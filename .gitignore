@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+# secrets — never commit these
+credentials.json
+credentials-web.json
+.gmail_token.json
+# personal content
+profile.md

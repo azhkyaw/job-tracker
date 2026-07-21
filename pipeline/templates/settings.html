@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}settings — tracker{% endblock %}
+{% block nav_settings %}active{% endblock %}
+{% block content %}
+<h1>Settings <span class="mono" style="color:var(--muted);font-size:.8em">{{ email }}</span></h1>
+{% if msg %}<p class="empty" style="text-align:left">{{ msg }}</p>{% endif %}
+
+{% if new_token %}
+<div class="card" style="border-left:3px solid var(--pending);padding:.8rem 1rem;margin-bottom:1rem">
+  <strong>Your API token</strong> — paste it into the extension options. Shown only once:
+  <div><code class="mono" id="newtok" style="user-select:all;word-break:break-all">{{ new_token }}</code></div>
+</div>
+{% endif %}
+
+<h2>Extension API token</h2>
+<form method="post" action="/settings/token">
+  <button>Mint a new token</button>
+  <span style="color:var(--muted)">invalidates the previous one immediately</span>
+</form>
+
+<h2>Gmail</h2>
+{% if gmail_connected %}
+<p>Connected. Status emails sync on the next <span class="mono">sync</span> run.</p>
+<form method="post" action="/settings/gmail/disconnect"><button>Disconnect Gmail</button></form>
+{% elif gmail_web_configured %}
+<p><a href="/oauth/gmail/start"><button class="primary" type="button">Connect Gmail</button></a>
+   <span style="color:var(--muted)">read-only scope; tokens stored encrypted</span></p>
+{% else %}
+<p class="empty" style="text-align:left">No web OAuth client configured on this server.
+Single-user installs can keep using <span class="mono">python -m pipeline.cli auth</span>;
+to enable Connect Gmail, add a Google web-application client JSON as
+<span class="mono">credentials-web.json</span>.</p>
+{% endif %}
+
+<h2>Resume profile (grounds your cover letters)</h2>
+<form method="post" action="/settings/profile" style="display:grid;gap:.5rem;max-width:44rem">
+  <textarea name="resume_profile" rows="10"
+    style="font:inherit;border:1px solid var(--line);border-radius:6px;padding:.5rem"
+    placeholder="Your real background, in your words — the letter generator will not invent beyond this.">{{ resume_profile }}</textarea>
+  <div><button class="primary">Save profile</button></div>
+</form>
+
+<h2>Password</h2>
+<form method="post" action="/settings/password" style="display:grid;gap:.5rem;max-width:24rem">
+  <label>current <input type="password" name="current" autocomplete="current-password" required></label>
+  <label>new (8+ characters) <input type="password" name="new" autocomplete="new-password" required></label>
+  <div><button class="primary">Change password</button></div>
+</form>
+{% endblock %}

@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}{{ a.company_norm }} — tracker{% endblock %}
+{% block nav_apps %}active{% endblock %}
+{% block content %}
+<h1>{{ a.company_norm }} · {{ a.title_canonical }}
+  <span class="badge" style="--c:var(--{{ 'interview_invite' if status == 'interviewing' else status }})">{{ status }}</span>
+</h1>
+
+<dl class="kv">
+  <dt>focused</dt>
+  <dd>
+    <form method="post" action="/applications/{{ a.id }}/focused" style="display:inline">
+      {% if a.focused is none %}not set —
+        <button name="focused" value="yes">Mark focused</button>
+        <button name="focused" value="no">Mark generic</button>
+      {% elif a.focused %}yes <button name="focused" value="no">Change to generic</button>
+      {% else %}no <button name="focused" value="yes">Change to focused</button>{% endif %}
+    </form>
+  </dd>
+</dl>
+
+<h2>Timeline</h2>
+<div class="card" style="padding:.4rem .9rem">
+<ul class="timeline">
+  {% for e in events %}
+  <li><span class="when">{{ e.occurred_at | dtt }}</span>
+      <span>{{ e.type }} <span class="mono" style="color:var(--muted)">via {{ e.source }}</span>
+      {% if e.payload.get('note') %}— {{ e.payload['note'] }}{% endif %}
+      {% if e.payload.get('status_detail') %}— {{ e.payload['status_detail'] }}{% endif %}</span></li>
+  {% endfor %}
+</ul>
+</div>
+<form method="post" action="/applications/{{ a.id }}/events" style="margin-top:.6rem;display:flex;gap:.5rem;flex-wrap:wrap">
+  <select name="type" aria-label="Event type">
+    <option value="follow_up_sent">followed up</option>
+    <option value="note">note</option>
+    <option value="withdrawn">withdrew</option>
+  </select>
+  <input type="text" name="note" placeholder="optional note" aria-label="Note">
+  <button class="primary">Log event</button>
+</form>
+
+{% if extractions %}
+<h2>Extracted from the JD</h2>
+{% for x in extractions %}
+<div class="card" style="padding:.8rem 1rem;margin-bottom:.7rem">
+  <form method="post" action="/extractions/{{ x.id }}/verify" style="display:grid;gap:.45rem">
+    <input type="hidden" name="application_id" value="{{ a.id }}">
+    <div class="facts mono" style="color:var(--muted)">
+      via {{ x.platform }} · {{ x.model }} · {{ x.prompt_version }}
+      {% if x.verified %}· <span style="color:var(--offer)">verified</span>{% else %}· unverified{% endif %}
+    </div>
+    <label>languages
+      <input type="text" name="languages" value="{{ x.languages | join(', ') }}" aria-label="Languages"></label>
+    <label>technologies
+      <input type="text" name="technologies" value="{{ x.technologies | join(', ') }}" aria-label="Technologies"></label>
+    <dl class="kv">
+      <dt>seniority</dt><dd>{{ x.seniority or "—" }}</dd>
+      <dt>salary</dt><dd>{% if x.salary_min %}{{ x.currency or "" }} {{ x.salary_min }}{% if x.salary_max and x.salary_max != x.salary_min %}–{{ x.salary_max }}{% endif %}{% else %}—{% endif %}</dd>
+      <dt>work mode</dt><dd>{{ x.work_mode or "—" }}</dd>
+      <dt>visa</dt><dd>
+        <select name="visa_signal" aria-label="Visa signal">
+          <option value="">{{ x.visa_signal }} (keep)</option>
+          <option value="sponsors">sponsors</option>
+          <option value="local_only">local_only</option>
+          <option value="unclear">unclear</option>
+        </select>
+        {% if x.visa_notes %}<span style="color:var(--muted)">{{ x.visa_notes }}</span>{% endif %}
+      </dd>
+    </dl>
+    <div><button class="primary">{% if x.verified %}Save corrections{% else %}Verify{% endif %}</button></div>
+  </form>
+</div>
+{% endfor %}
+{% endif %}
+
+<h2>Cover letter</h2>
+{% if cover_queued %}
+<p class="empty">Draft queued — it appears here once the worker runs.</p>
+{% endif %}
+{% for ar in artifacts %}
+<div class="card" style="padding:.8rem 1rem;margin-bottom:.7rem">
+  <div class="facts mono" style="color:var(--muted)">{{ ar.kind }} · {{ ar.created_at | dtt }}{% if ar.model %} · {{ ar.model }}{% endif %}</div>
+  <details><summary>Show text</summary>
+    <pre style="white-space:pre-wrap;font:inherit;margin:.5rem 0 0">{{ ar.content }}</pre>
+  </details>
+</div>
+{% endfor %}
+{% if not cover_queued %}
+<form method="post" action="/applications/{{ a.id }}/cover-letter">
+  <button class="primary">Draft a cover letter</button>
+  <span style="color:var(--muted)">uses your resume profile + the captured JD</span>
+</form>
+{% endif %}
+
+<h2>Postings</h2>
+{% if postings %}
+<div class="card"><table>
+  <thead><tr><th>platform</th><th>title</th><th>captured</th><th>jd</th><th></th></tr></thead>
+  <tbody>{% for p in postings %}
+  <tr><td class="mono">{{ p.platform }}</td><td>{{ p.title or "—" }}</td>
+      <td class="mono">{{ p.captured_at | dt }} · {{ p.captured_via }}</td>
+      <td class="mono">{{ "yes" if p.has_jd else "needs enrichment" }}</td>
+      <td>{% if p.url %}<a href="{{ p.url }}">open</a>{% endif %}</td></tr>
+  {% endfor %}</tbody>
+</table></div>
+{% else %}<p class="empty">No postings captured for this job yet.</p>{% endif %}
+
+{% if contacts %}
+<h2>Contacts</h2>
+<div class="card"><table>
+  <thead><tr><th>name</th><th>role</th><th>approached</th><th>notes</th></tr></thead>
+  <tbody>{% for c in contacts %}
+  <tr><td>{% if c.url %}<a href="{{ c.url }}">{{ c.name }}</a>{% else %}{{ c.name }}{% endif %}</td>
+      <td>{{ c.role or "—" }}</td><td class="mono">{{ "yes" if c.approached else "no" }}</td>
+      <td>{{ c.notes or "—" }}</td></tr>
+  {% endfor %}</tbody>
+</table></div>
+{% endif %}
+
+{% if emails %}
+<h2>Emails</h2>
+<div class="card"><table>
+  <thead><tr><th>received</th><th>subject</th><th>from</th><th>type</th></tr></thead>
+  <tbody>{% for m in emails %}
+  <tr><td class="mono">{{ m.received_at | dtt }}</td><td>{{ m.subject or "—" }}</td>
+      <td class="mono">{{ m.sender }}</td>
+      <td>{% if m.classification %}<span class="badge" style="--c:var(--applied)">{{ m.classification }}</span>{% endif %}</td></tr>
+  {% endfor %}</tbody>
+</table></div>
+{% endif %}
+{% endblock %}

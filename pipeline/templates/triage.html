@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}triage — tracker{% endblock %}
+{% block nav_triage %}active{% endblock %}
+{% block content %}
+<h1>Triage</h1>
+{% if not emails %}
+<p class="empty">Nothing waiting. Every email is matched, resolved, or ignored.</p>
+{% endif %}
+{% for e in emails %}
+<div class="tri">
+  <div class="meta">
+    <span class="subject">{{ e.subject or "(no subject)" }}</span>
+    <span class="from">{{ e.sender }}</span>
+    <span class="mono from">{{ e.received_at | dtt }}</span>
+    {% if e.classification %}<span class="badge" style="--c:var(--pending)">{{ e.classification }}</span>{% endif %}
+  </div>
+  {% if e.extraction %}
+  <div class="facts">
+    {{ e.extraction.company or "company?" }} · {{ e.extraction.role_title or "role?" }}
+    · via {{ e.extraction.platform }}{% if e.match_score is not none %} · best score {{ e.match_score }}{% endif %}
+  </div>
+  {% endif %}
+  <form method="post" action="/triage/{{ e.id }}">
+    <select name="application_id" aria-label="Application to link to">
+      <option value="">— pick an application —</option>
+      {% for o in options %}
+      <option value="{{ o.id }}">{{ o.company_norm }} · {{ o.title_canonical }}</option>
+      {% endfor %}
+    </select>
+    <button class="primary" name="action" value="link">Link email</button>
+    {% if e.extraction and e.extraction.company %}
+    <button name="action" value="create">Create application</button>
+    {% endif %}
+    <button name="action" value="ignore">Ignore</button>
+  </form>
+</div>
+{% endfor %}
+
+{% if dupes %}
+<h2>Possible duplicates</h2>
+{% for d in dupes %}
+<div class="tri">
+  <div class="meta">
+    <span class="subject">{{ d.comp_a or "?" }} · {{ d.title_a or "?" }}
+      <span class="mono" style="color:var(--muted)">({{ d.plat_a }})</span></span>
+    <span style="color:var(--muted)">vs</span>
+    <span class="subject">{{ d.comp_b or "?" }} · {{ d.title_b or "?" }}
+      <span class="mono" style="color:var(--muted)">({{ d.plat_b }})</span></span>
+  </div>
+  <div class="facts">jd similarity {{ "%.3f" | format(d.cosine_sim) }} · title similarity {{ "%.2f" | format(d.title_sim) }}</div>
+  <form method="post" action="/duplicates/{{ d.id }}">
+    <button class="primary" name="action" value="confirm">Same job — merge</button>
+    <button name="action" value="reject">Different jobs</button>
+  </form>
+</div>
+{% endfor %}
+{% endif %}
+{% endblock %}

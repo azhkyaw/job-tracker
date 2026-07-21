@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}tracker{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F3F6F7; --card:#FFFFFF; --ink:#1B2A33; --muted:#5E7079;
+  --line:#DAE3E7; --accent:#0E6E66; --accent-ink:#FFFFFF;
+  --interested:#7A6A8A; --applied:#54707D; --viewed:#3D6B8E;
+  --interview_invite:#2B5FA3; --offer:#2F6B3A; --rejected:#9E4038;
+  --withdrawn:#6B6B6B; --pending:#A16207;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+     font:15px/1.5 'IBM Plex Sans',system-ui,sans-serif}
+.mono{font-family:'IBM Plex Mono',ui-monospace,monospace}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible{
+  outline:2px solid var(--accent);outline-offset:2px}
+
+header{display:flex;align-items:baseline;gap:1.6rem;flex-wrap:wrap;
+       padding:.9rem 1.6rem;background:var(--card);border-bottom:1px solid var(--line)}
+header .brand{font-family:'IBM Plex Mono',monospace;font-weight:500;font-size:1.05rem}
+header .brand::before{content:"▸ ";color:var(--accent)}
+header nav{display:flex;gap:1.2rem}
+header nav a{color:var(--muted)}
+header nav a.active{color:var(--ink);font-weight:600}
+.pill{font-family:'IBM Plex Mono',monospace;font-size:.72rem;
+      background:color-mix(in srgb,var(--pending) 14%,white);color:var(--pending);
+      border:1px solid color-mix(in srgb,var(--pending) 40%,white);
+      border-radius:999px;padding:0 .5em;margin-left:.35em;vertical-align:1px}
+
+main{max-width:1080px;margin:0 auto;padding:1.4rem 1.6rem 3rem}
+h1{font-size:1.15rem;margin:.2rem 0 1rem}
+h2{font-size:.8rem;margin:1.6rem 0 .5rem;color:var(--muted);
+   font-family:'IBM Plex Mono',monospace;font-weight:500;
+   text-transform:uppercase;letter-spacing:.08em}
+
+/* signature: the funnel strip — pipeline counts as a segmented bar */
+.funnel{display:flex;gap:2px;margin:0 0 1.4rem;border-radius:6px;overflow:hidden}
+.funnel .seg{flex-grow:var(--n);flex-basis:0;min-width:86px;padding:.45rem .6rem .35rem;
+             border-top:3px solid var(--c);
+             background:color-mix(in srgb,var(--c) 9%,white)}
+.funnel .seg .n{font-family:'IBM Plex Mono',monospace;font-weight:500;font-size:1.05rem;color:var(--c)}
+.funnel .seg .l{display:block;font-size:.7rem;color:var(--muted);
+                font-family:'IBM Plex Mono',monospace;letter-spacing:.04em}
+
+.badge{font-family:'IBM Plex Mono',monospace;font-size:.74rem;white-space:nowrap;
+       color:var(--c);border:1px solid color-mix(in srgb,var(--c) 45%,white);
+       background:color-mix(in srgb,var(--c) 9%,white);
+       border-radius:4px;padding:.05em .45em}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;
+      padding:0;overflow:hidden}
+table{width:100%;border-collapse:collapse}
+th{font-family:'IBM Plex Mono',monospace;font-weight:500;font-size:.7rem;
+   text-transform:uppercase;letter-spacing:.08em;color:var(--muted);
+   text-align:left;padding:.6rem .9rem;border-bottom:1px solid var(--line)}
+td{padding:.55rem .9rem;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:0}
+tr:hover td{background:color-mix(in srgb,var(--accent) 4%,white)}
+td.mono,th.mono{font-family:'IBM Plex Mono',monospace;font-size:.82rem;color:var(--muted)}
+
+.tri{background:var(--card);border:1px solid var(--line);border-radius:8px;
+     padding:.9rem 1rem;margin-bottom:.9rem;display:grid;gap:.7rem}
+.tri .meta{display:flex;gap:.8rem;flex-wrap:wrap;align-items:baseline}
+.tri .subject{font-weight:600}
+.tri .from{color:var(--muted);font-size:.85rem}
+.tri .facts{font-family:'IBM Plex Mono',monospace;font-size:.8rem;color:var(--muted)}
+.tri form{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center}
+
+button,select,input[type=text]{font:inherit}
+button{font-family:'IBM Plex Mono',monospace;font-size:.8rem;cursor:pointer;
+       border:1px solid var(--line);background:var(--card);color:var(--ink);
+       border-radius:6px;padding:.32rem .7rem}
+button:hover{border-color:var(--accent);color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+button.primary:hover{filter:brightness(1.08);color:var(--accent-ink)}
+select,input[type=text]{border:1px solid var(--line);border-radius:6px;
+       padding:.3rem .5rem;background:var(--card);max-width:20rem}
+
+.empty{color:var(--muted);padding:2.2rem 1rem;text-align:center;
+       border:1px dashed var(--line);border-radius:8px}
+dl.kv{display:grid;grid-template-columns:max-content 1fr;gap:.25rem 1.2rem;margin:0}
+dl.kv dt{color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:.78rem}
+dl.kv dd{margin:0}
+ul.timeline{list-style:none;margin:0;padding:0}
+ul.timeline li{display:flex;gap:.9rem;padding:.4rem 0;border-bottom:1px solid var(--line)}
+ul.timeline li:last-child{border-bottom:0}
+ul.timeline .when{font-family:'IBM Plex Mono',monospace;font-size:.78rem;
+                  color:var(--muted);white-space:nowrap;min-width:9.5rem}
+@media (prefers-reduced-motion: no-preference){
+  .tri,tr{transition:background .12s ease}
+}
+@media (max-width:720px){
+  main{padding:1rem}
+  .card{overflow-x:auto}
+  .funnel .seg{min-width:64px}
+}
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">tracker</span>
+  <nav>
+    <a href="/" class="{% block nav_apps %}{% endblock %}">applications</a>
+    <a href="/triage" class="{% block nav_triage %}{% endblock %}">triage{% if pending %}<span class="pill">{{ pending }}</span>{% endif %}</a>
+    <a href="/analytics" class="{% block nav_analytics %}{% endblock %}">analytics</a>
+    <a href="/settings" class="{% block nav_settings %}{% endblock %}">settings</a>
+  </nav>
+  <nav style="margin-left:auto">
+    <form method="post" action="/logout" style="display:inline">
+      <button style="border:0;background:none;color:var(--muted);cursor:pointer;padding:0;font:inherit">sign out</button>
+    </form>
+  </nav>
+</header>
+<main>
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

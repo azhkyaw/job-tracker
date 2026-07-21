@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}create account — tracker{% endblock %}
+{% block content %}
+<h1>Create an account</h1>
+{% if error %}<p class="empty" style="border-color:var(--rejected);color:var(--rejected)">{{ error }}</p>{% endif %}
+<div class="card" style="max-width:24rem;padding:1rem">
+<form method="post" action="/signup" style="display:grid;gap:.6rem">
+  <label>email <input type="text" name="email" autocomplete="username" required></label>
+  <label>password (8+ characters) <input type="password" name="password" autocomplete="new-password" required></label>
+  <div><button class="primary">Create account</button>
+  <a href="/login" style="margin-left:.8rem">I have an account</a></div>
+</form>
+</div>
+{% endblock %}

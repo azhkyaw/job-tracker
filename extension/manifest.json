@@ -1,0 +1,65 @@
+{
+  "manifest_version": 3,
+  "name": "Job Tracker Capture",
+  "version": "0.2.0",
+  "description": "Captures job descriptions at the moment you apply on LinkedIn, JobStreet, and Indeed, and sends them to your personal tracker.",
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1/*",
+    "http://localhost/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": false
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Job Tracker"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.linkedin.com/*"
+      ],
+      "js": [
+        "adapters/linkedin.js",
+        "shared/capture.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://*.jobstreet.com/*",
+        "*://*.jobstreet.com.sg/*",
+        "*://*.jobstreet.com.my/*",
+        "*://*.jobstreet.co.id/*",
+        "*://*.seek.com.au/*"
+      ],
+      "js": [
+        "adapters/jobstreet.js",
+        "shared/capture.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://*.indeed.com/*"
+      ],
+      "js": [
+        "adapters/indeed.js",
+        "shared/capture.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://*/*"
+  ]
+}
