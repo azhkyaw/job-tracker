@@ -44,6 +44,13 @@
     };
   }
 
+  function textMatchTarget(ev) {
+    if (!adapter.applyTextMatches || !adapter.applyTextMatches.length) return null;
+    const btn = ev.target.closest("button, a, [role='button']");
+    if (btn && adapter.applyTextMatches.includes((btn.textContent || "").trim())) return btn;
+    return null;
+  }
+
   /* ---------------------------------------------------------- popover */
 
   let host = null;
@@ -111,11 +118,20 @@
 
   document.addEventListener("click", (ev) => {
     const sel = (adapter.applySelectors || []).join(",");
-    if (!sel) return;
-    const hit = ev.target.closest(sel);
-    if (!hit) return;
-    const external = adapter.isExternal ? adapter.isExternal(hit) : false;
-    capture("apply", external);
+    const hit = sel ? ev.target.closest(sel) : null;
+    if (hit) {
+      const external = adapter.isExternal ? adapter.isExternal(hit) : false;
+      if (external || !adapter.deferInternalApply) {
+        capture("apply", external);
+        return;
+      }
+      // deferInternalApply: this click only opened an in-page wizard (e.g.
+      // LinkedIn Easy Apply) — the applicant can still cancel or discard
+      // partway through, so wait for the real completion signal below
+      // instead of recording an application that may never happen.
+    }
+    const submitHit = textMatchTarget(ev);
+    if (submitHit) capture("apply", false);
   }, true);
 
   /* Manual capture from the popup ("interested", no apply). */

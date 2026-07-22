@@ -2,6 +2,12 @@
  * When capture fails, fix these first; everything else lives in shared code. */
 window.__trackerAdapter = {
   platform: "linkedin",
+  // Easy Apply is an in-page multi-step wizard (resume -> questions -> review
+  // -> submit) — clicking its opener only starts the flow, and LinkedIn's own
+  // "Save this application?" prompt lets the applicant cancel or discard
+  // partway through. Capturing on that opening click records applications
+  // that may never actually happen; only the final submit click should count.
+  deferInternalApply: true,
   applySelectors: [
     ".jobs-apply-button",
     "button[aria-label*='Easy Apply']",
@@ -9,12 +15,21 @@ window.__trackerAdapter = {
     "button[data-live-test-job-apply-button]",
     // External applies ("Apply on company website") render as an <a>, not a
     // <button> — none of the selectors above are tag-agnostic, so this class
-    // of apply was never catchable at all, on either page layout.
+    // of apply was never catchable at all, on either page layout. The Easy
+    // Apply opener is *also* an <a> with "Apply" in its aria-label ("Easy
+    // Apply to this job") and matches this selector too — isExternal() below
+    // is what tells them apart, tag-agnostically, by checking for "Easy
+    // Apply" in the label; deferInternalApply then suppresses the internal
+    // one until the real submit.
     "a[aria-label*='Apply']",
   ],
+  // The wizard's final button has no stable selector (same hashed atomic CSS
+  // as everything else on this layout) — matched by exact visible text
+  // instead, checked directly against click targets in shared/capture.js.
+  applyTextMatches: ["Submit application"],
   isExternal(el) {
     const label = (el.getAttribute("aria-label") || el.textContent || "");
-    return el.tagName === "A" || !/easy apply/i.test(label);
+    return !/easy apply/i.test(label);       // plain "Apply" leaves the site
   },
   getJob() {
     const q = (sels) => {
