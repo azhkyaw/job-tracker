@@ -20,7 +20,12 @@ window.__trackerAdapter = {
       }
       return null;
     };
-    const idFromUrl = (location.pathname.match(/\/job\/(\d+)/) || [])[1] || null;
+    // Canonical page is /job/<id>; the search split-view instead carries the
+    // same id as ?jobId=<id> on a /<slug>-jobs search URL — fall back to that
+    // or the id would silently go missing and url would point at the search
+    // page instead of the posting.
+    const idFromUrl = (location.pathname.match(/\/job\/(\d+)/) || [])[1] ||
+      new URLSearchParams(location.search).get("jobId") || null;
     const title = q(["[data-automation='job-detail-title']", "h1"]);
     const company = q([
       "[data-automation='advertiser-name']",
@@ -30,7 +35,7 @@ window.__trackerAdapter = {
     if (!title && !jdEl) return null;
     return {
       platform_job_id: idFromUrl,
-      url: location.href.split("?")[0],
+      url: idFromUrl ? `${location.origin}/job/${idFromUrl}` : location.href.split("?")[0],
       company,
       title,
       jd_text: jdEl ? jdEl.innerText.trim() : null,
