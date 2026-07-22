@@ -17,6 +17,9 @@ phases built (Jul 2026) and test-driven. Full design rationale: `docs/design.md`
 - Backlog: `python -m pipeline.cli scan` (enqueue JD extraction/embeddings)
 - Account bootstrap/recovery: `python -m pipeline.cli passwd <email>`
 - Requires Postgres running: `sudo service postgresql start` (WSL doesn't autostart)
+- **Native Windows (no WSL):** see `docs/windows-dev.md` — Docker Postgres
+  (`docker compose up -d`, port 55432) + uv-managed Python;
+  `scripts/dev-setup.ps1` once, `scripts/test.ps1` to run suites.
 
 ## Architecture invariants — do not violate
 
@@ -62,6 +65,10 @@ phases built (Jul 2026) and test-driven. Full design rationale: `docs/design.md`
   deliberately untuned — tune against real backfill data, not intuition.
 - `emails.match_score` stores the best candidate score even for `pending`
   rows — that's the tuning dataset.
+- **Shadow DOM breaks click delegation:** `shared/capture.js`'s apply-detection
+  listener must use `ev.composedPath()`, never `ev.target.closest(...)` —
+  LinkedIn's Easy Apply renders its controls inside a shadow root, which
+  retargets `ev.target` to the shadow host for any listener outside that tree.
 
 ## Environment
 
@@ -75,12 +82,18 @@ second account exists) · `TRACKER_BASE_URL` (needed for Gmail web OAuth).
 Secrets files are gitignored: `credentials.json`, `credentials-web.json`,
 `.gmail_token.json`, `.env`, `profile.md`.
 
+`TRACKER_*`/`ANTHROPIC_API_KEY`/etc. auto-load from a gitignored `.env` at
+repo root (`pipeline/config.py`, `override=False` — real shell vars still
+win). No per-shell export needed for local dev.
+
 ## Known-untested surfaces (verify on first real contact)
 
 - **Extension DOM selectors** (`extension/adapters/*.js`) — best-effort against
   unverified live DOMs; WILL need adjustment. Failures surface loudly: console
   warning, popover error, ring buffer in the extension popup. Fix = edit one
-  thin adapter file, reload the unpacked extension.
+  thin adapter file, reload the unpacked extension, **and hard-refresh any
+  already-open tab** — reloading the extension does not re-inject content
+  scripts into tabs opened before the reload; the stale script keeps running.
 - **Voyage embeddings live call** (`pipeline/embeddings.py`, ~25 lines) —
   never executed against the real API; verify model name/dimension (schema is
   `vector(1024)`) on first use.
