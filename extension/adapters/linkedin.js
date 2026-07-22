@@ -7,10 +7,14 @@ window.__trackerAdapter = {
     "button[aria-label*='Easy Apply']",
     "button[aria-label^='Apply']",
     "button[data-live-test-job-apply-button]",
+    // External applies ("Apply on company website") render as an <a>, not a
+    // <button> — none of the selectors above are tag-agnostic, so this class
+    // of apply was never catchable at all, on either page layout.
+    "a[aria-label*='Apply']",
   ],
   isExternal(el) {
     const label = (el.getAttribute("aria-label") || el.textContent || "");
-    return !/easy apply/i.test(label);       // plain "Apply" leaves the site
+    return el.tagName === "A" || !/easy apply/i.test(label);
   },
   getJob() {
     const q = (sels) => {
