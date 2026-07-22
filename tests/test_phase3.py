@@ -9,12 +9,14 @@ fresh or existing test DB after the other suites:
 import math
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-dummy-key")
 os.environ.setdefault("TRACKER_API_TOKEN", "testtok")
-os.environ.setdefault("TRACKER_RESUME_PROFILE", "/tmp/test-profile.md")
-Path("/tmp/test-profile.md").write_text("# AZ\n12y software engineer; AI pivot.")
+_profile = Path(tempfile.gettempdir()) / "test-profile.md"
+os.environ.setdefault("TRACKER_RESUME_PROFILE", str(_profile))
+_profile.write_text("# AZ\n12y software engineer; AI pivot.")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi.testclient import TestClient

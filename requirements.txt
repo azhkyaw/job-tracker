@@ -9,3 +9,4 @@ python-multipart
 httpx
 bcrypt
 cryptography
+python-dotenv

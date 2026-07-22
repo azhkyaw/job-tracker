@@ -5,6 +5,18 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+# Dev convenience: load a gitignored .env at the project root if present, so the
+# CLI/server pick up TRACKER_* vars without sourcing a shell script first.
+# Real environment variables take precedence (override=False) — so test.ps1 and
+# CI, which set TRACKER_DATABASE_URL explicitly, are unaffected. Absent
+# python-dotenv (or absent .env) is a silent no-op.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=False)
+except ImportError:
+    pass
+
 DATABASE_URL = os.environ.get("TRACKER_DATABASE_URL", "postgresql:///tracker")
 
 # Bearer token for the extension -> /captures endpoint (§6.3). Generate one:
