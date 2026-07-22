@@ -32,9 +32,23 @@ window.__trackerAdapter = {
     return !/easy apply/i.test(label);       // plain "Apply" leaves the site
   },
   getJob() {
+    // Easy Apply's "Submit application" click happens inside a same-origin
+    // iframe (the modal) whose own document only has the contact-form/resume
+    // fields — the job title/company/JD live in the outer page. Since the
+    // script now runs in every frame (manifest all_frames), always read job
+    // identity from the top frame's document/location; when getJob() is
+    // itself called from the top frame (e.g. an external-apply click), top
+    // *is* window, so this is a no-op there.
+    let topWin = window;
+    try {
+      if (window.top && window.top.document) topWin = window.top;
+    } catch (e) { /* cross-origin top somehow — fall back to this frame */ }
+    const topDoc = topWin.document;
+    const topLoc = topWin.location;
+
     const q = (sels) => {
       for (const s of sels) {
-        const el = document.querySelector(s);
+        const el = topDoc.querySelector(s);
         if (el && el.textContent.trim()) return el.textContent.trim();
       }
       return null;
@@ -46,7 +60,7 @@ window.__trackerAdapter = {
     // deploys. document.title ("<title> | <company> | LinkedIn") is set by
     // LinkedIn's own tab-title code and is a steadier fallback than chasing
     // hashes.
-    const titleParts = document.title.split(" | ");
+    const titleParts = topDoc.title.split(" | ");
     const titleFromDocTitle =
       titleParts.length >= 2 && titleParts[titleParts.length - 1] === "LinkedIn"
         ? titleParts[0].trim() : null;
@@ -55,8 +69,8 @@ window.__trackerAdapter = {
         ? titleParts[titleParts.length - 2].trim() : null;
 
     const idFromUrl =
-      new URLSearchParams(location.search).get("currentJobId") ||
-      (location.pathname.match(/\/jobs\/view\/(\d+)/) || [])[1] || null;
+      new URLSearchParams(topLoc.search).get("currentJobId") ||
+      (topLoc.pathname.match(/\/jobs\/view\/(\d+)/) || [])[1] || null;
     const title = q([
       ".job-details-jobs-unified-top-card__job-title",
       ".jobs-unified-top-card__job-title",
@@ -68,14 +82,14 @@ window.__trackerAdapter = {
       ".jobs-unified-top-card__company-name",
     ]) || companyFromDocTitle;
     const jdEl =
-      document.querySelector("#job-details") ||
-      document.querySelector(".jobs-description__content") ||
-      document.querySelector(".jobs-box__html-content") ||
-      document.querySelector("[id^='JobDetails_AboutTheJob_']");
+      topDoc.querySelector("#job-details") ||
+      topDoc.querySelector(".jobs-description__content") ||
+      topDoc.querySelector(".jobs-box__html-content") ||
+      topDoc.querySelector("[id^='JobDetails_AboutTheJob_']");
     if (!title && !jdEl) return null;
     return {
       platform_job_id: idFromUrl,
-      url: idFromUrl ? `https://www.linkedin.com/jobs/view/${idFromUrl}/` : location.href,
+      url: idFromUrl ? `https://www.linkedin.com/jobs/view/${idFromUrl}/` : topLoc.href,
       company,
       title,
       jd_text: jdEl ? jdEl.innerText.trim() : null,

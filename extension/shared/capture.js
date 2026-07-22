@@ -46,8 +46,21 @@
 
   function textMatchTarget(ev) {
     if (!adapter.applyTextMatches || !adapter.applyTextMatches.length) return null;
-    const btn = ev.target.closest("button, a, [role='button']");
-    if (btn && adapter.applyTextMatches.includes((btn.textContent || "").trim())) return btn;
+    // ev.target is retargeted to the shadow host for clicks originating inside
+    // a shadow tree (open or closed) — LinkedIn's Easy Apply wizard renders
+    // its buttons that way, so .closest() from here never reaches them.
+    // composedPath() carries the real path through shadow boundaries for any
+    // composed event (click always is), regardless of open/closed mode.
+    const path = ev.composedPath ? ev.composedPath() : [ev.target];
+    for (const el of path) {
+      if (!el || !el.tagName) continue;
+      const tag = el.tagName.toLowerCase();
+      const isButtonish = tag === "button" || tag === "a" ||
+        (el.getAttribute && el.getAttribute("role") === "button");
+      if (isButtonish && adapter.applyTextMatches.includes((el.textContent || "").trim())) {
+        return el;
+      }
+    }
     return null;
   }
 
