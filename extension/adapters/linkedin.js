@@ -31,6 +31,24 @@ window.__trackerAdapter = {
     const label = (el.getAttribute("aria-label") || el.textContent || "");
     return !/easy apply/i.test(label);       // plain "Apply" leaves the site
   },
+  // External applies don't link straight to the employer/ATS — LinkedIn
+  // routes them through an outbound-link safety interstitial
+  // (linkedin.com/safety/go/?url=<real destination>&urlhash=...), verified
+  // live 2026-07-23. Unwrap it so ATS detection (shared/capture.js) sees the
+  // real host instead of linkedin.com.
+  resolveExternalUrl(el) {
+    const href = el.href || el.getAttribute("href");
+    if (!href) return null;
+    try {
+      const u = new URL(href, location.href);
+      if (/(^|\.)linkedin\.com$/i.test(u.hostname) && u.pathname.includes("/safety/go")) {
+        return u.searchParams.get("url") || href;
+      }
+      return href;
+    } catch (e) {
+      return href;
+    }
+  },
   getJob() {
     // Easy Apply's "Submit application" click happens inside a same-origin
     // iframe (the modal) whose own document only has the contact-form/resume
@@ -53,46 +71,163 @@ window.__trackerAdapter = {
       }
       return null;
     };
-    // LinkedIn's "AI-powered search" beta variant (/jobs/search-results/) ships
-    // hashed atomic CSS classes (e.g. "f6cb7395") instead of the stable
-    // .job-details-jobs-unified-top-card__* classes below — those classes are
-    // regenerated per build, so no fixed selector will survive across
-    // deploys. document.title ("<title> | <company> | LinkedIn") is set by
-    // LinkedIn's own tab-title code and is a steadier fallback than chasing
-    // hashes.
-    const titleParts = topDoc.title.split(" | ");
-    const titleFromDocTitle =
-      titleParts.length >= 2 && titleParts[titleParts.length - 1] === "LinkedIn"
-        ? titleParts[0].trim() : null;
-    const companyFromDocTitle =
-      titleParts.length >= 3 && titleParts[titleParts.length - 1] === "LinkedIn"
-        ? titleParts[titleParts.length - 2].trim() : null;
-
     const idFromUrl =
       new URLSearchParams(topLoc.search).get("currentJobId") ||
       (topLoc.pathname.match(/\/jobs\/view\/(\d+)/) || [])[1] || null;
-    const title = q([
+
+    // Try the classic, human-named classes first — still real on the
+    // /jobs/collections/recommended/ layout (verified live 2026-07-23).
+    const classTitle = q([
       ".job-details-jobs-unified-top-card__job-title",
       ".jobs-unified-top-card__job-title",
-      "h1",
-    ]) || titleFromDocTitle;
-    const company = q([
+    ]);
+    const classCompany = q([
       ".job-details-jobs-unified-top-card__company-name a",
       ".job-details-jobs-unified-top-card__company-name",
       ".jobs-unified-top-card__company-name",
-    ]) || companyFromDocTitle;
+    ]);
     const jdEl =
       topDoc.querySelector("#job-details") ||
       topDoc.querySelector(".jobs-description__content") ||
       topDoc.querySelector(".jobs-box__html-content") ||
       topDoc.querySelector("[id^='JobDetails_AboutTheJob_']");
+
+    // Location / posted-time / repost line ("Singapore, Singapore · Reposted
+    // 3 weeks ago · Over 100 people clicked apply"). Three layouts verified
+    // live 2026-07-23:
+    //  1. /jobs/collections/recommended/ — has a real, stable class
+    //     (.job-details-jobs-unified-top-card__tertiary-description-container)
+    //     wrapping ONE child <span> whose own children are the segments,
+    //     plus a trailing <p> ("Promoted by hirer...") sharing the container.
+    //  2. /jobs/view/ and /jobs/search-results/ — hashed atomic CSS, no
+    //     class survives a build. Found structurally instead, scoped to an
+    //     ancestor of jdEl (NOT the whole document — the split search-results
+    //     view duplicates the job title as plain text in the left-hand
+    //     results list, so an unscoped search can anchor on that instead of
+    //     the real top card). Within that scope, the tertiary line is
+    //     identified by SHAPE — a <p> with >=2 SPAN children and a "·" in
+    //     its text — rather than by matching already-known title text: a
+    //     same-shaped exact-text match breaks when the job's own title (or a
+    //     headhunter's company name) itself contains " | ", which also
+    //     corrupts document.title-based guessing below. Once found, its
+    //     preceding sibling <p>s ARE the title and company — this doubles as
+    //     a title/company source that's immune to that corruption.
+    let location = null, posted_label = null, reposted = null;
+    let tertiaryHost = null, structTitle = null, structCompany = null;
+    const classContainer = topDoc.querySelector(
+      ".job-details-jobs-unified-top-card__tertiary-description-container");
+    if (classContainer && classContainer.children[0]) {
+      tertiaryHost = classContainer.children[0];
+    } else {
+      for (let node = jdEl || topDoc.body, hops = 0;
+           hops < 12 && node && !tertiaryHost; hops++, node = node.parentElement) {
+        const ps = [...node.querySelectorAll("p")];
+        const idx = ps.findIndex((p) => {
+          const spanCount = [...p.children].filter((c) => c.tagName === "SPAN").length;
+          return spanCount >= 2 && p.textContent.includes("·");
+        });
+        if (idx > 0) {
+          tertiaryHost = ps[idx];
+          structTitle = ps[idx - 1].textContent.trim();
+          structCompany = idx >= 2 ? ps[idx - 2].textContent.trim() : null;
+        }
+      }
+    }
+    if (tertiaryHost) {
+      const segments = [...tertiaryHost.children]
+        .filter((c) => c.tagName === "SPAN")
+        .map((s) => s.textContent.trim())
+        .filter((t) => t && t !== "·");
+      location = segments[0] || null;
+      const postedRaw = segments[1] || null;
+      if (postedRaw) {
+        reposted = /^Reposted\b/i.test(postedRaw);
+        posted_label = postedRaw.replace(/^Reposted\s+/i, "");
+      }
+    }
+
+    // Last resort: document.title ("<title> | <company> | LinkedIn") set by
+    // LinkedIn's own tab-title code. Only trustworthy when it has exactly one
+    // job title and one company segment — a job/company name containing its
+    // own " | " (verified live 2026-07-23 on a headhunter posting whose title
+    // read "... | APPLICABLE FOR WORK VISA") desyncs the positional guess,
+    // which the structural path above isn't fooled by since it doesn't parse
+    // this string at all. Also unusable on /jobs/collections/recommended/,
+    // where the tab title is the page's own ("Top job picks for you |
+    // LinkedIn") regardless of which job is selected — verified live same day.
+    const docTitleTracksSelectedJob = !/\/jobs\/collections\//.test(topLoc.pathname);
+    const titleParts = topDoc.title.split(" | ");
+    const titleFromDocTitle =
+      docTitleTracksSelectedJob && titleParts.length === 3 && titleParts[2] === "LinkedIn"
+        ? titleParts[0].trim() : null;
+    const companyFromDocTitle =
+      docTitleTracksSelectedJob && titleParts.length === 3 && titleParts[2] === "LinkedIn"
+        ? titleParts[1].trim() : null;
+
+    const title = classTitle || structTitle || titleFromDocTitle;
+    const company = classCompany || structCompany || companyFromDocTitle;
     if (!title && !jdEl) return null;
+
     return {
       platform_job_id: idFromUrl,
       url: idFromUrl ? `https://www.linkedin.com/jobs/view/${idFromUrl}/` : topLoc.href,
       company,
       title,
       jd_text: jdEl ? jdEl.innerText.trim() : null,
+      location,
+      posted_label,
+      reposted,
     };
+  },
+  // "Meet the hiring team" job-poster card — only present when the poster
+  // opted to show it, so absence is normal, not a selector failure. Deliberately
+  // NOT the separate "People you can reach out to" card LinkedIn also shows:
+  // that's just a 1st-degree connection who happens to work there, not a
+  // hiring contact. Same top-frame reasoning as getJob(): Easy Apply's submit
+  // click fires inside the modal iframe, which doesn't have this section in
+  // its own document.
+  //
+  // Verified live against the "AI-powered search" beta (/jobs/search-results/)
+  // on 2026-07-23: this layout has NO stable classes at all on the card
+  // (hashed atomic CSS on every element, e.g. "_85e1283b e218918b..." —
+  // regenerated per build, same issue getJob() works around via document.title).
+  // "Meet the hiring team" is plain visible copy though, so anchor on that text
+  // instead of any class. Not verified against the classic /jobs/view/ layout.
+  getRecruiter() {
+    let topWin = window;
+    try {
+      if (window.top && window.top.document) topWin = window.top;
+    } catch (e) { /* cross-origin top somehow — fall back to this frame */ }
+    const topDoc = topWin.document;
+    const heading = [...topDoc.querySelectorAll("*")].find(
+      (el) => el.children.length === 0 && el.textContent.trim() === "Meet the hiring team");
+    const card = heading && heading.parentElement;
+    if (!card) return null;
+    const links = [...card.querySelectorAll("a[href*='/in/']")];
+    if (!links.length) return null;
+    // The card nests a name-only <a> (its only content is the text "Ray Tan")
+    // inside a wrapping card-sized <a> with the same href whose textContent
+    // also picks up the role and the "Job poster" badge — same nested-anchor
+    // shape LinkedIn uses for the Easy Apply shadow-DOM controls. Own direct
+    // text (excluding descendant elements) isolates just the name; fall back
+    // to full textContent if that ever comes back empty for every candidate.
+    const ownText = (el) => [...el.childNodes]
+      .filter((n) => n.nodeType === 3).map((n) => n.textContent).join("").trim();
+    let best = null;
+    for (const l of links) {
+      const text = ownText(l) || l.textContent.trim();
+      if (text && (!best || text.length < best.text.length)) best = { text, href: l.href };
+    }
+    if (!best) return null;
+    // The role/headline text ("Talent Acquisition | Hiring top Tech talents
+    // across Migoo and Product") lives in a <span> inside the OTHER link — the
+    // outer, card-sized one, not the inner name-only one — as that span's own
+    // direct text. Everything else under the outer link (avatar, name, "•
+    // 2nd" connection degree, "Job poster" badge) wraps its text in further
+    // child elements instead, so this stays the only match.
+    const outer = links.reduce((a, b) => (a.textContent.length >= b.textContent.length ? a : b));
+    const roleSpan = [...outer.querySelectorAll("span")].find((s) => ownText(s));
+    const role = roleSpan ? ownText(roleSpan) : null;
+    return { name: best.text, url: best.href.split("?")[0], role };
   },
 };

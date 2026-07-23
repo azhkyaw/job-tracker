@@ -187,6 +187,14 @@ postings(
   platform_job_id, url,
   company_raw, company_norm, title,
   jd_text, jd_embedding vector(1024),
+  location NULL,                     -- listing's stated location, as shown
+  posted_label NULL,                 -- platform's own relative-time text,
+                                      -- e.g. "3 weeks ago" (not parsed to a
+                                      -- date: granularity is too fuzzy)
+  reposted NULL,                     -- boolean; NULL = platform didn't say
+  ats NULL,                          -- greenhouse | lever | workday | ...;
+                                      -- learned from ATS confirmation emails
+                                      -- (email_classifier.py Extraction.ats)
   captured_via,                      -- extension | email_only | manual
   captured_at
 )

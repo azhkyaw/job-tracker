@@ -40,6 +40,8 @@ if ($hasTables -eq 't') {
     docker compose exec -T db psql -U postgres -v ON_ERROR_STOP=1 -d tracker -f /migrations/001_init.sql
     docker compose exec -T db psql -U postgres -v ON_ERROR_STOP=1 -d tracker -f /migrations/002_gmail_sync_state.sql
     docker compose exec -T db psql -U postgres -v ON_ERROR_STOP=1 -d tracker -f /migrations/003_multi_tenant.sql
+    docker compose exec -T db psql -U postgres -v ON_ERROR_STOP=1 -d tracker -f /migrations/004_posting_listing_meta.sql
+    docker compose exec -T db psql -U postgres -v ON_ERROR_STOP=1 -d tracker -f /migrations/005_posting_ats.sql
     docker compose exec -T db psql -U postgres -v ON_ERROR_STOP=1 -d tracker `
         -c "INSERT INTO users (email) VALUES ('you@example.com');"
 }

@@ -25,6 +25,11 @@
   {% for e in events %}
   <li><span class="when">{{ e.occurred_at | dtt }}</span>
       <span>{{ e.type }} <span class="mono" style="color:var(--muted)">via {{ e.source }}</span>
+      {% if 'external' in e.payload %}
+        {% if e.payload['external'] %}— applied via employer's website
+        {% else %}— applied on-platform (Easy Apply / quick apply)
+        {% endif %}
+      {% endif %}
       {% if e.payload.get('note') %}— {{ e.payload['note'] }}{% endif %}
       {% if e.payload.get('status_detail') %}— {{ e.payload['status_detail'] }}{% endif %}</span></li>
   {% endfor %}
@@ -75,8 +80,12 @@
 {% endif %}
 
 <h2>Cover letter</h2>
-{% if cover_queued %}
+{% if cover_job and cover_job.state in ('pending', 'running') and cover_job.attempts == 0 %}
 <p class="empty">Draft queued — it appears here once the worker runs.</p>
+{% elif cover_job and cover_job.state in ('pending', 'running') and cover_job.attempts > 0 %}
+<p class="empty" style="color:var(--pending)">Draft generation failed and is retrying — attempt {{ cover_job.attempts }} of {{ cover_max_attempts }}{% if cover_error %}: {{ cover_error }}{% endif %}</p>
+{% elif cover_job and cover_job.state == 'dead' %}
+<p class="empty" style="color:var(--rejected)">Draft generation failed after {{ cover_job.attempts }} attempts{% if cover_error %}: {{ cover_error }}{% endif %}</p>
 {% endif %}
 {% for ar in artifacts %}
 <div class="card" style="padding:.8rem 1rem;margin-bottom:.7rem">
@@ -86,7 +95,7 @@
   </details>
 </div>
 {% endfor %}
-{% if not cover_queued %}
+{% if not (cover_job and cover_job.state in ('pending', 'running')) %}
 <form method="post" action="/applications/{{ a.id }}/cover-letter">
   <button class="primary">Draft a cover letter</button>
   <span style="color:var(--muted)">uses your resume profile + the captured JD</span>
@@ -96,9 +105,13 @@
 <h2>Postings</h2>
 {% if postings %}
 <div class="card"><table>
-  <thead><tr><th>platform</th><th>title</th><th>captured</th><th>jd</th><th></th></tr></thead>
+  <thead><tr><th>platform</th><th>title</th><th>location</th><th>posted</th>
+    <th>ats</th><th>captured</th><th>jd</th><th></th></tr></thead>
   <tbody>{% for p in postings %}
   <tr><td class="mono">{{ p.platform }}</td><td>{{ p.title or "—" }}</td>
+      <td>{{ p.location or "—" }}</td>
+      <td class="mono">{% if p.posted_label %}{% if p.reposted %}reposted {% endif %}{{ p.posted_label }}{% else %}—{% endif %}</td>
+      <td class="mono">{{ p.ats or "—" }}</td>
       <td class="mono">{{ p.captured_at | dt }} · {{ p.captured_via }}</td>
       <td class="mono">{{ "yes" if p.has_jd else "needs enrichment" }}</td>
       <td>{% if p.url %}<a href="{{ p.url }}">open</a>{% endif %}</td></tr>

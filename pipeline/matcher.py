@@ -149,6 +149,17 @@ def _append_event(conn, user_id, application_id, email_row, classification,
             (user_id, extraction.recruiter["name"], extraction.recruiter.get("email"),
              extraction.notes, application_id, extraction.recruiter["name"]),
         )
+    if extraction.ats:
+        # applied_via_posting_id is the specific ad this application's ATS
+        # confirmation is about — COALESCE so a later, less-certain email
+        # never overwrites an ATS already learned from an earlier one.
+        conn.execute(
+            """
+            UPDATE postings SET ats = COALESCE(ats, %s)
+            WHERE id = (SELECT applied_via_posting_id FROM applications WHERE id = %s)
+            """,
+            (extraction.ats, application_id),
+        )
 
 
 def _create_application(conn, user_id, email_row, extraction: Extraction,
@@ -166,11 +177,12 @@ def _create_application(conn, user_id, email_row, extraction: Extraction,
     posting = conn.execute(
         """
         INSERT INTO postings (user_id, job_id, platform, company_raw, title,
-                              captured_via, captured_at)
-        VALUES (%s, %s, %s, %s, %s, 'email_only', %s)
+                              ats, captured_via, captured_at)
+        VALUES (%s, %s, %s, %s, %s, %s, 'email_only', %s)
         RETURNING id
         """,
-        (user_id, job["id"], platform, extraction.company, extraction.role_title, occurred_at),
+        (user_id, job["id"], platform, extraction.company, extraction.role_title,
+         extraction.ats, occurred_at),
     ).fetchone()
     app = conn.execute(
         """

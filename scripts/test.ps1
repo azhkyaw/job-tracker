@@ -28,6 +28,8 @@ Psql @('-d', 'postgres', '-c', "CREATE DATABASE $DB;")
 Psql @('-d', $DB, '-f', '/migrations/001_init.sql')
 Psql @('-d', $DB, '-f', '/migrations/002_gmail_sync_state.sql')
 Psql @('-d', $DB, '-f', '/migrations/003_multi_tenant.sql')
+Psql @('-d', $DB, '-f', '/migrations/004_posting_listing_meta.sql')
+Psql @('-d', $DB, '-f', '/migrations/005_posting_ats.sql')
 Psql @('-d', $DB, '-c', "INSERT INTO users (email) VALUES ('dev@test.local');")
 
 $dbPort = if ($env:TRACKER_DB_PORT) { $env:TRACKER_DB_PORT } else { '55432' }

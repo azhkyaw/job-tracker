@@ -139,8 +139,8 @@ def application_detail(request: Request, app_id: str):
             "SELECT type, source, occurred_at, payload FROM events "
             "WHERE application_id = %s ORDER BY occurred_at DESC", (a["id"],)).fetchall()
         postings = conn.execute(
-            "SELECT platform, url, title, captured_via, captured_at, "
-            "       jd_text IS NOT NULL AS has_jd "
+            "SELECT platform, url, title, captured_via, captured_at, location, "
+            "       posted_label, reposted, ats, jd_text IS NOT NULL AS has_jd "
             "FROM postings WHERE job_id = %s ORDER BY captured_at", (a["job_id"],)).fetchall()
         contacts = conn.execute(
             "SELECT name, role, url, approached, notes FROM contacts "
@@ -158,15 +158,24 @@ def application_detail(request: Request, app_id: str):
         artifacts = conn.execute(
             "SELECT id, kind, content, model, created_at FROM artifacts "
             "WHERE application_id = %s ORDER BY created_at DESC", (a["id"],)).fetchall()
-        cover_queued = conn.execute(
-            "SELECT 1 FROM job_queue WHERE type = 'generate_cover_letter' "
-            "AND state IN ('pending','running') AND payload->>'application_id' = %s",
-            (str(a["id"]),)).fetchone() is not None
+        # Most recent job only — a prior dead-lettered attempt shouldn't mask
+        # a fresh retry the user kicked off after fixing whatever broke it.
+        cover_job = conn.execute(
+            "SELECT state, attempts, last_error FROM job_queue "
+            "WHERE type = 'generate_cover_letter' AND payload->>'application_id' = %s "
+            "ORDER BY created_at DESC LIMIT 1",
+            (str(a["id"]),)).fetchone()
+        cover_error = None
+        if cover_job and cover_job["last_error"]:
+            # last_error is a full traceback (worker.py); the exception's own
+            # message is the last line — the rest is noise for this audience.
+            cover_error = cover_job["last_error"].strip().splitlines()[-1]
         return templates.TemplateResponse(request=request, name="application_detail.html", context={
             "a": a, "status": _display(a["status"]),
             "events": events, "postings": postings, "contacts": contacts,
             "emails": emails, "extractions": extractions, "artifacts": artifacts,
-            "cover_queued": cover_queued, "pending": _pending_count(conn),
+            "cover_job": cover_job, "cover_error": cover_error,
+            "cover_max_attempts": config.MAX_ATTEMPTS, "pending": _pending_count(conn),
         })
 
 
@@ -295,6 +304,11 @@ class CaptureIn(BaseModel):
     note: str | None = None
     recruiter_name: str | None = None
     recruiter_url: str | None = None
+    recruiter_role: str | None = None
+    location: str | None = None
+    posted_label: str | None = None     # platform's own relative-time text, e.g. "3 weeks ago"
+    reposted: bool | None = None
+    ats: str | None = None              # detected from an external apply's destination host
 
 
 _ENRICH_JOB_SQL = """
@@ -353,11 +367,16 @@ def captures(payload: CaptureIn, authorization: str | None = Header(None)):
                     url          = COALESCE(%s, url),
                     title        = COALESCE(%s, title),
                     company_raw  = COALESCE(%s, company_raw),
-                    company_norm = COALESCE(%s, company_norm)
+                    company_norm = COALESCE(%s, company_norm),
+                    location     = COALESCE(%s, location),
+                    posted_label = COALESCE(%s, posted_label),
+                    reposted     = COALESCE(%s, reposted),
+                    ats          = COALESCE(%s, ats)
                 WHERE id = %s
                 """,
                 (payload.jd_text, payload.url, payload.title, payload.company,
-                 company_norm, existing["id"]))
+                 company_norm, payload.location, payload.posted_label,
+                 payload.reposted, payload.ats, existing["id"]))
             posting_id, job_id = existing["id"], existing["job_id"]
             if payload.jd_text and not had_jd:
                 db.enqueue(conn, user_id, "extract_jd", {"posting_id": str(posting_id)})
@@ -384,13 +403,15 @@ def captures(payload: CaptureIn, authorization: str | None = Header(None)):
                 """
                 INSERT INTO postings (user_id, job_id, platform, platform_job_id,
                                       url, company_raw, company_norm, title,
-                                      jd_text, captured_via)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'extension')
+                                      jd_text, location, posted_label, reposted,
+                                      ats, captured_via)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'extension')
                 RETURNING id
                 """,
                 (user_id, job_id, payload.platform, payload.platform_job_id,
                  payload.url, payload.company, company_norm, payload.title,
-                 payload.jd_text)).fetchone()["id"]
+                 payload.jd_text, payload.location, payload.posted_label,
+                 payload.reposted, payload.ats)).fetchone()["id"]
             if payload.jd_text:
                 db.enqueue(conn, user_id, "extract_jd", {"posting_id": str(posting_id)})
 
@@ -412,8 +433,7 @@ def captures(payload: CaptureIn, authorization: str | None = Header(None)):
                     "INSERT INTO events (user_id, application_id, type, source, "
                     "occurred_at, payload) VALUES (%s, %s, 'applied', 'extension', "
                     "now(), %s)",
-                    (user_id, app_row["id"],
-                     Json({"external": True} if payload.external else {})))
+                    (user_id, app_row["id"], Json({"external": payload.external})))
         else:
             has_any = conn.execute(
                 "SELECT 1 FROM events WHERE application_id = %s", (app_row["id"],)).fetchone()
@@ -434,13 +454,13 @@ def captures(payload: CaptureIn, authorization: str | None = Header(None)):
         if payload.recruiter_name:
             conn.execute(
                 """
-                INSERT INTO contacts (user_id, job_id, name, url, source)
-                SELECT %s, %s, %s, %s, 'extension'
+                INSERT INTO contacts (user_id, job_id, name, url, role, source)
+                SELECT %s, %s, %s, %s, %s, 'extension'
                 WHERE NOT EXISTS (SELECT 1 FROM contacts
                                   WHERE job_id = %s AND name = %s)
                 """,
                 (user_id, job_id, payload.recruiter_name, payload.recruiter_url,
-                 job_id, payload.recruiter_name))
+                 payload.recruiter_role, job_id, payload.recruiter_name))
 
         return {"application_id": str(app_row["id"]), "posting_id": str(posting_id),
                 "created": created, "enriched": enriched}

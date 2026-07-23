@@ -4,7 +4,19 @@
  *   platform        "linkedin" | "jobstreet" | "indeed"
  *   applySelectors  CSS selectors whose click means "the user is applying"
  *   isExternal(el)  optional: true when the button leaves for the employer site
- *   getJob()        {platform_job_id, url, company, title, jd_text} | null
+ *   getJob()        {platform_job_id, url, company, title, jd_text,
+ *                    location?, posted_label?, reposted?} | null — the last
+ *                   three are optional/nullable: not every platform (or
+ *                   every listing) exposes them
+ *   getRecruiter()  optional: {name, url, role?} | null — a named hiring
+ *                   contact shown on the job page (not the applicant's own
+ *                   profile); role is the headline/title text under their
+ *                   name, e.g. "Talent Acquisition", when the page has one
+ *   resolveExternalUrl(el)
+ *                   optional: given the clicked apply element, return the
+ *                   real destination URL when the platform wraps outbound
+ *                   links in a redirect/interstitial (e.g. LinkedIn's
+ *                   linkedin.com/safety/go/?url=<dest>). Falls back to el.href.
  *
  * This file owns everything else: delegated apply detection (works across the
  * SPAs' re-renders), the quick-tag popover (shadow DOM so page CSS can't touch
@@ -17,17 +29,42 @@
   const send = (payload) =>
     chrome.runtime.sendMessage({ type: "tracker-capture", payload });
 
-  function buildPayload(trigger, external, tags) {
-    const job = adapter.getJob();
-    if (!job || (!job.title && !job.jd_text)) {
-      console.warn("[tracker] capture failed — adapter found no job on this page",
-                   location.href);
-      chrome.runtime.sendMessage({
-        type: "tracker-capture-failure",
-        detail: { platform: adapter.platform, url: location.href, at: Date.now() },
-      });
-      return null;
+  // Hostname suffix -> ATS vendor. Only for genuinely external applies (the
+  // employer's own domain never matches these) — an in-house/direct careers
+  // page correctly yields no match rather than a guess.
+  const ATS_HOSTS = {
+    "greenhouse.io": "greenhouse",
+    "lever.co": "lever",
+    "myworkdayjobs.com": "workday",
+    "myworkday.com": "workday",
+    "ashbyhq.com": "ashby",
+    "icims.com": "icims",
+    "smartrecruiters.com": "smartrecruiters",
+    "jobvite.com": "jobvite",
+    "bamboohr.com": "bamboohr",
+    "taleo.net": "taleo",
+    "successfactors.com": "successfactors",
+    "workable.com": "workable",
+    "breezy.hr": "breezy",
+    "personio.com": "personio",
+    "personio.de": "personio",
+    "recruitee.com": "recruitee",
+    "teamtailor.com": "teamtailor",
+    "jazzhr.com": "jazzhr",
+    "paylocity.com": "paylocity",
+  };
+
+  function detectAts(urlStr) {
+    if (!urlStr) return null;
+    let hostname;
+    try { hostname = new URL(urlStr).hostname.toLowerCase(); } catch (e) { return null; }
+    for (const [domain, vendor] of Object.entries(ATS_HOSTS)) {
+      if (hostname === domain || hostname.endsWith("." + domain)) return vendor;
     }
+    return null;
+  }
+
+  function buildPayload(trigger, external, ats, job, recruiter, tags) {
     return {
       platform: adapter.platform,
       platform_job_id: job.platform_job_id || null,
@@ -39,8 +76,13 @@
       external: !!external,
       focused: tags.focused,
       note: tags.note || null,
-      recruiter_name: null,
-      recruiter_url: null,
+      recruiter_name: (recruiter && recruiter.name) || null,
+      recruiter_url: (recruiter && recruiter.url) || null,
+      recruiter_role: (recruiter && recruiter.role) || null,
+      location: job.location || null,
+      posted_label: job.posted_label || null,
+      reposted: job.reposted ?? null,
+      ats: ats || null,
     };
   }
 
@@ -113,10 +155,30 @@
     setTimeout(() => host && host.remove(), 45000);
   }
 
-  function capture(trigger, external) {
+  function capture(trigger, external, ats) {
+    // Snapshot the job DOM NOW, not inside the popover callback below: the
+    // popover waits on a human, and platforms routinely swap the page's
+    // content out from under it in the meantime — e.g. LinkedIn's Easy Apply
+    // replaces the top card (title/company/location) with an "application
+    // sent" confirmation within moments of the real submit click, well before
+    // anyone gets around to tagging Focused/Generic. Read while the DOM still
+    // reflects the job being applied to; tag whenever the human gets to it.
+    const job = adapter.getJob();
+    if (!job || (!job.title && !job.jd_text)) {
+      console.warn("[tracker] capture failed — adapter found no job on this page",
+                   location.href);
+      chrome.runtime.sendMessage({
+        type: "tracker-capture-failure",
+        detail: { platform: adapter.platform, url: location.href, at: Date.now() },
+      });
+      return;
+    }
+    // getRecruiter is optional — most platforms don't surface a named
+    // contact on the job page, and adapters that don't implement it just
+    // omit the method rather than returning null every time.
+    const recruiter = adapter.getRecruiter ? adapter.getRecruiter() : null;
     popover((tags, report) => {
-      const payload = buildPayload(trigger, external, tags);
-      if (!payload) return report("Couldn't read this page — selectors may need updating.", false);
+      const payload = buildPayload(trigger, external, ats, job, recruiter, tags);
       send(payload).then((res) => {
         if (res && res.ok) {
           report(res.enriched ? "Saved — enriched an existing record." : "Saved.", true);
@@ -134,8 +196,14 @@
     const hit = sel ? ev.target.closest(sel) : null;
     if (hit) {
       const external = adapter.isExternal ? adapter.isExternal(hit) : false;
+      // Only external applies have a resolvable ATS destination — Easy
+      // Apply / native quick-apply never leaves the platform, so there's
+      // nothing to detect from.
+      const ats = external
+        ? detectAts(adapter.resolveExternalUrl ? adapter.resolveExternalUrl(hit) : hit.href)
+        : null;
       if (external || !adapter.deferInternalApply) {
-        capture("apply", external);
+        capture("apply", external, ats);
         return;
       }
       // deferInternalApply: this click only opened an in-page wizard (e.g.
@@ -144,13 +212,13 @@
       // instead of recording an application that may never happen.
     }
     const submitHit = textMatchTarget(ev);
-    if (submitHit) capture("apply", false);
+    if (submitHit) capture("apply", false, null);
   }, true);
 
   /* Manual capture from the popup ("interested", no apply). */
   chrome.runtime.onMessage.addListener((msg, _sender, respond) => {
     if (msg && msg.type === "tracker-capture-manual") {
-      capture("manual", false);
+      capture("manual", false, null);
       respond({ ok: true });
     }
     return false;
