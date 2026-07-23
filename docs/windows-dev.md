@@ -56,9 +56,6 @@ Then just run the CLI directly — no per-shell env setup needed:
 The browser extension (Chrome on Windows) points at `http://127.0.0.1:8000`
 with the `TRACKER_API_TOKEN` from `.env` — same value, same as the Linux flow.
 
-> `scripts/env.ps1` still exists for setting vars in a shell explicitly, but
-> with `.env` auto-loading you no longer need to dot-source it.
-
 ## Key differences from the Linux/WSL docs
 
 | Linux/WSL doc says            | Windows equivalent                                   |

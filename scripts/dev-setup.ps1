@@ -47,5 +47,4 @@ if ($hasTables -eq 't') {
 Write-Host ''
 Write-Host 'Setup complete. Next:'
 Write-Host '  pwsh scripts/test.ps1            # run the suites'
-Write-Host '  . .\scripts\env.ps1              # load dev env vars into this shell'
 Write-Host '  .\.venv\Scripts\python.exe -m pipeline.cli serve   # UI at http://127.0.0.1:8000'
