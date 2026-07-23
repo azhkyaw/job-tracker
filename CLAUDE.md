@@ -69,6 +69,18 @@ phases built (Jul 2026) and test-driven. Full design rationale: `docs/design.md`
   listener must use `ev.composedPath()`, never `ev.target.closest(...)` —
   LinkedIn's Easy Apply renders its controls inside a shadow root, which
   retargets `ev.target` to the shadow host for any listener outside that tree.
+- **LinkedIn ships 3+ concurrent DOM layouts** (`/jobs/view/`, `/jobs/search-results/`,
+  `/jobs/collections/recommended/`) with different CSS stability and even different
+  `document.title` behavior — verify adapter changes live against more than one. Prefer
+  matching DOM *shape* (e.g. a `<p>` with `·`-separated `<span>` children) over exact-text
+  or fixed-position string splits; both broke on real listings.
+- **Extension: snapshot DOM data synchronously at the trigger event, not lazily.**
+  `shared/capture.js`'s `capture()` used to read the job DOM inside the tag-popover's
+  callback (fires whenever the human clicks, seconds later) — by then SPAs like LinkedIn's
+  Easy Apply often already replaced the relevant DOM (e.g. an "application sent"
+  confirmation swapping out the top card), silently losing data.
+- **Git Bash mangles `/migrations/...`-style paths** in `docker compose exec` commands
+  (rewrites the leading `/` to the Git install dir). Prefix with `MSYS_NO_PATHCONV=1`.
 
 ## Environment
 

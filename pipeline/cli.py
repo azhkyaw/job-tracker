@@ -99,7 +99,7 @@ def cmd_scan(_args) -> None:
 
 def cmd_serve(args) -> None:
     import uvicorn
-    uvicorn.run("pipeline.web:app", host=args.host, port=args.port)
+    uvicorn.run("pipeline.web:app", host=args.host, port=args.port, reload=True)
 
 
 def cmd_status(_args) -> None:
