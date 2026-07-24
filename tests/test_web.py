@@ -222,8 +222,28 @@ with db.connect() as conn:
         (tz_app,)).fetchone()
     check("stored UTC instant lands on 2026-04-12 in Asia/Singapore",
           str(row["local_date"]) == "2026-04-12", row)
+
+print("manual entry: explicit time input")
+r = client.post("/applications/new", data={
+    "company": "Manual Entry Co", "title": "Explicit Time Role", "platform": "linkedin",
+    "applied_date": "2026-04-12", "applied_time": "14:30", "after": "view"})
+check("create with explicit time redirects", r.status_code == 303, r.text)
+time_app = r.headers["location"].rsplit("/", 1)[1]
+with db.connect() as conn:
+    occurred_at = conn.execute(
+        "SELECT occurred_at FROM events WHERE application_id = %s::uuid AND type = 'applied'",
+        (time_app,)).fetchone()["occurred_at"]
+    check("14:30 Asia/Singapore stored as the exact matching UTC instant",
+          occurred_at == datetime(2026, 4, 12, 6, 30, tzinfo=timezone.utc), occurred_at)
+
+r = client.post("/applications/new", data={
+    "company": "Manual Entry Co", "title": "Bad Time Role", "platform": "linkedin",
+    "applied_date": "2026-04-12", "applied_time": "not-a-time"})
+check("invalid time format rejected", r.status_code == 400, r.status_code)
+check("invalid time error shown", "valid applied time" in r.text)
+
+with db.connect() as conn, conn.transaction():
     conn.execute("UPDATE users SET timezone = NULL WHERE id = %s", (user_id,))
-    conn.commit()
 
 print("manual entry: linkedin url derives platform_job_id, resubmit merges")
 r = client.post("/applications/new", data={

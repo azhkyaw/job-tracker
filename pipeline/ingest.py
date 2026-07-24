@@ -13,7 +13,7 @@ tested email pipeline for no user-facing gain.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timezone
 from zoneinfo import ZoneInfo
 
 from . import db
@@ -37,19 +37,26 @@ LIMIT 1
 """
 
 
-def local_date_to_utc(d: date, tz: ZoneInfo, now: datetime | None = None) -> datetime:
-    """A bare form date carries no instant. Anchor it to the wall-clock
-    time-of-day at which the user is entering it, IN THEIR zone, then store
-    UTC — the manual-entry analogue of matcher._event_time() borrowing
-    received_at's time-of-day. Midnight UTC renders as the PREVIOUS day for
-    anyone west of UTC; midnight in any zone collapses same-day entries to
-    identical timestamps, the exact bug _event_time() exists to avoid.
+def local_date_to_utc(d: date, tz: ZoneInfo, t: time | None = None,
+                      now: datetime | None = None) -> datetime:
+    """A bare form date carries no instant on its own.
 
-    `now`'s tzinfo must be a real ZoneInfo (not a fixed-offset timezone) —
-    combining it with the historical date `d` and re-resolving via
-    .astimezone(utc) is what makes this correct across DST boundaries (a
-    January date entered in July gets January's offset, not July's).
+    If the user gave an explicit time `t`, anchor the date to exactly that
+    wall-clock time in their zone. Otherwise fall back to the wall-clock
+    time-of-day at which they're entering it — the manual-entry analogue of
+    matcher._event_time() borrowing received_at's time-of-day. Either way,
+    NEVER default to midnight: midnight UTC renders as the PREVIOUS day for
+    anyone west of UTC, and midnight in any zone collapses same-day entries
+    to identical timestamps, the exact bug _event_time() exists to avoid.
+
+    The zone (`tz`, or `now`'s tzinfo) must be a real ZoneInfo, not a
+    fixed-offset timezone — combining it with the historical date `d` and
+    re-resolving via .astimezone(utc) is what makes this correct across DST
+    boundaries (a January date entered in July gets January's offset, not
+    July's).
     """
+    if t is not None:
+        return datetime.combine(d, t, tzinfo=tz).astimezone(timezone.utc)
     local_now = (now or datetime.now(timezone.utc)).astimezone(tz)
     return datetime.combine(d, local_now.timetz()).astimezone(timezone.utc)
 

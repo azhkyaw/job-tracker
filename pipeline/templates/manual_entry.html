@@ -35,7 +35,10 @@ fine; it helps future emails match this record automatically.</p>
   <label>location (optional) <input type="text" name="location" value="{{ form.location }}"
     placeholder="e.g. Singapore, Remote"></label>
 
-  <label>applied <input type="date" name="applied_date" value="{{ form.applied_date }}" max="{{ today }}" required></label>
+  <div style="display:flex;gap:.5rem;align-items:end">
+    <label>applied <input type="date" name="applied_date" value="{{ form.applied_date }}" max="{{ today }}" required></label>
+    <label>time (optional) <input type="time" name="applied_time" value="{{ form.applied_time }}"></label>
+  </div>
 
   <label for="outcome">outcome so far (optional)</label>
   <select name="outcome" id="outcome" aria-label="Outcome">
@@ -46,7 +49,10 @@ fine; it helps future emails match this record automatically.</p>
     <option value="rejected" {% if form.outcome == 'rejected' %}selected{% endif %}>rejected</option>
     <option value="withdrawn" {% if form.outcome == 'withdrawn' %}selected{% endif %}>I withdrew</option>
   </select>
-  <label>outcome date <input type="date" name="outcome_date" value="{{ form.outcome_date }}" max="{{ today }}"></label>
+  <div style="display:flex;gap:.5rem;align-items:end">
+    <label>outcome date <input type="date" name="outcome_date" value="{{ form.outcome_date }}" max="{{ today }}"></label>
+    <label>time (optional) <input type="time" name="outcome_time" value="{{ form.outcome_time }}"></label>
+  </div>
 
   <label for="focused">focused (optional)</label>
   <select name="focused" id="focused" aria-label="Focused">
@@ -67,8 +73,9 @@ fine; it helps future emails match this record automatically.</p>
   </p>
 
   <p style="color:var(--muted);font-size:.85rem">
-    Dates are read in your timezone (<strong>{{ tz_label }}</strong> —
-    <a href="/settings">change in Settings</a>).
+    Dates and times are read in your timezone (<strong>{{ tz_label }}</strong> —
+    <a href="/settings">change in Settings</a>). Leave time blank to use the
+    moment you're submitting this.
   </p>
 
   <input type="hidden" name="confirm" value="{{ form.confirm }}">

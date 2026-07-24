@@ -234,7 +234,8 @@ def manual_entry_form(request: Request, company: str = "", title: str = "",
         form = {"company": company, "title": title, "url": url,
                 "platform": platform or "linkedin", "location": location,
                 "applied_date": date or datetime.now(tz).strftime("%Y-%m-%d"),
-                "outcome": "", "outcome_date": "", "jd_text": "", "note": "",
+                "applied_time": "", "outcome": "", "outcome_date": "",
+                "outcome_time": "", "jd_text": "", "note": "",
                 "focused": "", "confirm": ""}
         return templates.TemplateResponse(
             request=request, name="manual_entry.html",
@@ -250,19 +251,20 @@ def manual_entry_create(
     # values preserved) rather than FastAPI's raw 422 JSON short-circuiting
     # the route before it runs.
     company: str = Form(""), title: str = Form(""), platform: str = Form(""),
-    applied_date: str = Form(""), url: str = Form(""), location: str = Form(""),
-    outcome: str = Form(""), outcome_date: str = Form(""), jd_text: str = Form(""),
-    note: str = Form(""), focused: str = Form(""), confirm: str = Form(""),
-    after: str = Form("view"),
+    applied_date: str = Form(""), applied_time: str = Form(""), url: str = Form(""),
+    location: str = Form(""), outcome: str = Form(""), outcome_date: str = Form(""),
+    outcome_time: str = Form(""), jd_text: str = Form(""), note: str = Form(""),
+    focused: str = Form(""), confirm: str = Form(""), after: str = Form("view"),
 ):
     user = _login_user(request)
     tz = request.state.tz
     from psycopg.types.json import Json
 
     form = {"company": company, "title": title, "url": url, "platform": platform,
-            "location": location, "applied_date": applied_date, "outcome": outcome,
-            "outcome_date": outcome_date, "jd_text": jd_text, "note": note,
-            "focused": focused, "confirm": confirm}
+            "location": location, "applied_date": applied_date,
+            "applied_time": applied_time, "outcome": outcome,
+            "outcome_date": outcome_date, "outcome_time": outcome_time,
+            "jd_text": jd_text, "note": note, "focused": focused, "confirm": confirm}
 
     company_s, title_s, location_s = company.strip(), title.strip(), location.strip()
     company_norm = norm_company(company_s) or None
@@ -273,6 +275,7 @@ def manual_entry_create(
 
     error = None
     applied_d = outcome_d = None
+    applied_t = outcome_t = None            # None = borrow the submission time-of-day
     platform_job_id = canonical_url = None
 
     if not company_s:
@@ -288,6 +291,11 @@ def manual_entry_create(
             applied_d = datetime.strptime(applied_date, "%Y-%m-%d").date()
         except ValueError:
             error = "Enter a valid applied date."
+        if error is None and applied_time.strip():
+            try:
+                applied_t = datetime.strptime(applied_time.strip(), "%H:%M").time()
+            except ValueError:
+                error = "Enter a valid applied time (HH:MM), or leave it blank."
         if error is None and applied_d > datetime.now(tz).date():
             error = "The applied date can't be in the future."
         if error is None and outcome_s:
@@ -300,6 +308,11 @@ def manual_entry_create(
                     outcome_d = datetime.strptime(outcome_date, "%Y-%m-%d").date()
                 except ValueError:
                     error = "Enter a valid outcome date."
+                if error is None and outcome_time.strip():
+                    try:
+                        outcome_t = datetime.strptime(outcome_time.strip(), "%H:%M").time()
+                    except ValueError:
+                        error = "Enter a valid outcome time (HH:MM), or leave it blank."
                 if error is None and outcome_d < applied_d:
                     error = "The outcome can't be dated before the application."
         if error is None:
@@ -345,10 +358,10 @@ def manual_entry_create(
                     status_code=400)
 
         with conn.transaction():
-            applied_at = ingest.local_date_to_utc(applied_d, tz)
+            applied_at = ingest.local_date_to_utc(applied_d, tz, t=applied_t)
             outcome_at = None
             if outcome_d:
-                outcome_at = ingest.local_date_to_utc(outcome_d, tz)
+                outcome_at = ingest.local_date_to_utc(outcome_d, tz, t=outcome_t)
                 if outcome_at <= applied_at:      # same-day: keep it strictly later
                     outcome_at = applied_at + timedelta(seconds=1)
 
