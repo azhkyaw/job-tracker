@@ -186,6 +186,41 @@ with db.connect() as conn:
     check("focused=yes stored as True", row["focused"] is True, row)
     check("location stored on the posting", row["location"] == "Singapore, Remote", row)
 
+print("manual entry: how you applied (external / Easy Apply)")
+r = client.post("/applications/new", data={
+    "company": "Manual Entry Co", "title": "Easy Apply Role", "platform": "linkedin",
+    "applied_date": "2026-04-12", "external": "no", "after": "view"})
+easy_app = r.headers["location"].rsplit("/", 1)[1]
+with db.connect() as conn:
+    payload = conn.execute(
+        "SELECT payload FROM events WHERE application_id = %s::uuid AND type = 'applied'",
+        (easy_app,)).fetchone()["payload"]
+    check("external=no stored as False", payload.get("external") is False, payload)
+check("detail page shows on-platform copy",
+      "Easy Apply" in client.get(f"/applications/{easy_app}").text)
+
+r = client.post("/applications/new", data={
+    "company": "Manual Entry Co", "title": "External Apply Role", "platform": "linkedin",
+    "applied_date": "2026-04-12", "external": "yes", "after": "view"})
+ext_app = r.headers["location"].rsplit("/", 1)[1]
+with db.connect() as conn:
+    payload = conn.execute(
+        "SELECT payload FROM events WHERE application_id = %s::uuid AND type = 'applied'",
+        (ext_app,)).fetchone()["payload"]
+    check("external=yes stored as True", payload.get("external") is True, payload)
+check("detail page shows employer-website copy",
+      "employer" in client.get(f"/applications/{ext_app}").text)
+
+r = client.post("/applications/new", data={
+    "company": "Manual Entry Co", "title": "Unspecified Apply Role", "platform": "linkedin",
+    "applied_date": "2026-04-12", "after": "view"})
+unset_app = r.headers["location"].rsplit("/", 1)[1]
+with db.connect() as conn:
+    payload = conn.execute(
+        "SELECT payload FROM events WHERE application_id = %s::uuid AND type = 'applied'",
+        (unset_app,)).fetchone()["payload"]
+    check("external omitted when not set", "external" not in payload, payload)
+
 print("manual entry: applied + outcome, including same-day ordering")
 r = client.post("/applications/new", data={
     "company": "Manual Entry Co", "title": "Data Platform Engineer", "platform": "linkedin",

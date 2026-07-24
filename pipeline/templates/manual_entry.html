@@ -40,6 +40,13 @@ fine; it helps future emails match this record automatically.</p>
     <label>time (optional) <input type="time" name="applied_time" value="{{ form.applied_time }}"></label>
   </div>
 
+  <label for="external">how you applied (optional)</label>
+  <select name="external" id="external" aria-label="How you applied">
+    <option value="" {% if form.external == '' %}selected{% endif %}>— not set —</option>
+    <option value="no" {% if form.external == 'no' %}selected{% endif %}>on-platform (Easy Apply / quick apply)</option>
+    <option value="yes" {% if form.external == 'yes' %}selected{% endif %}>redirected to the employer's website</option>
+  </select>
+
   <label for="outcome">outcome so far (optional)</label>
   <select name="outcome" id="outcome" aria-label="Outcome">
     <option value="">— still waiting —</option>

@@ -236,7 +236,7 @@ def manual_entry_form(request: Request, company: str = "", title: str = "",
                 "applied_date": date or datetime.now(tz).strftime("%Y-%m-%d"),
                 "applied_time": "", "outcome": "", "outcome_date": "",
                 "outcome_time": "", "jd_text": "", "note": "",
-                "focused": "", "confirm": ""}
+                "focused": "", "external": "", "confirm": ""}
         return templates.TemplateResponse(
             request=request, name="manual_entry.html",
             context=_manual_ctx(conn, user, tz, form=form,
@@ -254,7 +254,8 @@ def manual_entry_create(
     applied_date: str = Form(""), applied_time: str = Form(""), url: str = Form(""),
     location: str = Form(""), outcome: str = Form(""), outcome_date: str = Form(""),
     outcome_time: str = Form(""), jd_text: str = Form(""), note: str = Form(""),
-    focused: str = Form(""), confirm: str = Form(""), after: str = Form("view"),
+    focused: str = Form(""), external: str = Form(""), confirm: str = Form(""),
+    after: str = Form("view"),
 ):
     user = _login_user(request)
     tz = request.state.tz
@@ -264,7 +265,8 @@ def manual_entry_create(
             "location": location, "applied_date": applied_date,
             "applied_time": applied_time, "outcome": outcome,
             "outcome_date": outcome_date, "outcome_time": outcome_time,
-            "jd_text": jd_text, "note": note, "focused": focused, "confirm": confirm}
+            "jd_text": jd_text, "note": note, "focused": focused,
+            "external": external, "confirm": confirm}
 
     company_s, title_s, location_s = company.strip(), title.strip(), location.strip()
     company_norm = norm_company(company_s) or None
@@ -272,6 +274,11 @@ def manual_entry_create(
     # Same three-state semantics as /captures' payload.focused: bool | None —
     # "" (unset) leaves focused untouched, anything else must be yes/no.
     focused_val = {"yes": True, "no": False}.get(focused.strip().lower())
+    # Same concept as /captures' payload.external — True = redirected to the
+    # employer's site to finish, False = handled on-platform (LinkedIn's
+    # "Easy Apply", Indeed Apply, etc.). "" (unset) omits the key entirely,
+    # matching how a captured application looks before this was tracked.
+    external_val = {"yes": True, "no": False}.get(external.strip().lower())
 
     error = None
     applied_d = outcome_d = None
@@ -376,10 +383,12 @@ def manual_entry_create(
                 "SELECT 1 FROM events WHERE application_id = %s AND type = 'applied'",
                 (app_id,)).fetchone()
             if has_applied is None:            # double-click / re-merge safe
+                applied_payload = ({"external": external_val} if external_val is not None
+                                   else {})
                 conn.execute(
                     "INSERT INTO events (user_id, application_id, type, source, "
                     "occurred_at, payload) VALUES (%s, %s, 'applied', 'manual', %s, %s)",
-                    (user["id"], app_id, applied_at, Json({})))
+                    (user["id"], app_id, applied_at, Json(applied_payload)))
 
             if outcome_at is not None:
                 conn.execute(
