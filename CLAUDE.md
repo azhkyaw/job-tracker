@@ -23,16 +23,24 @@ phases built (Jul 2026) and test-driven. Full design rationale: `docs/design.md`
 
 ## Architecture invariants — do not violate
 
-1. **NEVER scrape or automate against the job platforms.** Data enters ONLY
-   via the browser extension (user-initiated capture at apply time) and Gmail
-   parsing. No stored platform credentials, anywhere, ever. This is the
-   project's founding constraint (ToS + account-safety), not a preference.
+1. **NEVER scrape or automate against the job platforms.** Data enters via
+   three paths: the browser extension (user-initiated capture at apply
+   time), Gmail parsing, and manual entry (`/applications/new` — for
+   applications neither of the first two can reach: pre-date this system,
+   the posting has expired, or the extension adapter has drifted). No
+   stored platform credentials, anywhere, ever. This is the project's
+   founding constraint (ToS + account-safety), not a preference.
 2. **Status is an append-only event log** (`events`, real-world `occurred_at`).
    Current status is DERIVED via the `application_status` view. Never add a
    mutable status column; backfill inserts out of order safely.
 3. **postings ≠ jobs ≠ applications.** One application per (user, job). Dedup
    merges at the job level; `pipeline/dedup.py:merge_jobs` is the ONLY place
    records combine (moves events/artifacts/emails/contacts before deleting).
+   `pipeline/ingest.py:upsert_record` is its sibling on the write side — the
+   ONLY place job/posting/application records are *created* from a capture
+   (extension `/captures` and manual entry both call it); it owns the
+   partial-unique-index lookup and the email_only job-reuse heuristic so
+   those can't silently diverge between callers.
 4. **`norm_company()`** in `pipeline/email_classifier.py` is the single source
    of truth for `company_norm`. Never reimplement it in SQL. It strips SEA
    corporate forms including Indonesian PT/CV *prefixes*.

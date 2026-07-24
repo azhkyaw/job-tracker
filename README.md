@@ -11,6 +11,13 @@ per-user API tokens and Gmail credentials (encrypted at rest), per-user resume
 profiles, and Postgres row-level security under every request. Every server
 path is test-driven, including cross-tenant isolation at raw SQL.
 
+Three ways data gets in: the extension (capture at apply time), Gmail parsing
+(reconstructs history from confirmation/rejection emails), and manual entry
+(`/applications/new`) for whatever neither of those can reach — applications
+that pre-date this system, an expired posting, or a drifted extension
+selector. Never scraping the platforms is the one non-negotiable constraint
+across all three.
+
 ## Contents
 
 ```
@@ -26,6 +33,10 @@ pipeline/db.py                   psycopg 3 helpers, enqueue
 pipeline/email_classifier.py     Both LLM stages + norm_company()
 pipeline/gmail_sync.py           OAuth, backfill, incremental History-API sync
 pipeline/matcher.py              §8 scoring, auto-match / create / triage dispatch
+pipeline/ingest.py               job+posting+application upsert — the shared write
+                                 path behind /captures AND manual entry
+pipeline/joburl.py               paste-a-link -> (platform, platform_job_id), mirrors
+                                 the extension adapters' URL/id derivation
 pipeline/jd_extraction.py        JD structured extraction (§9)
 pipeline/embeddings.py           Voyage seam; absent key = dedup simply off
 pipeline/dedup.py                §10 blocking/thresholds + job merging
@@ -35,8 +46,8 @@ pipeline/auth.py                 Passwords, sessions, API tokens, encryption
 pipeline/gmail_oauth.py          Per-user Connect Gmail (web OAuth flow)
 pipeline/worker.py               SKIP LOCKED claim loop, savepoints, backoff
 pipeline/cli.py                  auth / backfill / sync / work / serve / status
-pipeline/web.py                  FastAPI app: applications, detail, triage
-pipeline/templates/              base / applications / detail / triage (Jinja)
+pipeline/web.py                  FastAPI app: applications, detail, manual entry, triage
+pipeline/templates/              base / applications / detail / manual_entry / triage (Jinja)
 extension/                       MV3 extension: manifest, shared capture core,
                                  per-site adapters, background worker, popup/options
 tests/test_integration.py        End-to-end with LLM stages stubbed
@@ -95,6 +106,12 @@ python -m pipeline.cli serve            # web UI at http://127.0.0.1:8000
 # after adding keys or backlog:  python -m pipeline.cli scan
 ```
 
+No confirmation email and the posting's gone (applied before this existed,
+notifications were off, or the extension missed it)? Open
+`/applications/new` — same dedup-aware write path as `/captures`, so pasting
+a URL for something you've already captured enriches it instead of
+duplicating.
+
 ## Test
 
 ```bash
@@ -116,7 +133,9 @@ TRACKER_API_TOKEN=testtok TRACKER_SECRET_KEY=x TRACKER_DATABASE_URL=postgresql:/
 
 Covers: auto-match with event provenance, the create/backfill path (including
 stated event dates beating received timestamps, and recruiter contact capture),
-pending triage (no silent guesses), non-job mail ignored, and failure backoff.
+pending triage (no silent guesses), non-job mail ignored, failure backoff, and
+manual entry (timezone-anchored dates, URL-based merge instead of duplication,
+and the near-duplicate confirm guard).
 
 ## Design notes worth knowing before writing more code
 

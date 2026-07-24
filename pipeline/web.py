@@ -1,9 +1,13 @@
 """Phase 1 web UI (design doc §6.6, bare version).
 
-Three surfaces:
+Four surfaces:
   /                    applications table + pipeline funnel strip
   /applications/{id}   detail: timeline, postings, contacts, linked emails
-  /triage              pending emails; resolve = link / create / ignore
+  /applications/new    manual entry — the third ingest path alongside the
+                        extension and Gmail, for applications neither of
+                        those can reach (pre-dates this system, or the
+                        posting/extension has failed)
+  /triage               pending emails; resolve = link / create / ignore
 
 Server-rendered Jinja + plain forms (POST-redirect-GET). No JS build step,
 no framework — this is a single-user ops tool that must stay maintainable.
@@ -11,6 +15,7 @@ no framework — this is a single-user ops tool that must stay maintainable.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -23,7 +28,7 @@ from pydantic import BaseModel
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from . import analytics, auth, config, db, dedup, gmail_oauth, ingest, matcher
+from . import analytics, auth, config, db, dedup, gmail_oauth, ingest, joburl, matcher
 from .email_classifier import norm_company
 
 app = FastAPI(title="Job Tracker")
@@ -40,10 +45,16 @@ def _zoneinfo(name: str | None) -> ZoneInfo:
 
 
 # Everything is stored and compared in UTC (postgres timestamptz); these two
-# filters are the ONLY place display converts to the viewer's timezone —
+# filters are the ONLY place DISPLAY converts to the viewer's timezone —
 # read from request.state.tz, set once per request by _login_user(). Business
 # logic (analytics.py reminders, matcher.py day-difference scoring) must never
 # use these or otherwise convert — only rendering should.
+#
+# The one sanctioned INPUT conversion is ingest.local_date_to_utc(), used by
+# the manual-entry form (/applications/new): a bare form date has no instant
+# of its own, so it's anchored in the user's zone at entry time and stored
+# UTC like everything else. That's parsing, not display or business logic —
+# it doesn't contradict the rule above.
 @pass_context
 def _dt(context, v):
     if not v:
@@ -173,6 +184,205 @@ def _get_application(conn, app_id: str) -> dict:
     if row is None:
         raise HTTPException(404, "application not found")
     return row
+
+
+# --------------------------------------------------------------------------- manual entry
+#
+# Declared here — BEFORE @app.get("/applications/{app_id}") — deliberately.
+# Starlette matches routes in declaration order; "/applications/new" would
+# otherwise be swallowed by the "{app_id}" path param below, and since
+# _get_application() catches the resulting UUID-parse error, a route
+# declared after it would silently 404 rather than error loudly.
+
+_OUTCOME_TYPES = {"viewed", "interview_invite", "offer", "rejected", "withdrawn"}
+
+
+def _manual_ctx(conn, user, tz, *, form, error=None, added=None, merged=False):
+    return {
+        "form": form, "error": error, "added": added, "merged": merged,
+        "tz_label": user.get("timezone") or "UTC",
+        "today": datetime.now(tz).strftime("%Y-%m-%d"),
+        "pending": _pending_count(conn),
+    }
+
+
+@app.get("/applications/new")
+def manual_entry_form(request: Request, company: str = "", title: str = "",
+                       url: str = "", platform: str = "linkedin",
+                       added: str | None = None, merged: str | None = None,
+                       date: str | None = None):
+    user = _login_user(request)
+    tz = request.state.tz
+    with db.connect_scoped(user["id"]) as conn:
+        added_info = None
+        if added:
+            try:
+                added_info = conn.execute(
+                    """
+                    SELECT a.id,
+                           COALESCE(
+                             (SELECT p.company_raw FROM postings p
+                               WHERE p.job_id = a.job_id AND p.company_raw IS NOT NULL
+                               ORDER BY p.captured_at DESC LIMIT 1),
+                             j.company_norm) AS company_display,
+                           j.title_canonical
+                    FROM applications a JOIN jobs j ON j.id = a.job_id
+                    WHERE a.id = %s::uuid
+                    """, (added,)).fetchone()
+            except psycopg.errors.InvalidTextRepresentation:
+                added_info = None
+        form = {"company": company, "title": title, "url": url,
+                "platform": platform or "linkedin",
+                "applied_date": date or datetime.now(tz).strftime("%Y-%m-%d"),
+                "outcome": "", "outcome_date": "", "jd_text": "", "note": "",
+                "confirm": ""}
+        return templates.TemplateResponse(
+            request=request, name="manual_entry.html",
+            context=_manual_ctx(conn, user, tz, form=form,
+                                added=added_info, merged=bool(merged)))
+
+
+@app.post("/applications/new")
+def manual_entry_create(
+    request: Request,
+    # Form("") not Form(...) even for "required" fields — an empty submission
+    # must reach our own validation below (friendly re-rendered error,
+    # values preserved) rather than FastAPI's raw 422 JSON short-circuiting
+    # the route before it runs.
+    company: str = Form(""), title: str = Form(""), platform: str = Form(""),
+    applied_date: str = Form(""), url: str = Form(""), outcome: str = Form(""),
+    outcome_date: str = Form(""), jd_text: str = Form(""), note: str = Form(""),
+    confirm: str = Form(""), after: str = Form("view"),
+):
+    user = _login_user(request)
+    tz = request.state.tz
+    from psycopg.types.json import Json
+
+    form = {"company": company, "title": title, "url": url, "platform": platform,
+            "applied_date": applied_date, "outcome": outcome,
+            "outcome_date": outcome_date, "jd_text": jd_text, "note": note,
+            "confirm": confirm}
+
+    company_s, title_s = company.strip(), title.strip()
+    company_norm = norm_company(company_s) or None
+    outcome_s, note_s, jd_s = outcome.strip(), note.strip(), jd_text.strip()
+
+    error = None
+    applied_d = outcome_d = None
+    platform_job_id = canonical_url = None
+
+    if not company_s:
+        error = "Enter the company name."
+    elif not company_norm:
+        error = f'Enter the plain company name — "{company_s}" normalizes to nothing.'
+    elif not title_s:
+        error = "Enter the job title."
+    elif platform not in ("linkedin", "jobstreet", "indeed", "other"):
+        error = "Unknown platform."
+    else:
+        try:
+            applied_d = datetime.strptime(applied_date, "%Y-%m-%d").date()
+        except ValueError:
+            error = "Enter a valid applied date."
+        if error is None and applied_d > datetime.now(tz).date():
+            error = "The applied date can't be in the future."
+        if error is None and outcome_s:
+            if outcome_s not in _OUTCOME_TYPES:
+                error = "Unknown outcome."
+            elif not outcome_date:
+                error = "Pick a date for that outcome."
+            else:
+                try:
+                    outcome_d = datetime.strptime(outcome_date, "%Y-%m-%d").date()
+                except ValueError:
+                    error = "Enter a valid outcome date."
+                if error is None and outcome_d < applied_d:
+                    error = "The outcome can't be dated before the application."
+        if error is None:
+            parsed_platform, platform_job_id, canonical_url = joburl.parse(url or None)
+            if parsed_platform and parsed_platform != platform:
+                error = (f"That looks like a {parsed_platform} URL, but you picked "
+                         f"{platform}. Fix one of them.")
+
+    with db.connect_scoped(user["id"]) as conn:
+        if error:
+            return templates.TemplateResponse(
+                request=request, name="manual_entry.html",
+                context=_manual_ctx(conn, user, tz, form=form, error=error),
+                status_code=400)
+
+        # Without a URL there's no reliable dedup key (postings_platform_job_uidx
+        # only fires when platform_job_id is set) — so this is the one path
+        # where a duplicate could slip in silently. One confirming click
+        # closes it, consistent with "never a silent guess" elsewhere here.
+        if not platform_job_id and not confirm:
+            near_dup = conn.execute(
+                """
+                SELECT COALESCE(
+                         (SELECT p.company_raw FROM postings p
+                           WHERE p.job_id = a.job_id AND p.company_raw IS NOT NULL
+                           ORDER BY p.captured_at DESC LIMIT 1), j.company_norm) AS company_display,
+                       j.title_canonical,
+                       (SELECT min(occurred_at) FROM events e
+                         WHERE e.application_id = a.id AND e.type = 'applied') AS applied_at
+                FROM applications a JOIN jobs j ON j.id = a.job_id
+                WHERE a.user_id = %s AND j.company_norm = %s AND j.title_canonical = %s
+                """, (user["id"], company_norm, title_s)).fetchone()
+            if near_dup:
+                when = (near_dup["applied_at"].astimezone(tz).strftime("%d %b %Y")
+                        if near_dup["applied_at"] else "an unknown date")
+                form["confirm"] = "1"
+                return templates.TemplateResponse(
+                    request=request, name="manual_entry.html",
+                    context=_manual_ctx(conn, user, tz, form=form, error=(
+                        f'You already track "{near_dup["company_display"]} · '
+                        f'{near_dup["title_canonical"]}" (applied {when}). '
+                        "Submit again to add it anyway.")),
+                    status_code=400)
+
+        with conn.transaction():
+            applied_at = ingest.local_date_to_utc(applied_d, tz)
+            outcome_at = None
+            if outcome_d:
+                outcome_at = ingest.local_date_to_utc(outcome_d, tz)
+                if outcome_at <= applied_at:      # same-day: keep it strictly later
+                    outcome_at = applied_at + timedelta(seconds=1)
+
+            r = ingest.upsert_record(
+                conn, user["id"], platform=platform, platform_job_id=platform_job_id,
+                url=canonical_url, company=company_s, title=title_s,
+                jd_text=jd_s or None, captured_via="manual", captured_at=applied_at)
+            app_id = r["application_id"]
+
+            has_applied = conn.execute(
+                "SELECT 1 FROM events WHERE application_id = %s AND type = 'applied'",
+                (app_id,)).fetchone()
+            if has_applied is None:            # double-click / re-merge safe
+                conn.execute(
+                    "INSERT INTO events (user_id, application_id, type, source, "
+                    "occurred_at, payload) VALUES (%s, %s, 'applied', 'manual', %s, %s)",
+                    (user["id"], app_id, applied_at, Json({})))
+
+            if outcome_at is not None:
+                conn.execute(
+                    "INSERT INTO events (user_id, application_id, type, source, "
+                    "occurred_at, payload) VALUES (%s, %s, %s, 'manual', %s, %s)",
+                    (user["id"], app_id, outcome_s, outcome_at, Json({})))
+
+            if note_s:
+                conn.execute(
+                    "INSERT INTO events (user_id, application_id, type, source, "
+                    "occurred_at, payload) VALUES (%s, %s, 'note', 'manual', %s, %s)",
+                    (user["id"], app_id, applied_at, Json({"note": note_s})))
+
+            merged = r["application_existed"]
+
+    if after == "another":
+        qs = f"added={app_id}&platform={platform}&date={applied_date}"
+        if merged:
+            qs += "&merged=1"
+        return RedirectResponse(f"/applications/new?{qs}", status_code=303)
+    return RedirectResponse(f"/applications/{app_id}", status_code=303)
 
 
 @app.get("/applications/{app_id}")

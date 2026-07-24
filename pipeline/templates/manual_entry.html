@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}add application — tracker{% endblock %}
+{% block nav_apps %}active{% endblock %}
+{% block content %}
+<h1>Add a past application</h1>
+<p style="color:var(--muted)">For applications the extension and Gmail can't reach — made
+before this system existed, or the posting/extension failed. An approximate date is
+fine; it helps future emails match this record automatically.</p>
+
+{% if added %}
+<div class="card" style="border-left:3px solid var(--offer);padding:.8rem 1rem;margin-bottom:1rem">
+  {% if merged %}<strong>Already tracked</strong> — updated the existing application:
+  {% else %}<strong>Added</strong> —{% endif %}
+  <a href="/applications/{{ added.id }}">{{ added.company_display }} · {{ added.title_canonical }}</a>
+</div>
+{% endif %}
+
+{% if error %}<p class="empty" style="text-align:left">{{ error }}</p>{% endif %}
+
+<form method="post" action="/applications/new" style="display:grid;gap:.5rem;max-width:34rem">
+  <label>company <input type="text" name="company" value="{{ form.company }}" required></label>
+  <label>title <input type="text" name="title" value="{{ form.title }}" required></label>
+
+  <label for="platform">platform</label>
+  <select name="platform" id="platform" aria-label="Platform">
+    <option value="linkedin" {% if form.platform == 'linkedin' %}selected{% endif %}>linkedin</option>
+    <option value="jobstreet" {% if form.platform == 'jobstreet' %}selected{% endif %}>jobstreet</option>
+    <option value="indeed" {% if form.platform == 'indeed' %}selected{% endif %}>indeed</option>
+    <option value="other" {% if form.platform == 'other' %}selected{% endif %}>other</option>
+  </select>
+
+  <label>job URL (optional) <input type="text" name="url" value="{{ form.url }}"
+    placeholder="paste the listing URL — lets a later re-capture or email merge onto this record"></label>
+
+  <label>applied <input type="date" name="applied_date" value="{{ form.applied_date }}" max="{{ today }}" required></label>
+
+  <label for="outcome">outcome so far (optional)</label>
+  <select name="outcome" id="outcome" aria-label="Outcome">
+    <option value="">— still waiting —</option>
+    <option value="viewed" {% if form.outcome == 'viewed' %}selected{% endif %}>viewed by employer</option>
+    <option value="interview_invite" {% if form.outcome == 'interview_invite' %}selected{% endif %}>interviewing</option>
+    <option value="offer" {% if form.outcome == 'offer' %}selected{% endif %}>offer</option>
+    <option value="rejected" {% if form.outcome == 'rejected' %}selected{% endif %}>rejected</option>
+    <option value="withdrawn" {% if form.outcome == 'withdrawn' %}selected{% endif %}>I withdrew</option>
+  </select>
+  <label>outcome date <input type="date" name="outcome_date" value="{{ form.outcome_date }}" max="{{ today }}"></label>
+
+  <label>note (optional) <input type="text" name="note" value="{{ form.note }}"></label>
+
+  <label>job description (optional)
+    <textarea name="jd_text" rows="8"
+      style="display:block;width:100%;font:inherit;border:1px solid var(--line);border-radius:6px;padding:.5rem;margin-top:.25rem"
+      placeholder="paste it here if you still have it — verified/extracted the same as a captured JD">{{ form.jd_text }}</textarea>
+  </label>
+  <p class="mono" style="color:var(--muted);font-size:.78rem;margin:0">
+    JD extraction runs on the next <span class="mono">python -m pipeline.cli work</span>.
+  </p>
+
+  <p style="color:var(--muted);font-size:.85rem">
+    Dates are read in your timezone (<strong>{{ tz_label }}</strong> —
+    <a href="/settings">change in Settings</a>).
+  </p>
+
+  <input type="hidden" name="confirm" value="{{ form.confirm }}">
+  <div>
+    <button class="primary" name="after" value="another">Save and add another</button>
+    <button name="after" value="view">Save and open it</button>
+  </div>
+</form>
+{% endblock %}

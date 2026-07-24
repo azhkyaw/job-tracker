@@ -2,6 +2,10 @@
 {% block title %}applications — tracker{% endblock %}
 {% block nav_apps %}active{% endblock %}
 {% block content %}
+<div style="margin-bottom:1rem">
+  <a href="/applications/new"><button class="primary" type="button">+ Add application</button></a>
+  <span style="color:var(--muted)">for anything the extension and Gmail can't reach</span>
+</div>
 {% if reminders %}
 <div class="card" style="border-left:3px solid var(--pending);padding:.7rem 1rem;margin-bottom:1rem">
   <strong>Needs follow-up</strong>
@@ -47,6 +51,8 @@
 </div>
 {% else %}
 <p class="empty">No applications yet. Run the backfill, then process the queue:<br>
-<span class="mono">python -m pipeline.cli backfill && python -m pipeline.cli work --once</span></p>
+<span class="mono">python -m pipeline.cli backfill && python -m pipeline.cli work --once</span><br>
+No Gmail connected, or applying to something the extension can't reach?
+<a href="/applications/new">Add one manually</a>.</p>
 {% endif %}
 {% endblock %}
