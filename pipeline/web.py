@@ -128,7 +128,7 @@ def _funnel(conn, user_id) -> list[dict]:
 # --------------------------------------------------------------------------- applications
 
 @app.get("/")
-def applications(request: Request):
+def applications(request: Request, deleted: str | None = None):
     user = _login_user(request)
     with db.connect_scoped(user["id"]) as conn:
         user_id = user["id"]
@@ -160,6 +160,7 @@ def applications(request: Request):
             "pending": _pending_count(conn),
             "reminders": analytics.reminders(conn, user_id),
             "reminder_days": config.REMINDER_DAYS,
+            "deleted": deleted,
         })
 
 
@@ -488,6 +489,77 @@ def add_event(request: Request, app_id: str, type: str = Form(...), note: str = 
             "VALUES (%s, %s, %s, 'manual', now(), %s)",
             (a["user_id"], a["id"], type, Json({"note": note} if note else {})))
     return RedirectResponse(f"/applications/{app_id}", status_code=303)
+
+
+def _deletion_summary(conn, app_id, job_id) -> dict:
+    return conn.execute(
+        """
+        SELECT (SELECT count(*) FROM postings WHERE job_id = %(job_id)s)       AS n_postings,
+               (SELECT count(*) FROM events WHERE application_id = %(app_id)s) AS n_events,
+               (SELECT count(*) FROM contacts WHERE job_id = %(job_id)s)       AS n_contacts,
+               (SELECT count(*) FROM artifacts WHERE application_id = %(app_id)s) AS n_artifacts,
+               (SELECT count(*) FROM emails
+                 WHERE matched_application_id = %(app_id)s)                    AS n_emails
+        """, {"app_id": app_id, "job_id": job_id}).fetchone()
+
+
+def _delete_application(conn, a) -> None:
+    """Permanently removes one application and its job (applications is
+    UNIQUE(user_id, job_id), so a job never outlives the one application it
+    belongs to). Deletion order mirrors the FK graph child-to-parent:
+    postings <- applications/events/extractions/duplicate_candidates,
+    jobs <- postings/contacts.
+
+    Emails matched onto this application are NOT deleted — they're unlinked
+    and put back in triage ('never a silent guess' applies to undoing a
+    match as much as making one; the email itself is real data the user
+    didn't ask to lose). Pending job_queue rows for postings/application
+    about to disappear are cleaned up so the worker doesn't dead-letter on a
+    now-missing id.
+    """
+    job_id, app_id = a["job_id"], a["id"]
+    conn.execute(
+        "UPDATE emails SET matched_application_id = NULL, triage_state = 'pending' "
+        "WHERE matched_application_id = %s", (app_id,))
+    conn.execute(
+        "DELETE FROM job_queue WHERE payload->>'posting_id' IN "
+        "(SELECT id::text FROM postings WHERE job_id = %s) "
+        "OR payload->>'application_id' = %s", (job_id, str(app_id)))
+    conn.execute("DELETE FROM artifacts WHERE application_id = %s", (app_id,))
+    conn.execute("DELETE FROM events WHERE application_id = %s", (app_id,))
+    conn.execute(
+        "DELETE FROM duplicate_candidates WHERE posting_a IN "
+        "(SELECT id FROM postings WHERE job_id = %s) "
+        "OR posting_b IN (SELECT id FROM postings WHERE job_id = %s)", (job_id, job_id))
+    conn.execute(
+        "DELETE FROM extractions WHERE posting_id IN "
+        "(SELECT id FROM postings WHERE job_id = %s)", (job_id,))
+    conn.execute("DELETE FROM contacts WHERE job_id = %s", (job_id,))
+    conn.execute("DELETE FROM applications WHERE id = %s", (app_id,))
+    conn.execute("DELETE FROM postings WHERE job_id = %s", (job_id,))
+    conn.execute("DELETE FROM jobs WHERE id = %s", (job_id,))
+
+
+@app.get("/applications/{app_id}/delete")
+def delete_confirm(request: Request, app_id: str):
+    user = _login_user(request)
+    with db.connect_scoped(user["id"]) as conn:
+        a = _get_application(conn, app_id)
+        summary = _deletion_summary(conn, a["id"], a["job_id"])
+        return templates.TemplateResponse(
+            request=request, name="delete_confirm.html",
+            context={"a": a, "summary": summary, "pending": _pending_count(conn)})
+
+
+@app.post("/applications/{app_id}/delete")
+def delete_application(request: Request, app_id: str):
+    user = _login_user(request)
+    with db.connect_scoped(user["id"]) as conn, conn.transaction():
+        a = _get_application(conn, app_id)
+        label = f"{a['company_display']} · {a['title_canonical']}"
+        _delete_application(conn, a)
+    from urllib.parse import quote
+    return RedirectResponse(f"/?deleted={quote(label)}", status_code=303)
 
 
 # --------------------------------------------------------------------------- triage

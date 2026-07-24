@@ -146,4 +146,7 @@
   {% endfor %}</tbody>
 </table></div>
 {% endif %}
+
+<h2 style="color:var(--rejected)">Danger zone</h2>
+<a href="/applications/{{ a.id }}/delete"><button style="border-color:var(--rejected);color:var(--rejected)">Delete this application</button></a>
 {% endblock %}

@@ -376,4 +376,111 @@ with db.connect() as conn, conn.transaction():
     # stub raises AssertionError for any text without a stub key.
     conn.execute("DELETE FROM job_queue WHERE id = %s", (q["id"],))
 
+print("delete application: confirmation page + full cleanup")
+with db.connect() as conn, conn.transaction():
+    job = conn.execute(
+        "INSERT INTO jobs (user_id, company_norm, title_canonical) "
+        "VALUES (%s, 'delete test co', 'Doomed Role') RETURNING id",
+        (user_id,)).fetchone()
+    del_job = job["id"]
+    del_posting = conn.execute(
+        "INSERT INTO postings (user_id, job_id, platform, captured_via) "
+        "VALUES (%s, %s, 'linkedin', 'manual') RETURNING id",
+        (user_id, del_job)).fetchone()["id"]
+    del_posting2 = conn.execute(
+        "INSERT INTO postings (user_id, job_id, platform, captured_via) "
+        "VALUES (%s, %s, 'jobstreet', 'manual') RETURNING id",
+        (user_id, del_job)).fetchone()["id"]
+    del_app = conn.execute(
+        "INSERT INTO applications (user_id, job_id, applied_via_posting_id) "
+        "VALUES (%s, %s, %s) RETURNING id",
+        (user_id, del_job, del_posting)).fetchone()["id"]
+    conn.execute(
+        "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+        "VALUES (%s, %s, 'applied', 'manual', now(), '{}')", (user_id, del_app))
+    conn.execute(
+        "INSERT INTO contacts (user_id, job_id, name, source) "
+        "VALUES (%s, %s, 'Some Recruiter', 'manual')", (user_id, del_job))
+    conn.execute(
+        "INSERT INTO artifacts (user_id, application_id, kind, content) "
+        "VALUES (%s, %s, 'cover_letter', 'Dear Hiring Team...')", (user_id, del_app))
+    conn.execute("INSERT INTO extractions (user_id, posting_id) VALUES (%s, %s)",
+                 (user_id, del_posting))
+    conn.execute(
+        "INSERT INTO duplicate_candidates (user_id, posting_a, posting_b, state) "
+        "VALUES (%s, LEAST(%s::uuid, %s::uuid), GREATEST(%s::uuid, %s::uuid), 'pending')",
+        (user_id, del_posting, del_posting2, del_posting, del_posting2))
+    del_email = conn.execute(
+        """INSERT INTO emails (user_id, gmail_message_id, sender, subject, received_at,
+                               triage_state, matched_application_id)
+           VALUES (%s, 'gm-delete-test', 'x@y.example', 'doomed subject', now(),
+                   'resolved', %s)
+           RETURNING id""", (user_id, del_app)).fetchone()["id"]
+    conn.execute(
+        "INSERT INTO job_queue (user_id, type, payload) "
+        "VALUES (%s, 'extract_jd', jsonb_build_object('posting_id', %s::text))",
+        (user_id, del_posting))
+    conn.execute(
+        "INSERT INTO job_queue (user_id, type, payload) "
+        "VALUES (%s, 'generate_cover_letter', jsonb_build_object('application_id', %s::text))",
+        (user_id, del_app))
+
+r = client.get(f"/applications/{del_app}/delete")
+check("confirm page renders", r.status_code == 200, r.status_code)
+check("confirm page shows posting count", "2 postings" in r.text, r.text)
+check("confirm page shows event/contact/artifact counts",
+      "1 timeline event" in r.text and "1 contact" in r.text
+      and "1 generated artifact" in r.text, r.text)
+check("confirm page warns about the linked email",
+      "1 linked email" in r.text, r.text)
+
+r = client.post(f"/applications/{del_app}/delete")
+check("delete redirects to / with a banner", r.status_code == 303 and
+      "deleted=" in r.headers["location"], r.text)
+banner_page = client.get(r.headers["location"])
+check("banner shows the company and title",
+      "delete test co" in banner_page.text and "Doomed Role" in banner_page.text,
+      banner_page.text)
+
+with db.connect() as conn:
+    check("job gone", conn.execute(
+        "SELECT 1 FROM jobs WHERE id = %s", (del_job,)).fetchone() is None)
+    check("postings gone", conn.execute(
+        "SELECT count(*) AS n FROM postings WHERE job_id = %s", (del_job,)
+        ).fetchone()["n"] == 0)
+    check("application gone", conn.execute(
+        "SELECT 1 FROM applications WHERE id = %s", (del_app,)).fetchone() is None)
+    check("events gone", conn.execute(
+        "SELECT count(*) AS n FROM events WHERE application_id = %s", (del_app,)
+        ).fetchone()["n"] == 0)
+    check("contacts gone", conn.execute(
+        "SELECT count(*) AS n FROM contacts WHERE job_id = %s", (del_job,)
+        ).fetchone()["n"] == 0)
+    check("artifacts gone", conn.execute(
+        "SELECT count(*) AS n FROM artifacts WHERE application_id = %s", (del_app,)
+        ).fetchone()["n"] == 0)
+    check("extractions gone", conn.execute(
+        "SELECT count(*) AS n FROM extractions WHERE posting_id = %s", (del_posting,)
+        ).fetchone()["n"] == 0)
+    check("duplicate_candidates gone", conn.execute(
+        "SELECT count(*) AS n FROM duplicate_candidates WHERE posting_a = %s OR posting_b = %s",
+        (del_posting, del_posting)).fetchone()["n"] == 0)
+    check("queued jobs for the deleted posting/application gone", conn.execute(
+        "SELECT count(*) AS n FROM job_queue WHERE payload->>'posting_id' = %s "
+        "OR payload->>'application_id' = %s",
+        (str(del_posting), str(del_app))).fetchone()["n"] == 0)
+    email_row = conn.execute(
+        "SELECT matched_application_id, triage_state FROM emails WHERE id = %s",
+        (del_email,)).fetchone()
+    check("matched email unlinked, not deleted", email_row is not None, email_row)
+    check("email put back in triage",
+          email_row["matched_application_id"] is None and
+          email_row["triage_state"] == "pending", email_row)
+
+print("delete application: gone means gone")
+check("confirm page 404s for the now-deleted application",
+      client.get(f"/applications/{del_app}/delete").status_code == 404)
+check("delete route 404s for the now-deleted application",
+      client.post(f"/applications/{del_app}/delete").status_code == 404)
+
 print("\nALL WEB PATHS PASS")

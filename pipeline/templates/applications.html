@@ -2,6 +2,11 @@
 {% block title %}applications — tracker{% endblock %}
 {% block nav_apps %}active{% endblock %}
 {% block content %}
+{% if deleted %}
+<p class="empty" style="text-align:left;border-color:var(--rejected);color:var(--rejected)">
+  Deleted <strong>{{ deleted }}</strong>.
+</p>
+{% endif %}
 <div style="margin-bottom:1rem">
   <a href="/applications/new"><button class="primary" type="button">+ Add application</button></a>
   <span style="color:var(--muted)">for anything the extension and Gmail can't reach</span>
