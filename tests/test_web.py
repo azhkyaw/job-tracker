@@ -167,6 +167,24 @@ with db.connect() as conn:
         "SELECT count(*) AS n FROM events WHERE application_id = %s::uuid AND type = 'applied'",
         (manual_app_1,)).fetchone()["n"]
     check("exactly one applied event", n_applied == 1, n_applied)
+    check("focused left unset when omitted (matches /captures semantics)",
+          conn.execute("SELECT focused FROM applications WHERE id = %s::uuid",
+                      (manual_app_1,)).fetchone()["focused"] is None)
+
+print("manual entry: focused and location")
+r = client.post("/applications/new", data={
+    "company": "Manual Entry Co", "title": "Focused Role", "platform": "linkedin",
+    "applied_date": "2026-04-12", "location": "Singapore, Remote", "focused": "yes",
+    "after": "view"})
+check("create with focused+location redirects", r.status_code == 303, r.text)
+focus_app = r.headers["location"].rsplit("/", 1)[1]
+with db.connect() as conn:
+    row = conn.execute(
+        """SELECT a.focused, p.location FROM applications a
+           JOIN postings p ON p.id = a.applied_via_posting_id
+           WHERE a.id = %s::uuid""", (focus_app,)).fetchone()
+    check("focused=yes stored as True", row["focused"] is True, row)
+    check("location stored on the posting", row["location"] == "Singapore, Remote", row)
 
 print("manual entry: applied + outcome, including same-day ordering")
 r = client.post("/applications/new", data={

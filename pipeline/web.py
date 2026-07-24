@@ -208,7 +208,7 @@ def _manual_ctx(conn, user, tz, *, form, error=None, added=None, merged=False):
 
 @app.get("/applications/new")
 def manual_entry_form(request: Request, company: str = "", title: str = "",
-                       url: str = "", platform: str = "linkedin",
+                       url: str = "", platform: str = "linkedin", location: str = "",
                        added: str | None = None, merged: str | None = None,
                        date: str | None = None):
     user = _login_user(request)
@@ -232,10 +232,10 @@ def manual_entry_form(request: Request, company: str = "", title: str = "",
             except psycopg.errors.InvalidTextRepresentation:
                 added_info = None
         form = {"company": company, "title": title, "url": url,
-                "platform": platform or "linkedin",
+                "platform": platform or "linkedin", "location": location,
                 "applied_date": date or datetime.now(tz).strftime("%Y-%m-%d"),
                 "outcome": "", "outcome_date": "", "jd_text": "", "note": "",
-                "confirm": ""}
+                "focused": "", "confirm": ""}
         return templates.TemplateResponse(
             request=request, name="manual_entry.html",
             context=_manual_ctx(conn, user, tz, form=form,
@@ -250,22 +250,26 @@ def manual_entry_create(
     # values preserved) rather than FastAPI's raw 422 JSON short-circuiting
     # the route before it runs.
     company: str = Form(""), title: str = Form(""), platform: str = Form(""),
-    applied_date: str = Form(""), url: str = Form(""), outcome: str = Form(""),
-    outcome_date: str = Form(""), jd_text: str = Form(""), note: str = Form(""),
-    confirm: str = Form(""), after: str = Form("view"),
+    applied_date: str = Form(""), url: str = Form(""), location: str = Form(""),
+    outcome: str = Form(""), outcome_date: str = Form(""), jd_text: str = Form(""),
+    note: str = Form(""), focused: str = Form(""), confirm: str = Form(""),
+    after: str = Form("view"),
 ):
     user = _login_user(request)
     tz = request.state.tz
     from psycopg.types.json import Json
 
     form = {"company": company, "title": title, "url": url, "platform": platform,
-            "applied_date": applied_date, "outcome": outcome,
+            "location": location, "applied_date": applied_date, "outcome": outcome,
             "outcome_date": outcome_date, "jd_text": jd_text, "note": note,
-            "confirm": confirm}
+            "focused": focused, "confirm": confirm}
 
-    company_s, title_s = company.strip(), title.strip()
+    company_s, title_s, location_s = company.strip(), title.strip(), location.strip()
     company_norm = norm_company(company_s) or None
     outcome_s, note_s, jd_s = outcome.strip(), note.strip(), jd_text.strip()
+    # Same three-state semantics as /captures' payload.focused: bool | None —
+    # "" (unset) leaves focused untouched, anything else must be yes/no.
+    focused_val = {"yes": True, "no": False}.get(focused.strip().lower())
 
     error = None
     applied_d = outcome_d = None
@@ -351,7 +355,8 @@ def manual_entry_create(
             r = ingest.upsert_record(
                 conn, user["id"], platform=platform, platform_job_id=platform_job_id,
                 url=canonical_url, company=company_s, title=title_s,
-                jd_text=jd_s or None, captured_via="manual", captured_at=applied_at)
+                jd_text=jd_s or None, location=location_s or None,
+                captured_via="manual", captured_at=applied_at)
             app_id = r["application_id"]
 
             has_applied = conn.execute(
@@ -374,6 +379,10 @@ def manual_entry_create(
                     "INSERT INTO events (user_id, application_id, type, source, "
                     "occurred_at, payload) VALUES (%s, %s, 'note', 'manual', %s, %s)",
                     (user["id"], app_id, applied_at, Json({"note": note_s})))
+
+            if focused_val is not None:    # explicit tag always wins (§7), matches /captures
+                conn.execute("UPDATE applications SET focused = %s WHERE id = %s",
+                             (focused_val, app_id))
 
             merged = r["application_existed"]
 

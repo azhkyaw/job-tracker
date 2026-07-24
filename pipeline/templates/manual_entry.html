@@ -32,6 +32,9 @@ fine; it helps future emails match this record automatically.</p>
   <label>job URL (optional) <input type="text" name="url" value="{{ form.url }}"
     placeholder="paste the listing URL — lets a later re-capture or email merge onto this record"></label>
 
+  <label>location (optional) <input type="text" name="location" value="{{ form.location }}"
+    placeholder="e.g. Singapore, Remote"></label>
+
   <label>applied <input type="date" name="applied_date" value="{{ form.applied_date }}" max="{{ today }}" required></label>
 
   <label for="outcome">outcome so far (optional)</label>
@@ -44,6 +47,13 @@ fine; it helps future emails match this record automatically.</p>
     <option value="withdrawn" {% if form.outcome == 'withdrawn' %}selected{% endif %}>I withdrew</option>
   </select>
   <label>outcome date <input type="date" name="outcome_date" value="{{ form.outcome_date }}" max="{{ today }}"></label>
+
+  <label for="focused">focused (optional)</label>
+  <select name="focused" id="focused" aria-label="Focused">
+    <option value="" {% if form.focused == '' %}selected{% endif %}>— not set —</option>
+    <option value="yes" {% if form.focused == 'yes' %}selected{% endif %}>yes — tailored/high-effort</option>
+    <option value="no" {% if form.focused == 'no' %}selected{% endif %}>no — generic application</option>
+  </select>
 
   <label>note (optional) <input type="text" name="note" value="{{ form.note }}"></label>
 
