@@ -23,7 +23,7 @@ from pydantic import BaseModel
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from . import analytics, auth, config, db, dedup, gmail_oauth, matcher
+from . import analytics, auth, config, db, dedup, gmail_oauth, ingest, matcher
 from .email_classifier import norm_company
 
 app = FastAPI(title="Job Tracker")
@@ -363,19 +363,6 @@ class CaptureIn(BaseModel):
     ats: str | None = None              # detected from an external apply's destination host
 
 
-_ENRICH_JOB_SQL = """
-SELECT j.id
-FROM jobs j
-WHERE j.user_id = %(user_id)s
-  AND j.company_norm = %(company)s
-  AND similarity(coalesce(j.title_canonical, ''), coalesce(%(title)s::text, '')) >= 0.5
-  AND NOT EXISTS (SELECT 1 FROM postings p
-                  WHERE p.job_id = j.id AND p.captured_via <> 'email_only')
-ORDER BY similarity(coalesce(j.title_canonical, ''), coalesce(%(title)s::text, '')) DESC
-LIMIT 1
-"""
-
-
 @app.post("/captures")
 def captures(payload: CaptureIn, authorization: str | None = Header(None)):
     supplied = (authorization or "").removeprefix("Bearer ").strip()
@@ -397,112 +384,41 @@ def captures(payload: CaptureIn, authorization: str | None = Header(None)):
     from psycopg.types.json import Json
 
     with db.connect_scoped(user_id) as conn, conn.transaction():
-        company_norm = norm_company(payload.company or "") or None
-        created, enriched = False, False
-
-        existing = None
-        if payload.platform_job_id:
-            existing = conn.execute(
-                "SELECT id, job_id FROM postings WHERE user_id = %s AND platform = %s "
-                "AND platform_job_id = %s",
-                (user_id, payload.platform, payload.platform_job_id)).fetchone()
-
-        if existing:
-            # Re-capture of a known ad: fill gaps, never blank existing data.
-            enriched = bool(payload.jd_text)
-            had_jd = conn.execute("SELECT jd_text IS NOT NULL AS h FROM postings "
-                                  "WHERE id = %s", (existing["id"],)).fetchone()["h"]
-            conn.execute(
-                """
-                UPDATE postings SET
-                    jd_text      = COALESCE(%s, jd_text),
-                    url          = COALESCE(%s, url),
-                    title        = COALESCE(%s, title),
-                    company_raw  = COALESCE(%s, company_raw),
-                    company_norm = COALESCE(%s, company_norm),
-                    location     = COALESCE(%s, location),
-                    posted_label = COALESCE(%s, posted_label),
-                    reposted     = COALESCE(%s, reposted),
-                    ats          = COALESCE(%s, ats)
-                WHERE id = %s
-                """,
-                (payload.jd_text, payload.url, payload.title, payload.company,
-                 company_norm, payload.location, payload.posted_label,
-                 payload.reposted, payload.ats, existing["id"]))
-            posting_id, job_id = existing["id"], existing["job_id"]
-            if payload.jd_text and not had_jd:
-                db.enqueue(conn, user_id, "extract_jd", {"posting_id": str(posting_id)})
-        else:
-            # New ad. Prefer attaching to an email_only record for the same
-            # company/role (the backfill created it; this capture enriches it)
-            # over creating a duplicate. Full cross-posting dedup is Phase 3.
-            job = None
-            if company_norm:
-                job = conn.execute(_ENRICH_JOB_SQL, {
-                    "user_id": user_id, "company": company_norm,
-                    "title": payload.title}).fetchone()
-            if job is None:
-                job = conn.execute(
-                    "INSERT INTO jobs (user_id, company_norm, title_canonical) "
-                    "VALUES (%s, %s, %s) RETURNING id",
-                    (user_id, company_norm or "unknown company",
-                     payload.title or "unknown role")).fetchone()
-                created = True
-            else:
-                enriched = True
-            job_id = job["id"]
-            posting_id = conn.execute(
-                """
-                INSERT INTO postings (user_id, job_id, platform, platform_job_id,
-                                      url, company_raw, company_norm, title,
-                                      jd_text, location, posted_label, reposted,
-                                      ats, captured_via)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'extension')
-                RETURNING id
-                """,
-                (user_id, job_id, payload.platform, payload.platform_job_id,
-                 payload.url, payload.company, company_norm, payload.title,
-                 payload.jd_text, payload.location, payload.posted_label,
-                 payload.reposted, payload.ats)).fetchone()["id"]
-            if payload.jd_text:
-                db.enqueue(conn, user_id, "extract_jd", {"posting_id": str(posting_id)})
-
-        app_row = conn.execute(
-            "SELECT id, focused FROM applications WHERE user_id = %s AND job_id = %s",
-            (user_id, job_id)).fetchone()
-        if app_row is None:
-            app_row = conn.execute(
-                "INSERT INTO applications (user_id, job_id, applied_via_posting_id) "
-                "VALUES (%s, %s, %s) RETURNING id, focused",
-                (user_id, job_id, posting_id)).fetchone()
+        r = ingest.upsert_record(
+            conn, user_id, platform=payload.platform,
+            platform_job_id=payload.platform_job_id, url=payload.url,
+            company=payload.company, title=payload.title, jd_text=payload.jd_text,
+            location=payload.location, posted_label=payload.posted_label,
+            reposted=payload.reposted, ats=payload.ats, captured_via="extension")
+        job_id, posting_id, app_id = r["job_id"], r["posting_id"], r["application_id"]
 
         if payload.trigger == "apply":
             has_applied = conn.execute(
                 "SELECT 1 FROM events WHERE application_id = %s AND type = 'applied'",
-                (app_row["id"],)).fetchone()
+                (app_id,)).fetchone()
             if has_applied is None:            # double-click safe
                 conn.execute(
                     "INSERT INTO events (user_id, application_id, type, source, "
                     "occurred_at, payload) VALUES (%s, %s, 'applied', 'extension', "
                     "now(), %s)",
-                    (user_id, app_row["id"], Json({"external": payload.external})))
+                    (user_id, app_id, Json({"external": payload.external})))
         else:
             has_any = conn.execute(
-                "SELECT 1 FROM events WHERE application_id = %s", (app_row["id"],)).fetchone()
+                "SELECT 1 FROM events WHERE application_id = %s", (app_id,)).fetchone()
             if has_any is None:
                 conn.execute(
                     "INSERT INTO events (user_id, application_id, type, source, "
                     "occurred_at, payload) VALUES (%s, %s, 'interested', 'extension', "
-                    "now(), '{}')", (user_id, app_row["id"]))
+                    "now(), '{}')", (user_id, app_id))
 
         if payload.focused is not None:        # explicit tag always wins (§7)
             conn.execute("UPDATE applications SET focused = %s WHERE id = %s",
-                         (payload.focused, app_row["id"]))
+                         (payload.focused, app_id))
         if payload.note:
             conn.execute(
                 "INSERT INTO events (user_id, application_id, type, source, "
                 "occurred_at, payload) VALUES (%s, %s, 'note', 'extension', now(), %s)",
-                (user_id, app_row["id"], Json({"note": payload.note})))
+                (user_id, app_id, Json({"note": payload.note})))
         if payload.recruiter_name:
             conn.execute(
                 """
@@ -514,8 +430,8 @@ def captures(payload: CaptureIn, authorization: str | None = Header(None)):
                 (user_id, job_id, payload.recruiter_name, payload.recruiter_url,
                  payload.recruiter_role, job_id, payload.recruiter_name))
 
-        return {"application_id": str(app_row["id"]), "posting_id": str(posting_id),
-                "created": created, "enriched": enriched}
+        return {"application_id": str(app_id), "posting_id": str(posting_id),
+                "created": r["created"], "enriched": r["enriched"]}
 
 
 # --------------------------------------------------------------------------- phase 3 routes
