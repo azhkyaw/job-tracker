@@ -14,7 +14,7 @@ extraction. Outcomes:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 
 from . import config
 from .email_classifier import Extraction, norm_company
@@ -110,9 +110,13 @@ def find_match(conn, user_id, extraction: Extraction, occurred_at: datetime) -> 
 # --------------------------------------------------------------------------- writes
 
 def _event_time(extraction: Extraction, received_at: datetime) -> datetime:
-    """§8: the email's stated event date wins; received time is the fallback."""
+    """§8: the email's stated event date wins over the received date — but
+    stated dates never carry a time, so borrow received_at's time-of-day
+    rather than defaulting to midnight, which otherwise collapses same-day
+    events to identical timestamps and loses their ordering."""
     if extraction.event_date:
-        return datetime.strptime(extraction.event_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        stated = datetime.strptime(extraction.event_date, "%Y-%m-%d").date()
+        return datetime.combine(stated, received_at.timetz())
     return received_at
 
 

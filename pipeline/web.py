@@ -12,11 +12,13 @@ no framework — this is a single-user ops tool that must stay maintainable.
 from __future__ import annotations
 
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import hmac
 
 import psycopg
 from fastapi import FastAPI, Form, Header, HTTPException, Request
+from jinja2 import pass_context
 from pydantic import BaseModel
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -26,8 +28,40 @@ from .email_classifier import norm_company
 
 app = FastAPI(title="Job Tracker")
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
-templates.env.filters["dt"] = lambda v: v.strftime("%d %b %Y") if v else "—"
-templates.env.filters["dtt"] = lambda v: v.strftime("%d %b %Y %H:%M") if v else "—"
+
+
+def _zoneinfo(name: str | None) -> ZoneInfo:
+    if name:
+        try:
+            return ZoneInfo(name)
+        except ZoneInfoNotFoundError:
+            pass
+    return ZoneInfo("UTC")
+
+
+# Everything is stored and compared in UTC (postgres timestamptz); these two
+# filters are the ONLY place display converts to the viewer's timezone —
+# read from request.state.tz, set once per request by _login_user(). Business
+# logic (analytics.py reminders, matcher.py day-difference scoring) must never
+# use these or otherwise convert — only rendering should.
+@pass_context
+def _dt(context, v):
+    if not v:
+        return "—"
+    tz = getattr(context["request"].state, "tz", None) or ZoneInfo("UTC")
+    return v.astimezone(tz).strftime("%d %b %Y")
+
+
+@pass_context
+def _dtt(context, v):
+    if not v:
+        return "—"
+    tz = getattr(context["request"].state, "tz", None) or ZoneInfo("UTC")
+    return v.astimezone(tz).strftime("%d %b %Y %H:%M")
+
+
+templates.env.filters["dt"] = _dt
+templates.env.filters["dtt"] = _dtt
 
 
 class AuthRequired(Exception):
@@ -46,6 +80,7 @@ def _login_user(request: Request) -> dict:
         user = auth.session_user(conn, request.cookies.get("session"))
     if user is None:
         raise AuthRequired()
+    request.state.tz = _zoneinfo(user.get("timezone"))
     return user
 
 # Display collapses the applied-family; the event log keeps the distinction.
@@ -89,6 +124,11 @@ def applications(request: Request):
         rows = conn.execute(
             """
             SELECT a.id, a.focused, j.company_norm, j.title_canonical, s.status,
+                   COALESCE(
+                     (SELECT p.company_raw FROM postings p
+                       WHERE p.job_id = a.job_id AND p.company_raw IS NOT NULL
+                       ORDER BY p.captured_at DESC LIMIT 1),
+                     j.company_norm) AS company_display,
                    (SELECT min(occurred_at) FROM events e
                      WHERE e.application_id = a.id AND e.type = 'applied') AS applied_at,
                    (SELECT max(occurred_at) FROM events e
@@ -117,7 +157,12 @@ def _get_application(conn, app_id: str) -> dict:
         row = conn.execute(
             """
             SELECT a.id, a.user_id, a.job_id, a.focused,
-                   j.company_norm, j.title_canonical, s.status
+                   j.company_norm, j.title_canonical, s.status,
+                   COALESCE(
+                     (SELECT p.company_raw FROM postings p
+                       WHERE p.job_id = a.job_id AND p.company_raw IS NOT NULL
+                       ORDER BY p.captured_at DESC LIMIT 1),
+                     j.company_norm) AS company_display
             FROM applications a
             JOIN jobs j ON j.id = a.job_id
             JOIN application_status s ON s.application_id = a.id
@@ -140,7 +185,7 @@ def application_detail(request: Request, app_id: str):
             "WHERE application_id = %s ORDER BY occurred_at DESC", (a["id"],)).fetchall()
         postings = conn.execute(
             "SELECT platform, url, title, captured_via, captured_at, location, "
-            "       posted_label, reposted, ats, jd_text IS NOT NULL AS has_jd "
+            "       posted_label, reposted, ats, jd_text "
             "FROM postings WHERE job_id = %s ORDER BY captured_at", (a["job_id"],)).fetchall()
         contacts = conn.execute(
             "SELECT name, role, url, approached, notes FROM contacts "
@@ -221,7 +266,12 @@ def triage(request: Request):
             """, (user_id,)).fetchall()
         options = conn.execute(
             """
-            SELECT a.id, j.company_norm, j.title_canonical
+            SELECT a.id, j.title_canonical,
+                   COALESCE(
+                     (SELECT p.company_raw FROM postings p
+                       WHERE p.job_id = a.job_id AND p.company_raw IS NOT NULL
+                       ORDER BY p.captured_at DESC LIMIT 1),
+                     j.company_norm) AS company_display
             FROM applications a JOIN jobs j ON j.id = a.job_id
             WHERE a.user_id = %s
             ORDER BY j.company_norm, j.title_canonical
@@ -229,8 +279,10 @@ def triage(request: Request):
         dupes = conn.execute(
             """
             SELECT d.id, d.title_sim, d.cosine_sim,
-                   pa.title AS title_a, pa.platform AS plat_a, ja.company_norm AS comp_a,
-                   pb.title AS title_b, pb.platform AS plat_b, jb.company_norm AS comp_b
+                   pa.title AS title_a, pa.platform AS plat_a,
+                   COALESCE(pa.company_raw, ja.company_norm) AS comp_a,
+                   pb.title AS title_b, pb.platform AS plat_b,
+                   COALESCE(pb.company_raw, jb.company_norm) AS comp_b
             FROM duplicate_candidates d
             JOIN postings pa ON pa.id = d.posting_a
             JOIN postings pb ON pb.id = d.posting_b
@@ -622,6 +674,7 @@ def logout(request: Request):
 def _settings_ctx(user: dict, new_token: str | None = None, msg: str | None = None):
     return {"email": user["email"],
             "resume_profile": user.get("resume_profile") or "",
+            "timezone": user.get("timezone") or "",
             "gmail_connected": bool(user.get("gmail_credentials")),
             "gmail_web_configured": gmail_oauth.configured(),
             "new_token": new_token, "msg": msg, "pending": 0}
@@ -645,6 +698,26 @@ def settings_profile(request: Request, resume_profile: str = Form("")):
     with db.connect() as conn, conn.transaction():
         conn.execute("UPDATE users SET resume_profile = NULLIF(%s, '') WHERE id = %s",
                      (resume_profile.strip(), user["id"]))
+    return RedirectResponse("/settings", status_code=303)
+
+
+@app.post("/settings/timezone")
+def settings_timezone(request: Request, timezone: str = Form("")):
+    user = _login_user(request)
+    timezone = timezone.strip()
+    if timezone:
+        try:
+            ZoneInfo(timezone)
+        except ZoneInfoNotFoundError:
+            return templates.TemplateResponse(
+                request=request, name="settings.html",
+                context=_settings_ctx(user, msg=f'"{timezone}" is not a recognized '
+                                      "timezone name (expected an IANA name like "
+                                      "Asia/Singapore)."),
+                status_code=400)
+    with db.connect() as conn, conn.transaction():
+        conn.execute("UPDATE users SET timezone = NULLIF(%s, '') WHERE id = %s",
+                     (timezone, user["id"]))
     return RedirectResponse("/settings", status_code=303)
 
 

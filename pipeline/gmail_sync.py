@@ -72,7 +72,12 @@ def get_service():
             flow = InstalledAppFlow.from_client_secrets_file(
                 str(config.GMAIL_CREDENTIALS_FILE), SCOPES
             )
-            creds = flow.run_local_server(port=0, open_browser=False)
+            # host="127.0.0.1", not the default "localhost" — on Windows the
+            # browser's IPv6-first resolution of "localhost" races a stray
+            # connection against the real OAuth redirect for this server's
+            # single handle_request() call, losing the code and surfacing as
+            # a misleading WSGITimeoutError instead of a real timeout.
+            creds = flow.run_local_server(host="127.0.0.1", port=0, open_browser=False)
         config.GMAIL_TOKEN_FILE.write_text(creds.to_json())
     return build("gmail", "v1", credentials=creds, cache_discovery=False)
 

@@ -49,28 +49,36 @@ tests/test_phase4.py             Accounts, tokens, RLS isolation (run LAST)
 ## Setup
 
 ```bash
-# 1. Database (PostgreSQL 15+ with pgvector and pg_trgm available)
+# 1. Database (PostgreSQL 15+ with pgvector and pg_trgm available). All six
+#    migrations are required — 003 is what creates the tracker_app RLS role
+#    and sessions table that every request now depends on.
 createdb tracker
-psql tracker -f migrations/001_init.sql -f migrations/002_gmail_sync_state.sql
-psql tracker -c "INSERT INTO users (email) VALUES ('you@example.com');"
+psql tracker -f migrations/001_init.sql -f migrations/002_gmail_sync_state.sql \
+             -f migrations/003_multi_tenant.sql -f migrations/004_posting_listing_meta.sql \
+             -f migrations/005_posting_ats.sql -f migrations/006_user_timezone.sql
 
 # 2. Python deps
 pip install anthropic "psycopg[binary]" google-api-python-client google-auth-oauthlib \
             fastapi "uvicorn[standard]" jinja2 python-multipart
 export ANTHROPIC_API_KEY=sk-ant-...
+export TRACKER_SECRET_KEY=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
+#    ^ set ONCE and keep forever — losing it orphans encrypted Gmail creds/sessions.
 
 # 3. Gmail OAuth: create a Desktop-app OAuth client in Google Cloud Console
 #    (Gmail API enabled, scope gmail.readonly), download credentials.json into
-#    the project root, then:
+#    the project root. The app is unverified, so also add your Google account
+#    under OAuth consent screen -> Test users, or auth fails with
+#    "Error 403: access_denied". Then:
 python -m pipeline.cli auth        # prints a URL — WSL-friendly, no browser launch
 
-# 4. Extension token: generate once, export before `serve`
-python -c "import secrets; print(secrets.token_urlsafe(32))"
-export TRACKER_API_TOKEN=<that value>
+# 4. Start the server, then create your account in the browser.
+python -m pipeline.cli serve
+#    -> open http://127.0.0.1:8000/signup. This mints your per-user API token,
+#    shown once on the Settings page that follows — copy it now.
 
 # 5. Extension install: chrome://extensions -> Developer mode -> Load unpacked
 #    -> select the extension/ folder. Open its Options page, set the API base
-#    (http://127.0.0.1:8000) and paste the token.
+#    (http://127.0.0.1:8000) and paste the token from step 4.
 ```
 
 ## Run
@@ -92,6 +100,8 @@ python -m pipeline.cli serve            # web UI at http://127.0.0.1:8000
 ```bash
 createdb tracker_test
 psql tracker_test -f migrations/001_init.sql -f migrations/002_gmail_sync_state.sql \
+     -f migrations/003_multi_tenant.sql -f migrations/004_posting_listing_meta.sql \
+     -f migrations/005_posting_ats.sql -f migrations/006_user_timezone.sql \
      -c "INSERT INTO users (email) VALUES ('test@local');"
 TRACKER_DATABASE_URL=postgresql:///tracker_test python3 tests/test_integration.py
 TRACKER_DATABASE_URL=postgresql:///tracker_test python3 tests/test_web.py   # run second

@@ -42,11 +42,13 @@ if ($hasTables -eq 't') {
     docker compose exec -T db psql -U postgres -v ON_ERROR_STOP=1 -d tracker -f /migrations/003_multi_tenant.sql
     docker compose exec -T db psql -U postgres -v ON_ERROR_STOP=1 -d tracker -f /migrations/004_posting_listing_meta.sql
     docker compose exec -T db psql -U postgres -v ON_ERROR_STOP=1 -d tracker -f /migrations/005_posting_ats.sql
-    docker compose exec -T db psql -U postgres -v ON_ERROR_STOP=1 -d tracker `
-        -c "INSERT INTO users (email) VALUES ('you@example.com');"
+    docker compose exec -T db psql -U postgres -v ON_ERROR_STOP=1 -d tracker -f /migrations/006_user_timezone.sql
 }
 
 Write-Host ''
 Write-Host 'Setup complete. Next:'
 Write-Host '  pwsh scripts/test.ps1            # run the suites'
 Write-Host '  .\.venv\Scripts\python.exe -m pipeline.cli serve   # UI at http://127.0.0.1:8000'
+Write-Host '  then open /signup to create your account (Phase 4) -- no seed user is'
+Write-Host '  pre-created, since an unloginable placeholder row just confuses `backfill`'
+Write-Host '  and other commands that default to the earliest-created user.'

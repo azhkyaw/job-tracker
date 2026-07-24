@@ -8,3 +8,6 @@ credentials-web.json
 .gmail_token.json
 # personal content
 profile.md
+
+# per-machine Claude Code permission grants
+.claude/settings.local.json

@@ -8,7 +8,7 @@
   <span style="color:var(--muted)">— applied over {{ reminder_days }} days ago, no response, no follow-up yet</span>
   <ul style="margin:.4rem 0 0;padding-left:1.2em">
   {% for r in reminders %}
-    <li><a href="/applications/{{ r.id }}">{{ r.company_norm }} · {{ r.title_canonical }}</a>
+    <li><a href="/applications/{{ r.id }}">{{ r.company_display }} · {{ r.title_canonical }}</a>
         <span class="mono" style="color:var(--muted)">applied {{ r.applied_at | dt }}</span></li>
   {% endfor %}
   </ul>
@@ -33,7 +33,7 @@
   <tbody>
   {% for r in rows %}
     <tr>
-      <td><a href="/applications/{{ r.id }}">{{ r.company_norm }}</a></td>
+      <td><a href="/applications/{{ r.id }}">{{ r.company_display }}</a></td>
       <td>{{ r.title_canonical }}</td>
       <td><span class="badge" style="--c:var(--{{ 'interview_invite' if r.status == 'interviewing' else r.status }})">{{ r.status }}</span></td>
       <td class="mono">{{ r.platforms or "—" }}</td>

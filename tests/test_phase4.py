@@ -75,9 +75,12 @@ r = alice.post("/captures", headers={"Authorization": f"Bearer {alice_token}"}, 
     "jd_text": "JD for alice", "trigger": "apply"})
 check("capture with alice's token lands", r.status_code == 200, r.text)
 alice_app = r.json()["application_id"]
-# norm_company strips "Corp"/"Pte Ltd" as suffixes -> canonical name "alice"
-check("alice sees her application", ">alice</a>" in alice.get("/").text)
-check("bob does not see it on his pages", ">alice</a>" not in bob.get("/").text)
+# display uses the captured company_raw verbatim; company_norm (-> "alice")
+# is only the internal dedup/matching key, stripped of "Corp"/"Pte Ltd".
+check("alice sees her application",
+      ">Alice Corp Pte Ltd</a>" in alice.get("/").text)
+check("bob does not see it on his pages",
+      ">Alice Corp Pte Ltd</a>" not in bob.get("/").text)
 check("bob's direct fetch of alice's application 404s",
       bob.get(f"/applications/{alice_app}").status_code == 404)
 check("bob cannot log events on it", bob.post(

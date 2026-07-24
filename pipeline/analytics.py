@@ -105,7 +105,12 @@ def by_technology(conn, user_id, limit: int = 12):
 def reminders(conn, user_id):
     """Applied > REMINDER_DAYS ago, no response, no follow-up, not withdrawn."""
     return conn.execute(f"""
-        SELECT a.id, j.company_norm, j.title_canonical,
+        SELECT a.id, j.title_canonical,
+               COALESCE(
+                 (SELECT p.company_raw FROM postings p
+                   WHERE p.job_id = a.job_id AND p.company_raw IS NOT NULL
+                   ORDER BY p.captured_at DESC LIMIT 1),
+                 j.company_norm) AS company_display,
                (SELECT min(occurred_at) FROM events e
                  WHERE e.application_id = a.id AND e.type = 'applied') AS applied_at
         FROM applications a

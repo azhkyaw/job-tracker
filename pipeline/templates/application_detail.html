@@ -1,8 +1,8 @@
 {% extends "base.html" %}
-{% block title %}{{ a.company_norm }} — tracker{% endblock %}
+{% block title %}{{ a.company_display }} — tracker{% endblock %}
 {% block nav_apps %}active{% endblock %}
 {% block content %}
-<h1>{{ a.company_norm }} · {{ a.title_canonical }}
+<h1>{{ a.company_display }} · {{ a.title_canonical }}
   <span class="badge" style="--c:var(--{{ 'interview_invite' if status == 'interviewing' else status }})">{{ status }}</span>
 </h1>
 
@@ -56,9 +56,11 @@
       {% if x.verified %}· <span style="color:var(--offer)">verified</span>{% else %}· unverified{% endif %}
     </div>
     <label>languages
-      <input type="text" name="languages" value="{{ x.languages | join(', ') }}" aria-label="Languages"></label>
+      <input type="text" name="languages" value="{{ x.languages | join(', ') }}" aria-label="Languages"
+        style="max-width:100%;width:100%"></label>
     <label>technologies
-      <input type="text" name="technologies" value="{{ x.technologies | join(', ') }}" aria-label="Technologies"></label>
+      <input type="text" name="technologies" value="{{ x.technologies | join(', ') }}" aria-label="Technologies"
+        style="max-width:100%;width:100%"></label>
     <dl class="kv">
       <dt>seniority</dt><dd>{{ x.seniority or "—" }}</dd>
       <dt>salary</dt><dd>{% if x.salary_min %}{{ x.currency or "" }} {{ x.salary_min }}{% if x.salary_max and x.salary_max != x.salary_min %}–{{ x.salary_max }}{% endif %}{% else %}—{% endif %}</dd>
@@ -113,7 +115,9 @@
       <td class="mono">{% if p.posted_label %}{% if p.reposted %}reposted {% endif %}{{ p.posted_label }}{% else %}—{% endif %}</td>
       <td class="mono">{{ p.ats or "—" }}</td>
       <td class="mono">{{ p.captured_at | dt }} · {{ p.captured_via }}</td>
-      <td class="mono">{{ "yes" if p.has_jd else "needs enrichment" }}</td>
+      <td class="mono">{% if p.jd_text %}<details><summary>yes</summary>
+        <pre style="white-space:pre-wrap;font:inherit;margin:.5rem 0 0;max-width:60rem">{{ p.jd_text }}</pre>
+      </details>{% else %}needs enrichment{% endif %}</td>
       <td>{% if p.url %}<a href="{{ p.url }}">open</a>{% endif %}</td></tr>
   {% endfor %}</tbody>
 </table></div>

@@ -10,3 +10,4 @@ httpx
 bcrypt
 cryptography
 python-dotenv
+tzdata

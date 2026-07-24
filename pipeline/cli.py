@@ -1,7 +1,8 @@
 """CLI. Run as: python -m pipeline.cli <command>
 
   auth               one-time Gmail OAuth (prints a URL; token cached on disk)
-  backfill [-m N]    first-run inbox reconstruction, default 12 months
+  backfill [-m N] [-d N]  first-run inbox reconstruction, default 12 months
+                          (-d overrides -m, e.g. -d 1 for the last day)
   sync               incremental pull — this is the 15-minute cron entry
   scan               enqueue JD extraction/embedding for the backlog\n  work [--once]      run the queue worker (loop, or drain-and-exit)\n  serve              start the web UI (default http://127.0.0.1:8000)
   status             quick counts for a terminal sanity check
@@ -32,7 +33,8 @@ def cmd_backfill(args) -> None:
         if service is None:
             raise SystemExit("no Gmail connected for this user — Settings page "
                              "(web OAuth) or `auth` (single-user desktop flow)")
-        n = gmail_sync.backfill(conn, service, user["id"], months=args.months)
+        months = args.days / 31 if args.days else args.months
+        n = gmail_sync.backfill(conn, service, user["id"], months=months)
     print(f"backfill: {n} candidate emails stored and enqueued "
           f"(run 'work --once' to process)")
 
@@ -123,6 +125,8 @@ def main() -> None:
     sub.add_parser("auth").set_defaults(fn=cmd_auth)
     p = sub.add_parser("backfill")
     p.add_argument("-m", "--months", type=int, default=config.BACKFILL_MONTHS_DEFAULT)
+    p.add_argument("-d", "--days", type=int,
+                    help="backfill only the last N days (overrides --months)")
     p.add_argument("--email", help="which account's Gmail to backfill")
     p.set_defaults(fn=cmd_backfill)
     sub.add_parser("sync").set_defaults(fn=cmd_sync)

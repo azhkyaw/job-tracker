@@ -24,7 +24,7 @@
     <select name="application_id" aria-label="Application to link to">
       <option value="">— pick an application —</option>
       {% for o in options %}
-      <option value="{{ o.id }}">{{ o.company_norm }} · {{ o.title_canonical }}</option>
+      <option value="{{ o.id }}">{{ o.company_display }} · {{ o.title_canonical }}</option>
       {% endfor %}
     </select>
     <button class="primary" name="action" value="link">Link email</button>

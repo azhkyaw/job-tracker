@@ -32,6 +32,35 @@ to enable Connect Gmail, add a Google web-application client JSON as
 <span class="mono">credentials-web.json</span>.</p>
 {% endif %}
 
+<h2>Timezone</h2>
+<p style="color:var(--muted)">Everything is stored and matched in UTC — this only controls how
+dates/times are displayed to you.</p>
+<form method="post" action="/settings/timezone" style="display:grid;gap:.5rem;max-width:24rem">
+  <input name="timezone" list="tz-options" value="{{ timezone }}"
+    placeholder="e.g. Asia/Singapore (blank = UTC)">
+  <datalist id="tz-options">
+    <option value="UTC">
+    <option value="Asia/Singapore">
+    <option value="Asia/Kuala_Lumpur">
+    <option value="Asia/Jakarta">
+    <option value="Asia/Manila">
+    <option value="Asia/Bangkok">
+    <option value="Asia/Ho_Chi_Minh">
+    <option value="Asia/Hong_Kong">
+    <option value="Asia/Shanghai">
+    <option value="Asia/Tokyo">
+    <option value="Asia/Seoul">
+    <option value="Asia/Kolkata">
+    <option value="Australia/Sydney">
+    <option value="Europe/London">
+    <option value="Europe/Berlin">
+    <option value="America/New_York">
+    <option value="America/Chicago">
+    <option value="America/Los_Angeles">
+  </datalist>
+  <div><button class="primary">Save timezone</button></div>
+</form>
+
 <h2>Resume profile (grounds your cover letters)</h2>
 <form method="post" action="/settings/profile" style="display:grid;gap:.5rem;max-width:44rem">
   <textarea name="resume_profile" rows="10"

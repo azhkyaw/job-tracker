@@ -36,6 +36,12 @@ ALLOWLIST_DOMAINS = {
     "greenhouse.io", "lever.co", "myworkday.com", "workday.com",
     "workable.com", "smartrecruiters.com", "ashbyhq.com", "icims.com",
     "bamboohr.com", "jobvite.com",
+    # SG/SEA-specific platforms
+    "mycareersfuture.gov.sg", "glints.com", "jobsdb.com",
+    # more ATS vendors, unverified against any real inbox yet — trim/extend
+    # once a full backfill shows which senders actually show up
+    "teamtailor.com", "breezy.hr", "recruitee.com", "personio.com",
+    "taleo.net", "successfactors.com", "avature.net",
 }
 
 # Fallback net for direct employer mail from unknown domains. Subject-only
@@ -45,6 +51,11 @@ SUBJECT_KEYWORDS = [
     "your application", "application received", "application update",
     "interview", "candidacy", "next steps", "assessment", "coding challenge",
     "thank you for applying", "your candidature", "offer",
+    # rejection phrasing — was missing entirely; this is the one case this
+    # list exists for (a rejection from a non-allowlisted, direct employer
+    # domain would otherwise never match on `from:` either)
+    "unfortunately", "regret to inform", "not moving forward",
+    "not selected", "decided not to proceed", "other candidates",
 ]
 
 # Matching thresholds (design doc §8). Tune against the first backfill run.
