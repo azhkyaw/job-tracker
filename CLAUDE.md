@@ -20,6 +20,12 @@ phases built (Jul 2026) and test-driven. Full design rationale: `docs/design.md`
 - **Native Windows (no WSL):** see `docs/windows-dev.md` — Docker Postgres
   (`docker compose up -d`, port 55432) + uv-managed Python;
   `scripts/dev-setup.ps1` once, `scripts/test.ps1` to run suites.
+- **Fast syntax check before a full suite run:** `python -c "import ast;
+  ast.parse(open('path/to/file.py', encoding='utf-8').read())"` — catches
+  typos without a DB reset/migration cycle.
+- **Suites always log full per-assertion output**, not just PASS/FAIL —
+  `/tmp/<suite>.log` (WSL) or `$env:TEMP/<suite>.log` (native Windows), even
+  on success.
 
 ## Architecture invariants — do not violate
 
@@ -89,6 +95,28 @@ phases built (Jul 2026) and test-driven. Full design rationale: `docs/design.md`
   confirmation swapping out the top card), silently losing data.
 - **Git Bash mangles `/migrations/...`-style paths** in `docker compose exec` commands
   (rewrites the leading `/` to the Git install dir). Prefix with `MSYS_NO_PATHCONV=1`.
+- **A bare date has no time-of-day — never default it to midnight.** Borrow
+  the current/received time-of-day instead (`matcher._event_time`,
+  `ingest.local_date_to_utc`), or same-day entries collapse to identical
+  timestamps and display as the wrong calendar day for non-UTC users.
+- **FastAPI `Form(...)` (no default) 422s on an empty-but-present field
+  before your route body runs** — even one you meant to validate yourself
+  with a friendly message. Use `Form("")` and validate manually (confirmed
+  pre-existing on `/login`, not new).
+- **Windows: `uvicorn --reload`'s process tree outlives a single `taskkill`.**
+  The PID `netstat`/`Get-NetTCPConnection` reports often isn't the real
+  root — cross-check via `Get-CimInstance Win32_Process -Filter
+  "ProcessId=X"` and `taskkill //F //T //PID <true root>`, or the reloader
+  just respawns a worker and the port stays bound.
+- **Windows consoles default to cp1252.** A Python one-liner printing
+  non-ASCII (em-dash, curly quotes) via Bash/PowerShell can raise
+  `UnicodeEncodeError` — `sys.stdout.reconfigure(encoding='utf-8',
+  errors='replace')` first.
+- **Verifying an authenticated page via claude-in-chrome:**
+  `document.cookie` silently can't overwrite an existing httponly session
+  cookie, and the browser tool blocks `file://`. Fetch the rendered HTML
+  with curl + a real session cookie, serve it via a local `python -m
+  http.server`, then navigate/screenshot that.
 
 ## Environment
 
