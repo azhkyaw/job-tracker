@@ -95,10 +95,14 @@ phases built (Jul 2026) and test-driven. Full design rationale: `docs/design.md`
   confirmation swapping out the top card), silently losing data.
 - **Git Bash mangles `/migrations/...`-style paths** in `docker compose exec` commands
   (rewrites the leading `/` to the Git install dir). Prefix with `MSYS_NO_PATHCONV=1`.
-- **A bare date has no time-of-day — never default it to midnight.** Borrow
-  the current/received time-of-day instead (`matcher._event_time`,
-  `ingest.local_date_to_utc`), or same-day entries collapse to identical
-  timestamps and display as the wrong calendar day for non-UTC users.
+- **A bare date has no time-of-day — never default it to midnight.** Midnight
+  UTC displays as the previous day for non-UTC users, and local midnight sits
+  on the date boundary so it shifts if the user later changes timezone. The
+  two ingest paths differ by what they legitimately know: an email HAS a real
+  instant, so `matcher._event_time` borrows `received_at`'s time-of-day; a
+  typed form date does not, so `ingest.local_date_to_utc` anchors it at local
+  noon (`ingest.DEFAULT_TIME_OF_DAY`) rather than inventing the submission
+  time — fabricated precision the user can't see or correct.
 - **FastAPI `Form(...)` (no default) 422s on an empty-but-present field
   before your route body runs** — even one you meant to validate yourself
   with a friendly message. Use `Form("")` and validate manually (confirmed
@@ -112,6 +116,19 @@ phases built (Jul 2026) and test-driven. Full design rationale: `docs/design.md`
   non-ASCII (em-dash, curly quotes) via Bash/PowerShell can raise
   `UnicodeEncodeError` — `sys.stdout.reconfigure(encoding='utf-8',
   errors='replace')` first.
+- **Migration filenames are hardcoded in FOUR places — there is no runner.**
+  Adding `migrations/NNN_x.sql` also means editing `scripts/dev-setup.ps1`,
+  `scripts/test.ps1`, `scripts/test.sh`, and the two `psql -f` command
+  blocks in `README.md`. Miss one and `test.ps1` resets its DB without the
+  new column, so every page needing it 500s with no obvious cause.
+- **A `TemplateResponse` context key can silently shadow a Jinja global of
+  the same name.** `web.py` exposes per-request state (`theme()`, `dt`,
+  `dtt`) as `templates.env.globals`/`filters`, reached via `request.state`
+  in `@pass_context` functions — if any route's context dict reuses that
+  name (e.g. `_settings_ctx`'s `"theme"` key shadowing the `theme()`
+  global), Jinja resolves the local context first, and `{{ theme() }}`
+  raises `TypeError: 'str' object is not callable`. Keep new
+  global/filter names distinct from every context dict key.
 - **Verifying an authenticated page via claude-in-chrome:**
   `document.cookie` silently can't overwrite an existing httponly session
   cookie, and the browser tool blocks `file://`. Fetch the rendered HTML

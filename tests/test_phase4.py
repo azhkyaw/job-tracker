@@ -41,7 +41,10 @@ anon = new_client()
 r = anon.get("/")
 check("unauthenticated page redirects to login",
       r.status_code == 303 and r.headers["location"] == "/login", r.status_code)
-check("login page renders", anon.get("/login").status_code == 200)
+r = anon.get("/login")
+check("login page renders", r.status_code == 200)
+check("unauthenticated page defaults to data-theme=\"auto\" (no AttributeError "
+      "on the unset request.state.theme)", 'data-theme="auto"' in r.text, r.text[:200])
 
 print("signup")
 alice = new_client()
@@ -146,6 +149,34 @@ with db.connect() as conn:
                       (alice_app,)).fetchone()
 check("letter grounded in HER stored profile",
       ar and "ALICE-PROFILE-MARKER" in ar["content"], ar)
+
+print("settings: theme preference")
+r = alice.get("/settings")
+check("default theme is follow-my-system", '<option value="" selected>' in r.text, r.text)
+r = alice.get("/")
+check("default page carries data-theme=\"auto\"", 'data-theme="auto"' in r.text, r.text[:200])
+
+r = alice.post("/settings/theme", data={"theme": "dark"})
+check("theme=dark accepted", r.status_code == 303, r.status_code)
+check("home page now carries data-theme=\"dark\"",
+      'data-theme="dark"' in alice.get("/").text)
+check("settings page reflects the saved pin",
+      '<option value="dark" selected>' in alice.get("/settings").text)
+
+r = alice.post("/settings/theme", data={"theme": "light"})
+check("theme=light accepted", r.status_code == 303, r.status_code)
+check("home page now carries data-theme=\"light\"",
+      'data-theme="light"' in alice.get("/").text)
+
+r = alice.post("/settings/theme", data={"theme": "neon"})
+check("unknown theme value rejected", r.status_code == 400, r.status_code)
+check("rejected value did not overwrite the saved pin",
+      'data-theme="light"' in alice.get("/").text)
+
+r = alice.post("/settings/theme", data={"theme": ""})
+check("blank theme clears the pin", r.status_code == 303, r.status_code)
+check("page returns to data-theme=\"auto\"",
+      'data-theme="auto"' in alice.get("/").text)
 
 print("password change + logout")
 check("wrong current password blocked", alice.post(

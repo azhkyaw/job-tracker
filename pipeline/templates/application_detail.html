@@ -6,6 +6,14 @@
   <span class="badge" style="--c:var(--{{ 'interview_invite' if status == 'interviewing' else status }})">{{ status }}</span>
 </h1>
 
+{% if saved %}
+<div class="card" style="border-left:3px solid var(--offer);padding:.8rem 1rem;margin-bottom:1rem">
+  <strong>Saved</strong> — this record has been updated.
+</div>
+{% endif %}
+
+<p><a href="/applications/{{ a.id }}/edit"><button>Edit details</button></a></p>
+
 <dl class="kv">
   <dt>focused</dt>
   <dd>

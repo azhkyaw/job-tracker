@@ -60,13 +60,14 @@ tests/test_phase4.py             Accounts, tokens, RLS isolation (run LAST)
 ## Setup
 
 ```bash
-# 1. Database (PostgreSQL 15+ with pgvector and pg_trgm available). All six
+# 1. Database (PostgreSQL 15+ with pgvector and pg_trgm available). All seven
 #    migrations are required — 003 is what creates the tracker_app RLS role
 #    and sessions table that every request now depends on.
 createdb tracker
 psql tracker -f migrations/001_init.sql -f migrations/002_gmail_sync_state.sql \
              -f migrations/003_multi_tenant.sql -f migrations/004_posting_listing_meta.sql \
-             -f migrations/005_posting_ats.sql -f migrations/006_user_timezone.sql
+             -f migrations/005_posting_ats.sql -f migrations/006_user_timezone.sql \
+             -f migrations/007_user_theme.sql
 
 # 2. Python deps
 pip install anthropic "psycopg[binary]" google-api-python-client google-auth-oauthlib \
@@ -119,6 +120,7 @@ createdb tracker_test
 psql tracker_test -f migrations/001_init.sql -f migrations/002_gmail_sync_state.sql \
      -f migrations/003_multi_tenant.sql -f migrations/004_posting_listing_meta.sql \
      -f migrations/005_posting_ats.sql -f migrations/006_user_timezone.sql \
+     -f migrations/007_user_theme.sql \
      -c "INSERT INTO users (email) VALUES ('test@local');"
 TRACKER_DATABASE_URL=postgresql:///tracker_test python3 tests/test_integration.py
 TRACKER_DATABASE_URL=postgresql:///tracker_test python3 tests/test_web.py   # run second

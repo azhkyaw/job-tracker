@@ -32,6 +32,18 @@ to enable Connect Gmail, add a Google web-application client JSON as
 <span class="mono">credentials-web.json</span>.</p>
 {% endif %}
 
+<h2>Appearance</h2>
+<p style="color:var(--muted)">Follow my system matches your OS/browser setting
+automatically; light or dark overrides it everywhere you're signed in.</p>
+<form method="post" action="/settings/theme" style="display:grid;gap:.5rem;max-width:24rem">
+  <select name="theme" aria-label="Theme">
+    <option value="" {% if theme_pref == '' %}selected{% endif %}>— follow my system —</option>
+    <option value="light" {% if theme_pref == 'light' %}selected{% endif %}>light</option>
+    <option value="dark" {% if theme_pref == 'dark' %}selected{% endif %}>dark</option>
+  </select>
+  <div><button class="primary">Save theme</button></div>
+</form>
+
 <h2>Timezone</h2>
 <p style="color:var(--muted)">Everything is stored and matched in UTC — this only controls how
 dates/times are displayed to you.</p>

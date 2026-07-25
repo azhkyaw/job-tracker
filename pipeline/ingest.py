@@ -37,28 +37,41 @@ LIMIT 1
 """
 
 
-def local_date_to_utc(d: date, tz: ZoneInfo, t: time | None = None,
-                      now: datetime | None = None) -> datetime:
+# Where a date-only entry lands when the user didn't give a time. Local noon,
+# for two reasons: it's far enough from either date boundary that the entry
+# renders on the date the user typed in EVERY timezone, and a flat 12:00 reads
+# as "date known, time not recorded" instead of fabricating a precise-looking
+# instant. See local_date_to_utc for why this isn't midnight.
+DEFAULT_TIME_OF_DAY = time(12, 0)
+
+
+def local_date_to_utc(d: date, tz: ZoneInfo, t: time | None = None) -> datetime:
     """A bare form date carries no instant on its own.
 
-    If the user gave an explicit time `t`, anchor the date to exactly that
-    wall-clock time in their zone. Otherwise fall back to the wall-clock
-    time-of-day at which they're entering it — the manual-entry analogue of
-    matcher._event_time() borrowing received_at's time-of-day. Either way,
-    NEVER default to midnight: midnight UTC renders as the PREVIOUS day for
-    anyone west of UTC, and midnight in any zone collapses same-day entries
-    to identical timestamps, the exact bug _event_time() exists to avoid.
+    An explicit time `t` anchors the date to exactly that wall-clock time in
+    the user's zone. Without one, the date anchors to DEFAULT_TIME_OF_DAY
+    (local noon) rather than to the moment of submission: borrowing "now"'s
+    time-of-day made a backfilled April application claim it was submitted at,
+    say, 14:23 — precision the user never supplied and can't correct.
 
-    The zone (`tz`, or `now`'s tzinfo) must be a real ZoneInfo, not a
-    fixed-offset timezone — combining it with the historical date `d` and
-    re-resolving via .astimezone(utc) is what makes this correct across DST
-    boundaries (a January date entered in July gets January's offset, not
-    July's).
+    NOT midnight, in either zone. Midnight UTC renders as the PREVIOUS day for
+    anyone west of UTC; local midnight is correct today but sits on the date
+    boundary, so it silently shifts if the user later changes their timezone.
+    Noon is immune to both.
+
+    The cost is that several same-day entries share one instant instead of
+    landing in entry order. That's tolerable because nothing derives meaning
+    from their relative order: application_status breaks same-instant ties by
+    event-type precedence, and the one ordering that must hold — an outcome
+    after its application — is enforced explicitly by the caller.
+
+    `tz` must be a real ZoneInfo, not a fixed-offset timezone: combining it
+    with the historical date `d` and re-resolving via .astimezone(utc) is what
+    makes this correct across DST boundaries (a January date entered in July
+    gets January's offset, not July's).
     """
-    if t is not None:
-        return datetime.combine(d, t, tzinfo=tz).astimezone(timezone.utc)
-    local_now = (now or datetime.now(timezone.utc)).astimezone(tz)
-    return datetime.combine(d, local_now.timetz()).astimezone(timezone.utc)
+    return datetime.combine(d, t or DEFAULT_TIME_OF_DAY,
+                            tzinfo=tz).astimezone(timezone.utc)
 
 
 def upsert_record(conn, user_id, *, platform, captured_via, platform_job_id=None,

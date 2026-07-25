@@ -7,6 +7,9 @@ Four surfaces:
                         extension and Gmail, for applications neither of
                         those can reach (pre-dates this system, or the
                         posting/extension has failed)
+  /applications/{id}/edit  correct a record after the fact — the companion to
+                        manual entry, for the typo you only notice later or
+                        the listing URL you didn't have at entry time
   /triage               pending emails; resolve = link / create / ignore
 
 Server-rendered Jinja + plain forms (POST-redirect-GET). No JS build step,
@@ -51,10 +54,11 @@ def _zoneinfo(name: str | None) -> ZoneInfo:
 # use these or otherwise convert — only rendering should.
 #
 # The one sanctioned INPUT conversion is ingest.local_date_to_utc(), used by
-# the manual-entry form (/applications/new): a bare form date has no instant
-# of its own, so it's anchored in the user's zone at entry time and stored
-# UTC like everything else. That's parsing, not display or business logic —
-# it doesn't contradict the rule above.
+# the manual-entry (/applications/new) and edit (/applications/{id}/edit)
+# forms: a bare form date has no instant of its own, so it's anchored in the
+# user's zone — at the time they typed, or local noon when they left the time
+# blank — and stored UTC like everything else. That's parsing, not display or
+# business logic — it doesn't contradict the rule above.
 @pass_context
 def _dt(context, v):
     if not v:
@@ -71,8 +75,21 @@ def _dtt(context, v):
     return v.astimezone(tz).strftime("%d %b %Y %H:%M")
 
 
+@pass_context
+def _theme(context):
+    """'auto' | 'light' | 'dark' for the data-theme attribute on <html>.
+    login/signup never call _login_user (no session yet), so
+    request.state.theme is unset there — falls back to 'auto', letting
+    prefers-color-scheme decide rather than raising or forcing light."""
+    request = context.get("request")
+    if request is None:
+        return "auto"
+    return getattr(request.state, "theme", None) or "auto"
+
+
 templates.env.filters["dt"] = _dt
 templates.env.filters["dtt"] = _dtt
+templates.env.globals["theme"] = _theme
 
 
 class AuthRequired(Exception):
@@ -92,6 +109,7 @@ def _login_user(request: Request) -> dict:
     if user is None:
         raise AuthRequired()
     request.state.tz = _zoneinfo(user.get("timezone"))
+    request.state.theme = user.get("theme") or "auto"
     return user
 
 # Display collapses the applied-family; the event log keeps the distinction.
@@ -168,7 +186,7 @@ def _get_application(conn, app_id: str) -> dict:
     try:
         row = conn.execute(
             """
-            SELECT a.id, a.user_id, a.job_id, a.focused,
+            SELECT a.id, a.user_id, a.job_id, a.focused, a.applied_via_posting_id,
                    j.company_norm, j.title_canonical, s.status,
                    COALESCE(
                      (SELECT p.company_raw FROM postings p
@@ -418,7 +436,7 @@ def manual_entry_create(
 
 
 @app.get("/applications/{app_id}")
-def application_detail(request: Request, app_id: str):
+def application_detail(request: Request, app_id: str, saved: str | None = None):
     user = _login_user(request)
     with db.connect_scoped(user["id"]) as conn:
         a = _get_application(conn, app_id)
@@ -463,7 +481,255 @@ def application_detail(request: Request, app_id: str):
             "emails": emails, "extractions": extractions, "artifacts": artifacts,
             "cover_job": cover_job, "cover_error": cover_error,
             "cover_max_attempts": config.MAX_ATTEMPTS, "pending": _pending_count(conn),
+            "saved": bool(saved),
         })
+
+
+# --------------------------------------------------------------------------- edit
+#
+# Which table a field lands in follows what the field actually describes
+# (invariant #3 — postings != jobs != applications):
+#
+#   company / title   the JOB's identity. Written to jobs AND to every posting
+#     under it. Syncing the postings is deliberate, not sloppy: the page header
+#     renders company via company_display, which prefers the newest posting's
+#     company_raw over jobs.company_norm — so a jobs-only write would leave the
+#     user's correction visibly ignored on the very page they came from. The
+#     per-ad evidence that matters (jd_text, url, posted_label, ats,
+#     captured_at) is never touched.
+#   platform / url / location / jd_text   describe ONE ad, so they're written
+#     only to the application's primary posting.
+#   focused   belongs to the APPLICATION (how you approached it), not the ad.
+#   applied date/time   is an EVENT, corrected in place. Fixing a mistyped
+#     timestamp is not the same as storing a mutable status column — the log
+#     stays the single source of status, so invariant #2 holds.
+#
+# Editing jd_text re-runs the derived pipeline: extract_jd APPENDS a fresh
+# extractions row (the detail page reads the newest per posting, so it
+# supersedes without destroying the old one), and jd_embedding is nulled so the
+# stale vector can't keep driving dedup — handle_extract_jd only chains
+# embed_jd when the embedding is NULL.
+#
+# company_norm is always derived through norm_company() and never accepted from
+# the form (invariant #4).
+
+# Types that cannot legitimately predate the application itself — moving the
+# applied date past any of them would make the timeline incoherent. note /
+# follow_up_sent / recruiter_outreach are excluded: those genuinely can sit
+# anywhere, including before you applied.
+_POST_APPLY_TYPES = ("confirmation", "viewed", "interview_invite",
+                     "offer", "rejected", "withdrawn")
+
+
+def _primary_posting(conn, a) -> dict | None:
+    """The posting an edit's per-ad fields apply to: the one the application
+    was filed through, else the most recently captured."""
+    return conn.execute(
+        """
+        SELECT * FROM postings
+        WHERE job_id = %(job_id)s
+        ORDER BY (id = %(applied_via)s) DESC, captured_at DESC
+        LIMIT 1
+        """,
+        {"job_id": a["job_id"], "applied_via": a["applied_via_posting_id"]}).fetchone()
+
+
+def _applied_event(conn, app_id) -> dict | None:
+    """Earliest 'applied' event — the one matcher scores against (it reads
+    min(occurred_at)), so it's the one an edit must move."""
+    return conn.execute(
+        "SELECT id, occurred_at FROM events WHERE application_id = %s "
+        "AND type = 'applied' ORDER BY occurred_at LIMIT 1", (app_id,)).fetchone()
+
+
+def _edit_ctx(conn, a, user, tz, *, form, error=None):
+    return {
+        "a": a, "form": form, "error": error,
+        "tz_label": user.get("timezone") or "UTC",
+        "today": datetime.now(tz).strftime("%Y-%m-%d"),
+        "pending": _pending_count(conn),
+    }
+
+
+@app.get("/applications/{app_id}/edit")
+def edit_form(request: Request, app_id: str):
+    user = _login_user(request)
+    tz = request.state.tz
+    with db.connect_scoped(user["id"]) as conn:
+        a = _get_application(conn, app_id)
+        p = _primary_posting(conn, a)
+        ev = _applied_event(conn, a["id"])
+        local = ev["occurred_at"].astimezone(tz) if ev else None
+        form = {
+            "company": a["company_display"], "title": a["title_canonical"],
+            "platform": (p["platform"] if p else "linkedin"),
+            "url": (p["url"] if p else "") or "",
+            "location": (p["location"] if p else "") or "",
+            "jd_text": (p["jd_text"] if p else "") or "",
+            "focused": {True: "yes", False: "no"}.get(a["focused"], ""),
+            "applied_date": local.strftime("%Y-%m-%d") if local else "",
+            "applied_time": local.strftime("%H:%M") if local else "",
+        }
+        return templates.TemplateResponse(
+            request=request, name="application_edit.html",
+            context=_edit_ctx(conn, a, user, tz, form=form))
+
+
+@app.post("/applications/{app_id}/edit")
+def edit_application(
+    request: Request, app_id: str,
+    # Form("") not Form(...) — same reason as manual entry: an empty-but-present
+    # field must reach our validation, not FastAPI's raw 422.
+    company: str = Form(""), title: str = Form(""), platform: str = Form(""),
+    url: str = Form(""), location: str = Form(""), jd_text: str = Form(""),
+    focused: str = Form(""), applied_date: str = Form(""), applied_time: str = Form(""),
+):
+    """Full-state submission: every field posts back and a blank one CLEARS the
+    stored value (blanking the URL drops platform_job_id, and with it this
+    record's dedup key; blanking focused returns it to 'not set', which the
+    detail-page toggle can't do). Same contract as manual entry — the form
+    always renders every field, so "absent" only ever means "the user emptied
+    it", never "the user didn't mention it"."""
+    user = _login_user(request)
+    tz = request.state.tz
+
+    form = {"company": company, "title": title, "platform": platform, "url": url,
+            "location": location, "jd_text": jd_text, "focused": focused,
+            "applied_date": applied_date, "applied_time": applied_time}
+
+    company_s, title_s, location_s = company.strip(), title.strip(), location.strip()
+    jd_s = jd_text.strip()
+    company_norm = norm_company(company_s) or None
+    focused_val = {"yes": True, "no": False}.get(focused.strip().lower())
+
+    error = None
+    applied_d, applied_t = None, None
+    platform_job_id = canonical_url = None
+
+    if not company_s:
+        error = "Enter the company name."
+    elif not company_norm:
+        error = f'Enter the plain company name — "{company_s}" normalizes to nothing.'
+    elif not title_s:
+        error = "Enter the job title."
+    elif platform not in ("linkedin", "jobstreet", "indeed", "other"):
+        error = "Unknown platform."
+    elif focused.strip() and focused_val is None:
+        error = "Unknown focused value."
+    elif not applied_date:
+        error = "Enter the applied date."
+    else:
+        try:
+            applied_d = datetime.strptime(applied_date, "%Y-%m-%d").date()
+        except ValueError:
+            error = "Enter a valid applied date."
+        if error is None and applied_time.strip():
+            try:
+                applied_t = datetime.strptime(applied_time.strip(), "%H:%M").time()
+            except ValueError:
+                error = "Enter a valid applied time (HH:MM), or leave it blank."
+        if error is None and applied_d > datetime.now(tz).date():
+            error = "The applied date can't be in the future."
+        if error is None:
+            parsed_platform, platform_job_id, canonical_url = joburl.parse(url or None)
+            if parsed_platform and parsed_platform != platform:
+                error = (f"That looks like a {parsed_platform} URL, but you picked "
+                         f"{platform}. Fix one of them.")
+
+    with db.connect_scoped(user["id"]) as conn:
+        a = _get_application(conn, app_id)
+        if error:
+            return templates.TemplateResponse(
+                request=request, name="application_edit.html",
+                context=_edit_ctx(conn, a, user, tz, form=form, error=error),
+                status_code=400)
+
+        primary = _primary_posting(conn, a)
+        applied_at = ingest.local_date_to_utc(applied_d, tz, t=applied_t)
+
+        # Moving the application later than something it caused is incoherent.
+        clash_ev = conn.execute(
+            "SELECT type, occurred_at FROM events WHERE application_id = %s "
+            "AND type = ANY(%s) AND occurred_at < %s ORDER BY occurred_at LIMIT 1",
+            (a["id"], list(_POST_APPLY_TYPES), applied_at)).fetchone()
+        if clash_ev:
+            error = (f"The timeline already has a {clash_ev['type']} on "
+                     f"{clash_ev['occurred_at'].astimezone(tz).strftime('%d %b %Y')} — "
+                     "the applied date can't be after it.")
+
+        # postings_platform_job_uidx is (user_id, platform, platform_job_id):
+        # pre-check so a collision is a friendly message naming the other
+        # record, not an IntegrityError that aborts the transaction.
+        if error is None and platform_job_id and primary is not None:
+            clash = conn.execute(
+                """
+                SELECT a2.id, j2.title_canonical,
+                       COALESCE(
+                         (SELECT p2.company_raw FROM postings p2
+                           WHERE p2.job_id = a2.job_id AND p2.company_raw IS NOT NULL
+                           ORDER BY p2.captured_at DESC LIMIT 1),
+                         j2.company_norm) AS company_display
+                FROM postings p
+                JOIN applications a2 ON a2.job_id = p.job_id
+                JOIN jobs j2 ON j2.id = a2.job_id
+                WHERE p.platform = %s AND p.platform_job_id = %s AND p.id <> %s
+                LIMIT 1
+                """, (platform, platform_job_id, primary["id"])).fetchone()
+            if clash:
+                error = (f'That URL already belongs to "{clash["company_display"]} · '
+                         f'{clash["title_canonical"]}". Merge them instead of '
+                         "pointing two records at one posting.")
+
+        if error:
+            return templates.TemplateResponse(
+                request=request, name="application_edit.html",
+                context=_edit_ctx(conn, a, user, tz, form=form, error=error),
+                status_code=400)
+
+        with conn.transaction():
+            conn.execute(
+                "UPDATE jobs SET company_norm = %s, title_canonical = %s WHERE id = %s",
+                (company_norm, title_s, a["job_id"]))
+            conn.execute(
+                "UPDATE postings SET company_raw = %s, company_norm = %s, title = %s "
+                "WHERE job_id = %s",
+                (company_s, company_norm, title_s, a["job_id"]))
+            if primary is not None:
+                jd_changed = (jd_s or None) != primary["jd_text"]
+                conn.execute(
+                    "UPDATE postings SET platform = %s, platform_job_id = %s, "
+                    "url = %s, location = %s, jd_text = %s WHERE id = %s",
+                    (platform, platform_job_id, canonical_url,
+                     location_s or None, jd_s or None, primary["id"]))
+                if jd_changed:
+                    # The old vector describes text that no longer exists —
+                    # drop it so dedup can't score against it, and so
+                    # handle_extract_jd's `jd_embedding IS NULL` guard lets
+                    # embed_jd re-run.
+                    conn.execute(
+                        "UPDATE postings SET jd_embedding = NULL WHERE id = %s",
+                        (primary["id"],))
+                    if jd_s:
+                        db.enqueue(conn, a["user_id"], "extract_jd",
+                                   {"posting_id": str(primary["id"])})
+
+            conn.execute("UPDATE applications SET focused = %s WHERE id = %s",
+                         (focused_val, a["id"]))
+
+            ev = _applied_event(conn, a["id"])
+            if ev:
+                conn.execute("UPDATE events SET occurred_at = %s WHERE id = %s",
+                             (applied_at, ev["id"]))
+            else:
+                # No applied event to correct (e.g. a record still at
+                # 'interested') — supplying a date here is how you log one.
+                from psycopg.types.json import Json
+                conn.execute(
+                    "INSERT INTO events (user_id, application_id, type, source, "
+                    "occurred_at, payload) VALUES (%s, %s, 'applied', 'manual', %s, %s)",
+                    (a["user_id"], a["id"], applied_at, Json({})))
+
+    return RedirectResponse(f"/applications/{app_id}?saved=1", status_code=303)
 
 
 @app.post("/applications/{app_id}/focused")
@@ -904,6 +1170,11 @@ def _settings_ctx(user: dict, new_token: str | None = None, msg: str | None = No
     return {"email": user["email"],
             "resume_profile": user.get("resume_profile") or "",
             "timezone": user.get("timezone") or "",
+            # NOT "theme" — that name collides with the Jinja global theme()
+            # (base.html's data-theme="{{ theme() }}"): Jinja resolves a
+            # context variable before a global of the same name, so a context
+            # key "theme" would silently make base.html call a string.
+            "theme_pref": user.get("theme") or "",
             "gmail_connected": bool(user.get("gmail_credentials")),
             "gmail_web_configured": gmail_oauth.configured(),
             "new_token": new_token, "msg": msg, "pending": 0}
@@ -947,6 +1218,22 @@ def settings_timezone(request: Request, timezone: str = Form("")):
     with db.connect() as conn, conn.transaction():
         conn.execute("UPDATE users SET timezone = NULLIF(%s, '') WHERE id = %s",
                      (timezone, user["id"]))
+    return RedirectResponse("/settings", status_code=303)
+
+
+@app.post("/settings/theme")
+def settings_theme(request: Request, theme: str = Form("")):
+    user = _login_user(request)
+    theme = theme.strip()
+    if theme not in ("", "light", "dark"):
+        return templates.TemplateResponse(
+            request=request, name="settings.html",
+            context=_settings_ctx(user, msg=f'"{theme}" is not a known theme — '
+                                  "pick follow-system, light, or dark."),
+            status_code=400)
+    with db.connect() as conn, conn.transaction():
+        conn.execute("UPDATE users SET theme = NULLIF(%s, '') WHERE id = %s",
+                     (theme, user["id"]))
     return RedirectResponse("/settings", status_code=303)
 
 

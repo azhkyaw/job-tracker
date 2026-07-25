@@ -74,6 +74,16 @@ r = client.get("/")
 check("applications table renders", r.status_code == 200 and "northwind labs" in r.text, r.status_code)
 check("funnel strip present", 'class="funnel"' in r.text)
 check("triage count pill shows", 'class="pill"' in r.text)
+check("default theme renders data-theme=\"auto\"", 'data-theme="auto"' in r.text)
+# Regression guard for the dark-mode retheme: every color-mix() tint must
+# blend into var(--mix), not a literal white that would never adapt.
+# The 'white' in 'white-space:nowrap' must not false-positive this check.
+check("no hardcoded white color-mix tint remains",
+      ",white)" not in r.text.replace("white-space", ""), r.text[:200])
+check("password inputs are styled (not left to browser default black-on-dark)",
+      "input[type=password]" in r.text, r.text[:200])
+check("textarea has its own themed rule",
+      "textarea{" in r.text or "textarea {" in r.text, r.text[:200])
 
 r = client.get(f"/applications/{northwind_app}")
 check("detail renders timeline", r.status_code == 200 and "rejected" in r.text, r.status_code)
@@ -252,11 +262,28 @@ check("detail page shows the entered date in the user's timezone",
       "12 Apr 2026" in r.text, r.text[:200])
 with db.connect() as conn:
     row = conn.execute(
-        """SELECT (e.occurred_at AT TIME ZONE 'Asia/Singapore')::date AS local_date
+        """SELECT e.occurred_at,
+                  (e.occurred_at AT TIME ZONE 'Asia/Singapore')::date AS local_date
            FROM events e WHERE e.application_id = %s::uuid AND e.type = 'applied'""",
         (tz_app,)).fetchone()
     check("stored UTC instant lands on 2026-04-12 in Asia/Singapore",
           str(row["local_date"]) == "2026-04-12", row)
+    # Blank time anchors to local noon, NOT the moment of submission — so the
+    # instant is deterministic and asserting it exactly is meaningful.
+    check("blank time anchors to noon Asia/Singapore (04:00 UTC)",
+          row["occurred_at"] == datetime(2026, 4, 12, 4, 0, tzinfo=timezone.utc),
+          row["occurred_at"])
+
+r = client.post("/applications/new", data={
+    "company": "Manual Entry Co", "title": "Noon Determinism Role", "platform": "linkedin",
+    "applied_date": "2026-04-12", "after": "view"})
+noon_app = r.headers["location"].rsplit("/", 1)[1]
+with db.connect() as conn:
+    other = conn.execute(
+        "SELECT occurred_at FROM events WHERE application_id = %s::uuid AND type = 'applied'",
+        (noon_app,)).fetchone()["occurred_at"]
+    check("a second same-date entry gets the identical instant (no submission-time drift)",
+          other == datetime(2026, 4, 12, 4, 0, tzinfo=timezone.utc), other)
 
 print("manual entry: explicit time input")
 r = client.post("/applications/new", data={
@@ -375,6 +402,294 @@ with db.connect() as conn, conn.transaction():
     # the shared queue — doesn't pick up this leftover row; its embedding
     # stub raises AssertionError for any text without a stub key.
     conn.execute("DELETE FROM job_queue WHERE id = %s", (q["id"],))
+
+print("edit application: form prefills from the current record")
+r = client.post("/applications/new", data={
+    "company": "Edit Test Co", "title": "Backend Engineer", "platform": "linkedin",
+    "applied_date": "2026-05-10", "applied_time": "09:30", "location": "Singapore",
+    "after": "view"})
+edit_app = r.headers["location"].rsplit("/", 1)[1]
+r = client.get(f"/applications/{edit_app}/edit")
+check("edit form renders", r.status_code == 200, r.status_code)
+check("company prefilled", 'value="Edit Test Co"' in r.text)
+check("title prefilled", 'value="Backend Engineer"' in r.text)
+check("location prefilled", 'value="Singapore"' in r.text)
+check("applied date prefilled", 'value="2026-05-10"' in r.text)
+check("applied time prefilled", 'value="09:30"' in r.text)
+
+print("edit application: company/title sync across job AND every posting")
+# A second posting on the same job — the case that makes a jobs-only write
+# visibly wrong, since company_display prefers the newest posting's company_raw.
+with db.connect() as conn, conn.transaction():
+    edit_job = conn.execute(
+        "SELECT job_id FROM applications WHERE id = %s::uuid", (edit_app,)).fetchone()["job_id"]
+    second_posting = conn.execute(
+        "INSERT INTO postings (user_id, job_id, platform, company_raw, title, "
+        "captured_via, captured_at) VALUES (%s, %s, 'jobstreet', 'Stale Name', "
+        "'Stale Title', 'manual', now() + interval '1 day') RETURNING id",
+        (user_id, edit_job)).fetchone()["id"]
+
+r = client.post(f"/applications/{edit_app}/edit", data={
+    "company": "Edit Test Co Pte Ltd", "title": "Senior Backend Engineer",
+    "platform": "linkedin", "applied_date": "2026-05-10", "applied_time": "09:30",
+    "location": "Singapore"})
+check("edit redirects", r.status_code == 303, r.status_code)
+check("redirect flags the save", "saved=1" in r.headers["location"], r.headers["location"])
+with db.connect() as conn:
+    row = conn.execute("SELECT company_norm, title_canonical FROM jobs WHERE id = %s",
+                       (edit_job,)).fetchone()
+    check("job company_norm re-derived via norm_company (Pte Ltd stripped)",
+          row["company_norm"] == "edit test co", row)
+    check("job title updated", row["title_canonical"] == "Senior Backend Engineer", row)
+    ps = conn.execute(
+        "SELECT company_raw, company_norm, title FROM postings WHERE job_id = %s",
+        (edit_job,)).fetchall()
+    check("every posting carries the corrected company_raw",
+          all(p["company_raw"] == "Edit Test Co Pte Ltd" for p in ps), ps)
+    check("every posting carries the corrected title",
+          all(p["title"] == "Senior Backend Engineer" for p in ps), ps)
+    check("posting company_norm normalized too",
+          all(p["company_norm"] == "edit test co" for p in ps), ps)
+r = client.get(f"/applications/{edit_app}")
+check("detail header shows the corrected company (not the stale posting)",
+      "Edit Test Co Pte Ltd" in r.text and "Stale Name" not in r.text)
+check("saved banner shown after redirect",
+      "Saved" in client.get(f"/applications/{edit_app}?saved=1").text)
+
+print("edit application: per-ad fields touch only the primary posting")
+r = client.post(f"/applications/{edit_app}/edit", data={
+    "company": "Edit Test Co Pte Ltd", "title": "Senior Backend Engineer",
+    "platform": "linkedin", "applied_date": "2026-05-10", "applied_time": "09:30",
+    "location": "Remote"})
+check("per-ad edit redirects", r.status_code == 303, r.status_code)
+with db.connect() as conn:
+    primary_loc = conn.execute(
+        "SELECT p.location FROM postings p JOIN applications a "
+        "ON a.applied_via_posting_id = p.id WHERE a.id = %s::uuid", (edit_app,)
+        ).fetchone()["location"]
+    other_loc = conn.execute("SELECT location FROM postings WHERE id = %s",
+                             (second_posting,)).fetchone()["location"]
+    check("primary posting location updated", primary_loc == "Remote", primary_loc)
+    check("other posting location untouched", other_loc is None, other_loc)
+
+print("edit application: adding a URL retro-fits the dedup key")
+r = client.post(f"/applications/{edit_app}/edit", data={
+    "company": "Edit Test Co Pte Ltd", "title": "Senior Backend Engineer",
+    "platform": "linkedin", "applied_date": "2026-05-10", "applied_time": "09:30",
+    "url": "https://www.linkedin.com/jobs/view/5544332211/?refId=zzz"})
+check("url edit redirects", r.status_code == 303, r.status_code)
+with db.connect() as conn:
+    p = conn.execute(
+        "SELECT p.platform_job_id, p.url FROM postings p JOIN applications a "
+        "ON a.applied_via_posting_id = p.id WHERE a.id = %s::uuid", (edit_app,)).fetchone()
+    check("platform_job_id derived on edit", p["platform_job_id"] == "5544332211", p)
+    check("url canonicalized on edit",
+          p["url"] == "https://www.linkedin.com/jobs/view/5544332211/", p)
+
+print("edit application: applied date is corrected in place, not appended")
+with db.connect() as conn:
+    n_before_edit = conn.execute(
+        "SELECT count(*) AS n FROM events WHERE application_id = %s::uuid AND type = 'applied'",
+        (edit_app,)).fetchone()["n"]
+# The form is a full-state submission (every field posts back, blank clears) —
+# so a realistic edit carries the URL it already has, exactly as the browser does.
+r = client.post(f"/applications/{edit_app}/edit", data={
+    "company": "Edit Test Co Pte Ltd", "title": "Senior Backend Engineer",
+    "platform": "linkedin", "applied_date": "2026-05-08", "applied_time": "14:45",
+    "url": "https://www.linkedin.com/jobs/view/5544332211/"})
+check("date edit redirects", r.status_code == 303, r.status_code)
+with db.connect() as conn:
+    evs = conn.execute(
+        "SELECT occurred_at FROM events WHERE application_id = %s::uuid AND type = 'applied'",
+        (edit_app,)).fetchall()
+    check("still exactly one applied event (corrected, not appended)",
+          len(evs) == n_before_edit == 1, evs)
+    check("applied event moved to the new instant",
+          evs[0]["occurred_at"].astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M")
+          == "2026-05-08 14:45", evs[0])
+
+print("edit application: blank time anchors to local noon")
+r = client.post(f"/applications/{edit_app}/edit", data={
+    "company": "Edit Test Co Pte Ltd", "title": "Senior Backend Engineer",
+    "platform": "linkedin", "applied_date": "2026-05-09", "applied_time": "",
+    "url": "https://www.linkedin.com/jobs/view/5544332211/"})
+check("blank time edit redirects", r.status_code == 303, r.status_code)
+with db.connect() as conn:
+    # The user's timezone was reset to NULL above, so local == UTC here.
+    occurred = conn.execute(
+        "SELECT occurred_at FROM events WHERE application_id = %s::uuid AND type = 'applied'",
+        (edit_app,)).fetchone()["occurred_at"]
+    check("edit with blank time lands at noon, not the submission moment",
+          occurred == datetime(2026, 5, 9, 12, 0, tzinfo=timezone.utc), occurred)
+
+print("edit application: validation")
+r = client.post(f"/applications/{edit_app}/edit", data={
+    "company": "", "title": "Role", "platform": "linkedin", "applied_date": "2026-05-08"})
+check("blank company rejected", r.status_code == 400, r.status_code)
+check("blank company error shown", "Enter the company name" in r.text)
+
+r = client.post(f"/applications/{edit_app}/edit", data={
+    "company": "Pte Ltd", "title": "Role", "platform": "linkedin", "applied_date": "2026-05-08"})
+check("company normalizing to nothing rejected", r.status_code == 400, r.status_code)
+
+r = client.post(f"/applications/{edit_app}/edit", data={
+    "company": "Edit Preserve Co", "title": "", "platform": "linkedin",
+    "applied_date": "2026-05-08"})
+check("blank title rejected", r.status_code == 400, r.status_code)
+check("submitted value preserved on error", 'value="Edit Preserve Co"' in r.text)
+
+r = client.post(f"/applications/{edit_app}/edit", data={
+    "company": "Edit Test Co", "title": "Role", "platform": "linkedin",
+    "applied_date": "2099-01-01"})
+check("future applied date rejected", r.status_code == 400, r.status_code)
+
+r = client.post(f"/applications/{edit_app}/edit", data={
+    "company": "Edit Test Co", "title": "Role", "platform": "linkedin",
+    "applied_date": "2026-05-08", "url": "https://sg.indeed.com/viewjob?jk=abc123"})
+check("url/platform mismatch rejected", r.status_code == 400, r.status_code)
+check("mismatch names the detected platform", "indeed" in r.text)
+
+with db.connect() as conn:
+    unchanged = conn.execute("SELECT company_norm, title_canonical FROM jobs WHERE id = %s",
+                             (edit_job,)).fetchone()
+    check("no rejected edit was persisted",
+          unchanged["company_norm"] == "edit test co"
+          and unchanged["title_canonical"] == "Senior Backend Engineer", unchanged)
+
+print("edit application: URL already owned by another record is refused")
+r = client.post(f"/applications/{edit_app}/edit", data={
+    "company": "Edit Test Co", "title": "Senior Backend Engineer", "platform": "linkedin",
+    "applied_date": "2026-05-08",
+    "url": "https://www.linkedin.com/jobs/view/9988776655/"})
+check("colliding url rejected", r.status_code == 400, r.status_code)
+check("collision names the other record", "Manual Entry Co" in r.text, r.text[:400])
+with db.connect() as conn:
+    still = conn.execute(
+        "SELECT p.platform_job_id FROM postings p JOIN applications a "
+        "ON a.applied_via_posting_id = p.id WHERE a.id = %s::uuid", (edit_app,)).fetchone()
+    check("posting kept its own platform_job_id after the refused edit",
+          still["platform_job_id"] == "5544332211", still)
+
+print("edit application: applied date can't jump past an existing outcome")
+with db.connect() as conn, conn.transaction():
+    conn.execute(
+        "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+        "VALUES (%s, %s::uuid, 'rejected', 'manual', %s, '{}')",
+        (user_id, edit_app, datetime(2026, 5, 20, 10, 0, tzinfo=timezone.utc)))
+r = client.post(f"/applications/{edit_app}/edit", data={
+    "company": "Edit Test Co", "title": "Senior Backend Engineer", "platform": "linkedin",
+    "applied_date": "2026-06-01"})
+check("applied date after an outcome rejected", r.status_code == 400, r.status_code)
+check("error names the blocking event", "rejected" in r.text)
+r = client.post(f"/applications/{edit_app}/edit", data={
+    "company": "Edit Test Co", "title": "Senior Backend Engineer", "platform": "linkedin",
+    "applied_date": "2026-05-12", "applied_time": "08:00",
+    "url": "https://www.linkedin.com/jobs/view/5544332211/"})
+check("applied date before the outcome still allowed", r.status_code == 303, r.status_code)
+
+print("edit application: blanking the URL clears the dedup key")
+r = client.post(f"/applications/{edit_app}/edit", data={
+    "company": "Edit Test Co", "title": "Senior Backend Engineer", "platform": "linkedin",
+    "applied_date": "2026-05-12", "applied_time": "08:00", "url": ""})
+check("blank url accepted", r.status_code == 303, r.status_code)
+with db.connect() as conn:
+    p = conn.execute(
+        "SELECT p.url, p.platform_job_id FROM postings p JOIN applications a "
+        "ON a.applied_via_posting_id = p.id WHERE a.id = %s::uuid", (edit_app,)).fetchone()
+    check("url and platform_job_id both cleared",
+          p["url"] is None and p["platform_job_id"] is None, p)
+
+print("edit application: focused is settable, changeable and clearable")
+r = client.post(f"/applications/{edit_app}/edit", data={
+    "company": "Edit Test Co", "title": "Senior Backend Engineer", "platform": "linkedin",
+    "applied_date": "2026-05-12", "focused": "yes"})
+check("focused=yes accepted", r.status_code == 303, r.status_code)
+with db.connect() as conn:
+    check("focused stored as true", conn.execute(
+        "SELECT focused FROM applications WHERE id = %s::uuid", (edit_app,)
+        ).fetchone()["focused"] is True)
+check("focused prefilled as yes on the form",
+      '<option value="yes" selected>' in client.get(f"/applications/{edit_app}/edit").text)
+
+r = client.post(f"/applications/{edit_app}/edit", data={
+    "company": "Edit Test Co", "title": "Senior Backend Engineer", "platform": "linkedin",
+    "applied_date": "2026-05-12", "focused": "no"})
+with db.connect() as conn:
+    check("focused changed to false", conn.execute(
+        "SELECT focused FROM applications WHERE id = %s::uuid", (edit_app,)
+        ).fetchone()["focused"] is False)
+
+# Blank means "not set" — the one transition the detail-page toggle can't make.
+r = client.post(f"/applications/{edit_app}/edit", data={
+    "company": "Edit Test Co", "title": "Senior Backend Engineer", "platform": "linkedin",
+    "applied_date": "2026-05-12", "focused": ""})
+with db.connect() as conn:
+    check("blank focused clears back to not-set", conn.execute(
+        "SELECT focused FROM applications WHERE id = %s::uuid", (edit_app,)
+        ).fetchone()["focused"] is None)
+
+r = client.post(f"/applications/{edit_app}/edit", data={
+    "company": "Edit Test Co", "title": "Senior Backend Engineer", "platform": "linkedin",
+    "applied_date": "2026-05-12", "focused": "maybe"})
+check("unknown focused value rejected", r.status_code == 400, r.status_code)
+
+print("edit application: JD text re-runs extraction and drops the stale embedding")
+with db.connect() as conn, conn.transaction():
+    jd_posting = conn.execute(
+        "SELECT applied_via_posting_id FROM applications WHERE id = %s::uuid",
+        (edit_app,)).fetchone()["applied_via_posting_id"]
+    # Seed an embedding so we can prove the edit invalidates it — otherwise a
+    # stale vector keeps driving dedup against text that no longer exists.
+    conn.execute("UPDATE postings SET jd_embedding = %s::vector WHERE id = %s",
+                 ("[" + ",".join(["0.1"] * 1024) + "]", jd_posting))
+
+r = client.post(f"/applications/{edit_app}/edit", data={
+    "company": "Edit Test Co", "title": "Senior Backend Engineer", "platform": "linkedin",
+    "applied_date": "2026-05-12", "jd_text": "Build data pipelines. Go and Postgres."})
+check("jd edit redirects", r.status_code == 303, r.status_code)
+with db.connect() as conn, conn.transaction():
+    p = conn.execute("SELECT jd_text, jd_embedding FROM postings WHERE id = %s",
+                     (jd_posting,)).fetchone()
+    check("jd_text saved", p["jd_text"] == "Build data pipelines. Go and Postgres.", p["jd_text"])
+    check("stale embedding cleared so embed_jd can re-run", p["jd_embedding"] is None)
+    q = conn.execute(
+        "SELECT count(*) AS n FROM job_queue WHERE type = 'extract_jd' "
+        "AND payload->>'posting_id' = %s", (str(jd_posting),)).fetchone()["n"]
+    check("extract_jd enqueued once", q == 1, q)
+    # Same reason as the manual-entry jd case above: test_phase3.py drains the
+    # shared queue with an embedding stub that rejects unstubbed text.
+    conn.execute("DELETE FROM job_queue WHERE type = 'extract_jd' "
+                 "AND payload->>'posting_id' = %s", (str(jd_posting),))
+
+r = client.post(f"/applications/{edit_app}/edit", data={
+    "company": "Edit Test Co", "title": "Senior Backend Engineer", "platform": "linkedin",
+    "applied_date": "2026-05-12", "jd_text": "Build data pipelines. Go and Postgres."})
+check("resubmitting identical jd redirects", r.status_code == 303, r.status_code)
+with db.connect() as conn:
+    q = conn.execute(
+        "SELECT count(*) AS n FROM job_queue WHERE type = 'extract_jd' "
+        "AND payload->>'posting_id' = %s", (str(jd_posting),)).fetchone()["n"]
+    check("unchanged jd does not re-enqueue extraction", q == 0, q)
+
+r = client.post(f"/applications/{edit_app}/edit", data={
+    "company": "Edit Test Co", "title": "Senior Backend Engineer", "platform": "linkedin",
+    "applied_date": "2026-05-12", "jd_text": ""})
+check("blanking jd redirects", r.status_code == 303, r.status_code)
+with db.connect() as conn:
+    p = conn.execute("SELECT jd_text FROM postings WHERE id = %s", (jd_posting,)).fetchone()
+    check("jd_text cleared", p["jd_text"] is None, p)
+    q = conn.execute(
+        "SELECT count(*) AS n FROM job_queue WHERE type = 'extract_jd' "
+        "AND payload->>'posting_id' = %s", (str(jd_posting),)).fetchone()["n"]
+    check("no extraction enqueued for an emptied jd", q == 0, q)
+
+print("edit application: unknown id 404s")
+check("edit form 404s for a bogus id",
+      client.get("/applications/not-a-uuid/edit").status_code == 404)
+check("edit post 404s for a bogus id",
+      client.post("/applications/not-a-uuid/edit", data={
+          "company": "X Co", "title": "Role", "platform": "linkedin",
+          "applied_date": "2026-05-08"}).status_code == 404)
 
 print("delete application: confirmation page + full cleanup")
 with db.connect() as conn, conn.transaction():

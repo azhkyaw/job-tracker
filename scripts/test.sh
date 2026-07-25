@@ -14,6 +14,7 @@ psql "$DB" -q -v ON_ERROR_STOP=1 \
   -f migrations/004_posting_listing_meta.sql \
   -f migrations/005_posting_ats.sql \
   -f migrations/006_user_timezone.sql \
+  -f migrations/007_user_theme.sql \
   -c "INSERT INTO users (email) VALUES ('dev@test.local');" 2>/dev/null
 export TRACKER_DATABASE_URL="postgresql:///$DB"
 export TRACKER_API_TOKEN=testtok

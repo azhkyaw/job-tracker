@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="{{ theme() }}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -8,11 +8,35 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{
+  color-scheme:light;
   --bg:#F3F6F7; --card:#FFFFFF; --ink:#1B2A33; --muted:#5E7079;
-  --line:#DAE3E7; --accent:#0E6E66; --accent-ink:#FFFFFF;
+  --line:#DAE3E7; --accent:#0E6E66; --accent-ink:#FFFFFF; --mix:#FFFFFF;
   --interested:#7A6A8A; --applied:#54707D; --viewed:#3D6B8E;
   --interview_invite:#2B5FA3; --offer:#2F6B3A; --rejected:#9E4038;
   --withdrawn:#6B6B6B; --pending:#A16207;
+}
+/* "auto" (no saved pin): follow the OS. */
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#16181C; --card:#1E2228; --ink:#E4E9ED; --muted:#98A5AE;
+    --line:#2E353D; --accent:#4CC2B4; --accent-ink:#0B1416; --mix:#1E2228;
+    --interested:#B9A9CC; --applied:#9DB4C2; --viewed:#8CBCE0;
+    --interview_invite:#8FB2E8; --offer:#79C98A; --rejected:#E88C82;
+    --withdrawn:#A8A8A8; --pending:#E0B252;
+  }
+}
+/* An explicit pin beats the OS in both directions. Must come AFTER the media
+   query above — both selectors are equal specificity (0,2,0), so source
+   order is what makes a light pin win on a dark OS. Keep this token list in
+   sync with the one above; CSS has no way to share it between the two. */
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#16181C; --card:#1E2228; --ink:#E4E9ED; --muted:#98A5AE;
+  --line:#2E353D; --accent:#4CC2B4; --accent-ink:#0B1416; --mix:#1E2228;
+  --interested:#B9A9CC; --applied:#9DB4C2; --viewed:#8CBCE0;
+  --interview_invite:#8FB2E8; --offer:#79C98A; --rejected:#E88C82;
+  --withdrawn:#A8A8A8; --pending:#E0B252;
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);
@@ -31,8 +55,8 @@ header nav{display:flex;gap:1.2rem}
 header nav a{color:var(--muted)}
 header nav a.active{color:var(--ink);font-weight:600}
 .pill{font-family:'IBM Plex Mono',monospace;font-size:.72rem;
-      background:color-mix(in srgb,var(--pending) 14%,white);color:var(--pending);
-      border:1px solid color-mix(in srgb,var(--pending) 40%,white);
+      background:color-mix(in srgb,var(--pending) 14%,var(--mix));color:var(--pending);
+      border:1px solid color-mix(in srgb,var(--pending) 40%,var(--mix));
       border-radius:999px;padding:0 .5em;margin-left:.35em;vertical-align:1px}
 
 main{max-width:1080px;margin:0 auto;padding:1.4rem 1.6rem 3rem}
@@ -45,14 +69,14 @@ h2{font-size:.8rem;margin:1.6rem 0 .5rem;color:var(--muted);
 .funnel{display:flex;gap:2px;margin:0 0 1.4rem;border-radius:6px;overflow:hidden}
 .funnel .seg{flex-grow:var(--n);flex-basis:0;min-width:86px;padding:.45rem .6rem .35rem;
              border-top:3px solid var(--c);
-             background:color-mix(in srgb,var(--c) 9%,white)}
+             background:color-mix(in srgb,var(--c) 9%,var(--mix))}
 .funnel .seg .n{font-family:'IBM Plex Mono',monospace;font-weight:500;font-size:1.05rem;color:var(--c)}
 .funnel .seg .l{display:block;font-size:.7rem;color:var(--muted);
                 font-family:'IBM Plex Mono',monospace;letter-spacing:.04em}
 
 .badge{font-family:'IBM Plex Mono',monospace;font-size:.74rem;white-space:nowrap;
-       color:var(--c);border:1px solid color-mix(in srgb,var(--c) 45%,white);
-       background:color-mix(in srgb,var(--c) 9%,white);
+       color:var(--c);border:1px solid color-mix(in srgb,var(--c) 45%,var(--mix));
+       background:color-mix(in srgb,var(--c) 9%,var(--mix));
        border-radius:4px;padding:.05em .45em}
 
 .card{background:var(--card);border:1px solid var(--line);border-radius:8px;
@@ -63,7 +87,7 @@ th{font-family:'IBM Plex Mono',monospace;font-weight:500;font-size:.7rem;
    text-align:left;padding:.6rem .9rem;border-bottom:1px solid var(--line)}
 td{padding:.55rem .9rem;border-bottom:1px solid var(--line);vertical-align:top}
 tr:last-child td{border-bottom:0}
-tr:hover td{background:color-mix(in srgb,var(--accent) 4%,white)}
+tr:hover td{background:color-mix(in srgb,var(--accent) 4%,var(--mix))}
 td.mono,th.mono{font-family:'IBM Plex Mono',monospace;font-size:.82rem;color:var(--muted)}
 
 .tri{background:var(--card);border:1px solid var(--line);border-radius:8px;
@@ -74,14 +98,17 @@ td.mono,th.mono{font-family:'IBM Plex Mono',monospace;font-size:.82rem;color:var
 .tri .facts{font-family:'IBM Plex Mono',monospace;font-size:.8rem;color:var(--muted)}
 .tri form{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center}
 
-button,select,input[type=text],input[type=date],input[type=time]{font:inherit}
+button,select,input[type=text],input[type=date],input[type=time],input[type=password],textarea{font:inherit}
 button{font-family:'IBM Plex Mono',monospace;font-size:.8rem;cursor:pointer;
        border:1px solid var(--line);background:var(--card);color:var(--ink);
        border-radius:6px;padding:.32rem .7rem}
 button:hover{border-color:var(--accent);color:var(--accent)}
 button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
-select,input[type=text],input[type=date],input[type=time]{border:1px solid var(--line);
-       border-radius:6px;padding:.3rem .5rem;background:var(--card);max-width:20rem}
+select,input[type=text],input[type=date],input[type=time],input[type=password]{
+       border:1px solid var(--line);border-radius:6px;padding:.3rem .5rem;
+       background:var(--card);color:var(--ink);max-width:20rem}
+textarea{border:1px solid var(--line);border-radius:6px;padding:.5rem;
+       background:var(--card);color:var(--ink)}
 
 .empty{color:var(--muted);padding:2.2rem 1rem;text-align:center;
        border:1px dashed var(--line);border-radius:8px}

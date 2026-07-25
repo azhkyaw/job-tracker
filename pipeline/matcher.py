@@ -53,6 +53,9 @@ class MatchResult:
     action: str                     # auto | create | pending
     application_id: str | None = None
     score: float | None = None
+    had_candidates: bool = False    # a same-company application existed but
+                                     # scored below the auto-match bar — dispatch()
+                                     # must not treat this as "no record exists"
 
 
 def extraction_from_raw(raw: dict | None) -> Extraction:
@@ -104,7 +107,7 @@ def find_match(conn, user_id, extraction: Extraction, occurred_at: datetime) -> 
     margin_ok = len(scored) == 1 or (best_score - scored[1][0]) >= config.AUTO_MATCH_MARGIN
     if best_score >= config.AUTO_MATCH_SCORE and margin_ok:
         return MatchResult("auto", str(best["application_id"]), round(best_score, 3))
-    return MatchResult("pending", None, round(best_score, 3))
+    return MatchResult("pending", None, round(best_score, 3), had_candidates=True)
 
 
 # --------------------------------------------------------------------------- writes
@@ -213,7 +216,8 @@ def dispatch(conn, user_id, email_row, classification: str, extraction: Extracti
     occurred_at = _event_time(extraction, email_row["received_at"])
     result = find_match(conn, user_id, extraction, occurred_at)
 
-    if result.action == "pending" and classification == "confirmation" \
+    if result.action == "pending" and not result.had_candidates \
+            and classification == "confirmation" \
             and norm_company(extraction.company or ""):
         result = MatchResult("create",
                              _create_application(conn, user_id, email_row, extraction))
