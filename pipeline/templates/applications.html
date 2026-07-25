@@ -11,6 +11,12 @@
   <a href="/applications/new"><button class="primary" type="button">+ Add application</button></a>
   <span style="color:var(--muted)">for anything the extension and Gmail can't reach</span>
 </div>
+<div class="tabs" style="margin-bottom:1rem">
+  <a href="/" class="{{ 'active' if not origin }}">all</a>
+  <a href="/?origin=applied" class="{{ 'active' if origin == 'applied' }}">applied</a>
+  <a href="/?origin=inbound" class="{{ 'active' if origin == 'inbound' }}">inbound</a>
+  <a href="/?origin=saved" class="{{ 'active' if origin == 'saved' }}">saved</a>
+</div>
 {% if reminders %}
 <div class="card" style="border-left:3px solid var(--pending);padding:.7rem 1rem;margin-bottom:1rem">
   <strong>Needs follow-up</strong>
@@ -42,7 +48,8 @@
   <tbody>
   {% for r in rows %}
     <tr>
-      <td><a href="/applications/{{ r.id }}">{{ r.company_display }}</a></td>
+      <td><a href="/applications/{{ r.id }}">{{ r.company_display }}</a>
+        {% if r.origin == 'inbound' %}<span class="badge" style="--c:var(--interested)">inbound</span>{% endif %}</td>
       <td>{{ r.title_canonical }}</td>
       <td><span class="badge" style="--c:var(--{{ 'interview_invite' if r.status == 'interviewing' else r.status }})">{{ r.status }}</span></td>
       <td class="mono">{{ r.platforms or "—" }}</td>

@@ -59,6 +59,12 @@ header nav a.active{color:var(--ink);font-weight:600}
       border:1px solid color-mix(in srgb,var(--pending) 40%,var(--mix));
       border-radius:999px;padding:0 .5em;margin-left:.35em;vertical-align:1px}
 
+/* in-page lane/filter tabs — same active treatment as the top nav, one size
+   down, for triage lanes and the applications origin filter */
+.tabs{display:flex;gap:1.1rem;border-bottom:1px solid var(--line);padding-bottom:.6rem}
+.tabs a{color:var(--muted);font-size:.85rem}
+.tabs a.active{color:var(--ink);font-weight:600}
+
 main{max-width:1080px;margin:0 auto;padding:1.4rem 1.6rem 3rem}
 h1{font-size:1.15rem;margin:.2rem 0 1rem}
 h2{font-size:.8rem;margin:1.6rem 0 .5rem;color:var(--muted);
@@ -72,7 +78,8 @@ h2{font-size:.8rem;margin:1.6rem 0 .5rem;color:var(--muted);
              background:color-mix(in srgb,var(--c) 9%,var(--mix))}
 .funnel .seg .n{font-family:'IBM Plex Mono',monospace;font-weight:500;font-size:1.05rem;color:var(--c)}
 .funnel .seg .l{display:block;font-size:.7rem;color:var(--muted);
-                font-family:'IBM Plex Mono',monospace;letter-spacing:.04em}
+                font-family:'IBM Plex Mono',monospace;letter-spacing:.04em;
+                overflow-wrap:anywhere}
 
 .badge{font-family:'IBM Plex Mono',monospace;font-size:.74rem;white-space:nowrap;
        color:var(--c);border:1px solid color-mix(in srgb,var(--c) 45%,var(--mix));

@@ -3,8 +3,21 @@
 {% block nav_triage %}active{% endblock %}
 {% block content %}
 <h1>Triage</h1>
-{% if not emails %}
-<p class="empty">Nothing waiting. Every email is matched, resolved, or ignored.</p>
+<div class="tabs" style="margin-bottom:1rem">
+  <a href="/triage?lane=actionable" class="{{ 'active' if lane == 'actionable' }}">
+    actionable{% if actionable_n %}<span class="pill">{{ actionable_n }}</span>{% endif %}</a>
+  <a href="/triage?lane=inbound" class="{{ 'active' if lane == 'inbound' }}">
+    inbound{% if inbound_n %}<span class="pill">{{ inbound_n }}</span>{% endif %}</a>
+</div>
+{% if lane == 'inbound' %}
+<p style="color:var(--muted);margin:-0.4rem 0 1rem">
+  Recruiter/employer outreach about roles you didn't apply to. "Track as lead" files it
+  honestly — a real record with no applied event, so it never counts toward your funnel
+  or response rate unless you actually apply.
+</p>
+{% endif %}
+{% if not emails and not dupes %}
+<p class="empty">Nothing waiting in this lane.</p>
 {% endif %}
 {% for e in emails %}
 <div class="tri">
@@ -21,6 +34,7 @@
   </div>
   {% endif %}
   <form method="post" action="/triage/{{ e.id }}">
+    <input type="hidden" name="lane" value="{{ lane }}">
     <select name="application_id" aria-label="Application to link to">
       <option value="">— pick an application —</option>
       {% for o in options %}
@@ -28,7 +42,12 @@
       {% endfor %}
     </select>
     <button class="primary" name="action" value="link">Link email</button>
-    {% if e.extraction and e.extraction.company %}
+    <input type="text" name="company" value="{{ (e.extraction.company if e.extraction else '') or '' }}"
+           placeholder="company or agency" aria-label="Company"
+           style="max-width:11rem">
+    {% if lane == 'inbound' %}
+    <button name="action" value="lead">Track as lead</button>
+    {% else %}
     <button name="action" value="create">Create application</button>
     {% endif %}
     <button name="action" value="ignore">Ignore</button>

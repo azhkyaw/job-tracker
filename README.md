@@ -67,7 +67,7 @@ createdb tracker
 psql tracker -f migrations/001_init.sql -f migrations/002_gmail_sync_state.sql \
              -f migrations/003_multi_tenant.sql -f migrations/004_posting_listing_meta.sql \
              -f migrations/005_posting_ats.sql -f migrations/006_user_timezone.sql \
-             -f migrations/007_user_theme.sql
+             -f migrations/007_user_theme.sql -f migrations/008_application_origin.sql
 
 # 2. Python deps
 pip install anthropic "psycopg[binary]" google-api-python-client google-auth-oauthlib \
@@ -120,7 +120,7 @@ createdb tracker_test
 psql tracker_test -f migrations/001_init.sql -f migrations/002_gmail_sync_state.sql \
      -f migrations/003_multi_tenant.sql -f migrations/004_posting_listing_meta.sql \
      -f migrations/005_posting_ats.sql -f migrations/006_user_timezone.sql \
-     -f migrations/007_user_theme.sql \
+     -f migrations/007_user_theme.sql -f migrations/008_application_origin.sql \
      -c "INSERT INTO users (email) VALUES ('test@local');"
 TRACKER_DATABASE_URL=postgresql:///tracker_test python3 tests/test_integration.py
 TRACKER_DATABASE_URL=postgresql:///tracker_test python3 tests/test_web.py   # run second

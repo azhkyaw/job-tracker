@@ -76,7 +76,8 @@ def local_date_to_utc(d: date, tz: ZoneInfo, t: time | None = None) -> datetime:
 
 def upsert_record(conn, user_id, *, platform, captured_via, platform_job_id=None,
                   url=None, company=None, title=None, jd_text=None, location=None,
-                  posted_label=None, reposted=None, ats=None, captured_at=None) -> dict:
+                  posted_label=None, reposted=None, ats=None, captured_at=None,
+                  origin="applied") -> dict:
     """Create or enrich job + posting + application for one captured ad.
 
     Returns {job_id, posting_id, application_id, created, enriched,
@@ -85,6 +86,10 @@ def upsert_record(conn, user_id, *, platform, captured_via, platform_job_id=None
     jd_text for the first time, or a new posting attached to a reused
     email_only job — two different meanings kept as-is (from the original
     /captures logic) rather than split, to keep this a pure move.
+
+    `origin` only applies when a NEW application row is inserted — an
+    existing application's provenance is never overwritten by a later capture
+    (e.g. the extension re-capturing a lead you're now actually applying to).
 
     Caller owns the connection and its transaction, and is responsible for
     everything after this: events, `focused`, notes, contacts — their
@@ -166,9 +171,9 @@ def upsert_record(conn, user_id, *, platform, captured_via, platform_job_id=None
     application_existed = app_row is not None
     if app_row is None:
         app_row = conn.execute(
-            "INSERT INTO applications (user_id, job_id, applied_via_posting_id) "
-            "VALUES (%s, %s, %s) RETURNING id",
-            (user_id, job_id, posting_id)).fetchone()
+            "INSERT INTO applications (user_id, job_id, applied_via_posting_id, origin) "
+            "VALUES (%s, %s, %s, %s) RETURNING id",
+            (user_id, job_id, posting_id, origin)).fetchone()
 
     return {
         "job_id": job_id, "posting_id": posting_id,

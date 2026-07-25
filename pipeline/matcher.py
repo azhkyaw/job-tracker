@@ -170,8 +170,16 @@ def _append_event(conn, user_id, application_id, email_row, classification,
 
 
 def _create_application(conn, user_id, email_row, extraction: Extraction,
-                        classification: str = "confirmation") -> str:
-    """The backfill path: a confirmation for a job we have no record of."""
+                        classification: str = "confirmation",
+                        origin: str = "applied") -> str:
+    """Create a job + posting + application for one email with no existing
+    record. The 'applied' event is fabricated for every classification EXCEPT
+    recruiter_outreach: a rejection/interview_invite/status_update with no
+    prior record still implies the user applied (you can't be rejected from a
+    role you never applied to) — only recruiter_outreach is "a role the user
+    did NOT apply to" by its own classify-prompt definition, so origin='inbound'
+    leads get no applied event and derive status 'interested' instead of lying
+    about having applied."""
     company_norm = norm_company(extraction.company or "")
     title = extraction.role_title or "unknown role"
     platform = extraction.platform if extraction.platform in ("linkedin", "jobstreet", "indeed") else "other"
@@ -193,20 +201,21 @@ def _create_application(conn, user_id, email_row, extraction: Extraction,
     ).fetchone()
     app = conn.execute(
         """
-        INSERT INTO applications (user_id, job_id, applied_via_posting_id)
-        VALUES (%s, %s, %s) RETURNING id
+        INSERT INTO applications (user_id, job_id, applied_via_posting_id, origin)
+        VALUES (%s, %s, %s, %s) RETURNING id
         """,
-        (user_id, job["id"], posting["id"]),
+        (user_id, job["id"], posting["id"], origin),
     ).fetchone()
-    from psycopg.types.json import Json
-    conn.execute(
-        """
-        INSERT INTO events (user_id, application_id, type, source, occurred_at,
-                            source_email_id, payload)
-        VALUES (%s, %s, 'applied', 'email', %s, %s, %s)
-        """,
-        (user_id, app["id"], occurred_at, email_row["id"], Json({})),
-    )
+    if classification != "recruiter_outreach":
+        from psycopg.types.json import Json
+        conn.execute(
+            """
+            INSERT INTO events (user_id, application_id, type, source, occurred_at,
+                                source_email_id, payload)
+            VALUES (%s, %s, 'applied', 'email', %s, %s, %s)
+            """,
+            (user_id, app["id"], occurred_at, email_row["id"], Json({})),
+        )
     _append_event(conn, user_id, app["id"], email_row, classification, extraction)
     return str(app["id"])
 
@@ -214,16 +223,25 @@ def _create_application(conn, user_id, email_row, extraction: Extraction,
 def dispatch(conn, user_id, email_row, classification: str, extraction: Extraction) -> MatchResult:
     """Route one extracted email; updates the emails row with the outcome."""
     occurred_at = _event_time(extraction, email_row["received_at"])
-    result = find_match(conn, user_id, extraction, occurred_at)
 
-    if result.action == "pending" and not result.had_candidates \
-            and classification == "confirmation" \
-            and norm_company(extraction.company or ""):
-        result = MatchResult("create",
-                             _create_application(conn, user_id, email_row, extraction))
-    elif result.action == "auto":
-        _append_event(conn, user_id, result.application_id, email_row,
-                      classification, extraction)
+    if classification == "recruiter_outreach":
+        # By definition "a role the user did NOT apply to" (see the classify
+        # prompt) — must never auto-match or auto-append onto an existing
+        # application's timeline, and never auto-create either (no silent
+        # guessing about which cold pitches are worth tracking). Always
+        # triage; the human decides via the inbound lane's "track as lead".
+        result = MatchResult("pending")
+    else:
+        result = find_match(conn, user_id, extraction, occurred_at)
+
+        if result.action == "pending" and not result.had_candidates \
+                and classification == "confirmation" \
+                and norm_company(extraction.company or ""):
+            result = MatchResult("create",
+                                 _create_application(conn, user_id, email_row, extraction))
+        elif result.action == "auto":
+            _append_event(conn, user_id, result.application_id, email_row,
+                          classification, extraction)
 
     triage = "auto_matched" if result.action in ("auto", "create") else "pending"
     conn.execute(

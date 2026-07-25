@@ -75,6 +75,16 @@ phases built (Jul 2026) and test-driven. Full design rationale: `docs/design.md`
    leaves the job `pending`; no cleanup logic exists or is needed. Worker and
    Gmail sync are trusted admin batch jobs (no RLS) — keep them that way.
 8. **Migrations are append-only numbered files**; never edit an applied one.
+9. **`applications.origin`** (`applied` | `inbound` | `saved`) is immutable
+   provenance, separate from derived status (invariant #2). `inbound` = a
+   recruiter/employer approached the user about a role they did NOT apply
+   to — `matcher.dispatch` NEVER auto-matches or auto-creates for
+   classification `recruiter_outreach`; it always routes to triage's inbound
+   lane, and only a human resolving it there (`action=lead`) creates the
+   record. `_create_application`'s applied-event fabrication is gated on
+   `classification != 'recruiter_outreach'`, not `== 'confirmation'` — a
+   rejection/interview_invite with no prior record still implies the user
+   applied; only recruiter_outreach doesn't.
 
 ## Gotchas learned the hard way in the original build
 
@@ -143,7 +153,20 @@ phases built (Jul 2026) and test-driven. Full design rationale: `docs/design.md`
   `document.cookie` silently can't overwrite an existing httponly session
   cookie, and the browser tool blocks `file://`. Fetch the rendered HTML
   with curl + a real session cookie, serve it via a local `python -m
-  http.server`, then navigate/screenshot that.
+  http.server`, then navigate/screenshot that. Mint the cookie directly via
+  `pipeline.auth.create_session(conn, user_id)` in a one-off script rather
+  than needing the real login password.
+- **Jinja prints Python `None` as the literal string `"None"`**, not empty,
+  when interpolated directly (`{{ x }}`). Bit us in
+  `<input value="{{ e.extraction.company }}">` when `company` was `null` —
+  rendered `value="None"`. Always `... or ''` on a value that can be `None`,
+  not just a truthiness check on its container.
+- **A flex segment's label can overflow invisibly.** `.funnel .seg` sizes via
+  `flex-grow` off a real count with only a `min-width` floor, and `.funnel`
+  has `overflow:hidden` — a long single-word label (e.g. "interviewing") on a
+  low-count segment silently clipped instead of wrapping. Fixed with
+  `overflow-wrap:anywhere` on `.funnel .seg .l`; same pattern could bite any
+  new flex-sized-by-count UI.
 - **Gmail's `messages.list` returns newest-first, but ingest is order-sensitive.**
   `gmail_sync.py`'s `backfill()` and `_window_fallback()` used to store/enqueue
   `classify_email` jobs in that (newest-first) order, and the worker claims
@@ -198,14 +221,18 @@ win). No per-shell export needed for local dev.
 
 ## Immediate next tasks (in order)
 
-1. **Real backfill:** the 10-day test run is done; run the full `auth` →
-   `backfill -m 12` → `work --once` → open `/triage` next. Expect: missing
-   ATS senders → add domains to `ALLOWLIST_DOMAINS` in `pipeline/config.py`;
-   mis-scored matches → tune thresholds using real `emails.match_score`
-   values; misclassified emails → harvest as few-shot examples into a new
-   prompt version; more same-employer/different-branding emails → resolve
-   with `refile_email` (application detail page), not by deleting and
-   re-creating.
+1. **Real backfill: done.** Job search started 2026-07-16, so the `-m 12`
+   (year-long) default never applied to this user — used `backfill -d 14`
+   instead (`-d` overrides `-m` via `months = days/31`, cli.py). Actionable
+   triage queue is clear. Concrete finding: an employer's "Welcome to Talent
+   Community" autoresponder classifies as `recruiter_outreach` (scored 0.645
+   vs. a real application to that same employer, just under `AUTO_MATCH_SCORE`) but is really
+   a receipt tied to that application — first real candidate for a
+   `email_classify_v2.txt` few-shot example. Still open: one inbound lead
+   (Beacon Search, agency withheld the client name) awaiting a
+   company-name decision in the triage UI. Remaining from the original plan:
+   tune match thresholds against real `emails.match_score` values, and watch
+   for more `ALLOWLIST_DOMAINS` gaps as new mail arrives.
 2. **One real apply via the extension** on each platform; fix whichever
    adapter selectors have drifted.
 3. If enabling dedup: set `VOYAGE_API_KEY`, run `scan`, review duplicate

@@ -4,8 +4,11 @@ Run AFTER the integration test on the same database:
   TRACKER_DATABASE_URL=postgresql:///tracker_test python3 tests/test_web.py
 
 Covers: applications table + funnel render, detail page, focused toggle,
-manual event logging, triage listing, and all three resolve actions
-(link appends an event with provenance; create builds a full record; ignore).
+manual event logging, triage listing, and all resolve actions (link appends
+an event with provenance; create builds a full record; ignore; lead files a
+recruiter_outreach email as an inbound application with origin='inbound' and
+no fabricated applied event), plus the triage actionable/inbound lane split
+and the applications-list origin filter.
 """
 
 import os
@@ -19,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from fastapi.testclient import TestClient
 from psycopg.types.json import Json
 
-from pipeline import db
+from pipeline import analytics, db
 from pipeline.web import app
 
 client = TestClient(app, follow_redirects=False)
@@ -228,6 +231,96 @@ with db.connect() as conn:
         "SELECT triage_state FROM emails WHERE id = %s", (ign,)).fetchone()["triage_state"] == "ignored")
 check("resolved emails leave the queue",
       "Your application was viewed" not in client.get("/triage").text)
+
+print("triage: inbound lane (recruiter_outreach)")
+with db.connect() as conn:
+    # Null company — the agency-withholds-the-client case (a real Northwind
+    # Recruiting email in production had extraction.company = null).
+    recruiter_email = conn.execute(
+        """INSERT INTO emails (user_id, gmail_message_id, sender, subject, body_text,
+                               received_at, classification, extraction, triage_state)
+           VALUES (%s, 'gm-recruiter-agency', 'recruiter@beaconsearch.example',
+                   'Hiring for Senior Software Engineer (AI and LLMOps)', 'body', now(),
+                   'recruiter_outreach', %s, 'pending')
+           ON CONFLICT (user_id, gmail_message_id)
+             DO UPDATE SET triage_state = 'pending', matched_application_id = NULL
+           RETURNING id""",
+        (user_id,
+         Json({"company": None, "role_title": "Senior Software Engineer (AI and LLMOps)",
+               "platform": "linkedin", "ats": None, "event_date": None,
+               "status_detail": None,
+               "recruiter": {"name": "Mira Sen", "email": None}, "notes": None})),
+    ).fetchone()["id"]
+    conn.commit()
+
+r = client.get("/triage")
+check("actionable lane omits recruiter_outreach email",
+      "Hiring for Senior Software Engineer" not in r.text, r.status_code)
+r = client.get("/triage?lane=inbound")
+check("inbound lane lists it", "Hiring for Senior Software Engineer" in r.text)
+
+print("triage: nav badge excludes recruiter_outreach")
+with db.connect() as conn:
+    expected_pending = conn.execute(
+        "SELECT (SELECT count(*) FROM emails WHERE triage_state = 'pending' "
+        "        AND classification IS DISTINCT FROM 'recruiter_outreach') + "
+        "       (SELECT count(*) FROM duplicate_candidates WHERE state = 'pending') AS n"
+    ).fetchone()["n"]
+r = client.get("/")
+# Everything actionable was already resolved above, so the only pending item
+# left is the recruiter_outreach email just seeded — the nav pill (which
+# hides itself at 0, base.html's {% if pending %}) should therefore be gone
+# entirely, proving the exclusion rather than just matching a nonzero count.
+if expected_pending:
+    check(f"nav pill shows actionable-only count ({expected_pending})",
+          f'class="pill">{expected_pending}<' in r.text, r.text)
+else:
+    check("nav pill hidden — only a recruiter_outreach email is pending",
+          'class="pill"' not in r.text, r.text)
+
+print("triage: track as lead (agency company override, null extraction.company)")
+with db.connect() as conn:
+    summary_before = analytics.summary(conn, user_id)
+r = client.post(f"/triage/{recruiter_email}", data={
+    "action": "lead", "company": "Beacon Search", "lane": "inbound"})
+check("lead redirects to inbound lane",
+      r.status_code == 303 and "lane=inbound" in r.headers["location"], r.headers.get("location"))
+with db.connect() as conn:
+    row = conn.execute("SELECT matched_application_id, triage_state FROM emails WHERE id = %s",
+                       (recruiter_email,)).fetchone()
+    check("email resolved", row["triage_state"] == "resolved")
+    lead_app_id = row["matched_application_id"]
+    a = conn.execute(
+        "SELECT a.origin, j.company_norm, s.status FROM applications a "
+        "JOIN jobs j ON j.id = a.job_id JOIN application_status s ON s.application_id = a.id "
+        "WHERE a.id = %s", (lead_app_id,)).fetchone()
+    check("origin is inbound", a["origin"] == "inbound", a)
+    check("filed under the posted company override (agency, not null)",
+          a["company_norm"] == "beacon search", a)
+    check("derived status is interested — no applied event fabricated",
+          a["status"] == "interested", a)
+    has_applied = conn.execute(
+        "SELECT 1 FROM events WHERE application_id = %s AND type = 'applied'",
+        (lead_app_id,)).fetchone()
+    check("no applied event written", has_applied is None)
+    contact = conn.execute(
+        "SELECT name FROM contacts WHERE job_id = "
+        "(SELECT job_id FROM applications WHERE id = %s) AND name = 'Mira Sen'",
+        (lead_app_id,)).fetchone()
+    check("recruiter captured as contact", contact is not None)
+    summary_after = analytics.summary(conn, user_id)
+check("lead does not change applied count", summary_after["applied"] == summary_before["applied"],
+      (summary_before, summary_after))
+check("lead does not change response rate",
+      summary_after["response_rate"] == summary_before["response_rate"],
+      (summary_before, summary_after))
+
+print("applications: origin filter")
+r = client.get("/?origin=inbound")
+check("inbound filter lists the lead", "Beacon Search" in r.text, r.status_code)
+check("inbound badge shown", ">inbound</span>" in r.text)
+r = client.get("/?origin=applied")
+check("applied filter excludes the lead", "Beacon Search" not in r.text)
 
 print("manual entry: form + route-ordering guard")
 r = client.get("/applications/new")

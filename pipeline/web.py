@@ -18,6 +18,7 @@ no framework — this is a single-user ops tool that must stay maintainable.
 
 from __future__ import annotations
 
+from dataclasses import replace as _replace
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -125,16 +126,27 @@ def _display(status: str) -> str:
 
 
 def _pending_count(conn) -> int:
+    """Nav badge — actionable lane only. recruiter_outreach pending emails
+    have their own inbound triage lane and their own count; surfacing them
+    here would nag the nav badge with cold-pitch volume the user can't act on
+    the same way as a rejection to file."""
     return conn.execute(
-        "SELECT (SELECT count(*) FROM emails WHERE triage_state = 'pending') + "
+        "SELECT (SELECT count(*) FROM emails WHERE triage_state = 'pending' "
+        "        AND classification IS DISTINCT FROM 'recruiter_outreach') + "
         "       (SELECT count(*) FROM duplicate_candidates WHERE state = 'pending') AS n"
     ).fetchone()["n"]
 
 
-def _funnel(conn, user_id) -> list[dict]:
+def _funnel(conn, user_id, origin: str | None = None) -> list[dict]:
     rows = conn.execute(
-        "SELECT status, count(*) AS n FROM application_status "
-        "WHERE user_id = %s GROUP BY status", (user_id,)).fetchall()
+        """
+        SELECT s.status, count(*) AS n
+        FROM application_status s
+        JOIN applications a ON a.id = s.application_id
+        WHERE s.user_id = %(user_id)s
+          AND (%(origin)s::text IS NULL OR a.origin = %(origin)s)
+        GROUP BY s.status
+        """, {"user_id": user_id, "origin": origin}).fetchall()
     counts: dict[str, int] = {}
     for r in rows:
         key = DISPLAY_STATUS.get(r["status"], r["status"])
@@ -146,13 +158,14 @@ def _funnel(conn, user_id) -> list[dict]:
 # --------------------------------------------------------------------------- applications
 
 @app.get("/")
-def applications(request: Request, deleted: str | None = None):
+def applications(request: Request, deleted: str | None = None, origin: str | None = None):
     user = _login_user(request)
+    origin = origin if origin in ("applied", "inbound", "saved") else None
     with db.connect_scoped(user["id"]) as conn:
         user_id = user["id"]
         rows = conn.execute(
             """
-            SELECT a.id, a.focused, j.company_norm, j.title_canonical, s.status,
+            SELECT a.id, a.focused, a.origin, j.company_norm, j.title_canonical, s.status,
                    COALESCE(
                      (SELECT p.company_raw FROM postings p
                        WHERE p.job_id = a.job_id AND p.company_raw IS NOT NULL
@@ -167,18 +180,20 @@ def applications(request: Request, deleted: str | None = None):
             FROM applications a
             JOIN jobs j ON j.id = a.job_id
             JOIN application_status s ON s.application_id = a.id
-            WHERE a.user_id = %s
+            WHERE a.user_id = %(user_id)s
+              AND (%(origin)s::text IS NULL OR a.origin = %(origin)s)
             ORDER BY last_activity DESC NULLS LAST
-            """, (user_id,)).fetchall()
+            """, {"user_id": user_id, "origin": origin}).fetchall()
         for r in rows:
             r["status"] = _display(r["status"])
         return templates.TemplateResponse(request=request, name="applications.html", context={
             "rows": rows,
-            "funnel": _funnel(conn, user_id),
+            "funnel": _funnel(conn, user_id, origin),
             "pending": _pending_count(conn),
             "reminders": analytics.reminders(conn, user_id),
             "reminder_days": config.REMINDER_DAYS,
             "deleted": deleted,
+            "origin": origin,
         })
 
 
@@ -971,11 +986,12 @@ def _application_options(conn, user_id) -> list[dict]:
 
 
 @app.get("/triage")
-def triage(request: Request):
+def triage(request: Request, lane: str = "actionable"):
+    lane = lane if lane in ("actionable", "inbound") else "actionable"
     user = _login_user(request)
     with db.connect_scoped(user["id"]) as conn:
         user_id = user["id"]
-        emails = conn.execute(
+        all_pending = conn.execute(
             """
             SELECT id, sender, subject, received_at, classification,
                    match_score, extraction
@@ -983,6 +999,8 @@ def triage(request: Request):
             WHERE user_id = %s AND triage_state = 'pending'
             ORDER BY received_at DESC
             """, (user_id,)).fetchall()
+        inbound = [e for e in all_pending if e["classification"] == "recruiter_outreach"]
+        actionable = [e for e in all_pending if e["classification"] != "recruiter_outreach"]
         options = _application_options(conn, user_id)
         dupes = conn.execute(
             """
@@ -1000,14 +1018,21 @@ def triage(request: Request):
             ORDER BY d.cosine_sim DESC
             """, (user_id,)).fetchall()
         return templates.TemplateResponse(request=request, name="triage.html", context={
-            "emails": emails, "options": options, "dupes": dupes,
-            "pending": len(emails) + len(dupes),
+            "emails": inbound if lane == "inbound" else actionable,
+            "options": options,
+            "dupes": dupes if lane == "actionable" else [],
+            "lane": lane,
+            "actionable_n": len(actionable) + len(dupes),
+            "inbound_n": len(inbound),
+            "pending": _pending_count(conn),
         })
 
 
 @app.post("/triage/{email_id}")
 def resolve(request: Request, email_id: str, action: str = Form(...),
-            application_id: str | None = Form(None)):
+            application_id: str | None = Form(None), company: str = Form(""),
+            lane: str = Form("actionable")):
+    lane = lane if lane in ("actionable", "inbound") else "actionable"
     user = _login_user(request)
     with db.connect_scoped(user["id"]) as conn, conn.transaction():
         try:
@@ -1020,6 +1045,13 @@ def resolve(request: Request, email_id: str, action: str = Form(...),
             raise HTTPException(404, "pending email not found")
         user_id = email["user_id"]
         x = matcher.extraction_from_raw(email["extraction"])
+        company_s = company.strip()
+        if company_s:
+            # Agency pitches often withhold the client's name (extraction.company
+            # is null); the agency itself is who the user is actually in a
+            # process with, so let the human supply/override it here rather
+            # than hiding the create/lead actions entirely.
+            x = _replace(x, company=company_s)
 
         if action == "ignore":
             conn.execute(
@@ -1037,16 +1069,26 @@ def resolve(request: Request, email_id: str, action: str = Form(...),
                 (a["id"], email["id"]))
         elif action == "create":
             if not (x.company or "").strip():
-                raise HTTPException(400, "no company extracted — link or ignore instead")
+                raise HTTPException(400, "no company — enter one, link, or ignore instead")
             new_id = matcher._create_application(conn, user_id, email, x,
                                                 email["classification"] or "confirmation")
             conn.execute(
                 "UPDATE emails SET matched_application_id = %s, "
                 "triage_state = 'resolved', processed_at = now() WHERE id = %s",
                 (new_id, email["id"]))
+        elif action == "lead":
+            if not (x.company or "").strip():
+                raise HTTPException(400, "no company — enter one, link, or ignore instead")
+            new_id = matcher._create_application(conn, user_id, email, x,
+                                                email["classification"] or "recruiter_outreach",
+                                                origin="inbound")
+            conn.execute(
+                "UPDATE emails SET matched_application_id = %s, "
+                "triage_state = 'resolved', processed_at = now() WHERE id = %s",
+                (new_id, email["id"]))
         else:
             raise HTTPException(400, "unknown action")
-    return RedirectResponse("/triage", status_code=303)
+    return RedirectResponse(f"/triage?lane={lane}", status_code=303)
 
 
 def _get_email(conn, email_id: str) -> dict:
@@ -1189,7 +1231,8 @@ def captures(payload: CaptureIn, authorization: str | None = Header(None)):
             platform_job_id=payload.platform_job_id, url=payload.url,
             company=payload.company, title=payload.title, jd_text=payload.jd_text,
             location=payload.location, posted_label=payload.posted_label,
-            reposted=payload.reposted, ats=payload.ats, captured_via="extension")
+            reposted=payload.reposted, ats=payload.ats, captured_via="extension",
+            origin="applied" if payload.trigger == "apply" else "saved")
         job_id, posting_id, app_id = r["job_id"], r["posting_id"], r["application_id"]
 
         if payload.trigger == "apply":

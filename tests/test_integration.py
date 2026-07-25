@@ -1,11 +1,12 @@
 """End-to-end integration test against a live database (no external APIs).
 
 Stubs the two LLM stage functions and drives the real queue, worker, matcher,
-and event writes. Covers the four paths that matter:
+and event writes. Covers the paths that matter:
 
   1. auto-match  — rejection email matched to a seeded application, event appended
   2. create      — confirmation from an unseen company creates job/application/posting/events
   3. pending     — non-confirmation with no candidate lands in triage, writes nothing
+  3c. recruiter_outreach — never auto-matches (even same-company) or auto-creates
   4. backoff     — a failing job retries with attempts+1 and a future run_after
 
 Run:  TRACKER_DATABASE_URL=postgresql:///tracker python3 tests/test_integration.py
@@ -34,6 +35,8 @@ FAKE_CLASSIFY = {
     "acme-confirmation": Classification(True, "confirmation", 0.9, "stub"),
     "mystery-rejection": Classification(True, "rejection", 0.9, "stub"),
     "newsletter": Classification(False, None, 0.98, "stub"),
+    "recruiter-pitch": Classification(True, "recruiter_outreach", 0.9, "stub"),
+    "recruiter-unknown": Classification(True, "recruiter_outreach", 0.85, "stub"),
 }
 def _fake_extraction(**kw):
     """Mirror the real extract_email(): raw always carries the full payload."""
@@ -53,6 +56,16 @@ FAKE_EXTRACT = {
                                           recruiter={"name": "Jo Tan", "email": "jo@acme.example"}),
     "mystery-rejection": _fake_extraction(company="Totally Unknown Corp",
                                           role_title="Data Engineer"),
+    # Same company as the seeded Northwind application, but a DIFFERENT role — the
+    # regression case for "recruiter_outreach must never auto-match onto an
+    # existing application's timeline", since by definition it's a role the
+    # user did not apply to.
+    "recruiter-pitch": _fake_extraction(company="Northwind Labs Inc",
+                                        role_title="Staff ML Engineer",
+                                        platform="linkedin",
+                                        recruiter={"name": "Recruiter Ren", "email": None}),
+    "recruiter-unknown": _fake_extraction(company="Totally New Agency",
+                                          role_title="Backend Engineer"),
 }
 
 email_classifier.classify_email = lambda client, sender, subject, received, body: \
@@ -169,6 +182,32 @@ with db.connect() as conn:
     s4 = email_state(conn, e4)
     check("marked not_job_related and ignored",
           s4["classification"] == "not_job_related" and s4["triage_state"] == "ignored", s4)
+
+    print("path 3c: recruiter outreach never auto-matches or auto-creates")
+    northwind_events_before = conn.execute(
+        "SELECT count(*) AS n FROM events WHERE application_id = %s", (app["id"],)).fetchone()["n"]
+    e5 = seed_email(conn, user_id, "recruiter-pitch")
+    conn.commit()
+    drain(conn)
+    s5 = email_state(conn, e5)
+    check("recruiter pitch lands pending, not auto-matched",
+          s5["triage_state"] == "pending" and s5["matched_application_id"] is None, s5)
+    check("no score recorded (never a silent guess)", s5["match_score"] is None, s5)
+    northwind_events_after = conn.execute(
+        "SELECT count(*) AS n FROM events WHERE application_id = %s", (app["id"],)).fetchone()["n"]
+    check("Northwind application's timeline untouched despite company match",
+          northwind_events_after == northwind_events_before, (northwind_events_before, northwind_events_after))
+
+    e6 = seed_email(conn, user_id, "recruiter-unknown")
+    conn.commit()
+    drain(conn)
+    s6 = email_state(conn, e6)
+    check("recruiter pitch at unknown company also lands pending, no create",
+          s6["triage_state"] == "pending" and s6["matched_application_id"] is None, s6)
+    ghost = conn.execute(
+        "SELECT 1 FROM jobs WHERE user_id = %s AND company_norm = 'totally new agency'",
+        (user_id,)).fetchone()
+    check("no job fabricated for the unknown recruiter pitch", ghost is None)
 
     print("path 4: failure backoff")
     db.enqueue(conn, user_id, "classify_email",
