@@ -237,3 +237,11 @@ win). No per-shell export needed for local dev.
    adapter selectors have drifted.
 3. If enabling dedup: set `VOYAGE_API_KEY`, run `scan`, review duplicate
    bands in `/triage` on real cross-platform posts.
+4. **Decide the email body retention policy** (design doc §14 open
+   question #4, `migrations/001_init.sql:86-87`) — now genuinely overdue:
+   the comment's own trigger ("revisit before multi-user") passed when
+   `003_multi_tenant.sql` shipped RLS. Raw `emails.body_text` (recruiter
+   names, salary figures, personal details) sits unencrypted-at-rest
+   per-row with no retention policy. Decide: keep storing full bodies for
+   reprocessing (current behavior), or store only `gmail_message_id` and
+   re-fetch on demand.

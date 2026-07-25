@@ -325,10 +325,10 @@ Build order rationale: email before extension, even though the extension is more
 
 ## 14. Open questions
 
-1. Embedding model and dimension — finalize against cost and SEA-English JD quality; treat as migration-able.
-2. HTMX vs. Next.js for the dashboard once Phase 3 analytics views get richer.
-3. Whether `recruiter_outreach` emails (inbound from recruiters, not tied to an application) deserve their own entity in v1 or ride as unattached events until Phase 4.
-4. Retention policy for raw email bodies after extraction (store vs. keep only Gmail message ID and re-fetch on demand).
+1. ~~Embedding model and dimension~~ — **chosen, not finalized.** `voyage-3.5-lite` / `vector(1024)` (`pipeline/config.py:87-88`), matching the schema column. Never run against the real Voyage API (`VOYAGE_API_KEY` unset, dedup inert) — cost and SEA-English JD quality are both still unmeasured. Revisit once `VOYAGE_API_KEY` is set and `scan` runs against real cross-platform posts.
+2. ~~HTMX vs. Next.js~~ — **resolved by sidestepping both.** Plain server-rendered Jinja2 + forms, POST-redirect-GET, no JS build step (`pipeline/web.py`, module docstring). Simpler than either option on the table; revisit only if a dashboard view needs real client-side interactivity Jinja can't express.
+3. ~~Whether `recruiter_outreach` deserves its own entity~~ — **resolved.** Neither a separate entity nor unattached events: it's an `applications` row with `origin = 'inbound'` and no `applied` event, deriving status `interested` (invariant #9 in CLAUDE.md, migration `008_application_origin.sql`). Promotion to a real application is just adding the `applied` event later.
+4. **Retention policy for raw email bodies — still open, and overdue by its own stated trigger.** `migrations/001_init.sql:86-87`'s comment says "revisit retention before multi-user" — multi-tenancy shipped in migration `003_multi_tenant.sql` and this was never revisited. Tracked in CLAUDE.md's Immediate next tasks.
 
 ## 15. What to revisit as it grows
 
