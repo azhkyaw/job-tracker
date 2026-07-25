@@ -448,10 +448,10 @@ def application_detail(request: Request, app_id: str, saved: str | None = None):
             "       posted_label, reposted, ats, jd_text "
             "FROM postings WHERE job_id = %s ORDER BY captured_at", (a["job_id"],)).fetchall()
         contacts = conn.execute(
-            "SELECT name, role, url, approached, notes FROM contacts "
-            "WHERE job_id = %s", (a["job_id"],)).fetchall()
+            "SELECT id, name, role, url, approached, notes FROM contacts "
+            "WHERE job_id = %s ORDER BY name", (a["job_id"],)).fetchall()
         emails = conn.execute(
-            "SELECT sender, subject, received_at, classification FROM emails "
+            "SELECT id, sender, subject, received_at, classification FROM emails "
             "WHERE matched_application_id = %s ORDER BY received_at DESC", (a["id"],)).fetchall()
         extractions = conn.execute(
             """
@@ -478,7 +478,8 @@ def application_detail(request: Request, app_id: str, saved: str | None = None):
         return templates.TemplateResponse(request=request, name="application_detail.html", context={
             "a": a, "status": _display(a["status"]),
             "events": events, "postings": postings, "contacts": contacts,
-            "emails": emails, "extractions": extractions, "artifacts": artifacts,
+            "emails": emails, "options": _application_options(conn, a["user_id"]),
+            "extractions": extractions, "artifacts": artifacts,
             "cover_job": cover_job, "cover_error": cover_error,
             "cover_max_attempts": config.MAX_ATTEMPTS, "pending": _pending_count(conn),
             "saved": bool(saved),
@@ -500,9 +501,12 @@ def application_detail(request: Request, app_id: str, saved: str | None = None):
 #   platform / url / location / jd_text   describe ONE ad, so they're written
 #     only to the application's primary posting.
 #   focused   belongs to the APPLICATION (how you approached it), not the ad.
-#   applied date/time   is an EVENT, corrected in place. Fixing a mistyped
-#     timestamp is not the same as storing a mutable status column — the log
-#     stays the single source of status, so invariant #2 holds.
+#   applied date/time / external ("how you applied")   both live on the
+#     'applied' EVENT, corrected in place — external as that event's payload
+#     (its only key, from both /captures and manual entry). Fixing a mistyped
+#     timestamp or a wrong yes/no is not the same as storing a mutable status
+#     column — the log stays the single source of status, so invariant #2
+#     holds.
 #
 # Editing jd_text re-runs the derived pipeline: extract_jd APPENDS a fresh
 # extractions row (the detail page reads the newest per posting, so it
@@ -536,9 +540,12 @@ def _primary_posting(conn, a) -> dict | None:
 
 def _applied_event(conn, app_id) -> dict | None:
     """Earliest 'applied' event — the one matcher scores against (it reads
-    min(occurred_at)), so it's the one an edit must move."""
+    min(occurred_at)), so it's the one an edit must move. Also the sole home
+    of payload.external (invariant: this event's payload only ever holds that
+    one key, from both /captures and manual entry) — carried along so an edit
+    can prefill and correct it in place."""
     return conn.execute(
-        "SELECT id, occurred_at FROM events WHERE application_id = %s "
+        "SELECT id, occurred_at, payload FROM events WHERE application_id = %s "
         "AND type = 'applied' ORDER BY occurred_at LIMIT 1", (app_id,)).fetchone()
 
 
@@ -569,6 +576,8 @@ def edit_form(request: Request, app_id: str):
             "focused": {True: "yes", False: "no"}.get(a["focused"], ""),
             "applied_date": local.strftime("%Y-%m-%d") if local else "",
             "applied_time": local.strftime("%H:%M") if local else "",
+            "external": {True: "yes", False: "no"}.get(
+                (ev["payload"] or {}).get("external") if ev else None, ""),
         }
         return templates.TemplateResponse(
             request=request, name="application_edit.html",
@@ -583,6 +592,7 @@ def edit_application(
     company: str = Form(""), title: str = Form(""), platform: str = Form(""),
     url: str = Form(""), location: str = Form(""), jd_text: str = Form(""),
     focused: str = Form(""), applied_date: str = Form(""), applied_time: str = Form(""),
+    external: str = Form(""),
 ):
     """Full-state submission: every field posts back and a blank one CLEARS the
     stored value (blanking the URL drops platform_job_id, and with it this
@@ -595,12 +605,14 @@ def edit_application(
 
     form = {"company": company, "title": title, "platform": platform, "url": url,
             "location": location, "jd_text": jd_text, "focused": focused,
-            "applied_date": applied_date, "applied_time": applied_time}
+            "applied_date": applied_date, "applied_time": applied_time,
+            "external": external}
 
     company_s, title_s, location_s = company.strip(), title.strip(), location.strip()
     jd_s = jd_text.strip()
     company_norm = norm_company(company_s) or None
     focused_val = {"yes": True, "no": False}.get(focused.strip().lower())
+    external_val = {"yes": True, "no": False}.get(external.strip().lower())
 
     error = None
     applied_d, applied_t = None, None
@@ -616,6 +628,8 @@ def edit_application(
         error = "Unknown platform."
     elif focused.strip() and focused_val is None:
         error = "Unknown focused value."
+    elif external.strip() and external_val is None:
+        error = "Unknown 'how you applied' value."
     elif not applied_date:
         error = "Enter the applied date."
     else:
@@ -716,18 +730,20 @@ def edit_application(
             conn.execute("UPDATE applications SET focused = %s WHERE id = %s",
                          (focused_val, a["id"]))
 
+            from psycopg.types.json import Json
+            external_payload = Json({"external": external_val} if external_val is not None else {})
             ev = _applied_event(conn, a["id"])
             if ev:
-                conn.execute("UPDATE events SET occurred_at = %s WHERE id = %s",
-                             (applied_at, ev["id"]))
+                conn.execute(
+                    "UPDATE events SET occurred_at = %s, payload = %s WHERE id = %s",
+                    (applied_at, external_payload, ev["id"]))
             else:
                 # No applied event to correct (e.g. a record still at
                 # 'interested') — supplying a date here is how you log one.
-                from psycopg.types.json import Json
                 conn.execute(
                     "INSERT INTO events (user_id, application_id, type, source, "
                     "occurred_at, payload) VALUES (%s, %s, 'applied', 'manual', %s, %s)",
-                    (a["user_id"], a["id"], applied_at, Json({})))
+                    (a["user_id"], a["id"], applied_at, external_payload))
 
     return RedirectResponse(f"/applications/{app_id}?saved=1", status_code=303)
 
@@ -754,6 +770,113 @@ def add_event(request: Request, app_id: str, type: str = Form(...), note: str = 
             "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
             "VALUES (%s, %s, %s, 'manual', now(), %s)",
             (a["user_id"], a["id"], type, Json({"note": note} if note else {})))
+    return RedirectResponse(f"/applications/{app_id}", status_code=303)
+
+
+# --------------------------------------------------------------------------- contacts
+#
+# Contacts (recruiters/interviewers) belong to the JOB (invariant #3 —
+# postings != jobs != applications: several applications could in principle
+# share a job), so every route here scopes by a["job_id"], not app_id
+# directly — mirroring _primary_posting()'s pattern rather than adding a new
+# lookup shape.
+
+def _get_contact(conn, a, contact_id: str) -> dict:
+    try:
+        row = conn.execute(
+            "SELECT id, job_id, name, role, url, source, approached, approached_at, notes "
+            "FROM contacts WHERE id = %s::uuid AND job_id = %s",
+            (contact_id, a["job_id"])).fetchone()
+    except psycopg.errors.InvalidTextRepresentation:
+        row = None
+    if row is None:
+        raise HTTPException(404, "contact not found")
+    return row
+
+
+def _contact_ctx(conn, a, contact, *, form, error=None):
+    return {"a": a, "contact": contact, "form": form, "error": error,
+            "pending": _pending_count(conn)}
+
+
+@app.post("/applications/{app_id}/contacts")
+def add_contact(
+    request: Request, app_id: str,
+    name: str = Form(""), role: str = Form(""), url: str = Form(""),
+    approached: str = Form(""), notes: str = Form(""),
+):
+    user = _login_user(request)
+    name_s = name.strip()
+    if not name_s:
+        raise HTTPException(400, "contact name is required")
+    approached_val = approached.strip().lower() in ("yes", "on", "true", "1")
+    with db.connect_scoped(user["id"]) as conn, conn.transaction():
+        a = _get_application(conn, app_id)
+        conn.execute(
+            "INSERT INTO contacts (user_id, job_id, name, role, url, source, "
+            "approached, approached_at, notes) "
+            "VALUES (%s, %s, %s, %s, %s, 'manual', %s, "
+            "CASE WHEN %s THEN now() ELSE NULL END, %s)",
+            (user["id"], a["job_id"], name_s, role.strip() or None, url.strip() or None,
+             approached_val, approached_val, notes.strip() or None))
+    return RedirectResponse(f"/applications/{app_id}", status_code=303)
+
+
+@app.get("/applications/{app_id}/contacts/{contact_id}/edit")
+def edit_contact_form(request: Request, app_id: str, contact_id: str):
+    user = _login_user(request)
+    with db.connect_scoped(user["id"]) as conn:
+        a = _get_application(conn, app_id)
+        c = _get_contact(conn, a, contact_id)
+        form = {"name": c["name"], "role": c["role"] or "", "url": c["url"] or "",
+                "approached": "yes" if c["approached"] else "", "notes": c["notes"] or ""}
+        return templates.TemplateResponse(
+            request=request, name="contact_edit.html",
+            context=_contact_ctx(conn, a, c, form=form))
+
+
+@app.post("/applications/{app_id}/contacts/{contact_id}/edit")
+def edit_contact(
+    request: Request, app_id: str, contact_id: str,
+    name: str = Form(""), role: str = Form(""), url: str = Form(""),
+    approached: str = Form(""), notes: str = Form(""),
+):
+    user = _login_user(request)
+    form = {"name": name, "role": role, "url": url, "approached": approached, "notes": notes}
+    name_s = name.strip()
+    approached_val = approached.strip().lower() in ("yes", "on", "true", "1")
+    with db.connect_scoped(user["id"]) as conn:
+        a = _get_application(conn, app_id)
+        c = _get_contact(conn, a, contact_id)
+        if not name_s:
+            return templates.TemplateResponse(
+                request=request, name="contact_edit.html",
+                context=_contact_ctx(conn, a, c, form=form,
+                                      error="Enter the contact's name."),
+                status_code=400)
+        with conn.transaction():
+            conn.execute(
+                """
+                UPDATE contacts SET name = %(name)s, role = %(role)s, url = %(url)s,
+                       notes = %(notes)s, approached = %(approached)s,
+                       approached_at = CASE
+                         WHEN %(approached)s AND NOT approached THEN now()
+                         WHEN NOT %(approached)s THEN NULL
+                         ELSE approached_at END
+                WHERE id = %(id)s
+                """,
+                {"name": name_s, "role": role.strip() or None, "url": url.strip() or None,
+                 "notes": notes.strip() or None, "approached": approached_val, "id": c["id"]})
+    return RedirectResponse(f"/applications/{app_id}", status_code=303)
+
+
+@app.post("/applications/{app_id}/contacts/{contact_id}/delete")
+def delete_contact(request: Request, app_id: str, contact_id: str):
+    user = _login_user(request)
+    with db.connect_scoped(user["id"]) as conn, conn.transaction():
+        a = _get_application(conn, app_id)
+        c = _get_contact(conn, a, contact_id)
+        conn.execute("DELETE FROM contacts WHERE id = %s", (c["id"],))
     return RedirectResponse(f"/applications/{app_id}", status_code=303)
 
 
@@ -830,6 +953,23 @@ def delete_application(request: Request, app_id: str):
 
 # --------------------------------------------------------------------------- triage
 
+def _application_options(conn, user_id) -> list[dict]:
+    """Every application for this user, for a link-to-application dropdown
+    (triage's 'link' action and the emails table's 're-file' action)."""
+    return conn.execute(
+        """
+        SELECT a.id, j.title_canonical,
+               COALESCE(
+                 (SELECT p.company_raw FROM postings p
+                   WHERE p.job_id = a.job_id AND p.company_raw IS NOT NULL
+                   ORDER BY p.captured_at DESC LIMIT 1),
+                 j.company_norm) AS company_display
+        FROM applications a JOIN jobs j ON j.id = a.job_id
+        WHERE a.user_id = %s
+        ORDER BY j.company_norm, j.title_canonical
+        """, (user_id,)).fetchall()
+
+
 @app.get("/triage")
 def triage(request: Request):
     user = _login_user(request)
@@ -843,18 +983,7 @@ def triage(request: Request):
             WHERE user_id = %s AND triage_state = 'pending'
             ORDER BY received_at DESC
             """, (user_id,)).fetchall()
-        options = conn.execute(
-            """
-            SELECT a.id, j.title_canonical,
-                   COALESCE(
-                     (SELECT p.company_raw FROM postings p
-                       WHERE p.job_id = a.job_id AND p.company_raw IS NOT NULL
-                       ORDER BY p.captured_at DESC LIMIT 1),
-                     j.company_norm) AS company_display
-            FROM applications a JOIN jobs j ON j.id = a.job_id
-            WHERE a.user_id = %s
-            ORDER BY j.company_norm, j.title_canonical
-            """, (user_id,)).fetchall()
+        options = _application_options(conn, user_id)
         dupes = conn.execute(
             """
             SELECT d.id, d.title_sim, d.cosine_sim,
@@ -918,6 +1047,98 @@ def resolve(request: Request, email_id: str, action: str = Form(...),
         else:
             raise HTTPException(400, "unknown action")
     return RedirectResponse("/triage", status_code=303)
+
+
+def _get_email(conn, email_id: str) -> dict:
+    try:
+        row = conn.execute("SELECT * FROM emails WHERE id = %s::uuid", (email_id,)).fetchone()
+    except psycopg.errors.InvalidTextRepresentation:
+        row = None
+    if row is None:
+        raise HTTPException(404, "email not found")
+    return row
+
+
+def _job_is_empty(conn, job_id, app_id) -> bool:
+    """True when nothing but the application row itself remains — the state
+    an email-only 'create' (matcher._create_application) leaves behind once
+    its one email's events are undone. Postings aren't part of the check: a
+    bare captured posting with no event ever logged against it isn't real
+    tracked history."""
+    return conn.execute(
+        """
+        SELECT (SELECT count(*) FROM events WHERE application_id = %(app_id)s) = 0
+           AND (SELECT count(*) FROM contacts WHERE job_id = %(job_id)s) = 0
+           AND (SELECT count(*) FROM artifacts WHERE application_id = %(app_id)s) = 0
+           AS empty
+        """, {"app_id": app_id, "job_id": job_id}).fetchone()["empty"]
+
+
+@app.post("/emails/{email_id}/refile")
+def refile_email(request: Request, email_id: str, action: str = Form(...),
+                 application_id: str | None = Form(None), redirect_to: str = Form("/triage")):
+    """Undo one email's contribution and re-file it — unlike /triage/{id},
+    this works on an email in ANY triage_state (pending, auto_matched, or
+    already resolved), because the case this exists for — an email attached
+    to the wrong application due to a real-world naming mismatch the system
+    had no way to detect (see CLAUDE.md gotcha) — is usually only noticed
+    after the fact, on the application detail page, not while it's pending.
+
+    Scoped by source_email_id: only the event(s) THIS email caused are
+    removed, so the rest of the old application's history is untouched —
+    deliberately narrower than dedup.py:merge_jobs, which moves everything
+    and would import this email's events as spurious duplicates on whatever
+    it's re-filed to. If undoing those events leaves the old application
+    with nothing else (the matcher._create_application 'backfill' case,
+    where the whole job/posting/application existed only because of this one
+    email), it's deleted too — see _job_is_empty."""
+    if action not in ("link", "pending", "ignore"):
+        raise HTTPException(400, "unknown action")
+    if not (redirect_to == "/triage" or redirect_to.startswith("/applications/")):
+        redirect_to = "/triage"
+    user = _login_user(request)
+    with db.connect_scoped(user["id"]) as conn, conn.transaction():
+        email = _get_email(conn, email_id)
+        old_app_id = email["matched_application_id"]
+        old_a = _get_application(conn, old_app_id) if old_app_id else None
+        if old_app_id:
+            conn.execute(
+                "DELETE FROM events WHERE source_email_id = %s AND application_id = %s",
+                (email_id, old_app_id))
+
+        if action == "link":
+            if not application_id:
+                raise HTTPException(400, "pick an application to link to")
+            a = _get_application(conn, application_id)
+            x = matcher.extraction_from_raw(email["extraction"])
+            matcher._append_event(conn, user["id"], a["id"], email,
+                                  email["classification"] or "other", x)
+            conn.execute(
+                "UPDATE emails SET matched_application_id = %s, "
+                "triage_state = 'resolved', processed_at = now() WHERE id = %s",
+                (a["id"], email_id))
+        elif action == "pending":
+            conn.execute(
+                "UPDATE emails SET matched_application_id = NULL, "
+                "triage_state = 'pending', processed_at = now() WHERE id = %s",
+                (email_id,))
+        else:  # ignore
+            conn.execute(
+                "UPDATE emails SET matched_application_id = NULL, "
+                "triage_state = 'ignored', processed_at = now() WHERE id = %s",
+                (email_id,))
+
+        if old_a is not None and _job_is_empty(conn, old_a["job_id"], old_a["id"]):
+            # redirect_to may point at old_a's own page — that 404s once it's
+            # gone, so fall back to the same banner-redirect the manual
+            # /delete route uses.
+            label = f"{old_a['company_display']} · {old_a['title_canonical']}"
+            _delete_application(conn, old_a)
+            if redirect_to == f"/applications/{old_a['id']}":
+                from urllib.parse import quote
+                redirect_to = f"/?deleted={quote(label)}"
+
+    return RedirectResponse(redirect_to, status_code=303)
 
 
 # --------------------------------------------------------------------------- captures (§6.1/§6.3)

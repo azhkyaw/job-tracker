@@ -32,6 +32,13 @@ to add an outcome use the timeline on the
     <label>time (optional) <input type="time" name="applied_time" value="{{ form.applied_time }}"></label>
   </div>
 
+  <label for="external">how you applied (optional)</label>
+  <select name="external" id="external" aria-label="How you applied">
+    <option value="" {% if form.external == '' %}selected{% endif %}>— not set —</option>
+    <option value="no" {% if form.external == 'no' %}selected{% endif %}>on-platform (Easy Apply / quick apply)</option>
+    <option value="yes" {% if form.external == 'yes' %}selected{% endif %}>redirected to the employer's website</option>
+  </select>
+
   <label for="focused">focused</label>
   <select name="focused" id="focused" aria-label="Focused">
     <option value="" {% if form.focused == '' %}selected{% endif %}>— not set —</option>

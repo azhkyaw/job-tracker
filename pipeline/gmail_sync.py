@@ -181,18 +181,34 @@ def _backfill_query(months: int) -> str:
     return f"after:{since} (({froms}) OR ({subjects}))"
 
 
-def backfill(conn, service, user_id, months: int = config.BACKFILL_MONTHS_DEFAULT) -> int:
-    """First-run reconstruction of application history from the inbox."""
-    query, page_token, total = _backfill_query(months), None, 0
+def _list_message_ids(service, query: str) -> list[str]:
+    """All message ids matching `query`, oldest first.
+
+    messages.list returns newest-first, page by page (page 1 = newest 100,
+    last page = oldest) — collecting every page before reversing undoes that
+    ordering globally, not just within one page. This matters because
+    downstream processing is order-sensitive: matcher.dispatch() can only
+    match a status email (rejection/interview_invite/etc.) against an
+    application that a chronologically-earlier confirmation email created.
+    Enqueueing/processing newest-first (the un-reversed order) intermittently
+    sent a status email to triage for no real reason — the application
+    existed, it just hadn't been created yet when that email was matched.
+    """
+    page_token, ids = None, []
     while True:
         resp = service.users().messages().list(
             userId="me", q=query, maxResults=100, pageToken=page_token
         ).execute()
-        ids = [m["id"] for m in resp.get("messages", [])]
-        total += _fetch_and_store(conn, service, user_id, ids)
+        ids.extend(m["id"] for m in resp.get("messages", []))
         page_token = resp.get("nextPageToken")
         if not page_token:
-            break
+            return list(reversed(ids))
+
+
+def backfill(conn, service, user_id, months: int = config.BACKFILL_MONTHS_DEFAULT) -> int:
+    """First-run reconstruction of application history from the inbox."""
+    ids = _list_message_ids(service, _backfill_query(months))
+    total = _fetch_and_store(conn, service, user_id, ids)
     _save_cursor(conn, service, user_id)
     return total
 
@@ -216,16 +232,8 @@ def _save_cursor(conn, service, user_id) -> None:
 def _window_fallback(conn, service, user_id, since: datetime) -> int:
     """Used when there is no cursor or the cursor expired (History API 404)."""
     query = f"after:{since.strftime('%Y/%m/%d')}"
-    page_token, total = None, 0
-    while True:
-        resp = service.users().messages().list(
-            userId="me", q=query, maxResults=100, pageToken=page_token
-        ).execute()
-        total += _fetch_and_store(conn, service, user_id,
-                                  [m["id"] for m in resp.get("messages", [])])
-        page_token = resp.get("nextPageToken")
-        if not page_token:
-            return total
+    ids = _list_message_ids(service, query)
+    return _fetch_and_store(conn, service, user_id, ids)
 
 
 def incremental(conn, service, user_id) -> int:

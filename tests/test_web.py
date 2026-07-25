@@ -104,6 +104,87 @@ with db.connect() as conn:
         "AND source = 'manual'", (northwind_app,)).fetchone()
     check("manual follow-up logged with note", ev and ev["payload"].get("note") == "pinged recruiter", ev)
 
+print("contacts: CRUD")
+r = client.post(f"/applications/{northwind_app}/contacts",
+                data={"name": "Jane Recruiter", "role": "Talent Partner",
+                      "url": "https://linkedin.com/in/janer", "notes": "met at meetup"})
+check("add contact redirects", r.status_code == 303, r.status_code)
+with db.connect() as conn:
+    contact = conn.execute(
+        "SELECT id, name, role, url, source, approached, approached_at, notes "
+        "FROM contacts WHERE job_id = (SELECT job_id FROM applications WHERE id = %s) "
+        "AND name = 'Jane Recruiter'", (northwind_app,)).fetchone()
+    check("contact stored with manual source, unapproached",
+          contact and contact["source"] == "manual" and contact["approached"] is False
+          and contact["approached_at"] is None, contact)
+contact_id = contact["id"]
+
+r = client.get(f"/applications/{northwind_app}")
+check("contact appears on detail page with edit/delete controls",
+      "Jane Recruiter" in r.text and f"/contacts/{contact_id}/edit" in r.text, r.text)
+
+r = client.get(f"/applications/{northwind_app}/contacts/{contact_id}/edit")
+check("edit form prefills", r.status_code == 200 and 'value="Jane Recruiter"' in r.text, r.text)
+
+r = client.post(f"/applications/{northwind_app}/contacts/{contact_id}/edit",
+                data={"name": "Jane R. Recruiter", "role": "Senior Talent Partner",
+                      "url": "https://linkedin.com/in/janer", "approached": "yes",
+                      "notes": "met at meetup, followed up"})
+check("edit redirects", r.status_code == 303, r.status_code)
+with db.connect() as conn:
+    contact = conn.execute(
+        "SELECT name, role, approached, approached_at, notes FROM contacts WHERE id = %s",
+        (contact_id,)).fetchone()
+    check("edits persisted and approached_at stamped on first approach",
+          contact["name"] == "Jane R. Recruiter" and contact["role"] == "Senior Talent Partner"
+          and contact["approached"] is True and contact["approached_at"] is not None, contact)
+    first_approached_at = contact["approached_at"]
+
+r = client.post(f"/applications/{northwind_app}/contacts/{contact_id}/edit",
+                data={"name": "Jane R. Recruiter", "role": "Senior Talent Partner",
+                      "url": "https://linkedin.com/in/janer", "approached": "yes",
+                      "notes": "met at meetup, followed up"})
+with db.connect() as conn:
+    contact = conn.execute(
+        "SELECT approached_at FROM contacts WHERE id = %s", (contact_id,)).fetchone()
+    check("re-saving an already-approached contact doesn't reset the timestamp",
+          contact["approached_at"] == first_approached_at, contact)
+
+r = client.post(f"/applications/{northwind_app}/contacts/{contact_id}/edit",
+                data={"name": "", "role": "x", "url": "", "notes": ""})
+check("blank name rejected", r.status_code == 400 and "name" in r.text, r.text)
+
+r = client.post(f"/applications/{northwind_app}/contacts/{contact_id}/edit",
+                data={"name": "Jane R. Recruiter", "role": "Senior Talent Partner",
+                      "url": "https://linkedin.com/in/janer", "approached": "",
+                      "notes": "no longer approached"})
+with db.connect() as conn:
+    contact = conn.execute(
+        "SELECT approached, approached_at FROM contacts WHERE id = %s", (contact_id,)).fetchone()
+    check("unchecking approached clears the timestamp",
+          contact["approached"] is False and contact["approached_at"] is None, contact)
+
+r = client.get(f"/applications/{northwind_app}/contacts/00000000-0000-0000-0000-000000000000/edit")
+check("unknown contact 404s", r.status_code == 404, r.status_code)
+
+with db.connect() as conn, conn.transaction():
+    other_job = conn.execute(
+        "INSERT INTO jobs (user_id, company_norm, title_canonical) "
+        "VALUES (%s, 'other co', 'Other Role') RETURNING id", (user_id,)).fetchone()["id"]
+    other_contact = conn.execute(
+        "INSERT INTO contacts (user_id, job_id, name, source) "
+        "VALUES (%s, %s, 'Wrong Job Contact', 'manual') RETURNING id",
+        (user_id, other_job)).fetchone()["id"]
+r = client.get(f"/applications/{northwind_app}/contacts/{other_contact}/edit")
+check("a contact belonging to a different job 404s, even under a valid application id",
+      r.status_code == 404, r.status_code)
+
+r = client.post(f"/applications/{northwind_app}/contacts/{contact_id}/delete")
+check("delete redirects", r.status_code == 303, r.status_code)
+with db.connect() as conn:
+    check("contact gone", conn.execute(
+        "SELECT 1 FROM contacts WHERE id = %s", (contact_id,)).fetchone() is None)
+
 print("triage: link")
 r = client.get("/triage")
 check("pending email listed", "Your application was viewed" in r.text)
@@ -633,6 +714,43 @@ r = client.post(f"/applications/{edit_app}/edit", data={
     "applied_date": "2026-05-12", "focused": "maybe"})
 check("unknown focused value rejected", r.status_code == 400, r.status_code)
 
+print("edit application: how you applied (external) is settable, changeable and clearable")
+r = client.post(f"/applications/{edit_app}/edit", data={
+    "company": "Edit Test Co", "title": "Senior Backend Engineer", "platform": "linkedin",
+    "applied_date": "2026-05-12", "external": "yes"})
+check("external=yes accepted", r.status_code == 303, r.status_code)
+with db.connect() as conn:
+    ev = conn.execute(
+        "SELECT payload FROM events WHERE application_id = %s::uuid AND type = 'applied'",
+        (edit_app,)).fetchone()
+    check("payload.external stored as true", ev["payload"].get("external") is True, ev)
+check("external prefilled as yes on the form",
+      '<option value="yes" selected>' in client.get(f"/applications/{edit_app}/edit").text)
+
+r = client.post(f"/applications/{edit_app}/edit", data={
+    "company": "Edit Test Co", "title": "Senior Backend Engineer", "platform": "linkedin",
+    "applied_date": "2026-05-12", "external": "no"})
+with db.connect() as conn:
+    ev = conn.execute(
+        "SELECT payload FROM events WHERE application_id = %s::uuid AND type = 'applied'",
+        (edit_app,)).fetchone()
+    check("changed to false", ev["payload"].get("external") is False, ev)
+
+# Blank means "not set" — matches manual entry's three-state semantics.
+r = client.post(f"/applications/{edit_app}/edit", data={
+    "company": "Edit Test Co", "title": "Senior Backend Engineer", "platform": "linkedin",
+    "applied_date": "2026-05-12", "external": ""})
+with db.connect() as conn:
+    ev = conn.execute(
+        "SELECT payload FROM events WHERE application_id = %s::uuid AND type = 'applied'",
+        (edit_app,)).fetchone()
+    check("blank external clears back to not-set", "external" not in ev["payload"], ev)
+
+r = client.post(f"/applications/{edit_app}/edit", data={
+    "company": "Edit Test Co", "title": "Senior Backend Engineer", "platform": "linkedin",
+    "applied_date": "2026-05-12", "external": "maybe"})
+check("unknown external value rejected", r.status_code == 400, r.status_code)
+
 print("edit application: JD text re-runs extraction and drops the stale embedding")
 with db.connect() as conn, conn.transaction():
     jd_posting = conn.execute(
@@ -797,5 +915,117 @@ check("confirm page 404s for the now-deleted application",
       client.get(f"/applications/{del_app}/delete").status_code == 404)
 check("delete route 404s for the now-deleted application",
       client.post(f"/applications/{del_app}/delete").status_code == 404)
+
+print("refile email: ATS-branding wrong-company match, corrected after the fact")
+with db.connect() as conn, conn.transaction():
+    # The "wrong" application — exists ONLY because of one email, mirroring
+    # matcher._create_application's backfill path: job + email_only posting +
+    # application + applied + confirmation events, all from a single email.
+    wrong_job = conn.execute(
+        "INSERT INTO jobs (user_id, company_norm, title_canonical) "
+        "VALUES (%s, 'wrongco', 'unknown role') RETURNING id", (user_id,)).fetchone()["id"]
+    conn.execute(
+        "INSERT INTO postings (user_id, job_id, platform, captured_via) "
+        "VALUES (%s, %s, 'other', 'email_only')", (user_id, wrong_job))
+    wrong_app = conn.execute(
+        "INSERT INTO applications (user_id, job_id) VALUES (%s, %s) RETURNING id",
+        (user_id, wrong_job)).fetchone()["id"]
+    refile_email_id = conn.execute(
+        """INSERT INTO emails (user_id, gmail_message_id, sender, subject, received_at,
+                               classification, extraction, matched_application_id, triage_state)
+           VALUES (%s, 'gm-refile-test', 'no-reply@ashbyhq.com', 'Thanks for applying', now(),
+                   'confirmation', %s, %s, 'auto_matched')
+           RETURNING id""",
+        (user_id, Json({"company": "WrongCo", "platform": "ats"}), wrong_app)).fetchone()["id"]
+    conn.execute(
+        "INSERT INTO events (user_id, application_id, type, source, occurred_at, source_email_id, payload) "
+        "VALUES (%s, %s, 'applied', 'email', now(), %s, '{}')",
+        (user_id, wrong_app, refile_email_id))
+    conn.execute(
+        "INSERT INTO events (user_id, application_id, type, source, occurred_at, source_email_id, payload) "
+        "VALUES (%s, %s, 'confirmation', 'email', now(), %s, '{}')",
+        (user_id, wrong_app, refile_email_id))
+
+    # The real target application — its own genuine history that must survive untouched.
+    right_job = conn.execute(
+        "INSERT INTO jobs (user_id, company_norm, title_canonical) "
+        "VALUES (%s, 'rightco', 'Real Role') RETURNING id", (user_id,)).fetchone()["id"]
+    right_app = conn.execute(
+        "INSERT INTO applications (user_id, job_id) VALUES (%s, %s) RETURNING id",
+        (user_id, right_job)).fetchone()["id"]
+    conn.execute(
+        "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+        "VALUES (%s, %s, 'applied', 'manual', now(), '{}')", (user_id, right_app))
+
+r = client.post(f"/emails/{refile_email_id}/refile",
+                data={"action": "link", "application_id": str(right_app),
+                      "redirect_to": f"/applications/{wrong_app}"})
+check("refile redirects", r.status_code == 303, r.text)
+check("wrong application was empty after the undo, so it's cleaned up too — "
+      "redirect falls back to the delete banner instead of the now-gone page",
+      "deleted=" in r.headers["location"], r.headers["location"])
+
+with db.connect() as conn:
+    check("wrong job gone (existed only because of this email)", conn.execute(
+        "SELECT 1 FROM jobs WHERE id = %s", (wrong_job,)).fetchone() is None)
+    right_events = conn.execute(
+        "SELECT type, source_email_id FROM events WHERE application_id = %s "
+        "ORDER BY occurred_at", (right_app,)).fetchall()
+    check("right application kept its own event and gained exactly the confirmation",
+          len(right_events) == 2
+          and {(e["type"], e["source_email_id"] and str(e["source_email_id"])) for e in right_events}
+              == {("applied", None), ("confirmation", str(refile_email_id))},
+          right_events)
+    email_row = conn.execute(
+        "SELECT matched_application_id, triage_state FROM emails WHERE id = %s",
+        (refile_email_id,)).fetchone()
+    check("email now points at the right application, resolved",
+          str(email_row["matched_application_id"]) == str(right_app)
+          and email_row["triage_state"] == "resolved", email_row)
+
+print("refile email: only THIS email's events are undone, not the rest of the application's history")
+with db.connect() as conn, conn.transaction():
+    busy_job = conn.execute(
+        "INSERT INTO jobs (user_id, company_norm, title_canonical) "
+        "VALUES (%s, 'busyco', 'Busy Role') RETURNING id", (user_id,)).fetchone()["id"]
+    busy_app = conn.execute(
+        "INSERT INTO applications (user_id, job_id) VALUES (%s, %s) RETURNING id",
+        (user_id, busy_job)).fetchone()["id"]
+    stray_email_id = conn.execute(
+        """INSERT INTO emails (user_id, gmail_message_id, sender, subject, received_at,
+                               classification, extraction, matched_application_id, triage_state)
+           VALUES (%s, 'gm-refile-test-2', 'x@y.example', 'status update', now(),
+                   'status_update', %s, %s, 'auto_matched')
+           RETURNING id""",
+        (user_id, Json({"company": "BusyCo", "status_detail": "viewed"}), busy_app)).fetchone()["id"]
+    conn.execute(  # the application's own, unrelated history
+        "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+        "VALUES (%s, %s, 'applied', 'manual', now(), '{}')", (user_id, busy_app))
+    conn.execute(  # this email's contribution — a 'viewed' event
+        "INSERT INTO events (user_id, application_id, type, source, occurred_at, source_email_id, payload) "
+        "VALUES (%s, %s, 'viewed', 'email', now(), %s, '{}')",
+        (user_id, busy_app, stray_email_id))
+
+r = client.post(f"/emails/{stray_email_id}/refile",
+                data={"action": "pending", "redirect_to": f"/applications/{busy_app}"})
+check("send-to-pending redirects back to the (still-existing) application page",
+      r.status_code == 303 and r.headers["location"] == f"/applications/{busy_app}", r.text)
+
+with db.connect() as conn:
+    check("application NOT deleted — it has its own unrelated history", conn.execute(
+        "SELECT 1 FROM jobs WHERE id = %s", (busy_job,)).fetchone() is not None)
+    remaining = conn.execute(
+        "SELECT type FROM events WHERE application_id = %s", (busy_app,)).fetchall()
+    check("only the email's own event was undone; the manual one survives",
+          [e["type"] for e in remaining] == ["applied"], remaining)
+    email_row = conn.execute(
+        "SELECT matched_application_id, triage_state FROM emails WHERE id = %s",
+        (stray_email_id,)).fetchone()
+    check("email unmatched and back in triage as pending",
+          email_row["matched_application_id"] is None
+          and email_row["triage_state"] == "pending", email_row)
+
+r = client.post(f"/emails/{stray_email_id}/refile", data={"action": "bogus"})
+check("unknown action rejected", r.status_code == 400, r.status_code)
 
 print("\nALL WEB PATHS PASS")

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}edit contact — tracker{% endblock %}
+{% block nav_apps %}active{% endblock %}
+{% block content %}
+<h1>Edit contact</h1>
+<p style="color:var(--muted)">For {{ a.company_display }} · {{ a.title_canonical }}.</p>
+
+{% if error %}<p class="empty" style="text-align:left">{{ error }}</p>{% endif %}
+
+<form method="post" action="/applications/{{ a.id }}/contacts/{{ contact.id }}/edit"
+      style="display:grid;gap:.5rem;max-width:28rem">
+  <label>name <input type="text" name="name" value="{{ form.name }}" required></label>
+  <label>role <input type="text" name="role" value="{{ form.role }}"></label>
+  <label>url <input type="text" name="url" value="{{ form.url }}"></label>
+  <label style="display:flex;align-items:center;gap:.3rem">
+    <input type="checkbox" name="approached" value="yes" {% if form.approached == 'yes' %}checked{% endif %}>
+    approached</label>
+  <label>notes
+    <textarea name="notes" rows="4"
+      style="display:block;width:100%;font:inherit;border:1px solid var(--line);border-radius:6px;padding:.5rem;margin-top:.25rem">{{ form.notes }}</textarea>
+  </label>
+
+  <div>
+    <button class="primary">Save changes</button>
+    <a href="/applications/{{ a.id }}"><button type="button">Cancel</button></a>
+  </div>
+</form>
+
+<h2 style="color:var(--rejected);margin-top:1.5rem">Danger zone</h2>
+<form method="post" action="/applications/{{ a.id }}/contacts/{{ contact.id }}/delete">
+  <button style="border-color:var(--rejected);color:var(--rejected)">Delete this contact</button>
+</form>
+{% endblock %}

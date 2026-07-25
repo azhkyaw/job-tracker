@@ -131,28 +131,63 @@
 </table></div>
 {% else %}<p class="empty">No postings captured for this job yet.</p>{% endif %}
 
-{% if contacts %}
 <h2>Contacts</h2>
+{% if contacts %}
 <div class="card"><table>
-  <thead><tr><th>name</th><th>role</th><th>approached</th><th>notes</th></tr></thead>
+  <thead><tr><th>name</th><th>role</th><th>approached</th><th>notes</th><th></th></tr></thead>
   <tbody>{% for c in contacts %}
   <tr><td>{% if c.url %}<a href="{{ c.url }}">{{ c.name }}</a>{% else %}{{ c.name }}{% endif %}</td>
       <td>{{ c.role or "—" }}</td><td class="mono">{{ "yes" if c.approached else "no" }}</td>
-      <td>{{ c.notes or "—" }}</td></tr>
+      <td>{{ c.notes or "—" }}</td>
+      <td><a href="/applications/{{ a.id }}/contacts/{{ c.id }}/edit">edit</a>
+        <form method="post" action="/applications/{{ a.id }}/contacts/{{ c.id }}/delete" style="display:inline">
+          <button type="submit" style="margin-left:.4rem">delete</button>
+        </form></td></tr>
   {% endfor %}</tbody>
 </table></div>
-{% endif %}
+{% else %}<p class="empty">No contacts yet.</p>{% endif %}
+<form method="post" action="/applications/{{ a.id }}/contacts"
+      style="margin-top:.6rem;display:flex;gap:.5rem;flex-wrap:wrap;align-items:end">
+  <label>name <input type="text" name="name" placeholder="recruiter name" required aria-label="Contact name"></label>
+  <label>role <input type="text" name="role" placeholder="optional" aria-label="Role"></label>
+  <label>url <input type="text" name="url" placeholder="optional profile URL" aria-label="URL"></label>
+  <label style="display:flex;align-items:center;gap:.3rem">
+    <input type="checkbox" name="approached" value="yes"> approached</label>
+  <input type="text" name="notes" placeholder="notes (optional)" aria-label="Notes">
+  <button class="primary">Add contact</button>
+</form>
 
 {% if emails %}
 <h2>Emails</h2>
 <div class="card"><table>
-  <thead><tr><th>received</th><th>subject</th><th>from</th><th>type</th></tr></thead>
+  <thead><tr><th>received</th><th>subject</th><th>from</th><th>type</th><th></th></tr></thead>
   <tbody>{% for m in emails %}
   <tr><td class="mono">{{ m.received_at | dtt }}</td><td>{{ m.subject or "—" }}</td>
       <td class="mono">{{ m.sender }}</td>
-      <td>{% if m.classification %}<span class="badge" style="--c:var(--applied)">{{ m.classification }}</span>{% endif %}</td></tr>
+      <td>{% if m.classification %}<span class="badge" style="--c:var(--applied)">{{ m.classification }}</span>{% endif %}</td>
+      <td>
+        <form method="post" action="/emails/{{ m.id }}/refile"
+              style="display:flex;gap:.3rem;align-items:center;flex-wrap:wrap">
+          <input type="hidden" name="redirect_to" value="/applications/{{ a.id }}">
+          <select name="application_id" aria-label="Re-file to a different application" style="max-width:14rem">
+            <option value="">— pick an application —</option>
+            {% for o in options %}
+            <option value="{{ o.id }}">{{ o.company_display }} · {{ o.title_canonical }}</option>
+            {% endfor %}
+          </select>
+          <button name="action" value="link">Re-file</button>
+          <button name="action" value="pending">Send to triage</button>
+          <button name="action" value="ignore">Ignore</button>
+        </form>
+      </td></tr>
   {% endfor %}</tbody>
 </table></div>
+<p class="mono" style="color:var(--muted);font-size:.78rem;margin:.4rem 0 0">
+  Wrong company/application? "Re-file" undoes just this email's events here and
+  moves it to the one you pick — the rest of this application's history is
+  untouched. If that empties this application entirely (it existed only
+  because of this email), it's deleted too.
+</p>
 {% endif %}
 
 <h2 style="color:var(--rejected)">Danger zone</h2>

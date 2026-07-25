@@ -47,6 +47,16 @@ phases built (Jul 2026) and test-driven. Full design rationale: `docs/design.md`
    (extension `/captures` and manual entry both call it); it owns the
    partial-unique-index lookup and the email_only job-reuse heuristic so
    those can't silently diverge between callers.
+   `web.py:refile_email` is a DIFFERENT tool for a different problem — one
+   misfiled email (a real-world company-name mismatch the matcher can't
+   detect — an ATS confirmation branded differently than the employer you
+   track, e.g. a parent company vs. a subsidiary), not two genuinely-duplicate jobs. It undoes
+   only that email's own events (scoped by `source_email_id`) and re-files
+   them elsewhere, deleting the source application only if that leaves it
+   completely empty. Never reach for `merge_jobs` here — it moves *all* of a
+   job's history, which would import the misfiled email's events as
+   spurious duplicates (e.g. a second `applied` event) on the target
+   application.
 4. **`norm_company()`** in `pipeline/email_classifier.py` is the single source
    of truth for `company_norm`. Never reimplement it in SQL. It strips SEA
    corporate forms including Indonesian PT/CV *prefixes*.
@@ -134,6 +144,21 @@ phases built (Jul 2026) and test-driven. Full design rationale: `docs/design.md`
   cookie, and the browser tool blocks `file://`. Fetch the rendered HTML
   with curl + a real session cookie, serve it via a local `python -m
   http.server`, then navigate/screenshot that.
+- **Gmail's `messages.list` returns newest-first, but ingest is order-sensitive.**
+  `gmail_sync.py`'s `backfill()` and `_window_fallback()` used to store/enqueue
+  `classify_email` jobs in that (newest-first) order, and the worker claims
+  `job_queue` FIFO — so during a real backfill a chronologically-later status
+  email (e.g. a rejection) could get matched *before* the confirmation email
+  that would have created its application. `matcher.find_match()` correctly
+  found zero candidates (not a scoring miss — `emails.match_score` stays NULL
+  on these, distinguishing them from a real low-confidence match) and the
+  email landed in `/triage` for no real reason — reproduced on a real
+  application (confirmation + rejection, ~4 days apart) on the first backfill.
+  Fixed via `_list_message_ids()`, which collects every page before reversing
+  so ingest always processes oldest-first. `incremental()`'s normal path
+  (History API) was never affected — Gmail returns history records oldest-first
+  already; only its cursor-expired fallback (`_window_fallback`, same
+  `messages.list` call) shared the bug.
 
 ## Environment
 
@@ -164,15 +189,23 @@ win). No per-shell export needed for local dev.
   `vector(1024)`) on first use.
 - **Gmail web OAuth end-to-end** (`pipeline/gmail_oauth.py`) — flow code is
   tested for state/storage, not against Google.
-- **Gmail poller against a real inbox** — that's the next task:
+- **Gmail poller against a real inbox** — a 10-day test backfill (Jul 2026)
+  already surfaced and fixed two real issues (see Gotchas): the
+  `messages.list` newest-first ordering bug, and a same-employer/different-
+  branding email that needed the new `refile_email` route rather than
+  `merge_jobs`. Still unverified: the full `-m 12` window, `ALLOWLIST_DOMAINS`
+  coverage, and match-threshold tuning against a larger real sample.
 
 ## Immediate next tasks (in order)
 
-1. **Real backfill:** `auth` → `backfill -m 12` → `work --once` → open
-   `/triage`. Expect: missing ATS senders → add domains to
-   `ALLOWLIST_DOMAINS` in `pipeline/config.py`; mis-scored matches → tune
-   thresholds using real `emails.match_score` values; misclassified emails →
-   harvest as few-shot examples into a new prompt version.
+1. **Real backfill:** the 10-day test run is done; run the full `auth` →
+   `backfill -m 12` → `work --once` → open `/triage` next. Expect: missing
+   ATS senders → add domains to `ALLOWLIST_DOMAINS` in `pipeline/config.py`;
+   mis-scored matches → tune thresholds using real `emails.match_score`
+   values; misclassified emails → harvest as few-shot examples into a new
+   prompt version; more same-employer/different-branding emails → resolve
+   with `refile_email` (application detail page), not by deleting and
+   re-creating.
 2. **One real apply via the extension** on each platform; fix whichever
    adapter selectors have drifted.
 3. If enabling dedup: set `VOYAGE_API_KEY`, run `scan`, review duplicate

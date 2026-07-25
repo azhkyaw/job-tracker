@@ -46,8 +46,8 @@
       <td>{{ r.title_canonical }}</td>
       <td><span class="badge" style="--c:var(--{{ 'interview_invite' if r.status == 'interviewing' else r.status }})">{{ r.status }}</span></td>
       <td class="mono">{{ r.platforms or "—" }}</td>
-      <td class="mono">{{ r.applied_at | dt }}</td>
-      <td class="mono">{{ r.last_activity | dt }}</td>
+      <td class="mono">{{ r.applied_at | dtt }}</td>
+      <td class="mono">{{ r.last_activity | dtt }}</td>
       <td class="mono">{% if r.focused is none %}—{% elif r.focused %}yes{% else %}no{% endif %}</td>
     </tr>
   {% endfor %}

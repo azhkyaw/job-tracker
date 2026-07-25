@@ -75,7 +75,7 @@ BACKFILL_MONTHS_DEFAULT = 12
 
 # JD extraction (small-to-mid model) and cover letters (larger; §9).
 JD_MODEL = os.environ.get("TRACKER_JD_MODEL", "claude-haiku-4-5-20251001")
-COVER_MODEL = os.environ.get("TRACKER_COVER_MODEL", "claude-sonnet-4-6")
+COVER_MODEL = os.environ.get("TRACKER_COVER_MODEL", "claude-sonnet-5")
 
 # Candidate profile used for cover letters — a markdown file you maintain
 # by hand (design doc §9); never re-derived per call.
