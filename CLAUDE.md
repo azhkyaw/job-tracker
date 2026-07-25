@@ -2,7 +2,11 @@
 
 Personal job-application tracker for LinkedIn / JobStreet / Indeed. All four
 phases built (Jul 2026) and test-driven. Full design rationale: `docs/design.md`
-— read it before any structural change.
+— read it before any structural change. Direction: **open-source release**, not
+SaaS — `docs/open-source.md` (LinkedIn extension-fingerprinting risk, the
+7-day OAuth token trap, release checklist). Feature priorities with the market
+research behind them: `docs/features.md`. `docs/monetization.md` is
+superseded but retained for its Gmail restricted-scope compliance analysis.
 
 ## Commands
 
@@ -182,6 +186,18 @@ phases built (Jul 2026) and test-driven. Full design rationale: `docs/design.md`
   (History API) was never affected — Gmail returns history records oldest-first
   already; only its cursor-expired fallback (`_window_fallback`, same
   `messages.list` call) shared the bug.
+- **OAuth publishing status "Testing" revokes refresh tokens after 7 days.**
+  Google's docs are explicit: an external-user-type consent screen with
+  publishing status `Testing` issues refresh tokens expiring in 7 days unless
+  the only scopes are name/email/profile — `gmail.readonly` is not exempt.
+  `README.md`'s "add yourself under Test users" leaves you exactly there, so
+  Gmail sync dies weekly with `invalid_grant: Token has been expired or
+  revoked`. Whether flipping to "In production" while *unverified* stops the
+  clock is UNDOCUMENTED for restricted scopes (Google ties removal to
+  *verified* + published; community reports say the flip works) — test it
+  before asserting either way. Handle `invalid_grant` visibly regardless:
+  tokens also die on Google-password change (Gmail scopes specifically), six
+  months of disuse, and user revocation. See `docs/open-source.md` §2.
 
 ## Environment
 
@@ -233,15 +249,35 @@ win). No per-shell export needed for local dev.
    company-name decision in the triage UI. Remaining from the original plan:
    tune match thresholds against real `emails.match_score` values, and watch
    for more `ALLOWLIST_DOMAINS` gaps as new mail arrives.
-2. **One real apply via the extension** on each platform; fix whichever
-   adapter selectors have drifted.
-3. If enabling dedup: set `VOYAGE_API_KEY`, run `scan`, review duplicate
+2. **OAuth token expiry — time-critical.** See the 7-day gotcha above; the
+   author's own sync breaks ~30 Jul – 2 Aug 2026. Needs `invalid_grant`
+   handled visibly in `gmail_sync.py` + honest setup docs, regardless of how
+   the production-status test goes.
+3. **Release blockers** (`docs/open-source.md` §11, ordered there): LICENSE
+   (Apache-2.0 recommended), extension split into its own repo, genericise
+   real company names in `tests/test_web.py`, decide whether CLAUDE.md ships.
+   Git history is already clean — no secret was ever committed, so no rewrite
+   is needed.
+4. **First feature: follow-up drafting** (`docs/features.md` §3.1) — best
+   evidence-to-effort ratio in the backlog, and `REMINDER_DAYS = 10` already
+   matches the researched 7–10 business-day window.
+5. **One real apply via the extension** on each platform; fix whichever
+   adapter selectors have drifted. Keep this **load-unpacked only** — an
+   unpacked extension has a random per-install ID, while a Chrome Web Store
+   listing mints a stable public one that LinkedIn's extension-fingerprinting
+   script enumerates (`docs/open-source.md` §3). Do not publish to the store
+   during the author's active job search.
+6. If enabling dedup: set `VOYAGE_API_KEY`, run `scan`, review duplicate
    bands in `/triage` on real cross-platform posts.
-4. **Decide the email body retention policy** (design doc §14 open
-   question #4, `migrations/001_init.sql:86-87`) — now genuinely overdue:
-   the comment's own trigger ("revisit before multi-user") passed when
+7. **Decide the email body retention policy** (design doc §14 open
+   question #4, `migrations/001_init.sql:86-87`) — overdue by its own stated
+   trigger: the comment's "revisit before multi-user" passed when
    `003_multi_tenant.sql` shipped RLS. Raw `emails.body_text` (recruiter
-   names, salary figures, personal details) sits unencrypted-at-rest
-   per-row with no retention policy. Decide: keep storing full bodies for
+   names, salary figures, personal details) sits unencrypted-at-rest per-row
+   with no retention policy. Decide: keep storing full bodies for
    reprocessing (current behavior), or store only `gmail_message_id` and
-   re-fetch on demand.
+   re-fetch on demand. **Under the open-source direction this is ordinary
+   hygiene, not a compliance gate** — it is the self-hoster's own data on
+   their own disk. It was a hard gate only on the (superseded) hosted path,
+   where Google's restricted-scope limited-use policy applies
+   (`docs/monetization.md` §2.2).
