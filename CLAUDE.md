@@ -54,7 +54,8 @@ superseded but retained for its Gmail restricted-scope compliance analysis.
    `web.py:refile_email` is a DIFFERENT tool for a different problem — one
    misfiled email (a real-world company-name mismatch the matcher can't
    detect — an ATS confirmation branded differently than the employer you
-   track, e.g. a parent company vs. a subsidiary), not two genuinely-duplicate jobs. It undoes
+   track, e.g. a parent company vs. the subsidiary you applied to), not two
+   genuinely-duplicate jobs. It undoes
    only that email's own events (scoped by `source_email_id`) and re-files
    them elsewhere, deleting the source application only if that leaves it
    completely empty. Never reach for `merge_jobs` here — it moves *all* of a
@@ -242,11 +243,12 @@ win). No per-shell export needed for local dev.
    instead (`-d` overrides `-m` via `months = days/31`, cli.py). Actionable
    triage queue is clear. Concrete finding: an employer's "Welcome to Talent
    Community" autoresponder classifies as `recruiter_outreach` (scored 0.645
-   vs. a real application to that same employer, just under `AUTO_MATCH_SCORE`) but is really
-   a receipt tied to that application — first real candidate for a
-   `email_classify_v2.txt` few-shot example. Still open: one inbound lead
-   (Beacon Search, agency withheld the client name) awaiting a
-   company-name decision in the triage UI. Remaining from the original plan:
+   vs. a real application to that same employer, just under
+   `AUTO_MATCH_SCORE`) but is really a receipt tied to that application —
+   first real candidate for a `email_classify_v2.txt` few-shot example. Still
+   open: one inbound lead (a recruitment agency that withheld the client
+   name) awaiting a company-name decision in the triage UI. Remaining from
+   the original plan:
    tune match thresholds against real `emails.match_score` values, and watch
    for more `ALLOWLIST_DOMAINS` gaps as new mail arrives.
 2. **OAuth token expiry — time-critical.** See the 7-day gotcha above; the

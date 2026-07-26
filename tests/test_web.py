@@ -234,8 +234,8 @@ check("resolved emails leave the queue",
 
 print("triage: inbound lane (recruiter_outreach)")
 with db.connect() as conn:
-    # Null company — the agency-withholds-the-client case (a real Northwind
-    # Recruiting email in production had extraction.company = null).
+    # Null company — the agency-withholds-the-client case (a real agency
+    # email in production had extraction.company = null).
     recruiter_email = conn.execute(
         """INSERT INTO emails (user_id, gmail_message_id, sender, subject, body_text,
                                received_at, classification, extraction, triage_state)

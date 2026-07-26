@@ -329,17 +329,31 @@ Mitigations that cost little:
 
 Audit results, run 26 July 2026:
 
-- **Git history is clean.** No secret was ever committed across all 23 commits
-  (`.env`, `credentials*.json`, `.gmail_token.json`, `profile.md` all
-  gitignored from the start). Publishable with no history rewrite — this is
-  the usual thing that sinks a release and it is already fine.
+- **Git history is clean of secrets.** None was ever committed across all 24
+  commits (`.env`, `credentials*.json`, `.gmail_token.json`, `profile.md` all
+  gitignored from the start), and `--diff-filter=AD` confirms no file was ever
+  added-then-deleted. This is the usual thing that sinks a release and it is
+  already fine.
+  **But "no secrets" is not "no personal data."** The real company and
+  recruiter names below live in the history of tracked files, so scrubbing
+  them in a new commit does not remove them from a published repo. No remote
+  is configured yet, which makes a rewrite (`git filter-repo`, or a squashed
+  fresh initial commit) free right now and impossible after the first push.
 - Single author, no remote configured yet.
 - No LICENSE file exists.
-- Personal identifiers in tracked files: real company names appear in
-  `tests/test_web.py:285,299,320,323` (Beacon Search) and `:1012`
-  (an ATS-branding mismatch), and in CLAUDE.md's gotchas (real company names). All are
-  the author's own information; genericise the fixtures and make CLAUDE.md a
-  conscious decision rather than an oversight.
+- Personal identifiers in tracked files: **scrubbed 26 July 2026.** Real
+  company names (five employers and one recruitment agency, all from the
+  author's own live search) appeared across all four test suites and in
+  CLAUDE.md's gotchas; a real named recruiter appeared in
+  `tests/test_web.py`'s inbound-lead fixture — a third party, and the most
+  sensitive item the audit found. All are now fictional placeholders that
+  normalise identically under `norm_company()`. Note this closes the
+  *working-tree* half only: the names remain in five historical commits —
+  `570a920`, `544f9a4`, `47fcbfd`, `f8ac05f`, `58bc7d2` — and the bulk of the
+  fixtures sit in `570a920`, the **initial** commit. Because the earliest
+  commit is affected there is no cheap late-history fix; it is a full
+  `git filter-repo` pass or a squash to a fresh root, and it must happen
+  before the first push.
 - `.claude/settings.local.json` contains the author's Windows username but is
   gitignored; the tracked `.claude/settings.json` is clean.
 
@@ -349,7 +363,8 @@ Ordered work:
 2. `invalid_grant` handling + honest token documentation (§2).
 3. Split the extension into its own repo (§3.1.2); scrub platform framing from
    the main repo's pitch (§3.1.3–4).
-4. Genericise test fixtures; decide on CLAUDE.md.
+4. ~~Genericise test fixtures~~ (done, 26 Jul 2026); decide on CLAUDE.md;
+   rewrite or squash history **before** adding a remote.
 5. `docker compose up` path + a migration runner. The runner also retires the
    "migration filenames hardcoded in FOUR places" trap, which is a genuine
    contributor hazard.
