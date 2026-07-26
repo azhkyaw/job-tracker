@@ -335,10 +335,10 @@ Audit results, run 26 July 2026:
   added-then-deleted. This is the usual thing that sinks a release and it is
   already fine.
   **But "no secrets" is not "no personal data."** The real company and
-  recruiter names below live in the history of tracked files, so scrubbing
-  them in a new commit does not remove them from a published repo. No remote
-  is configured yet, which makes a rewrite (`git filter-repo`, or a squashed
-  fresh initial commit) free right now and impossible after the first push.
+  recruiter names below lived in the history of tracked files, where
+  scrubbing the working tree does not reach them — `git log -p` on a
+  published repo would still show every one. Since no remote was configured,
+  the rewrite was still free; it has now been done (see below).
 - Single author, no remote configured yet.
 - No LICENSE file exists.
 - Personal identifiers in tracked files: **scrubbed 26 July 2026.** Real
@@ -347,13 +347,28 @@ Audit results, run 26 July 2026:
   CLAUDE.md's gotchas; a real named recruiter appeared in
   `tests/test_web.py`'s inbound-lead fixture — a third party, and the most
   sensitive item the audit found. All are now fictional placeholders that
-  normalise identically under `norm_company()`. Note this closes the
-  *working-tree* half only: the names remain in five historical commits —
-  `570a920`, `544f9a4`, `47fcbfd`, `f8ac05f`, `58bc7d2` — and the bulk of the
-  fixtures sit in `570a920`, the **initial** commit. Because the earliest
-  commit is affected there is no cheap late-history fix; it is a full
-  `git filter-repo` pass or a squash to a fresh root, and it must happen
-  before the first push.
+  normalise identically under `norm_company()`.
+- **History rewritten 26 July 2026** (`git filter-repo` 2.47.0,
+  `--replace-text` + `--replace-message`, 29 literal case-sensitive rules).
+  The names spanned five commits including the initial one, so no
+  late-history fix was possible. `filter-repo` was chosen over a squash to
+  keep all 25 commit messages, which carry most of this project's design
+  rationale — accepting that it trades a squash's zero-enumeration-risk for
+  a set of literal rules that must be complete.
+
+  Three traps made case-insensitive matching unusable, and are the reason
+  every rule is a case-sensitive literal with surrounding context:
+  `design.md`'s "…extension that **grabs** the job description"; the Indeed
+  adapter's `inlineHeader-compan**yNa**me` selector, which contains the
+  recruiter's first name as a substring; and `P4-A1`, a `platform_job_id`
+  sharing a fragment with one of the company names.
+
+  Verification, in order: a dry run applying the rules to all 1,584 blob
+  versions across 25 commits (zero survivors, zero traps damaged), then the
+  same grep over the rewritten history, then a tree-hash comparison proving
+  the tip content was untouched, then the five suites. A pre-rewrite
+  `git bundle` of the original history is kept outside the repo — it still
+  contains every real name, so it must never be published or committed.
 - `.claude/settings.local.json` contains the author's Windows username but is
   gitignored; the tracked `.claude/settings.json` is clean.
 
@@ -363,8 +378,8 @@ Ordered work:
 2. `invalid_grant` handling + honest token documentation (§2).
 3. Split the extension into its own repo (§3.1.2); scrub platform framing from
    the main repo's pitch (§3.1.3–4).
-4. ~~Genericise test fixtures~~ (done, 26 Jul 2026); decide on CLAUDE.md;
-   rewrite or squash history **before** adding a remote.
+4. ~~Genericise test fixtures~~ and ~~rewrite history~~ (both done,
+   26 Jul 2026); decide on CLAUDE.md.
 5. `docker compose up` path + a migration runner. The runner also retires the
    "migration filenames hardcoded in FOUR places" trap, which is a genuine
    contributor hazard.
