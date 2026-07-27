@@ -90,6 +90,16 @@ def merge_jobs(conn, user_id, keep_job, drop_job) -> None:
         for sql in (
             "UPDATE events SET application_id = %(w)s WHERE application_id = %(l)s",
             "UPDATE artifacts SET application_id = %(w)s WHERE application_id = %(l)s",
+            # Both sides may have answered the same screening question (two
+            # postings of one job, applied to twice). UNIQUE (application_id,
+            # question_norm) would reject the move, so drop the loser's copy of
+            # any question the winner already has — its own answer is the one
+            # the winner's detail page should keep showing.
+            "DELETE FROM application_answers l USING application_answers w "
+            "WHERE l.application_id = %(l)s AND w.application_id = %(w)s "
+            "  AND l.question_norm = w.question_norm",
+            "UPDATE application_answers SET application_id = %(w)s "
+            "WHERE application_id = %(l)s",
             "UPDATE emails SET matched_application_id = %(w)s WHERE matched_application_id = %(l)s",
         ):
             conn.execute(sql, {"w": wa["id"], "l": la["id"]})

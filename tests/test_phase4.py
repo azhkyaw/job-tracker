@@ -80,10 +80,16 @@ check("capture with alice's token lands", r.status_code == 200, r.text)
 alice_app = r.json()["application_id"]
 # display uses the captured company_raw verbatim; company_norm (-> "alice")
 # is only the internal dedup/matching key, stripped of "Corp"/"Pte Ltd".
+#
+# Asserted as "the name is on the page AND it links to her application"
+# rather than on one exact tag: the list rows became whole-row links in the
+# timeline redesign, so the company name no longer sits in an <a> of its own.
+# What this test is actually about is tenancy, not markup.
+alice_home, bob_home = alice.get("/").text, bob.get("/").text
 check("alice sees her application",
-      ">Alice Corp Pte Ltd</a>" in alice.get("/").text)
+      "Alice Corp Pte Ltd" in alice_home and f'/applications/{alice_app}"' in alice_home)
 check("bob does not see it on his pages",
-      ">Alice Corp Pte Ltd</a>" not in bob.get("/").text)
+      "Alice Corp Pte Ltd" not in bob_home and f'/applications/{alice_app}"' not in bob_home)
 check("bob's direct fetch of alice's application 404s",
       bob.get(f"/applications/{alice_app}").status_code == 404)
 check("bob cannot log events on it", bob.post(

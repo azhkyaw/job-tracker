@@ -19,7 +19,7 @@ no framework — this is a single-user ops tool that must stay maintainable.
 from __future__ import annotations
 
 from dataclasses import replace as _replace
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -32,7 +32,8 @@ from pydantic import BaseModel
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from . import analytics, auth, config, db, dedup, gmail_imap, gmail_oauth, ingest, joburl, mailbox, matcher
+from . import (analytics, answers, auth, config, db, dedup, gmail_imap, gmail_oauth,
+               ingest, joburl, mailbox, matcher, trace)
 from .email_classifier import norm_company
 
 app = FastAPI(title="Job Tracker")
@@ -157,14 +158,29 @@ def _funnel(conn, user_id, origin: str | None = None) -> list[dict]:
 
 # --------------------------------------------------------------------------- applications
 
+# Sort keys the list accepts, mapped to their ORDER BY. "silence" is the
+# default and the reason the page exists: the longest-unanswered live thread
+# first, closed threads (nothing to chase) after them.
+_SORTS = {
+    "silence": ("s.status IN ('rejected','offer','withdrawn') ASC, "
+                "last_activity ASC NULLS LAST"),
+    "activity": "last_activity DESC NULLS LAST",
+    "applied": "applied_at DESC NULLS LAST",
+    "company": "lower(company_display) ASC",
+}
+
+
 @app.get("/")
-def applications(request: Request, deleted: str | None = None, origin: str | None = None):
+def applications(request: Request, deleted: str | None = None, origin: str | None = None,
+                 q: str = "", sort: str = "silence"):
     user = _login_user(request)
     origin = origin if origin in ("applied", "inbound", "saved") else None
+    sort = sort if sort in _SORTS else "silence"
+    q = q.strip()
     with db.connect_scoped(user["id"]) as conn:
         user_id = user["id"]
         rows = conn.execute(
-            """
+            f"""
             SELECT a.id, a.focused, a.origin, j.company_norm, j.title_canonical, s.status,
                    COALESCE(
                      (SELECT p.company_raw FROM postings p
@@ -182,18 +198,42 @@ def applications(request: Request, deleted: str | None = None, origin: str | Non
             JOIN application_status s ON s.application_id = a.id
             WHERE a.user_id = %(user_id)s
               AND (%(origin)s::text IS NULL OR a.origin = %(origin)s)
-            ORDER BY last_activity DESC NULLS LAST
-            """, {"user_id": user_id, "origin": origin}).fetchall()
+              AND (%(q)s::text = '' OR j.title_canonical ILIKE %(like)s
+                   OR j.company_norm ILIKE %(like)s
+                   OR EXISTS (SELECT 1 FROM postings p WHERE p.job_id = a.job_id
+                                AND p.company_raw ILIKE %(like)s))
+            ORDER BY {_SORTS[sort]}
+            """, {"user_id": user_id, "origin": origin,
+                  "q": q, "like": f"%{q}%"}).fetchall()
         for r in rows:
             r["status"] = _display(r["status"])
+
+        # One query for every event on the page, grouped in Python — the trace
+        # needs each application's full history, and 45 per-row queries to draw
+        # one screen is exactly the N+1 this view would die of.
+        events_by_app: dict = {}
+        if rows:
+            for e in conn.execute(
+                """
+                SELECT application_id, type, occurred_at FROM events
+                 WHERE application_id = ANY(%s) ORDER BY occurred_at
+                """, ([r["id"] for r in rows],)).fetchall():
+                events_by_app.setdefault(e["application_id"], []).append(e)
+        axis = trace.build(rows, events_by_app, datetime.now(timezone.utc),
+                           config.REMINDER_DAYS)
+
         return templates.TemplateResponse(request=request, name="applications.html", context={
             "rows": rows,
+            "axis": axis,
             "funnel": _funnel(conn, user_id, origin),
             "pending": _pending_count(conn),
             "reminders": analytics.reminders(conn, user_id),
             "reminder_days": config.REMINDER_DAYS,
+            "summary": analytics.summary(conn, user_id),
             "deleted": deleted,
             "origin": origin,
+            "q": q,
+            "sort": sort,
         })
 
 
@@ -478,6 +518,12 @@ def application_detail(request: Request, app_id: str, saved: str | None = None):
         artifacts = conn.execute(
             "SELECT id, kind, content, model, created_at FROM artifacts "
             "WHERE application_id = %s ORDER BY created_at DESC", (a["id"],)).fetchall()
+        # Form order, not alphabetical: the sequence is part of how the form
+        # read, and a question's neighbours are how you find it again.
+        form_answers = conn.execute(
+            "SELECT question, answer, field_type, captured_at FROM application_answers "
+            "WHERE application_id = %s ORDER BY ordinal NULLS LAST, question",
+            (a["id"],)).fetchall()
         # Most recent job only — a prior dead-lettered attempt shouldn't mask
         # a fresh retry the user kicked off after fixing whatever broke it.
         cover_job = conn.execute(
@@ -490,11 +536,16 @@ def application_detail(request: Request, app_id: str, saved: str | None = None):
             # last_error is a full traceback (worker.py); the exception's own
             # message is the last line — the rest is noise for this audience.
             cover_error = cover_job["last_error"].strip().splitlines()[-1]
+        # Same trace as the list, over this one application. events came back
+        # newest-first for the log below; trace.build wants chronological.
+        axis = trace.build([a], {a["id"]: list(reversed(events))},
+                           datetime.now(timezone.utc), config.REMINDER_DAYS)
         return templates.TemplateResponse(request=request, name="application_detail.html", context={
-            "a": a, "status": _display(a["status"]),
+            "a": a, "status": _display(a["status"]), "axis": axis,
             "events": events, "postings": postings, "contacts": contacts,
             "emails": emails, "options": _application_options(conn, a["user_id"]),
             "extractions": extractions, "artifacts": artifacts,
+            "form_answers": form_answers,
             "cover_job": cover_job, "cover_error": cover_error,
             "cover_max_attempts": config.MAX_ATTEMPTS, "pending": _pending_count(conn),
             "saved": bool(saved),
@@ -774,7 +825,12 @@ def set_focused(request: Request, app_id: str, focused: str = Form(...)):
 
 
 @app.post("/applications/{app_id}/events")
-def add_event(request: Request, app_id: str, type: str = Form(...), note: str = Form("")):
+def add_event(request: Request, app_id: str, type: str = Form(...), note: str = Form(""),
+              redirect_to: str = Form("")):
+    """`redirect_to` exists for the follow-up block on the list: ticking one of
+    fifteen rows there should leave you looking at the remaining fourteen, not
+    on that application's detail page. Constrained to known-good in-app
+    destinations rather than trusted, same as refile_email's."""
     if type not in ("follow_up_sent", "note", "withdrawn"):
         raise HTTPException(400, "unsupported manual event type")
     from psycopg.types.json import Json
@@ -785,7 +841,8 @@ def add_event(request: Request, app_id: str, type: str = Form(...), note: str = 
             "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
             "VALUES (%s, %s, %s, 'manual', now(), %s)",
             (a["user_id"], a["id"], type, Json({"note": note} if note else {})))
-    return RedirectResponse(f"/applications/{app_id}", status_code=303)
+    dest = redirect_to if redirect_to == "/" else f"/applications/{app_id}"
+    return RedirectResponse(dest, status_code=303)
 
 
 # --------------------------------------------------------------------------- contacts
@@ -930,6 +987,7 @@ def _delete_application(conn, a) -> None:
         "(SELECT id::text FROM postings WHERE job_id = %s) "
         "OR payload->>'application_id' = %s", (job_id, str(app_id)))
     conn.execute("DELETE FROM artifacts WHERE application_id = %s", (app_id,))
+    conn.execute("DELETE FROM application_answers WHERE application_id = %s", (app_id,))
     conn.execute("DELETE FROM events WHERE application_id = %s", (app_id,))
     conn.execute(
         "DELETE FROM duplicate_candidates WHERE posting_a IN "
@@ -1112,6 +1170,8 @@ def _job_is_empty(conn, job_id, app_id) -> bool:
         SELECT (SELECT count(*) FROM events WHERE application_id = %(app_id)s) = 0
            AND (SELECT count(*) FROM contacts WHERE job_id = %(job_id)s) = 0
            AND (SELECT count(*) FROM artifacts WHERE application_id = %(app_id)s) = 0
+           AND (SELECT count(*) FROM application_answers
+                 WHERE application_id = %(app_id)s) = 0
            AS empty
         """, {"app_id": app_id, "job_id": job_id}).fetchone()["empty"]
 
@@ -1185,6 +1245,12 @@ def refile_email(request: Request, email_id: str, action: str = Form(...),
 
 # --------------------------------------------------------------------------- captures (§6.1/§6.3)
 
+class AnswerIn(BaseModel):
+    question: str
+    answer: str
+    type: str | None = None             # text | textarea | select | radio | checkbox | number
+
+
 class CaptureIn(BaseModel):
     platform: str                       # linkedin | jobstreet | indeed | other
     platform_job_id: str | None = None
@@ -1203,10 +1269,16 @@ class CaptureIn(BaseModel):
     posted_label: str | None = None     # platform's own relative-time text, e.g. "3 weeks ago"
     reposted: bool | None = None
     ats: str | None = None              # detected from an external apply's destination host
+    # Screening Q&A read off the in-page apply form at submit time (LinkedIn
+    # Easy Apply today). Absent on manual captures and on external applies —
+    # the form lives on the employer's ATS, where the extension doesn't run.
+    answers: list[AnswerIn] | None = None
 
 
-@app.post("/captures")
-def captures(payload: CaptureIn, authorization: str | None = Header(None)):
+def _bearer_user_id(authorization: str | None):
+    """Resolve the extension's bearer token to a user. Shared by every route
+    the extension calls, so the legacy single-tenant fallback can't drift
+    between them."""
     supplied = (authorization or "").removeprefix("Bearer ").strip()
     with db.connect() as conn:
         user_id = auth.user_id_for_token(conn, supplied)
@@ -1219,6 +1291,12 @@ def captures(payload: CaptureIn, authorization: str | None = Header(None)):
                 user_id = rows[0]["id"]
     if user_id is None:
         raise HTTPException(401, "bad or missing bearer token")
+    return user_id
+
+
+@app.post("/captures")
+def captures(payload: CaptureIn, authorization: str | None = Header(None)):
+    user_id = _bearer_user_id(authorization)
     if payload.platform not in ("linkedin", "jobstreet", "indeed", "other"):
         raise HTTPException(422, "unknown platform")
     if payload.trigger not in ("apply", "manual"):
@@ -1273,8 +1351,52 @@ def captures(payload: CaptureIn, authorization: str | None = Header(None)):
                 (user_id, job_id, payload.recruiter_name, payload.recruiter_url,
                  payload.recruiter_role, job_id, payload.recruiter_name))
 
+        n_answers = answers.store(
+            conn, user_id, app_id, posting_id,
+            [x.model_dump() for x in (payload.answers or [])])
+
         return {"application_id": str(app_id), "posting_id": str(posting_id),
-                "created": r["created"], "enriched": r["enriched"]}
+                "created": r["created"], "enriched": r["enriched"],
+                "answers": n_answers,
+                "label": f"{payload.company or 'unknown company'}"
+                         f" · {payload.title or 'unknown role'}"}
+
+
+class TagIn(BaseModel):
+    focused: bool | None = None         # None = leave as-is, NOT "generic"
+    note: str | None = None
+
+
+@app.post("/captures/{application_id}/tag")
+def capture_tag(application_id: str, payload: TagIn,
+                authorization: str | None = Header(None)):
+    """Tag or annotate an already-saved capture.
+
+    The extension used to hold the whole capture hostage until the user
+    answered "focused or generic?" — so closing the Easy Apply modal, or
+    ignoring the popover for 45 seconds, silently threw away a real
+    application. Now the record is written the moment you apply and this
+    route carries the optional extras afterwards, which means losing the
+    popover costs a tag instead of the application.
+
+    Each call is one field. `focused=None` means "not saying" and leaves the
+    column alone (it is NOT the same as `false`, per applications.focused's
+    three-state contract); an empty note is ignored rather than logged.
+    """
+    user_id = _bearer_user_id(authorization)
+    with db.connect_scoped(user_id) as conn, conn.transaction():
+        a = _get_application(conn, application_id)
+        if payload.focused is not None:
+            conn.execute("UPDATE applications SET focused = %s WHERE id = %s",
+                         (payload.focused, a["id"]))
+        note = (payload.note or "").strip()
+        if note:
+            from psycopg.types.json import Json
+            conn.execute(
+                "INSERT INTO events (user_id, application_id, type, source, "
+                "occurred_at, payload) VALUES (%s, %s, 'note', 'extension', now(), %s)",
+                (user_id, a["id"], Json({"note": note})))
+        return {"ok": True, "focused": payload.focused, "note": bool(note)}
 
 
 # --------------------------------------------------------------------------- phase 3 routes
@@ -1341,10 +1463,38 @@ def analytics_page(request: Request):
         user_id = user["id"]
         return templates.TemplateResponse(request=request, name="analytics.html", context={
             "summary": analytics.summary(conn, user_id),
+            "weekly": analytics.weekly(conn, user_id),
+            "min_rate_n": analytics.MIN_RATE_N,
             "by_platform": analytics.by_platform(conn, user_id),
             "by_focus": analytics.by_focus(conn, user_id),
             "by_technology": analytics.by_technology(conn, user_id),
             "pending": _pending_count(conn),
+        })
+
+
+# --------------------------------------------------------------------------- answer bank
+
+@app.get("/answers")
+def answers_page(request: Request):
+    """Every screening question you've been asked, with what you said.
+
+    Grouped by question rather than listed by application because that's the
+    question this page exists to answer — "what do I normally put for notice
+    period?" — and because the same form questions recur across employers
+    almost verbatim. The per-application copy still lives on the detail page.
+    """
+    user = _login_user(request)
+    with db.connect_scoped(user["id"]) as conn:
+        bank = conn.execute(answers.BANK_SQL).fetchall()
+        # Only the questions with a disagreement need their history shown; for
+        # the rest the single answer above IS the history.
+        varied = [b["question_norm"] for b in bank if b["variants"] > 1]
+        history = {}
+        if varied:
+            for row in conn.execute(answers.BANK_DETAIL_SQL, (varied,)).fetchall():
+                history.setdefault(row["question_norm"], []).append(row)
+        return templates.TemplateResponse(request=request, name="answers.html", context={
+            "bank": bank, "history": history, "pending": _pending_count(conn),
         })
 
 

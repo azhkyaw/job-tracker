@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}answers — tracker{% endblock %}
+{% block nav_answers %}active{% endblock %}
+{% block content %}
+<h1>What you've told them</h1>
+<p class="sm quiet" style="margin:-.4rem 0 1.4rem;max-width:62ch">
+  Every screening question the apply forms have asked, with your most recent
+  answer. Captured automatically when you submit an Easy Apply.
+</p>
+
+{% if bank %}
+{% for b in bank %}
+<div class="card pad" style="margin-bottom:.7rem">
+  <dl class="qa">
+    <dt>{{ b.question }}</dt>
+    <dd>{{ b.answer }}</dd>
+  </dl>
+  <p class="mono quiet" style="font-size:.72rem;margin:.6rem 0 0">
+    asked {{ b.times_asked }} time{{ "s" if b.times_asked != 1 }}
+    · last {{ b.last_asked | dt }}
+    {%- if b.field_type %} · {{ b.field_type }}{% endif %}
+    {%- if b.variants > 1 %} · {{ b.variants }} different answers{% endif %}
+  </p>
+  {% if b.variants > 1 %}
+  <details style="margin-top:.5rem">
+    <summary class="sm quiet" style="cursor:pointer">What you said each time</summary>
+    <ul class="timeline" style="margin-top:.4rem">
+      {% for h in history.get(b.question_norm, []) %}
+      <li><span class="when">{{ h.captured_at | dt }}</span>
+          <span><a href="/applications/{{ h.application_id }}">{{ h.company_display }}</a>
+            <span class="quiet">· {{ h.title_canonical }}</span><br>{{ h.answer }}</span></li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+</div>
+{% endfor %}
+{% else %}
+<p class="empty">No form answers captured yet — they arrive with your next
+  Easy Apply, via the extension.</p>
+{% endif %}
+{% endblock %}

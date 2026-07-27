@@ -3,10 +3,10 @@
 {% block nav_settings %}active{% endblock %}
 {% block content %}
 <h1>Settings <span class="mono" style="color:var(--muted);font-size:.8em">{{ email }}</span></h1>
-{% if msg %}<p class="empty" style="text-align:left">{{ msg }}</p>{% endif %}
+{% if msg %}<div class="note">{{ msg }}</div>{% endif %}
 
 {% if new_token %}
-<div class="card" style="border-left:3px solid var(--pending);padding:.8rem 1rem;margin-bottom:1rem">
+<div class="note" style="--c:var(--age)">
   <strong>Your API token</strong> — paste it into the extension options. Shown only once:
   <div><code class="mono" id="newtok" style="user-select:all;word-break:break-all">{{ new_token }}</code></div>
 </div>
@@ -24,7 +24,7 @@
 Status emails sync on the next <span class="mono">sync</span> run.</p>
 <form method="post" action="/settings/gmail/disconnect"><button>Disconnect Gmail</button></form>
 {% if gmail_legacy_file %}
-<p class="empty" style="text-align:left">Disconnecting here does not stop sync — a legacy
+<p class="note">Disconnecting here does not stop sync — a legacy
 <span class="mono">.gmail_token.json</span> file is also present on this server and is used
 as a fallback. Delete that file too if you want Gmail fully disconnected.</p>
 {% endif %}
@@ -33,14 +33,14 @@ as a fallback. Delete that file too if you want Gmail fully disconnected.</p>
 <p>Connected via OAuth. Status emails sync on the next <span class="mono">sync</span> run.</p>
 <form method="post" action="/settings/gmail/disconnect"><button>Disconnect Gmail</button></form>
 {% if gmail_legacy_file %}
-<p class="empty" style="text-align:left">Disconnecting here does not stop sync — a legacy
+<p class="note">Disconnecting here does not stop sync — a legacy
 <span class="mono">.gmail_token.json</span> file is also present on this server and is used
 as a fallback. Delete that file too if you want Gmail fully disconnected.</p>
 {% endif %}
 
 {% else %}
 {% if gmail_kind == 'unreadable' %}
-<p class="empty" style="text-align:left">Stored Gmail credentials can't be decrypted —
+<p class="note">Stored Gmail credentials can't be decrypted —
 <span class="mono">TRACKER_SECRET_KEY</span> changed since they were saved. Reconnect below.</p>
 {% endif %}
 
@@ -66,7 +66,7 @@ as a fallback. Delete that file too if you want Gmail fully disconnected.</p>
     <p><a href="/oauth/gmail/start"><button class="primary" type="button">Connect Gmail via OAuth</button></a>
        <span style="color:var(--muted)">read-only scope; tokens stored encrypted</span></p>
     {% else %}
-    <p class="empty" style="text-align:left">No web OAuth client configured on this server.
+    <p class="note">No web OAuth client configured on this server.
     Single-user installs can use <span class="mono">python -m pipeline.cli auth --oauth</span>;
     to enable Connect Gmail via OAuth here, add a Google web-application client JSON as
     <span class="mono">credentials-web.json</span>.</p>

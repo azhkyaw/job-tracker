@@ -1,15 +1,27 @@
 <!doctype html>
 <meta charset="utf-8">
 <style>
-  body{font:13px/1.5 system-ui,sans-serif;color:#1B2A33;padding:12px;min-width:280px}
-  button{font:inherit;cursor:pointer;border:1px solid #0E6E66;background:#0E6E66;color:#fff;border-radius:6px;padding:6px 12px;width:100%}
-  #out{margin-top:8px;color:#5E7079;min-height:1.2em}
-  h4{margin:.9em 0 .3em;font-size:.8em;color:#5E7079;text-transform:uppercase;letter-spacing:.06em}
-  ul{margin:0;padding-left:1.1em;color:#9E4038}
+  /* Palette mirrors templates/base.html — same tokens, written twice for the
+     two schemes, so the extension and the app read as one product. */
+  :root{color-scheme:light dark}
+  body{font:13px/1.5 system-ui,sans-serif;color:#141C24;background:#F7F9FA;
+       padding:12px;min-width:280px}
+  button{font:inherit;cursor:pointer;border:1px solid #1F53BE;background:#1F53BE;
+         color:#FFFFFF;border-radius:6px;padding:6px 12px;width:100%}
+  #out{margin-top:8px;color:#5A6873;min-height:1.2em}
+  h4{margin:.9em 0 .3em;font-size:.8em;color:#5A6873;text-transform:uppercase;letter-spacing:.06em}
+  ul{margin:0;padding-left:1.1em;color:#9A4231}
   li{margin-bottom:.2em;word-break:break-all}
+  li.none{color:#5A6873}
+  @media (prefers-color-scheme: dark){
+    body{color:#DBE3EA;background:#181E25}
+    button{border-color:#7FB0FF;background:#7FB0FF;color:#0A1017}
+    #out,h4,li.none{color:#8695A2}
+    ul{color:#E28D79}
+  }
 </style>
 <button id="cap">Capture this job as interested</button>
 <div id="out"></div>
 <h4>Recent capture failures</h4>
-<ul id="fails"><li style="color:#5E7079">none</li></ul>
+<ul id="fails"><li class="none">none</li></ul>
 <script src="popup.js"></script>

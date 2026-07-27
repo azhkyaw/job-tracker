@@ -1,11 +1,23 @@
 <!doctype html>
 <meta charset="utf-8">
 <style>
-  body{font:14px/1.5 system-ui,sans-serif;color:#1B2A33;padding:14px;min-width:340px}
-  label{display:block;margin:.7em 0 .2em;color:#5E7079;font-size:.85em}
-  input{width:100%;box-sizing:border-box;border:1px solid #DAE3E7;border-radius:6px;padding:6px 8px;font:inherit}
-  button{margin-top:12px;font:inherit;cursor:pointer;border:1px solid #0E6E66;background:#0E6E66;color:#fff;border-radius:6px;padding:6px 14px}
-  #status{color:#0E6E66;margin-left:.6em}
+  /* Palette mirrors templates/base.html — see popup.html. */
+  :root{color-scheme:light dark}
+  body{font:14px/1.5 system-ui,sans-serif;color:#141C24;background:#F7F9FA;
+       padding:14px;min-width:340px}
+  label{display:block;margin:.7em 0 .2em;color:#5A6873;font-size:.85em}
+  input{width:100%;box-sizing:border-box;border:1px solid #CCD5DB;border-radius:6px;
+        padding:6px 8px;font:inherit;background:transparent;color:#141C24}
+  button{margin-top:12px;font:inherit;cursor:pointer;border:1px solid #1F53BE;
+         background:#1F53BE;color:#FFFFFF;border-radius:6px;padding:6px 14px}
+  #status{color:#26694A;margin-left:.6em}
+  @media (prefers-color-scheme: dark){
+    body{color:#DBE3EA;background:#181E25}
+    label{color:#8695A2}
+    input{border-color:#262F39;color:#DBE3EA}
+    button{border-color:#7FB0FF;background:#7FB0FF;color:#0A1017}
+    #status{color:#6FC793}
+  }
 </style>
 <h3>Job Tracker settings</h3>
 <label for="apiBase">API base URL</label>

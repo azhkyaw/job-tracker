@@ -73,7 +73,8 @@ createdb tracker
 psql tracker -f migrations/001_init.sql -f migrations/002_gmail_sync_state.sql \
              -f migrations/003_multi_tenant.sql -f migrations/004_posting_listing_meta.sql \
              -f migrations/005_posting_ats.sql -f migrations/006_user_timezone.sql \
-             -f migrations/007_user_theme.sql -f migrations/008_application_origin.sql
+             -f migrations/007_user_theme.sql -f migrations/008_application_origin.sql \
+             -f migrations/009_application_answers.sql
 
 # 2. Python deps. google-api-python-client/google-auth-oauthlib are only
 #    needed for the OAuth alternative in step 3b — safe to skip if you're

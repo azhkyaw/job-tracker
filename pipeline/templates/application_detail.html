@@ -2,71 +2,114 @@
 {% block title %}{{ a.company_display }} — tracker{% endblock %}
 {% block nav_apps %}active{% endblock %}
 {% block content %}
-<h1>{{ a.company_display }} · {{ a.title_canonical }}
-  <span class="badge" style="--c:var(--{{ 'interview_invite' if status == 'interviewing' else status }})">{{ status }}</span>
+
+<h1 style="margin-bottom:.3rem">{{ a.company_display }}
+  <span class="quiet" style="font-weight:400">· {{ a.title_canonical }}</span>
+  <span class="badge" style="--c:var(--{{ 'interview_invite' if status == 'interviewing' else status }});font-size:.7rem;vertical-align:.28em">{{ status }}</span>
 </h1>
 
-{% if saved %}
-<div class="card" style="border-left:3px solid var(--offer);padding:.8rem 1rem;margin-bottom:1rem">
-  <strong>Saved</strong> — this record has been updated.
+<div class="bar sm" style="margin-bottom:1.3rem;gap:.9rem">
+  <a href="/applications/{{ a.id }}/edit">Edit details</a>
+  <span class="quiet">·</span>
+  <form method="post" action="/applications/{{ a.id }}/focused" style="display:inline">
+    {% if a.focused is none %}
+      <span class="quiet">Tailored to this role?</span>
+      <button name="focused" value="yes">Yes, tailored</button>
+      <button name="focused" value="no">No, generic</button>
+    {% elif a.focused %}
+      <span class="quiet">Tailored application —</span>
+      <button class="link" name="focused" value="no">mark it generic</button>
+    {% else %}
+      <span class="quiet">Generic application —</span>
+      <button class="link" name="focused" value="yes">mark it tailored</button>
+    {% endif %}
+  </form>
 </div>
+
+{% if saved %}
+<div class="note" style="--c:var(--offer)"><strong>Saved</strong> — this record has been updated.</div>
 {% endif %}
 
-<p><a href="/applications/{{ a.id }}/edit"><button>Edit details</button></a></p>
-
-<dl class="kv">
-  <dt>focused</dt>
-  <dd>
-    <form method="post" action="/applications/{{ a.id }}/focused" style="display:inline">
-      {% if a.focused is none %}not set —
-        <button name="focused" value="yes">Mark focused</button>
-        <button name="focused" value="no">Mark generic</button>
-      {% elif a.focused %}yes <button name="focused" value="no">Change to generic</button>
-      {% else %}no <button name="focused" value="yes">Change to focused</button>{% endif %}
-    </form>
-  </dd>
-</dl>
-
-<h2>Timeline</h2>
-<div class="card" style="padding:.4rem .9rem">
-<ul class="timeline">
-  {% for e in events %}
-  <li><span class="when">{{ e.occurred_at | dtt }}</span>
-      <span>{{ e.type }} <span class="mono" style="color:var(--muted)">via {{ e.source }}</span>
-      {% if 'external' in e.payload %}
-        {% if e.payload['external'] %}— applied via employer's website
-        {% else %}— applied on-platform (Easy Apply / quick apply)
+<h2>The thread</h2>
+<div class="card">
+  <div class="pad" style="padding-bottom:.2rem">
+    <div class="axis">
+      {% for t in axis.ticks %}<span class="t{% if loop.first %} first{% endif %}" style="--x:{{ t.x }}">{{ t.label }}</span>{% endfor %}
+      <span class="t last">today</span>
+    </div>
+    <div class="trace" style="--week:{{ axis.week }};height:2rem">
+      {%- if a.tail %}<span class="seg{% if a.tail.aging %} aging{% endif %}"
+        style="--a:{{ a.tail.a }};--b:{{ a.tail.b }};--c:var(--{{ a.tail.role }})"></span>{% endif -%}
+      {%- for p in a.pts %}<span class="pt{% if p.hollow %} hollow{% endif %}"
+        style="--x:{{ p.x }};--c:var(--{{ p.role }})" title="{{ p.label }}"></span>{% endfor -%}
+      {%- if a.cap %}<span class="cap"
+        style="--x:{{ a.cap }};--c:var(--{{ 'interview_invite' if status == 'interviewing' else status }})"></span>{% endif -%}
+    </div>
+    {% if a.silent_days is not none %}
+    <p class="sm quiet" style="margin:.1rem 0 .6rem">
+      {% if a.silent_days == 0 %}Something moved today.
+      {% else %}Quiet for {{ a.silent_days }} day{{ "s" if a.silent_days != 1 }}.{% endif %}
+    </p>
+    {% endif %}
+  </div>
+  <ul class="timeline" style="padding:0 1rem .5rem">
+    {% for e in events %}
+    <li><span class="when">{{ e.occurred_at | dtt }}</span>
+        <span>{{ e.type }} <span class="mono quiet">via {{ e.source }}</span>
+        {% if 'external' in e.payload %}
+          {% if e.payload['external'] %}— applied via employer's website
+          {% else %}— applied on-platform (Easy Apply / quick apply)
+          {% endif %}
         {% endif %}
-      {% endif %}
-      {% if e.payload.get('note') %}— {{ e.payload['note'] }}{% endif %}
-      {% if e.payload.get('status_detail') %}— {{ e.payload['status_detail'] }}{% endif %}</span></li>
-  {% endfor %}
-</ul>
+        {% if e.payload.get('note') %}— {{ e.payload['note'] }}{% endif %}
+        {% if e.payload.get('status_detail') %}— {{ e.payload['status_detail'] }}{% endif %}</span></li>
+    {% endfor %}
+  </ul>
 </div>
-<form method="post" action="/applications/{{ a.id }}/events" style="margin-top:.6rem;display:flex;gap:.5rem;flex-wrap:wrap">
-  <select name="type" aria-label="Event type">
-    <option value="follow_up_sent">followed up</option>
-    <option value="note">note</option>
-    <option value="withdrawn">withdrew</option>
+
+<form method="post" action="/applications/{{ a.id }}/events"
+      style="margin-top:.7rem;display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+  <span class="sm quiet">Record what happened:</span>
+  <select name="type" aria-label="What happened">
+    <option value="follow_up_sent">I followed up</option>
+    <option value="note">Note to self</option>
+    <option value="withdrawn">I withdrew</option>
   </select>
-  <input type="text" name="note" placeholder="optional note" aria-label="Note">
-  <button class="primary">Log event</button>
+  <input type="text" name="note" placeholder="optional detail" aria-label="Detail">
+  <button class="primary">Add to timeline</button>
 </form>
 
+{% if form_answers %}
+<h2>What the form asked</h2>
+<div class="card pad">
+  <dl class="qa">
+    {% for q in form_answers %}
+    <dt>{{ q.question }}</dt>
+    <dd>{{ q.answer }}{% if q.field_type %}<span class="mono quiet"> · {{ q.field_type }}</span>{% endif %}</dd>
+    {% endfor %}
+  </dl>
+</div>
+<p class="sm quiet" style="margin:.5rem 0 0">
+  Captured from the apply form when you submitted.
+  <a href="/answers">See every question you've been asked →</a>
+</p>
+{% endif %}
+
 {% if extractions %}
-<h2>Extracted from the JD</h2>
+<h2>What the job description says</h2>
 {% for x in extractions %}
-<div class="card" style="padding:.8rem 1rem;margin-bottom:.7rem">
-  <form method="post" action="/extractions/{{ x.id }}/verify" style="display:grid;gap:.45rem">
+<div class="card pad" style="margin-bottom:.7rem">
+  <form method="post" action="/extractions/{{ x.id }}/verify" style="display:grid;gap:.5rem">
     <input type="hidden" name="application_id" value="{{ a.id }}">
-    <div class="facts mono" style="color:var(--muted)">
+    <div class="mono quiet" style="font-size:.72rem">
       via {{ x.platform }} · {{ x.model }} · {{ x.prompt_version }}
-      {% if x.verified %}· <span style="color:var(--offer)">verified</span>{% else %}· unverified{% endif %}
+      {% if x.verified %}· <span style="color:var(--offer)">verified by you</span>
+      {% else %}· not yet checked{% endif %}
     </div>
-    <label>languages
+    <label class="sm quiet">languages
       <input type="text" name="languages" value="{{ x.languages | join(', ') }}" aria-label="Languages"
         style="max-width:100%;width:100%"></label>
-    <label>technologies
+    <label class="sm quiet">technologies
       <input type="text" name="technologies" value="{{ x.technologies | join(', ') }}" aria-label="Technologies"
         style="max-width:100%;width:100%"></label>
     <dl class="kv">
@@ -80,10 +123,10 @@
           <option value="local_only">local_only</option>
           <option value="unclear">unclear</option>
         </select>
-        {% if x.visa_notes %}<span style="color:var(--muted)">{{ x.visa_notes }}</span>{% endif %}
+        {% if x.visa_notes %}<span class="quiet">{{ x.visa_notes }}</span>{% endif %}
       </dd>
     </dl>
-    <div><button class="primary">{% if x.verified %}Save corrections{% else %}Verify{% endif %}</button></div>
+    <div><button class="primary">{% if x.verified %}Save corrections{% else %}Looks right — verify{% endif %}</button></div>
   </form>
 </div>
 {% endfor %}
@@ -91,24 +134,26 @@
 
 <h2>Cover letter</h2>
 {% if cover_job and cover_job.state in ('pending', 'running') and cover_job.attempts == 0 %}
-<p class="empty">Draft queued — it appears here once the worker runs.</p>
+<div class="note"><strong>Draft queued</strong> — it appears here once the worker runs.</div>
 {% elif cover_job and cover_job.state in ('pending', 'running') and cover_job.attempts > 0 %}
-<p class="empty" style="color:var(--pending)">Draft generation failed and is retrying — attempt {{ cover_job.attempts }} of {{ cover_max_attempts }}{% if cover_error %}: {{ cover_error }}{% endif %}</p>
+<div class="note" style="--c:var(--age)">Draft generation failed and is retrying —
+  attempt {{ cover_job.attempts }} of {{ cover_max_attempts }}{% if cover_error %}: {{ cover_error }}{% endif %}</div>
 {% elif cover_job and cover_job.state == 'dead' %}
-<p class="empty" style="color:var(--rejected)">Draft generation failed after {{ cover_job.attempts }} attempts{% if cover_error %}: {{ cover_error }}{% endif %}</p>
+<div class="note" style="--c:var(--rejected)">Draft generation failed after
+  {{ cover_job.attempts }} attempts{% if cover_error %}: {{ cover_error }}{% endif %}</div>
 {% endif %}
 {% for ar in artifacts %}
-<div class="card" style="padding:.8rem 1rem;margin-bottom:.7rem">
-  <div class="facts mono" style="color:var(--muted)">{{ ar.kind }} · {{ ar.created_at | dtt }}{% if ar.model %} · {{ ar.model }}{% endif %}</div>
-  <details><summary>Show text</summary>
+<div class="card pad" style="margin-bottom:.7rem">
+  <div class="mono quiet" style="font-size:.72rem">{{ ar.kind }} · {{ ar.created_at | dtt }}{% if ar.model %} · {{ ar.model }}{% endif %}</div>
+  <details><summary style="cursor:pointer">Show text</summary>
     <pre style="white-space:pre-wrap;font:inherit;margin:.5rem 0 0">{{ ar.content }}</pre>
   </details>
 </div>
 {% endfor %}
 {% if not (cover_job and cover_job.state in ('pending', 'running')) %}
-<form method="post" action="/applications/{{ a.id }}/cover-letter">
+<form method="post" action="/applications/{{ a.id }}/cover-letter" class="bar">
   <button class="primary">Draft a cover letter</button>
-  <span style="color:var(--muted)">uses your resume profile + the captured JD</span>
+  <span class="quiet sm">grounded in your resume profile and the captured job description</span>
 </form>
 {% endif %}
 
@@ -123,7 +168,7 @@
       <td class="mono">{% if p.posted_label %}{% if p.reposted %}reposted {% endif %}{{ p.posted_label }}{% else %}—{% endif %}</td>
       <td class="mono">{{ p.ats or "—" }}</td>
       <td class="mono">{{ p.captured_at | dt }} · {{ p.captured_via }}</td>
-      <td class="mono">{% if p.jd_text %}<details><summary>yes</summary>
+      <td class="mono">{% if p.jd_text %}<details><summary style="cursor:pointer">yes</summary>
         <pre style="white-space:pre-wrap;font:inherit;margin:.5rem 0 0;max-width:60rem">{{ p.jd_text }}</pre>
       </details>{% else %}needs enrichment{% endif %}</td>
       <td>{% if p.url %}<a href="{{ p.url }}">open</a>{% endif %}</td></tr>
@@ -141,21 +186,25 @@
       <td>{{ c.notes or "—" }}</td>
       <td><a href="/applications/{{ a.id }}/contacts/{{ c.id }}/edit">edit</a>
         <form method="post" action="/applications/{{ a.id }}/contacts/{{ c.id }}/delete" style="display:inline">
-          <button type="submit" style="margin-left:.4rem">delete</button>
+          <button type="submit" class="danger" style="margin-left:.4rem">delete</button>
         </form></td></tr>
   {% endfor %}</tbody>
 </table></div>
-{% else %}<p class="empty">No contacts yet.</p>{% endif %}
-<form method="post" action="/applications/{{ a.id }}/contacts"
-      style="margin-top:.6rem;display:flex;gap:.5rem;flex-wrap:wrap;align-items:end">
-  <label>name <input type="text" name="name" placeholder="recruiter name" required aria-label="Contact name"></label>
-  <label>role <input type="text" name="role" placeholder="optional" aria-label="Role"></label>
-  <label>url <input type="text" name="url" placeholder="optional profile URL" aria-label="URL"></label>
-  <label style="display:flex;align-items:center;gap:.3rem">
-    <input type="checkbox" name="approached" value="yes"> approached</label>
-  <input type="text" name="notes" placeholder="notes (optional)" aria-label="Notes">
-  <button class="primary">Add contact</button>
-</form>
+{% endif %}
+<details {% if not contacts %}style="margin-top:-.2rem"{% else %}style="margin-top:.6rem"{% endif %}>
+  <summary class="sm quiet" style="cursor:pointer">
+    {% if contacts %}Add another contact{% else %}No contacts yet — add one{% endif %}</summary>
+  <form method="post" action="/applications/{{ a.id }}/contacts"
+        style="margin-top:.6rem;display:flex;gap:.5rem;flex-wrap:wrap;align-items:end">
+    <label class="sm quiet">name <input type="text" name="name" placeholder="recruiter name" required aria-label="Contact name"></label>
+    <label class="sm quiet">role <input type="text" name="role" placeholder="optional" aria-label="Role"></label>
+    <label class="sm quiet">url <input type="text" name="url" placeholder="optional profile URL" aria-label="URL"></label>
+    <label style="display:flex;align-items:center;gap:.3rem" class="sm quiet">
+      <input type="checkbox" name="approached" value="yes"> approached</label>
+    <input type="text" name="notes" placeholder="notes (optional)" aria-label="Notes">
+    <button class="primary">Add contact</button>
+  </form>
+</details>
 
 {% if emails %}
 <h2>Emails</h2>
@@ -164,7 +213,7 @@
   <tbody>{% for m in emails %}
   <tr><td class="mono">{{ m.received_at | dtt }}</td><td>{{ m.subject or "—" }}</td>
       <td class="mono">{{ m.sender }}</td>
-      <td>{% if m.classification %}<span class="badge" style="--c:var(--applied)">{{ m.classification }}</span>{% endif %}</td>
+      <td>{% if m.classification %}<span class="badge" style="--c:var(--viewed)">{{ m.classification }}</span>{% endif %}</td>
       <td>
         <form method="post" action="/emails/{{ m.id }}/refile"
               style="display:flex;gap:.3rem;align-items:center;flex-wrap:wrap">
@@ -182,14 +231,16 @@
       </td></tr>
   {% endfor %}</tbody>
 </table></div>
-<p class="mono" style="color:var(--muted);font-size:.78rem;margin:.4rem 0 0">
-  Wrong company/application? "Re-file" undoes just this email's events here and
-  moves it to the one you pick — the rest of this application's history is
-  untouched. If that empties this application entirely (it existed only
-  because of this email), it's deleted too.
+<p class="mono quiet" style="font-size:.75rem;margin:.5rem 0 0;max-width:60ch">
+  Wrong company? "Re-file" undoes just this email's events here and moves it to
+  the one you pick — the rest of this application's history is untouched. If
+  that empties this application entirely (it existed only because of this
+  email), it's deleted too.
 </p>
 {% endif %}
 
-<h2 style="color:var(--rejected)">Danger zone</h2>
-<a href="/applications/{{ a.id }}/delete"><button style="border-color:var(--rejected);color:var(--rejected)">Delete this application</button></a>
+<p style="margin-top:2.5rem;text-align:right">
+  <a class="sm quiet" href="/applications/{{ a.id }}/delete"
+     style="color:var(--muted)">Delete this application</a>
+</p>
 {% endblock %}

@@ -107,12 +107,12 @@ check("stub geometry: C is pending band",
       0.88 <= _cos(VECTORS["JD-A"], VECTORS["JD-C"]) < 0.95)
 
 
-def cap(pid, company, title, jd_key, platform="linkedin"):
+def cap(pid, company, title, jd_key, platform="linkedin", answers=None):
     r = client.post("/captures", headers=AUTH, json={
         "platform": platform, "platform_job_id": pid,
         "company": company, "title": title,
         "jd_text": f"{jd_key} Build LLM systems for {company}.",
-        "trigger": "apply"})
+        "trigger": "apply", "answers": answers})
     assert r.status_code == 200, r.text
     return r.json()
 
@@ -124,7 +124,9 @@ def drain():
 
 
 print("extraction chain: capture -> extract_jd -> embed_jd -> dedup_scan")
-ra = cap("P3-A", "Vantage Tech Co., Ltd.", "Senior AI Engineer", "JD-A")
+ra = cap("P3-A", "Vantage Tech Co., Ltd.", "Senior AI Engineer", "JD-A",
+         answers=[{"question": "Notice period?", "answer": "1 month"},
+                  {"question": "Years with Python", "answer": "8"}])
 drain()
 with db.connect() as conn:
     x = conn.execute(
@@ -139,7 +141,9 @@ with db.connect() as conn:
     check("embedding stored", emb["has"] is True)
 
 print("dedup: auto merge (cross-platform, same role)")
-rb = cap("P3-B", "Vantage Tech", "Senior AI Engineer (LLM)", "JD-B", platform="jobstreet")
+rb = cap("P3-B", "Vantage Tech", "Senior AI Engineer (LLM)", "JD-B", platform="jobstreet",
+         answers=[{"question": "Notice period", "answer": "2 months"},
+                  {"question": "Willing to relocate?", "answer": "No"}])
 drain()
 with db.connect() as conn:
     check("applications merged into one",
@@ -155,6 +159,20 @@ with db.connect() as conn:
         "SELECT state FROM duplicate_candidates ORDER BY created_at DESC LIMIT 1"
     ).fetchone()
     check("pair recorded as auto", st["state"] == "auto", st)
+    # Both postings' forms asked about notice period, in different words. The
+    # UNIQUE (application_id, question_norm) would reject a blind move, so
+    # merge_jobs drops the loser's copy of a question the winner already has.
+    qa = {r_["question_norm"]: r_["answer"] for r_ in conn.execute(
+        "SELECT question_norm, answer FROM application_answers aa "
+        "JOIN applications a ON a.id = aa.application_id "
+        "WHERE a.job_id = (SELECT job_id FROM postings WHERE platform_job_id='P3-A')"
+    ).fetchall()}
+    check("merged answers: one row per question, loser's duplicate dropped",
+          sorted(qa) == ["notice period", "willing to relocate", "years with python"], qa)
+    check("surviving application kept its own answer to the shared question",
+          qa["notice period"] == "1 month", qa)
+    check("the other posting's unique answer came across",
+          qa["willing to relocate"] == "No", qa)
 
 print("dedup: pending band goes to triage")
 rc = cap("P3-C", "Talent Bridge Agency", "Senior AI Engineer", "JD-C", platform="indeed")

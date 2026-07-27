@@ -5,25 +5,39 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}tracker{% endblock %}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
+/* ---------------------------------------------------------------- tokens
+   Colour means exactly one thing here: the state of the wait. The page is
+   achromatic at rest — chroma is reserved for blue (someone engaged), amber
+   (time passing, unanswered), rust (closed), green (offer). Every other
+   status is grey on purpose, so a glance down a list finds the live threads
+   and nothing else competes for it. */
 :root{
   color-scheme:light;
-  --bg:#F3F6F7; --card:#FFFFFF; --ink:#1B2A33; --muted:#5E7079;
-  --line:#DAE3E7; --accent:#0E6E66; --accent-ink:#FFFFFF; --mix:#FFFFFF;
-  --interested:#7A6A8A; --applied:#54707D; --viewed:#3D6B8E;
-  --interview_invite:#2B5FA3; --offer:#2F6B3A; --rejected:#9E4038;
-  --withdrawn:#6B6B6B; --pending:#A16207;
+  /* the ground is DARKER than the panels — paper laid on a desk mat */
+  --bg:#E4E8EB; --card:#F7F9FA; --ink:#141C24; --muted:#5A6873;
+  --line:#CCD5DB; --mix:#F7F9FA;
+  --accent:#1F53BE; --accent-ink:#FFFFFF;
+  --age:#A8620A;
+  /* status tokens keep their names (templates index them by status string),
+     but map onto the four semantic roles above */
+  --interested:#5A6873; --applied:#141C24; --viewed:#1F53BE;
+  --interview_invite:#1F53BE; --offer:#26694A; --rejected:#9A4231;
+  --withdrawn:#626C76; --pending:#A8620A;
 }
 /* "auto" (no saved pin): follow the OS. */
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
     color-scheme:dark;
-    --bg:#16181C; --card:#1E2228; --ink:#E4E9ED; --muted:#98A5AE;
-    --line:#2E353D; --accent:#4CC2B4; --accent-ink:#0B1416; --mix:#1E2228;
-    --interested:#B9A9CC; --applied:#9DB4C2; --viewed:#8CBCE0;
-    --interview_invite:#8FB2E8; --offer:#79C98A; --rejected:#E88C82;
-    --withdrawn:#A8A8A8; --pending:#E0B252;
+    --bg:#101419; --card:#181E25; --ink:#DBE3EA; --muted:#8695A2;
+    --line:#262F39; --mix:#181E25;
+    --accent:#7FB0FF; --accent-ink:#0A1017;
+    --age:#E3A445;
+    --interested:#8695A2; --applied:#DBE3EA; --viewed:#7FB0FF;
+    --interview_invite:#7FB0FF; --offer:#6FC793; --rejected:#E28D79;
+    --withdrawn:#82909C; --pending:#E3A445;
   }
 }
 /* An explicit pin beats the OS in both directions. Must come AFTER the media
@@ -32,128 +46,300 @@
    sync with the one above; CSS has no way to share it between the two. */
 :root[data-theme="dark"]{
   color-scheme:dark;
-  --bg:#16181C; --card:#1E2228; --ink:#E4E9ED; --muted:#98A5AE;
-  --line:#2E353D; --accent:#4CC2B4; --accent-ink:#0B1416; --mix:#1E2228;
-  --interested:#B9A9CC; --applied:#9DB4C2; --viewed:#8CBCE0;
-  --interview_invite:#8FB2E8; --offer:#79C98A; --rejected:#E88C82;
-  --withdrawn:#A8A8A8; --pending:#E0B252;
+  --bg:#101419; --card:#181E25; --ink:#DBE3EA; --muted:#8695A2;
+  --line:#262F39; --mix:#181E25;
+  --accent:#7FB0FF; --accent-ink:#0A1017;
+  --age:#E3A445;
+  --interested:#8695A2; --applied:#DBE3EA; --viewed:#7FB0FF;
+  --interview_invite:#7FB0FF; --offer:#6FC793; --rejected:#E28D79;
+  --withdrawn:#82909C; --pending:#E3A445;
 }
+
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);
-     font:15px/1.5 'IBM Plex Sans',system-ui,sans-serif}
-.mono{font-family:'IBM Plex Mono',ui-monospace,monospace}
+     font:15px/1.55 Archivo,system-ui,sans-serif;font-stretch:100%}
+.mono{font-family:'DM Mono',ui-monospace,monospace}
+/* Archivo's width axis carries hierarchy — nameplates and figures run wide,
+   prose runs normal. Size and weight stay comparatively quiet. */
+.wide{font-stretch:118%}
 a{color:var(--accent);text-decoration:none}
 a:hover{text-decoration:underline}
-a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible{
-  outline:2px solid var(--accent);outline-offset:2px}
+a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible,
+summary:focus-visible,.row:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
-header{display:flex;align-items:baseline;gap:1.6rem;flex-wrap:wrap;
-       padding:.9rem 1.6rem;background:var(--card);border-bottom:1px solid var(--line)}
-header .brand{font-family:'IBM Plex Mono',monospace;font-weight:500;font-size:1.05rem}
-header .brand::before{content:"▸ ";color:var(--accent)}
-header nav{display:flex;gap:1.2rem}
+/* -------------------------------------------------------------- structure
+   header and main share one grid — the brand sits on the same left edge as
+   the content, not floating out in the margin. */
+.wrap{max-width:1140px;margin:0 auto;padding:0 1.6rem}
+header{background:var(--card);border-bottom:1px solid var(--line)}
+header .wrap{display:flex;align-items:center;gap:1.6rem;flex-wrap:wrap;
+             min-height:3.1rem;padding-top:.5rem;padding-bottom:.5rem}
+header .brand{font-family:'DM Mono',monospace;font-weight:500;font-size:.74rem;
+              text-transform:uppercase;letter-spacing:.22em;color:var(--ink)}
+header nav{display:flex;gap:1.15rem;font-size:.88rem}
 header nav a{color:var(--muted)}
 header nav a.active{color:var(--ink);font-weight:600}
-.pill{font-family:'IBM Plex Mono',monospace;font-size:.72rem;
-      background:color-mix(in srgb,var(--pending) 14%,var(--mix));color:var(--pending);
-      border:1px solid color-mix(in srgb,var(--pending) 40%,var(--mix));
-      border-radius:999px;padding:0 .5em;margin-left:.35em;vertical-align:1px}
+main{display:block}
+main .inner{max-width:1140px;margin:0 auto;padding:1.5rem 1.6rem 4rem}
 
-/* in-page lane/filter tabs — same active treatment as the top nav, one size
-   down, for triage lanes and the applications origin filter */
-.tabs{display:flex;gap:1.1rem;border-bottom:1px solid var(--line);padding-bottom:.6rem}
+h1{font-size:1.4rem;font-stretch:115%;font-weight:600;letter-spacing:-.01em;
+   margin:.1rem 0 1.1rem}
+h2{font-size:.7rem;margin:2rem 0 .6rem;color:var(--muted);
+   font-family:'DM Mono',monospace;font-weight:500;
+   text-transform:uppercase;letter-spacing:.14em}
+h2:first-child{margin-top:.4rem}
+
+.pill{font-family:'DM Mono',monospace;font-size:.7rem;
+      background:color-mix(in srgb,var(--age) 15%,var(--mix));color:var(--age);
+      border:1px solid color-mix(in srgb,var(--age) 40%,var(--mix));
+      border-radius:999px;padding:0 .5em;margin-left:.4em;vertical-align:1px}
+
+/* in-page lane/filter tabs — same active treatment as the top nav */
+.tabs{display:flex;gap:1.1rem;align-items:baseline}
 .tabs a{color:var(--muted);font-size:.85rem}
 .tabs a.active{color:var(--ink);font-weight:600}
 
-main{max-width:1080px;margin:0 auto;padding:1.4rem 1.6rem 3rem}
-h1{font-size:1.15rem;margin:.2rem 0 1rem}
-h2{font-size:.8rem;margin:1.6rem 0 .5rem;color:var(--muted);
-   font-family:'IBM Plex Mono',monospace;font-weight:500;
-   text-transform:uppercase;letter-spacing:.08em}
+/* ------------------------------------------------------------------ cards */
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;
+      padding:0;overflow:hidden}
+.pad{padding:.85rem 1rem}
+.note{background:var(--card);border:1px solid var(--line);border-radius:10px;
+      border-left:3px solid var(--c,var(--accent));padding:.7rem 1rem;margin-bottom:1rem}
+.empty{color:var(--muted);padding:2rem 1rem;text-align:center;
+       border:1px dashed var(--line);border-radius:10px}
+.quiet{color:var(--muted)}
+.sm{font-size:.85rem}
 
-/* signature: the funnel strip — pipeline counts as a segmented bar */
-.funnel{display:flex;gap:2px;margin:0 0 1.4rem;border-radius:6px;overflow:hidden}
-.funnel .seg{flex-grow:var(--n);flex-basis:0;min-width:86px;padding:.45rem .6rem .35rem;
-             border-top:3px solid var(--c);
-             background:color-mix(in srgb,var(--c) 9%,var(--mix))}
-.funnel .seg .n{font-family:'IBM Plex Mono',monospace;font-weight:500;font-size:1.05rem;color:var(--c)}
-.funnel .seg .l{display:block;font-size:.7rem;color:var(--muted);
-                font-family:'IBM Plex Mono',monospace;letter-spacing:.04em;
-                overflow-wrap:anywhere}
+/* ----------------------------------------------------------------- tables */
+table{width:100%;border-collapse:collapse}
+th{font-family:'DM Mono',monospace;font-weight:500;font-size:.66rem;
+   text-transform:uppercase;letter-spacing:.12em;color:var(--muted);
+   text-align:left;padding:.55rem .9rem;border-bottom:1px solid var(--line)}
+td{padding:.5rem .9rem;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:0}
+tbody tr:hover td{background:color-mix(in srgb,var(--accent) 5%,var(--mix))}
+td.mono,th.mono{font-family:'DM Mono',monospace;font-size:.8rem;color:var(--muted)}
+.num{font-variant-numeric:tabular-nums}
 
-.badge{font-family:'IBM Plex Mono',monospace;font-size:.74rem;white-space:nowrap;
-       color:var(--c);border:1px solid color-mix(in srgb,var(--c) 45%,var(--mix));
-       background:color-mix(in srgb,var(--c) 9%,var(--mix));
+.badge{font-family:'DM Mono',monospace;font-size:.72rem;white-space:nowrap;
+       color:var(--c);border:1px solid color-mix(in srgb,var(--c) 40%,var(--mix));
+       background:color-mix(in srgb,var(--c) 10%,var(--mix));
        border-radius:4px;padding:.05em .45em}
 
-.card{background:var(--card);border:1px solid var(--line);border-radius:8px;
-      padding:0;overflow:hidden}
-table{width:100%;border-collapse:collapse}
-th{font-family:'IBM Plex Mono',monospace;font-weight:500;font-size:.7rem;
-   text-transform:uppercase;letter-spacing:.08em;color:var(--muted);
-   text-align:left;padding:.6rem .9rem;border-bottom:1px solid var(--line)}
-td{padding:.55rem .9rem;border-bottom:1px solid var(--line);vertical-align:top}
-tr:last-child td{border-bottom:0}
-tr:hover td{background:color-mix(in srgb,var(--accent) 4%,var(--mix))}
-td.mono,th.mono{font-family:'IBM Plex Mono',monospace;font-size:.82rem;color:var(--muted)}
+/* ------------------------------------------------------- signature: traces
+   One application, one trace, on a date axis shared by the whole list. The
+   tail runs from the last event to today — the thing that grows while you
+   wait, and turns amber once it crosses the follow-up threshold. */
+.axis{position:relative;height:1.15rem;font-family:'DM Mono',monospace;
+      font-size:.64rem;color:var(--muted);letter-spacing:.04em}
+.axis .t{position:absolute;left:var(--x);transform:translateX(-50%);white-space:nowrap}
+.axis .t.first{transform:none;left:0}
+.axis .t.last{transform:none;right:0;left:auto;color:var(--ink)}
 
-.tri{background:var(--card);border:1px solid var(--line);border-radius:8px;
+/* Week gridlines only — deliberately NO baseline rule per row. The single
+   horizontal mark on a line is then always data (the tail you're waiting on),
+   never chrome, which is what lets the amber read at a glance. */
+.trace{position:relative;height:1.5rem;
+       background:repeating-linear-gradient(to right,
+         color-mix(in srgb,var(--line) 60%,var(--mix)) 0 1px,
+         transparent 1px var(--week,7.7%))}
+/* today — the hard right edge everything is measured against */
+.trace::after{content:"";position:absolute;right:0;top:.1rem;bottom:.1rem;width:1px;
+              background:color-mix(in srgb,var(--ink) 55%,var(--mix))}
+.trace .seg{position:absolute;top:50%;left:var(--a);width:calc(var(--b) - var(--a));
+            height:3px;margin-top:-1.5px;border-radius:2px;
+            background:color-mix(in srgb,var(--c) 55%,var(--mix))}
+.trace .seg.aging{background:color-mix(in srgb,var(--age) 70%,var(--mix))}
+.trace .pt{position:absolute;top:50%;left:var(--x);width:7px;height:7px;
+           margin:-3.5px 0 0 -3.5px;border-radius:50%;background:var(--c);
+           border:1px solid var(--mix)}
+.trace .pt.hollow{background:var(--mix);border:1.5px solid var(--c)}
+/* a closed thread stops with a cap instead of running to today */
+.trace .cap{position:absolute;top:50%;left:var(--x);width:2px;height:11px;
+            margin:-5.5px 0 0 -1px;background:var(--c)}
+
+/* the timeline list: name gutter | trace | outcome
+   The name column takes the free space and the trace is CAPPED, not the other
+   way round. With a real backlog most rows are one applied event and an amber
+   tail — 47 identical lines — while the company/role they belong to was being
+   ellipsed at 20rem ("Wingtip Talent Group | Specialist Techn…"). Agency
+   postings have long names; the trace repeating "still nothing" in 600px does
+   not need them. It still shares one axis, so rows stay comparable. */
+.tl{display:grid;grid-template-columns:minmax(11rem,1fr) minmax(7rem,20rem) 11.5rem;
+    align-items:center;gap:0 1.1rem;padding:.3rem .9rem;
+    border-bottom:1px solid var(--line);color:inherit}
+.tl:last-child{border-bottom:0}
+a.tl:hover{background:color-mix(in srgb,var(--accent) 5%,var(--mix));text-decoration:none}
+.tl .name{min-width:0}
+.tl .co,.tl .ro{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tl .co{font-weight:600}
+.tl .ro{color:var(--muted);font-size:.82rem}
+.tl .out{display:flex;align-items:center;gap:.4rem;justify-content:flex-end;
+         font-family:'DM Mono',monospace;font-size:.72rem;color:var(--muted)}
+.tl-head{padding:.5rem .9rem .35rem}
+.tl-head .lab{font-family:'DM Mono',monospace;font-size:.66rem;
+              text-transform:uppercase;letter-spacing:.12em;color:var(--muted)}
+
+/* needs-follow-up block. Amber only on the wait length — the number IS the
+   reason the row is here, and rule 1 says the colour marks time passing
+   unanswered. The rest stays achromatic; a block of amber rows would just be
+   a highlighted list. */
+/* h2 is an uppercase mono section marker; a sentence of explanation set in it
+   becomes a shouted paragraph. Opt the subtitle back out. */
+.fu-h{display:flex;align-items:baseline;gap:.7rem;flex-wrap:wrap}
+.fu-h .quiet{text-transform:none;letter-spacing:0;
+             font-family:Archivo,system-ui,sans-serif}
+.fu-row{display:grid;grid-template-columns:minmax(0,1fr) 3.2rem max-content;
+        align-items:center;gap:0 1rem;padding:.4rem .9rem;
+        border-bottom:1px solid var(--line)}
+.fu-row:last-child{border-bottom:0}
+.fu details .fu-row:first-of-type{border-top:1px solid var(--line)}
+.fu-name{min-width:0;color:inherit}
+.fu-name:hover{text-decoration:none}
+.fu-name:hover .co{color:var(--accent)}
+.fu-name .co,.fu-name .ro{display:block;white-space:nowrap;
+                          overflow:hidden;text-overflow:ellipsis}
+.fu-name .co{font-weight:600}
+.fu-name .ro{color:var(--muted);font-size:.82rem}
+.fu-d{color:var(--age);text-align:right;font-size:.78rem}
+.fu form{margin:0}
+.fu summary{cursor:pointer;padding:.45rem .9rem}
+
+/* --------------------------------------------------------------- the strip
+   Counts as one restrained line, not five equal boxes pretending to be a
+   funnel. Segment width IS the count; derived figures live in .stats. */
+/* Segment width IS the count. No numerals inside the bar — they'd have to
+   wrap on a thin segment, which is the bug the old strip had; the legend
+   underneath carries them at a size that always fits. */
+.funnel{display:flex;gap:2px;height:.45rem;margin:0 0 .5rem;
+        border-radius:3px;overflow:hidden}
+.funnel .seg{flex-grow:var(--n);flex-basis:0;min-width:3px;background:var(--c)}
+.funnel .seg .n,.funnel .seg .l{position:absolute;width:1px;height:1px;
+        overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.legend{display:flex;flex-wrap:wrap;gap:.15rem 1rem;margin:0 0 1.5rem;
+        font-family:'DM Mono',monospace;font-size:.72rem;color:var(--muted)}
+.legend i{display:inline-block;width:.45rem;height:.45rem;border-radius:50%;
+          background:var(--c);margin-right:.4rem;vertical-align:.05rem}
+.stats{display:flex;flex-wrap:wrap;gap:.2rem 1.8rem;margin:.2rem 0 1.1rem;
+       align-items:baseline;
+       font-family:'DM Mono',monospace;font-size:.74rem;color:var(--muted)}
+.stats b{font-family:Archivo,sans-serif;font-stretch:118%;font-weight:600;
+         font-size:1.35rem;color:var(--ink);font-variant-numeric:tabular-nums;
+         margin-right:.35rem}
+
+/* ------------------------------------------------------------------ charts
+   Every chart on the analytics page is single-series, so there is no
+   categorical palette and no legend: magnitude gets one hue, the panel title
+   names the measure. Marks are thin, rounded at the data end only, and
+   anchored to a baseline that is the only rule drawn. */
+.fbars{display:grid;gap:.45rem}
+.fb{display:grid;grid-template-columns:6.5rem minmax(0,1fr) 3rem;
+    align-items:center;gap:.75rem}
+.fb .lab{font-family:'DM Mono',monospace;font-size:.7rem;color:var(--muted);
+         text-transform:uppercase;letter-spacing:.1em}
+.fb .track{height:.8rem;border-radius:4px;overflow:hidden;
+           background:color-mix(in srgb,var(--line) 45%,var(--mix))}
+.fb .fill{display:block;width:var(--w);height:100%;background:var(--accent);
+          border-radius:0 4px 4px 0}
+.fb .val{font-family:'DM Mono',monospace;font-size:.8rem;text-align:right;
+         font-variant-numeric:tabular-nums}
+
+.panel{margin-bottom:1rem}
+.ptitle{font-family:'DM Mono',monospace;font-size:.72rem;margin-bottom:.4rem}
+.spark{display:flex;align-items:flex-end;gap:2px;height:3.4rem;
+       border-bottom:1px solid var(--line)}
+.spark .col{flex:1;display:flex;align-items:flex-end;height:100%;min-width:0}
+/* NOT .bar — that name belongs to the toolbar/button-row utility below, whose
+   margin-bottom:.9rem was silently lifting every chart bar 14px off the axis
+   and pushing the tallest one up over its own panel title. A scoped selector
+   does NOT protect you from a less-specific rule setting a property the
+   scoped one never mentions. Keep chart class names out of the utility
+   namespace entirely. */
+.spark .wk{width:100%;height:var(--h);min-height:2px;background:var(--c);
+           border-radius:3px 3px 0 0}
+.xaxis{display:flex;justify-content:space-between;margin-top:.3rem;
+       font-family:'DM Mono',monospace;font-size:.68rem;color:var(--muted)}
+
+/* ------------------------------------------------------------------ forms */
+button,select,input,textarea{font:inherit}
+button{font-family:'DM Mono',monospace;font-size:.78rem;cursor:pointer;
+       border:1px solid var(--line);background:var(--card);color:var(--ink);
+       border-radius:6px;padding:.34rem .7rem}
+button:hover{border-color:var(--accent);color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+button.primary:hover{color:var(--accent-ink);filter:brightness(1.08)}
+button.link{border:0;background:none;color:var(--accent);padding:0}
+button.link:hover{text-decoration:underline}
+button.danger:hover{border-color:var(--rejected);color:var(--rejected)}
+select,input[type=text],input[type=date],input[type=time],input[type=password],
+input[type=email],input[type=search]{
+       border:1px solid var(--line);border-radius:6px;padding:.32rem .55rem;
+       background:var(--card);color:var(--ink);max-width:20rem}
+input[type=search]{max-width:100%}
+textarea{border:1px solid var(--line);border-radius:6px;padding:.5rem;
+       background:var(--card);color:var(--ink)}
+.bar{display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;margin-bottom:.9rem}
+.grow{flex:1 1 12rem;min-width:0}
+
+dl.kv{display:grid;grid-template-columns:max-content 1fr;gap:.3rem 1.2rem;margin:0}
+dl.kv dt{color:var(--muted);font-family:'DM Mono',monospace;font-size:.75rem}
+dl.kv dd{margin:0}
+/* Form Q&A. Stacked, not two columns like dl.kv: a screening question is a
+   sentence, and the answer beside it is the thing being read — the question
+   recedes (muted, smaller) and the answer sits at body weight below it. */
+dl.qa{margin:0;display:grid;gap:.75rem}
+dl.qa dt{color:var(--muted);font-size:.82rem;max-width:70ch}
+dl.qa dd{margin:.12rem 0 0;font-stretch:105%;white-space:pre-wrap;max-width:70ch}
+dl.qa dd .quiet{font-size:.72rem}
+ul.timeline{list-style:none;margin:0;padding:0}
+ul.timeline li{display:flex;gap:.9rem;padding:.4rem 0;border-bottom:1px solid var(--line)}
+ul.timeline li:last-child{border-bottom:0}
+ul.timeline .when{font-family:'DM Mono',monospace;font-size:.76rem;
+                  color:var(--muted);white-space:nowrap;min-width:9.5rem}
+
+.tri{background:var(--card);border:1px solid var(--line);border-radius:10px;
      padding:.9rem 1rem;margin-bottom:.9rem;display:grid;gap:.7rem}
 .tri .meta{display:flex;gap:.8rem;flex-wrap:wrap;align-items:baseline}
 .tri .subject{font-weight:600}
 .tri .from{color:var(--muted);font-size:.85rem}
-.tri .facts{font-family:'IBM Plex Mono',monospace;font-size:.8rem;color:var(--muted)}
+.tri .facts{font-family:'DM Mono',monospace;font-size:.78rem;color:var(--muted)}
 .tri form{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center}
 
-button,select,input[type=text],input[type=date],input[type=time],input[type=password],textarea{font:inherit}
-button{font-family:'IBM Plex Mono',monospace;font-size:.8rem;cursor:pointer;
-       border:1px solid var(--line);background:var(--card);color:var(--ink);
-       border-radius:6px;padding:.32rem .7rem}
-button:hover{border-color:var(--accent);color:var(--accent)}
-button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
-select,input[type=text],input[type=date],input[type=time],input[type=password]{
-       border:1px solid var(--line);border-radius:6px;padding:.3rem .5rem;
-       background:var(--card);color:var(--ink);max-width:20rem}
-textarea{border:1px solid var(--line);border-radius:6px;padding:.5rem;
-       background:var(--card);color:var(--ink)}
-
-.empty{color:var(--muted);padding:2.2rem 1rem;text-align:center;
-       border:1px dashed var(--line);border-radius:8px}
-dl.kv{display:grid;grid-template-columns:max-content 1fr;gap:.25rem 1.2rem;margin:0}
-dl.kv dt{color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:.78rem}
-dl.kv dd{margin:0}
-ul.timeline{list-style:none;margin:0;padding:0}
-ul.timeline li{display:flex;gap:.9rem;padding:.4rem 0;border-bottom:1px solid var(--line)}
-ul.timeline li:last-child{border-bottom:0}
-ul.timeline .when{font-family:'IBM Plex Mono',monospace;font-size:.78rem;
-                  color:var(--muted);white-space:nowrap;min-width:9.5rem}
 @media (prefers-reduced-motion: no-preference){
-  .tri,tr{transition:background .12s ease}
+  .tri,tr,a.tl{transition:background .12s ease}
+}
+@media (max-width:820px){
+  .tl{grid-template-columns:minmax(9rem,1fr) 9rem;gap:0 .7rem}
+  .tl .trace,.tl-head .axis{display:none}
 }
 @media (max-width:720px){
-  main{padding:1rem}
+  main .inner{padding:1rem}
+  .wrap{padding:0 1rem}
   .card{overflow-x:auto}
-  .funnel .seg{min-width:64px}
+  .funnel .seg{min-width:4.6rem}
 }
 </style>
 </head>
 <body>
 <header>
-  <span class="brand">tracker</span>
-  <nav>
-    <a href="/" class="{% block nav_apps %}{% endblock %}">applications</a>
-    <a href="/triage" class="{% block nav_triage %}{% endblock %}">triage{% if pending %}<span class="pill">{{ pending }}</span>{% endif %}</a>
-    <a href="/analytics" class="{% block nav_analytics %}{% endblock %}">analytics</a>
-    <a href="/settings" class="{% block nav_settings %}{% endblock %}">settings</a>
-  </nav>
-  <nav style="margin-left:auto">
-    <form method="post" action="/logout" style="display:inline">
-      <button style="border:0;background:none;color:var(--muted);cursor:pointer;padding:0;font:inherit">sign out</button>
-    </form>
-  </nav>
+  <div class="wrap">
+    <span class="brand">tracker</span>
+    <nav>
+      <a href="/" class="{% block nav_apps %}{% endblock %}">applications</a>
+      <a href="/triage" class="{% block nav_triage %}{% endblock %}">triage{% if pending %}<span class="pill">{{ pending }}</span>{% endif %}</a>
+      <a href="/analytics" class="{% block nav_analytics %}{% endblock %}">analytics</a>
+      <a href="/answers" class="{% block nav_answers %}{% endblock %}">answers</a>
+      <a href="/settings" class="{% block nav_settings %}{% endblock %}">settings</a>
+    </nav>
+    <nav style="margin-left:auto">
+      <form method="post" action="/logout" style="display:inline">
+        <button class="link" style="font-family:Archivo,sans-serif;font-size:.88rem">Sign out</button>
+      </form>
+    </nav>
+  </div>
 </header>
-<main>
+<main><div class="inner">
 {% block content %}{% endblock %}
-</main>
+</div></main>
 </body>
 </html>

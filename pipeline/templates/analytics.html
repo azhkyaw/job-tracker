@@ -2,32 +2,97 @@
 {% block title %}analytics — tracker{% endblock %}
 {% block nav_analytics %}active{% endblock %}
 {% block content %}
-<h1>Funnel</h1>
-<div class="funnel">
-  <div class="seg" style="--n:1;--c:var(--applied)"><span class="n">{{ summary.applied }}</span><span class="l">applied</span></div>
-  <div class="seg" style="--n:1;--c:var(--viewed)"><span class="n">{{ summary.responded }}</span><span class="l">responded</span></div>
-  <div class="seg" style="--n:1;--c:var(--interview_invite)"><span class="n">{{ summary.interviews }}</span><span class="l">interviews</span></div>
-  <div class="seg" style="--n:1;--c:var(--offer)"><span class="n">{{ summary.response_rate if summary.response_rate is not none else "—" }}{% if summary.response_rate is not none %}%{% endif %}</span><span class="l">response rate</span></div>
-  <div class="seg" style="--n:1;--c:var(--interested)"><span class="n">{{ summary.avg_days_to_resp or "—" }}</span><span class="l">avg days to resp.</span></div>
+<h1>How the search is going</h1>
+
+{% set stages = [
+  ("applied",     summary.applied),
+  ("replied",     summary.responded),
+  ("interviewing", summary.interviews),
+  ("offers",      summary.offers)] %}
+{% set top = summary.applied or 1 %}
+
+<h2>Funnel</h2>
+<div class="card pad">
+  <div class="fbars">
+    {% for label, n in stages %}
+    <div class="fb" title="{{ n }} {{ label }}">
+      <span class="lab">{{ label }}</span>
+      <span class="track"><span class="fill" style="--w:{{ (100.0 * n / top) | round(1) }}%"></span></span>
+      <span class="val num">{{ n }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  <p class="sm quiet" style="margin:.7rem 0 0">
+    {% if summary.response_rate is not none %}
+      <strong>{{ summary.response_rate }}%</strong> of applications get a reply{% if summary.avg_days_to_resp %},
+      after <strong>{{ summary.avg_days_to_resp }}</strong> days on average{% endif %}.
+    {% else %}Not enough applied history yet to compute a response rate.{% endif %}
+  </p>
 </div>
 
-{% macro dim_table(title, rows) %}
+{% if weekly %}
+<h2>Week by week</h2>
+<div class="card pad">
+  <div class="panel">
+    <div class="ptitle">Applications sent <span class="quiet">— peak {{ weekly[0].applied_peak }} in a week</span></div>
+    <div class="spark">
+      {% for w in weekly %}
+      <div class="col" title="week of {{ w.label }} — {{ w.applied }} sent">
+        {% if w.applied %}<span class="wk" style="--h:{{ w.applied_h }};--c:var(--ink)"></span>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="panel">
+    <div class="ptitle">Replies received <span class="quiet">— peak {{ weekly[0].replied_peak }} in a week</span></div>
+    <div class="spark">
+      {% for w in weekly %}
+      <div class="col" title="week of {{ w.label }} — {{ w.replied }} replies">
+        {% if w.replied %}<span class="wk" style="--h:{{ w.replied_h }};--c:var(--accent)"></span>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="xaxis">
+    <span>{{ weekly[0].label }}</span>
+    {% if weekly | length > 1 %}<span>{{ weekly[-1].label }}</span>{% endif %}
+  </div>
+  <p class="sm quiet" style="margin:.5rem 0 0">
+    Each panel is scaled to its own peak — the two measures are an order of
+    magnitude apart, so their bar heights are not comparable across panels.
+  </p>
+</div>
+{% endif %}
+
+{% macro dim_table(title, rows, note=None) %}
 <h2>{{ title }}</h2>
 {% if rows %}
 <div class="card"><table>
-  <thead><tr><th></th><th>applied</th><th>responded</th><th>rate</th><th>interviews</th><th>avg days</th></tr></thead>
+  <thead><tr><th></th><th>applied</th><th>replied</th><th>rate</th><th>interviews</th><th>avg days</th></tr></thead>
   <tbody>{% for r in rows %}
-  <tr><td>{{ r.dim }}</td><td class="mono">{{ r.applied }}</td>
-      <td class="mono">{{ r.responded }}</td>
-      <td class="mono">{% if r.response_rate is not none %}{{ r.response_rate }}%{% else %}—{% endif %}</td>
-      <td class="mono">{{ r.interviews }}</td>
-      <td class="mono">{{ r.avg_days_to_resp or "—" }}</td></tr>
+  <tr><td>{{ r.dim }}</td><td class="mono num">{{ r.applied }}</td>
+      <td class="mono num">{{ r.responded }}</td>
+      <td class="mono num">{% if r.response_rate is not none %}{{ r.response_rate }}%
+        {%- else %}<span title="fewer than {{ min_rate_n }} applications — too few to rate">—</span>{% endif %}</td>
+      <td class="mono num">{{ r.interviews }}</td>
+      <td class="mono num">{{ r.avg_days_to_resp or "—" }}</td></tr>
   {% endfor %}</tbody>
 </table></div>
+{% if note %}<p class="sm quiet" style="margin:.45rem 0 0">{{ note }}</p>{% endif %}
 {% else %}<p class="empty">No applied events yet — this fills in as the funnel moves.</p>{% endif %}
 {% endmacro %}
 
-{{ dim_table("By platform", by_platform) }}
-{{ dim_table("Focused vs generic", by_focus) }}
+{{ dim_table("By platform", by_platform,
+   "A rate needs at least " ~ min_rate_n ~ " applications before it means anything; thinner rows show counts only.") }}
 {{ dim_table("By technology (top extracted)", by_technology) }}
+{# Only worth a section once the dimension actually splits — with everything
+   marked one way it's a row of totals wearing a table. #}
+{% if by_focus | length > 1 %}
+{{ dim_table("Tailored vs generic", by_focus) }}
+{% else %}
+<h2>Tailored vs generic</h2>
+<p class="empty">Nothing is marked tailored yet — so this can't compare anything.
+The quickest place to mark one is the capture receipt the extension shows right
+after you apply; the detail page can correct it later.</p>
+{% endif %}
 {% endblock %}

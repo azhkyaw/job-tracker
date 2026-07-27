@@ -11,6 +11,13 @@ alternative for Workspace/Advanced Protection accounts:
 `docs/email-ingest.md`. `docs/monetization.md` is
 superseded but retained for its Gmail restricted-scope compliance analysis.
 
+A fourth thing the extension captures as of 28 Jul 2026: the **screening
+questions an apply form asks and the answers given** (`application_answers`,
+migration 009; `pipeline/answers.py` owns normalisation and the write). Per
+application on its detail page, and grouped per *question* across every
+application at `/answers` — the second view is the point, since the same
+questions recur almost verbatim between employers.
+
 ## Commands
 
 - **Run ALL tests: `./scripts/test.sh`** — creates a throwaway `tracker_test`
@@ -53,7 +60,10 @@ superseded but retained for its Gmail restricted-scope compliance analysis.
    mutable status column; backfill inserts out of order safely.
 3. **postings ≠ jobs ≠ applications.** One application per (user, job). Dedup
    merges at the job level; `pipeline/dedup.py:merge_jobs` is the ONLY place
-   records combine (moves events/artifacts/emails/contacts before deleting).
+   records combine (moves events/artifacts/answers/emails/contacts before
+   deleting — `application_answers` is UNIQUE per (application, question_norm),
+   so the loser's copy of a question the winner already answered is dropped,
+   not moved).
    `pipeline/ingest.py:upsert_record` is its sibling on the write side — the
    ONLY place job/posting/application records are *created* from a capture
    (extension `/captures` and manual entry both call it); it owns the
@@ -109,6 +119,63 @@ superseded but retained for its Gmail restricted-scope compliance analysis.
     builder into a provider — that is exactly how two ingest paths silently
     diverge, the same class of bug invariant #3 guards against elsewhere.
 
+## UI design system (redesigned 28 Jul 2026)
+
+All CSS lives in one `<style>` block in `templates/base.html` — no build step,
+no framework, no separate stylesheet. Fonts: **Archivo** (variable, `wdth`
+axis) + **DM Mono**, from Google Fonts.
+
+1. **Colour means exactly one thing: the state of the wait.** Blue
+   (`--accent`) = someone engaged. Amber (`--age`) = time passing, unanswered.
+   Rust (`--rejected`) = closed. Green (`--offer`) = an offer. **Everything
+   else is grey on purpose.** The status tokens (`--interested`, `--applied`,
+   `--viewed`, …) keep their names because templates index them by status
+   string, but they map onto those four roles — they are NOT four more hues.
+   Adding a colour so something stands out defeats the scheme: the page is
+   achromatic at rest so live threads are the only things carrying chroma.
+2. **The dark palette is written TWICE** — once under
+   `@media (prefers-color-scheme: dark)` and once under
+   `:root[data-theme="dark"]`, in that order, because both selectors have
+   equal specificity and source order is what lets a light pin win on a dark
+   OS. Change one, change the other. (A missed second block is exactly how a
+   contrast fix half-landed during the redesign.)
+3. **Hierarchy runs on Archivo's width axis, not only size/weight.**
+   `font-stretch:118%` for nameplates and numerals, 100% for prose. To give
+   something more presence, go wider before going bigger.
+4. **`pipeline/trace.py` owns ALL trace geometry** and is pure — no DB, no
+   template knowledge. Both the list and the detail page call
+   `trace.build(rows, events_by_app, now, reminder_days)`, which annotates
+   rows with `pts` / `tail` / `cap` / `silent_days` and returns the shared
+   axis. Every trace on a page shares ONE axis (first event on record → now);
+   that is what makes rows comparable, so never scale a row to its own span.
+   The list fetches every event in one `= ANY(...)` query — one query per row
+   to draw one screen is the N+1 this view would die of.
+5. **A row's only horizontal mark is data.** There is deliberately no baseline
+   rule per trace — an earlier draft had one and it competed with the tails,
+   making the amber unreadable. Week gridlines and the "today" rule are the
+   only chrome.
+6. **Charts are single-series by construction.** One hue for magnitude, the
+   panel title names the measure, no legend. **Never a dual-axis chart** — the
+   weekly panels show applications and replies as two small multiples
+   precisely because they differ ~10x, each scaled to its own peak and
+   labelled as such.
+7. **Never print a rate on a thin sample.** `analytics.MIN_RATE_N` (5) gates
+   every per-dimension `response_rate`; below it the row shows counts and an
+   em dash. "0% on n=16" describes the sample, not the technology.
+8. The list sorts by **silence** by default (`_SORTS` in `web.py`) — longest
+   unanswered live thread first. That ordering is the page's whole argument.
+9. **The needs-follow-up block is work; the table below it is a record.** It
+   gets real rows and a one-click `follow_up_sent` (posting with
+   `redirect_to=/` so the list shortens as you clear it), because on real data
+   it IS the day's task list — 15 of 47 threads. Don't demote it back to a
+   sentence of links.
+10. **The name column takes the free space; the trace is capped** (`.tl`
+   grid). Verified against 47 real applications: applied in one burst, so
+   every trace is the same line at the same length while agency company/role
+   names were being ellipsed. The trace still shares one axis (rule 4) and
+   still earns its place on the detail page — it just doesn't get 40% of a
+   list row to repeat "still nothing" 47 times.
+
 ## Gotchas learned the hard way in the original build
 
 - psycopg server-side binding cannot type a bare `%s IS NULL` — cast it
@@ -131,6 +198,20 @@ superseded but retained for its Gmail restricted-scope compliance analysis.
   `document.title` behavior — verify adapter changes live against more than one. Prefer
   matching DOM *shape* (e.g. a `<p>` with `·`-separated `<span>` children) over exact-text
   or fixed-position string splits; both broke on real listings.
+- **Never let the capture popover hold the only copy of a capture.** Until
+  28 Jul 2026 nothing was POSTed until the user answered "focused or generic?",
+  so a real application vanished if they ignored the box for 45s or closed the
+  Easy Apply modal (which destroys the iframe the popover renders in). Now an
+  *unambiguous* apply — Easy Apply's final submit, popup capture — writes
+  immediately with `focused = null` and the popover is a receipt;
+  `POST /captures/{id}/tag` carries the tag/note afterwards. An *ambiguous*
+  one — "Apply on company website", where you may never actually apply — still
+  confirms first. Keep that split: it's about evidence, not UI taste. The
+  receipt is relayed to frame 0 via the service worker
+  (`chrome.tabs.sendMessage` — **requires host permission for the site**,
+  hence `*://*.linkedin.com/*` in host_permissions; `activeTab` does NOT cover
+  it, since a click on the page's own button isn't an activeTab invocation),
+  with an in-frame fallback when the relay fails.
 - **Extension: snapshot DOM data synchronously at the trigger event, not lazily.**
   `shared/capture.js`'s `capture()` used to read the job DOM inside the tag-popover's
   callback (fires whenever the human clicks, seconds later) — by then SPAs like LinkedIn's
@@ -155,6 +236,25 @@ superseded but retained for its Gmail restricted-scope compliance analysis.
   root — cross-check via `Get-CimInstance Win32_Process -Filter
   "ProcessId=X"` and `taskkill //F //T //PID <true root>`, or the reloader
   just respawns a worker and the port stays bound.
+- **`.\scripts\test.ps1` via the PowerShell tool exits 1 even when every suite
+  passes.** `psql` writes a NOTICE ("role postgres is already a member of
+  tracker_app") to stderr during migration, and PowerShell 5.1 wraps a native
+  command's stderr in a NativeCommandError, flipping `$?` regardless of the
+  real exit code. Run it as `powershell.exe -NoProfile -ExecutionPolicy Bypass
+  -File scripts/test.ps1` from the **Bash** tool instead and grep for
+  `^== `; the per-suite PASS/FAIL lines are the truth, not the exit status.
+- **`%-d` / `%-m` strftime directives are glibc-only and raise `ValueError` on
+  Windows.** Format with `%d` and `.lstrip("0")` instead (`trace.py:_ticks`,
+  `analytics.weekly`). Sibling of the cp1252 gotcha below — both are ways a
+  Linux-shaped one-liner dies natively.
+- **Dark Reader in the dev Chrome profile defeats colour verification
+  entirely — including `getComputedStyle`.** Its dynamic mode injects real
+  overriding CSS, so resolved `background-color` comes back neutralised
+  (`.funnel .seg`, `.legend i`, `.spark .bar` all read as the card colour
+  while being correctly sized). `:root` custom properties, all geometry, and
+  font checks DO survive. Verify a palette numerically from the authored
+  hexes instead — computing WCAG contrast that way caught a real AA failure
+  on `--withdrawn` (3.43:1) that looking never would have.
 - **Windows consoles default to cp1252.** A Python one-liner printing
   non-ASCII (em-dash, curly quotes) via Bash/PowerShell can raise
   `UnicodeEncodeError` — `sys.stdout.reconfigure(encoding='utf-8',
@@ -184,6 +284,16 @@ superseded but retained for its Gmail restricted-scope compliance analysis.
   `<input value="{{ e.extraction.company }}">` when `company` was `null` —
   rendered `value="None"`. Always `... or ''` on a value that can be `None`,
   not just a truthiness check on its container.
+- **A scoped CSS selector does NOT protect you from a weaker rule setting a
+  property it never mentions.** `.spark .bar` (chart bar) and `.bar` (the
+  toolbar/button-row utility, `class="bar"` on forms) shared a name; the
+  utility's `margin-bottom:.9rem` applied to every chart bar because the
+  scoped rule only declares width/height/background. Result: every weekly bar
+  floated 14px off its axis and the tallest one covered its own panel title —
+  in both panels, always, not a data edge case. Specificity decides conflicts
+  per-property, not per-rule. Chart element names now stay out of the utility
+  namespace (`.spark .wk`). Measure geometry (`getBoundingClientRect`) when a
+  chart looks subtly off; the overlap was invisible until the numbers came out.
 - **A flex segment's label can overflow invisibly.** `.funnel .seg` sizes via
   `flex-grow` off a real count with only a `min-width` floor, and `.funnel`
   has `overflow:hidden` — a long single-word label (e.g. "interviewing") on a
@@ -287,6 +397,26 @@ win). No per-shell export needed for local dev.
   thin adapter file, reload the unpacked extension, **and hard-refresh any
   already-open tab** — reloading the extension does not re-inject content
   scripts into tabs opened before the reload; the stale script keeps running.
+- **Easy Apply screening-Q&A capture** (`extension/shared/answers.js`, added
+  28 Jul 2026) — server side, UI, merge, and delete are all suite-covered, but
+  the DOM scrape itself has NEVER met a real Easy Apply wizard. It is
+  deliberately structural, not selector-based (walks form controls, resolves
+  each one's label through `aria-labelledby` → `label[for]` → wrapping
+  `<label>` → `aria-label` → `<fieldset><legend>`), so LinkedIn's hashed
+  atomic CSS shouldn't matter — but two things are guesses until observed:
+  whether the modal's fields sit in a CLOSED shadow root (the sweep can't
+  descend into one; the `change`/`input` listener is the backstop, and it only
+  sees fields the user actually touches — LinkedIn PREFILLS most answers, so a
+  closed root would silently cost the untouched ones), and whether
+  `answerFormRoot()`'s in-iframe assumption still holds. Verify by applying to
+  one real job and reading the popover's "N form answers kept" line, then
+  `/answers`.
+- **The redesigned palette, on a real screen.** Layout, type, spacing,
+  responsive behaviour and contrast were all verified (contrast numerically —
+  0 WCAG AA failures in both themes); the *rendered colour* never was,
+  because Dark Reader owns the dev browser (see Gotchas). Nobody has yet
+  confirmed with their own eyes that the amber/blue/rust system reads the way
+  it is supposed to. Check this before putting screenshots in a README.
 - **Voyage embeddings live call** (`pipeline/embeddings.py`, ~25 lines) —
   never executed against the real API; verify model name/dimension (schema is
   `vector(1024)`) on first use.
@@ -350,9 +480,26 @@ win). No per-shell export needed for local dev.
    whether CLAUDE.md ships. Fixture names and git history are both done
    (26 Jul 2026) — the history rewrite was needed for personal data, not
    secrets; §11 records the method and the three false-positive traps.
+3b. **`applications.focused` — KEPT on a fair trial (decided 28 Jul 2026), not
+   dead after all.** It was null across all 45 applications, which read as a
+   dead field, but the diagnosis was wrong: it had never had a usable entry
+   point. It was asked *mid-apply, as a blocker* — the capture wouldn't save
+   until you answered — so the rational move was always to dismiss it. The
+   save-first receipt (see the popover gotcha) makes it one optional click on
+   an already-saved record, which is the first fair test it has had. Keep the
+   receipt buttons and the detail-page toggle (that's how you correct it);
+   `analytics.by_focus` stays gated on `length > 1` so it shows nothing until
+   the dimension actually splits. **Re-evaluate after ~20 more applications:
+   still all-null with a good entry point is a real answer, and then cut the
+   whole path** (field, toggle, edit input, `by_focus` + its
+   artifact-existence COALESCE fallback).
 4. **First feature: follow-up drafting** (`docs/features.md` §3.1) — best
    evidence-to-effort ratio in the backlog, and `REMINDER_DAYS = 10` already
-   matches the researched 7–10 business-day window.
+   matches the researched 7–10 business-day window. **Half-built as of 28 Jul:**
+   the list's needs-follow-up block (UI rule 9) already surfaces the right set
+   and logs a one-click `follow_up_sent`. What's missing is the draft itself —
+   the block is where it belongs, next to the button that currently just marks
+   it done.
 5. **One real apply via the extension** on each platform; fix whichever
    adapter selectors have drifted. Keep this **load-unpacked only** — an
    unpacked extension has a random per-install ID, while a Chrome Web Store

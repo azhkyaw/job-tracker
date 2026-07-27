@@ -4,10 +4,10 @@
 {% block content %}
 <h1>Delete this application?</h1>
 
-<div class="card" style="border-left:3px solid var(--rejected);padding:.8rem 1rem;margin-bottom:1rem">
+<div class="note" style="--c:var(--rejected)">
   <strong>{{ a.company_display }} · {{ a.title_canonical }}</strong>
-  <p style="color:var(--muted);margin:.5rem 0 0">This permanently deletes the job record and:</p>
-  <ul style="margin:.4rem 0 0;padding-left:1.2em;color:var(--muted)">
+  <p class="quiet" style="margin:.5rem 0 0">This permanently deletes the job record and:</p>
+  <ul class="quiet" style="margin:.4rem 0 0;padding-left:1.2em">
     <li>{{ summary.n_postings }} posting{{ '' if summary.n_postings == 1 else 's' }}</li>
     <li>{{ summary.n_events }} timeline event{{ '' if summary.n_events == 1 else 's' }}</li>
     <li>{{ summary.n_contacts }} contact{{ '' if summary.n_contacts == 1 else 's' }}</li>
@@ -15,7 +15,7 @@
       (cover letters — this text cannot be recovered)</li>
   </ul>
   {% if summary.n_emails %}
-  <p style="color:var(--muted);margin:.6rem 0 0">
+  <p class="quiet" style="margin:.6rem 0 0">
     {{ summary.n_emails }} linked email{{ '' if summary.n_emails == 1 else 's' }} will
     <strong>not</strong> be deleted — they go back to <a href="/triage">triage</a> as unresolved.
   </p>
@@ -24,7 +24,7 @@
 </div>
 
 <form method="post" action="/applications/{{ a.id }}/delete">
-  <button style="border-color:var(--rejected);color:var(--rejected)">Yes, permanently delete</button>
+  <button class="danger" style="border-color:var(--rejected);color:var(--rejected)">Yes, permanently delete</button>
   <a href="/applications/{{ a.id }}" style="margin-left:.8rem">Cancel</a>
 </form>
 {% endblock %}

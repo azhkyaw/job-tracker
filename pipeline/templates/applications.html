@@ -3,67 +3,143 @@
 {% block nav_apps %}active{% endblock %}
 {% block content %}
 {% if deleted %}
-<p class="empty" style="text-align:left;border-color:var(--rejected);color:var(--rejected)">
-  Deleted <strong>{{ deleted }}</strong>.
-</p>
+<div class="note" style="--c:var(--rejected)">Deleted <strong>{{ deleted }}</strong>.</div>
 {% endif %}
-<div style="margin-bottom:1rem">
-  <a href="/applications/new"><button class="primary" type="button">+ Add application</button></a>
-  <span style="color:var(--muted)">for anything the extension and Gmail can't reach</span>
+
+<div class="stats">
+  <span><b>{{ summary.applied }}</b> applied</span>
+  <span><b>{{ summary.responded }}</b> replied</span>
+  <span><b>{{ summary.response_rate if summary.response_rate is not none else "—" }}{% if summary.response_rate is not none %}%{% endif %}</b> response rate</span>
+  {% if summary.avg_days_to_resp %}<span><b>{{ summary.avg_days_to_resp }}</b> days to a first reply</span>{% endif %}
 </div>
-<div class="tabs" style="margin-bottom:1rem">
-  <a href="/" class="{{ 'active' if not origin }}">all</a>
-  <a href="/?origin=applied" class="{{ 'active' if origin == 'applied' }}">applied</a>
-  <a href="/?origin=inbound" class="{{ 'active' if origin == 'inbound' }}">inbound</a>
-  <a href="/?origin=saved" class="{{ 'active' if origin == 'saved' }}">saved</a>
-</div>
-{% if reminders %}
-<div class="card" style="border-left:3px solid var(--pending);padding:.7rem 1rem;margin-bottom:1rem">
-  <strong>Needs follow-up</strong>
-  <span style="color:var(--muted)">— applied over {{ reminder_days }} days ago, no response, no follow-up yet</span>
-  <ul style="margin:.4rem 0 0;padding-left:1.2em">
-  {% for r in reminders %}
-    <li><a href="/applications/{{ r.id }}">{{ r.company_display }} · {{ r.title_canonical }}</a>
-        <span class="mono" style="color:var(--muted)">applied {{ r.applied_at | dt }}</span></li>
-  {% endfor %}
-  </ul>
-</div>
-{% endif %}
+
 {% if funnel %}
 <div class="funnel">
   {% for s in funnel %}
-  <div class="seg" style="--n:{{ s.n }};--c:var(--{{ s.key }})">
+  <div class="seg" style="--n:{{ s.n }};--c:var(--{{ s.key }})" title="{{ s.n }} {{ s.label }}">
     <span class="n">{{ s.n }}</span><span class="l">{{ s.label }}</span>
   </div>
   {% endfor %}
 </div>
+<div class="legend">
+  {% for s in funnel %}<span><i style="--c:var(--{{ s.key }})"></i>{{ s.n }} {{ s.label }}</span>{% endfor %}
+</div>
 {% endif %}
+
+<form class="bar" method="get" action="/">
+  {% if origin %}<input type="hidden" name="origin" value="{{ origin }}">{% endif %}
+  <span class="grow"><input type="search" name="q" value="{{ q }}"
+        placeholder="Search company or role" aria-label="Search company or role"
+        style="width:100%"></span>
+  <select name="sort" aria-label="Sort by">
+    <option value="silence" {% if sort == 'silence' %}selected{% endif %}>quiet longest first</option>
+    <option value="activity" {% if sort == 'activity' %}selected{% endif %}>most recent activity</option>
+    <option value="applied" {% if sort == 'applied' %}selected{% endif %}>date applied</option>
+    <option value="company" {% if sort == 'company' %}selected{% endif %}>company A–Z</option>
+  </select>
+  <button>Apply</button>
+  {% if q %}<a class="sm" href="/{% if origin %}?origin={{ origin }}{% endif %}">Clear</a>{% endif %}
+</form>
+
+<div class="bar" style="justify-content:space-between">
+  <span class="tabs">
+    <a href="/?sort={{ sort }}" class="{{ 'active' if not origin }}">all</a>
+    <a href="/?origin=applied&sort={{ sort }}" class="{{ 'active' if origin == 'applied' }}">applied</a>
+    <a href="/?origin=inbound&sort={{ sort }}" class="{{ 'active' if origin == 'inbound' }}">inbound</a>
+    <a href="/?origin=saved&sort={{ sort }}" class="{{ 'active' if origin == 'saved' }}">saved</a>
+  </span>
+  <a class="sm" href="/applications/new">Add an application manually</a>
+</div>
+
+{# The one thing on this page that is work rather than record-keeping, so it
+   gets rows and a control instead of a sentence. Ticking one files a real
+   follow_up_sent event, which drops the row out of this block on the reload
+   (the query excludes anything with a follow-up) — the list shortens as you
+   work through it. Capped at 8 with a disclosure: on a bad week this is 20
+   rows and the table below it still matters. #}
+{% if reminders %}
+<h2 class="fu-h">Needs follow-up
+  <span class="quiet sm">{{ reminders | length }} applied over {{ reminder_days }}
+  days ago with no reply and nothing sent</span></h2>
+<div class="card fu">
+  {% for r in reminders[:8] %}
+  <div class="fu-row">
+    <a class="fu-name" href="/applications/{{ r.id }}">
+      <span class="co">{{ r.company_display }}</span>
+      <span class="ro">{{ r.title_canonical }}</span>
+    </a>
+    <span class="num fu-d">{{ r.days_waiting }}d</span>
+    <form method="post" action="/applications/{{ r.id }}/events">
+      <input type="hidden" name="type" value="follow_up_sent">
+      <input type="hidden" name="redirect_to" value="/">
+      <button title="Log a follow-up and clear this row">Followed up</button>
+    </form>
+  </div>
+  {% endfor %}
+  {% if reminders | length > 8 %}
+  <details>
+    <summary class="sm quiet">{{ reminders | length - 8 }} more waiting</summary>
+    {% for r in reminders[8:] %}
+    <div class="fu-row">
+      <a class="fu-name" href="/applications/{{ r.id }}">
+        <span class="co">{{ r.company_display }}</span>
+        <span class="ro">{{ r.title_canonical }}</span>
+      </a>
+      <span class="num fu-d">{{ r.days_waiting }}d</span>
+      <form method="post" action="/applications/{{ r.id }}/events">
+        <input type="hidden" name="type" value="follow_up_sent">
+        <input type="hidden" name="redirect_to" value="/">
+        <button title="Log a follow-up and clear this row">Followed up</button>
+      </form>
+    </div>
+    {% endfor %}
+  </details>
+  {% endif %}
+</div>
+{% endif %}
+
 {% if rows %}
 <div class="card">
-<table>
-  <thead><tr>
-    <th>company</th><th>role</th><th>status</th>
-    <th>platforms</th><th>applied</th><th>last activity</th><th>focused</th>
-  </tr></thead>
-  <tbody>
+  <div class="tl tl-head">
+    <span class="lab">company · role</span>
+    <span class="axis">
+      {% for t in axis.ticks %}<span class="t{% if loop.first %} first{% endif %}" style="--x:{{ t.x }}">{{ t.label }}</span>{% endfor %}
+      <span class="t last">today</span>
+    </span>
+    <span class="lab" style="text-align:right">status · quiet for</span>
+  </div>
   {% for r in rows %}
-    <tr>
-      <td><a href="/applications/{{ r.id }}">{{ r.company_display }}</a>
-        {% if r.origin == 'inbound' %}<span class="badge" style="--c:var(--interested)">inbound</span>{% endif %}</td>
-      <td>{{ r.title_canonical }}</td>
-      <td><span class="badge" style="--c:var(--{{ 'interview_invite' if r.status == 'interviewing' else r.status }})">{{ r.status }}</span></td>
-      <td class="mono">{{ r.platforms or "—" }}</td>
-      <td class="mono">{{ r.applied_at | dtt }}</td>
-      <td class="mono">{{ r.last_activity | dtt }}</td>
-      <td class="mono">{% if r.focused is none %}—{% elif r.focused %}yes{% else %}no{% endif %}</td>
-    </tr>
+  <a class="tl" href="/applications/{{ r.id }}" title="{{ r.trace_label }}">
+    <span class="name">
+      <span class="co">{{ r.company_display }}{% if r.origin == 'inbound' %}
+        <span class="badge" style="--c:var(--interested)">inbound</span>{% endif %}</span>
+      <span class="ro">{{ r.title_canonical }}</span>
+    </span>
+    <span class="trace" style="--week:{{ axis.week }}">
+      {%- if r.tail %}<span class="seg{% if r.tail.aging %} aging{% endif %}"
+        style="--a:{{ r.tail.a }};--b:{{ r.tail.b }};--c:var(--{{ r.tail.role }})"></span>{% endif -%}
+      {%- for p in r.pts %}<span class="pt{% if p.hollow %} hollow{% endif %}"
+        style="--x:{{ p.x }};--c:var(--{{ p.role }})"></span>{% endfor -%}
+      {%- if r.cap %}<span class="cap"
+        style="--x:{{ r.cap }};--c:var(--{{ 'interview_invite' if r.status == 'interviewing' else r.status }})"></span>{% endif -%}
+    </span>
+    <span class="out">
+      {% if r.silent_days is not none and r.silent_days >= reminder_days %}
+        <span class="num" style="color:var(--age)">{{ r.silent_days }}d</span>
+      {% elif r.silent_days is not none %}
+        <span class="num">{{ r.silent_days }}d</span>
+      {% endif %}
+      <span class="badge" style="--c:var(--{{ 'interview_invite' if r.status == 'interviewing' else r.status }})">{{ r.status }}</span>
+    </span>
+  </a>
   {% endfor %}
-  </tbody>
-</table>
 </div>
+{% elif q %}
+<p class="empty">Nothing matches “{{ q }}”.
+  <a href="/{% if origin %}?origin={{ origin }}{% endif %}">Clear the search</a> to see every application.</p>
 {% else %}
 <p class="empty">No applications yet. Run the backfill, then process the queue:<br>
-<span class="mono">python -m pipeline.cli backfill && python -m pipeline.cli work --once</span><br>
+<span class="mono">python -m pipeline.cli backfill &amp;&amp; python -m pipeline.cli work --once</span><br>
 No Gmail connected, or applying to something the extension can't reach?
 <a href="/applications/new">Add one manually</a>.</p>
 {% endif %}

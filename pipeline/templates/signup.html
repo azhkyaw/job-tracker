@@ -2,11 +2,11 @@
 {% block title %}create account — tracker{% endblock %}
 {% block content %}
 <h1>Create an account</h1>
-{% if error %}<p class="empty" style="border-color:var(--rejected);color:var(--rejected)">{{ error }}</p>{% endif %}
-<div class="card" style="max-width:24rem;padding:1rem">
+{% if error %}<div class="note" style="--c:var(--rejected);max-width:24rem">{{ error }}</div>{% endif %}
+<div class="card pad" style="max-width:24rem">
 <form method="post" action="/signup" style="display:grid;gap:.6rem">
-  <label>email <input type="text" name="email" autocomplete="username" required></label>
-  <label>password (8+ characters) <input type="password" name="password" autocomplete="new-password" required></label>
+  <label class="sm quiet">email <input type="text" name="email" autocomplete="username" required style="width:100%"></label>
+  <label class="sm quiet">password (8+ characters) <input type="password" name="password" autocomplete="new-password" required style="width:100%"></label>
   <div><button class="primary">Create account</button>
   <a href="/login" style="margin-left:.8rem">I have an account</a></div>
 </form>

@@ -1121,4 +1121,79 @@ with db.connect() as conn:
 r = client.post(f"/emails/{stray_email_id}/refile", data={"action": "bogus"})
 check("unknown action rejected", r.status_code == 400, r.status_code)
 
+print("needs-follow-up block: acts from the list and clears the row")
+with db.connect() as conn, conn.transaction():
+    stale_job = conn.execute(
+        "INSERT INTO jobs (user_id, company_norm, title_canonical) "
+        "VALUES (%s, 'quietcorp', 'Staff Engineer') RETURNING id", (user_id,)).fetchone()["id"]
+    stale_app = conn.execute(
+        "INSERT INTO applications (user_id, job_id) VALUES (%s, %s) RETURNING id",
+        (user_id, stale_job)).fetchone()["id"]
+    conn.execute(
+        "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+        "VALUES (%s, %s, 'applied', 'manual', now() - interval '30 days', '{}')",
+        (user_id, stale_app))
+
+r = client.get("/")
+check("stale thread appears in the block with its wait length",
+      r.status_code == 200 and "Needs follow-up" in r.text
+      and "quietcorp" in r.text and "30d" in r.text, r.status_code)
+check("block offers the action, not just a link", 'value="follow_up_sent"' in r.text)
+
+r = client.post(f"/applications/{stale_app}/events",
+                data={"type": "follow_up_sent", "redirect_to": "/"})
+check("acting from the list returns to the list",
+      r.status_code == 303 and r.headers["location"] == "/", r.headers.get("location"))
+with db.connect() as conn:
+    check("follow-up recorded", conn.execute(
+        "SELECT 1 FROM events WHERE application_id = %s AND type = 'follow_up_sent'",
+        (stale_app,)).fetchone() is not None)
+r = client.get("/")
+check("row is gone from the block once followed up", "quietcorp" not in r.text.split(
+    'class="card fu"')[1].split("</div>")[0] if 'class="card fu"' in r.text else True)
+
+r = client.post(f"/applications/{stale_app}/events",
+                data={"type": "note", "note": "from detail", "redirect_to": "/evil"})
+check("an unknown redirect falls back to the detail page, never followed",
+      r.headers["location"] == f"/applications/{stale_app}", r.headers.get("location"))
+
+print("form answers: detail page + answer bank")
+with db.connect() as conn, conn.transaction():
+    other_app = conn.execute(
+        "SELECT a.id FROM applications a WHERE a.id <> %s LIMIT 1",
+        (northwind_app,)).fetchone()["id"]
+    for app_id, notice, extra in (
+            (northwind_app, "1 month", ("Sponsorship needed?", "No")),
+            (other_app, "2 months", ("Preferred start date", "Immediately"))):
+        conn.execute(
+            "INSERT INTO application_answers (user_id, application_id, question, "
+            "question_norm, answer, field_type, ordinal) "
+            "VALUES (%s, %s, 'What is your notice period?', 'what is your notice period', "
+            "%s, 'text', 0)", (user_id, app_id, notice))
+        conn.execute(
+            "INSERT INTO application_answers (user_id, application_id, question, "
+            "question_norm, answer, field_type, ordinal) VALUES (%s, %s, %s, %s, %s, "
+            "'radio', 1)",
+            (user_id, app_id, extra[0],
+             extra[0].lower().replace("?", "").replace(" ", " "), extra[1]))
+
+r = client.get(f"/applications/{northwind_app}")
+check("detail page shows the form Q&A", r.status_code == 200
+      and "What the form asked" in r.text
+      and "What is your notice period?" in r.text and "1 month" in r.text, r.status_code)
+check("detail page does not leak the other application's answer",
+      "2 months" not in r.text, r.text[:200])
+
+r = client.get("/answers")
+check("answer bank renders", r.status_code == 200 and "What you've told them" in r.text,
+      r.status_code)
+check("the repeated question is grouped once, newest answer shown",
+      r.text.count("What is your notice period?") == 1 and "2 differe" in r.text, r.text[:200])
+check("a question answered two ways offers its history",
+      "What you said each time" in r.text, r.text[:200])
+check("questions asked once show no history toggle for themselves",
+      "Sponsorship needed?" in r.text, r.text[:200])
+check("answers nav entry is active on its own page",
+      '<a href="/answers" class="active"' in r.text, r.text[:200])
+
 print("\nALL WEB PATHS PASS")

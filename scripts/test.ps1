@@ -33,6 +33,7 @@ Psql @('-d', $DB, '-f', '/migrations/005_posting_ats.sql')
 Psql @('-d', $DB, '-f', '/migrations/006_user_timezone.sql')
 Psql @('-d', $DB, '-f', '/migrations/007_user_theme.sql')
 Psql @('-d', $DB, '-f', '/migrations/008_application_origin.sql')
+Psql @('-d', $DB, '-f', '/migrations/009_application_answers.sql')
 Psql @('-d', $DB, '-c', "INSERT INTO users (email) VALUES ('dev@test.local');")
 
 $dbPort = if ($env:TRACKER_DB_PORT) { $env:TRACKER_DB_PORT } else { '55432' }

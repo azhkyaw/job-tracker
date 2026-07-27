@@ -49,6 +49,28 @@ window.__trackerAdapter = {
       return href;
     }
   },
+  // Screening-question capture (shared/answers.js). Easy Apply renders in a
+  // same-origin iframe whose whole document IS the wizard — see getJob() — so
+  // in a subframe the form element (or failing that, the body) is the right
+  // root. In the TOP frame there is no Easy Apply form at all, and returning
+  // document there would scrape LinkedIn's own search/filter inputs as if they
+  // were application answers; the modal selectors are checked instead so that
+  // a future non-iframe layout still works, and anything else yields null.
+  answerFormRoot() {
+    if (window !== window.top) return document.querySelector("form") || document.body;
+    return document.querySelector(
+      ".jobs-easy-apply-modal, .jobs-easy-apply-content, " +
+      "[role='dialog'] form, [data-test-modal] form");
+  },
+  // The job the form belongs to, so answers can't survive into the next one.
+  // Read from the top frame's URL (cheap — this runs on every field edit)
+  // rather than via getJob(), which walks the DOM.
+  answerFormKey() {
+    let loc = location;
+    try { if (window.top && window.top.location) loc = window.top.location; } catch (e) {}
+    return new URLSearchParams(loc.search).get("currentJobId") ||
+           (loc.pathname.match(/\/jobs\/view\/(\d+)/) || [])[1] || loc.href;
+  },
   getJob() {
     // Easy Apply's "Submit application" click happens inside a same-origin
     // iframe (the modal) whose own document only has the contact-form/resume
