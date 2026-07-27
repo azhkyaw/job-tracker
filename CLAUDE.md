@@ -5,7 +5,9 @@ phases built (Jul 2026) and test-driven. Full design rationale: `docs/design.md`
 — read it before any structural change. Direction: **open-source release**, not
 SaaS — `docs/open-source.md` (LinkedIn extension-fingerprinting risk, the
 7-day OAuth token trap, release checklist). Feature priorities with the market
-research behind them: `docs/features.md`. `docs/monetization.md` is
+research behind them: `docs/features.md`. How mail gets in, and why IMAP +
+app password is proposed as the default over the Gmail API:
+`docs/email-ingest.md`. `docs/monetization.md` is
 superseded but retained for its Gmail restricted-scope compliance analysis.
 
 ## Commands
@@ -254,12 +256,15 @@ win). No per-shell export needed for local dev.
 2. **OAuth token expiry — time-critical.** See the 7-day gotcha above; the
    author's own sync breaks ~30 Jul – 2 Aug 2026. Needs `invalid_grant`
    handled visibly in `gmail_sync.py` + honest setup docs, regardless of how
-   the production-status test goes.
+   the production-status test goes. `docs/email-ingest.md` proposes the
+   structural fix — IMAP + app password as the default, which has no refresh
+   token to expire — but `invalid_grant` handling is still required either
+   way, because OAuth stays for Workspace accounts.
 3. **Release blockers** (`docs/open-source.md` §11, ordered there): LICENSE
-   (Apache-2.0 recommended), extension split into its own repo, genericise
-   real company names in `tests/test_web.py`, decide whether CLAUDE.md ships.
-   Git history is already clean — no secret was ever committed, so no rewrite
-   is needed.
+   (Apache-2.0 recommended), extension split into its own repo, decide
+   whether CLAUDE.md ships. Fixture names and git history are both done
+   (26 Jul 2026) — the history rewrite was needed for personal data, not
+   secrets; §11 records the method and the three false-positive traps.
 4. **First feature: follow-up drafting** (`docs/features.md` §3.1) — best
    evidence-to-effort ratio in the backlog, and `REMINDER_DAYS = 10` already
    matches the researched 7–10 business-day window.
