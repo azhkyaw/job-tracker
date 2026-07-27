@@ -1,7 +1,8 @@
 # Email Ingest — Research and Plan
 
 **Author:** AZ
-**Status:** Draft v1 — research findings and a recommendation, not yet built
+**Status:** Accepted and implemented (Gmail-only v1) — shipped and verified
+against a real inbox 28 Jul 2026. §10 records what shipped.
 **Date:** 27 July 2026
 **Scope:** How job-search email reaches this system, reconsidered under the
 open-source direction (`docs/open-source.md`). Design doc §6.2 chose the Gmail
@@ -224,26 +225,78 @@ realistically requires its own OAuth implementation. Do not promise it.
   user's own credential; nothing here scrapes or automates against a job
   platform.
 
-## 9. Open questions
+## 9. Open questions — answered
 
-1. **Does the author's own account permit an app password?** Requires 2SV
-   enabled and rules out Advanced Protection and security-key-only 2SV. This
-   gates testing the whole path and is a two-minute check.
-2. **Is the app password stored in the same encrypted slot?**
-   `users.gmail_credentials` currently holds an OAuth credentials JSON blob
-   and is encrypted with `TRACKER_SECRET_KEY`. Reusing it keeps one secret
-   path, but the column then holds two shapes and needs a discriminator.
-3. **Does the provider boundary ship with generic IMAP (§7.4) in v1, or
-   Gmail-only first?** Doing it later is cheap; doing it at the same time
-   avoids a second refactor of the same code.
-4. **Does this change the email-retention answer?** CLAUDE.md's open task #7
-   asks whether to keep storing full `emails.body_text` or store only an ID
-   and re-fetch. IMAP makes "re-fetch on demand" more attractive, because
-   `X-GM-MSGID` is stable and searchable, so a body can be recovered without
-   depending on a UID that `UIDVALIDITY` may invalidate. Worth deciding
-   together rather than separately.
+1. **Does the author's own account permit an app password?** Yes — 2SV was
+   already on, personal (non-Workspace) account, not Advanced Protection.
+   Confirmed by actually generating one and connecting (§11).
+2. **Is the app password stored in the same encrypted slot?** Yes.
+   `users.gmail_credentials` holds either shape now — IMAP writes
+   `{"kind":"imap","provider":"gmail","address":…,"app_password":…,
+   "connected_at":…}`; OAuth keeps writing bare `Credentials.to_json()`
+   unwrapped, so an OAuth blob is recognised by the *absence* of a `"kind"`
+   key rather than by a positive tag. `mailbox.credential_kind()` is the one
+   place that discriminates; `mailbox.provider_for_user()` is the one place
+   that dispatches on it. No migration — same `text` column, same
+   `auth.encrypt`/`auth.decrypt`.
+3. **Generic IMAP in v1, or Gmail-only first?** Gmail-only, as planned.
+   §7.4 stands as the scoped-out next step.
+4. **Does this change the email-retention answer?** Deliberately left open —
+   see CLAUDE.md task #7. The IMAP work made the tradeoff more attractive
+   (stable `X-GM-MSGID` makes "re-fetch on demand" cheaper) without deciding
+   it, exactly as scoped.
 
-## 10. Sources
+## 10. What shipped
+
+**Modules:** `pipeline/mailbox.py` (new) — the provider-agnostic orchestrator
+(candidate filter, storage, query building, cursor persistence) that both
+providers funnel through, so they cannot silently diverge (CLAUDE.md
+invariant #10). `pipeline/gmail_imap.py` (new) — the IMAP provider; the only
+module in the codebase that imports `imaplib`. `pipeline/gmail_sync.py`
+shrank to `GmailApiProvider`, the OAuth alternative; `google-api-python-client`/
+`google-auth-oauthlib` are needed only for that path. `pipeline/gmail_oauth.py`
+lost `disconnect()` (moved to `mailbox.py`, since disconnect is kind-agnostic)
+and its `gmail_sync` import (scopes moved to `config.GMAIL_SCOPES`).
+
+**CLI:** `auth` defaults to IMAP — prompts for address + `getpass`-hidden
+password, verifies by connecting before writing anything. `auth --oauth` is
+the untouched legacy desktop flow. `backfill`/`sync` dispatch through
+`mailbox.provider_for_user()`; `sync` now continues past a failing account
+(previously one failure aborted the whole cron run) and exits non-zero if
+any account failed, so a partial cron failure is visible.
+
+**Web:** `POST /settings/gmail/imap` — `Form("")` + validate-by-login-attempt,
+never echoes the password back. Settings renders four states (IMAP connected /
+OAuth connected / credential unreadable — new, previously indistinguishable
+from "connected" — / not connected, IMAP form primary with OAuth collapsed as
+the alternative). Disconnect is kind-agnostic and always drops the sync
+cursor too.
+
+**Tests:** `tests/test_email_ingest.py` — a hand-written `FakeIMAP` recording
+every command over the `gmail_imap.IMAP4_SSL` module-attribute seam (this
+repo's first fake network client), asserting protocol invariants as data:
+`readonly=True`, `BODY.PEEK[` on every fetch, quoted/escaped `X-GM-RAW`,
+ascending UID order, the `X-GM-MSGID`-to-hex identity, idempotent re-sync, a
+`UID n:*` stale match filtered client-side, a `UIDVALIDITY` change forcing a
+full re-search, a bare-integer legacy cursor treated as absent, `+0800`
+INTERNALDATE parsed to the correct UTC instant, and an RFC 2047 subject
+decoded before the candidate filter runs. 48 assertions, all passing.
+
+**Real-inbox verification (28 Jul 2026):** `backfill -d 14` against the
+author's live account — no crash on the real `X-GM-RAW` search (the biggest
+unknown going in), 4 new candidates, zero collisions against the 102 rows the
+prior OAuth backfill had written (proving hex-identity held, not just
+asserting it), cursor came out `uidvalidity:uidnext-1`-shaped, two `sync`
+runs both reported 0 new, a wrong app password produced the exact error text
+the fake predicted, and specifically-noted unread emails stayed unread across
+two backfill passes. Not run: the full `-m 12` window on a real account (a
+rough extrapolation from the observed candidate rate put a year's worth at
+under 100MB against the 2,500MB/day ceiling — not measured directly), and the
+web connect form against a real app password (only the CLI path was
+exercised live; the web route has fake-server and browser-screenshot
+coverage only).
+
+## 11. Sources
 
 - [Gmail IMAP Extensions — `X-GM-RAW`, `X-GM-MSGID`](https://developers.google.com/workspace/gmail/imap/imap-extensions)
 - [Google Accounts — Sign in with app passwords](https://support.google.com/accounts/answer/185833)

@@ -56,14 +56,47 @@ Then just run the CLI directly — no per-shell env setup needed:
 The browser extension (Chrome on Windows) points at `http://127.0.0.1:8000`
 with the `TRACKER_API_TOKEN` from `.env` — same value, same as the Linux flow.
 
-## Gmail OAuth (first-time setup)
+## Gmail (IMAP + app password — the default)
 
-The CLI's `auth` command (`pipeline/gmail_sync.py:get_service`) does a
+No Google Cloud project, no OAuth consent screen. Requires 2-Step
+Verification on your Google account (Advanced Protection and
+security-key-only 2SV accounts can't generate app passwords — use the OAuth
+alternative below instead).
+
+```powershell
+# Generate one at https://myaccount.google.com/apppasswords first.
+.\.venv\Scripts\python.exe -m pipeline.cli auth
+```
+
+Prompts for your Gmail address (Enter accepts the tracker account's own
+email) and the app password (hidden input — this isn't a real TTY-less
+`!`-prefixed command, so run it from an actual PowerShell/Terminal window,
+not through an automation harness that can't attach interactive stdin). It
+verifies the credential by connecting before storing anything, so a typo
+fails immediately with a message telling you what's wrong rather than
+storing a broken credential.
+
+```powershell
+.\.venv\Scripts\python.exe -m pipeline.cli backfill -m 12
+.\.venv\Scripts\python.exe -m pipeline.cli work --once
+.\.venv\Scripts\python.exe -m pipeline.cli serve   # check /triage for results
+```
+
+If `backfill` reports 0 candidates, check `ALLOWLIST_DOMAINS` in
+`pipeline/config.py` against your real ATS senders before assuming IMAP is
+broken — ATS-domain misses are the expected first-run gap, not an auth
+failure.
+
+### Gmail OAuth (alternative — Workspace / Advanced Protection accounts)
+
+The CLI's `auth --oauth` command (`pipeline/gmail_sync.py:get_service`) does a
 `run_local_server(port=0, open_browser=False)` dance: it binds a listener on
 a random `127.0.0.1` port, prints an authorization URL instead of launching a
 browser itself, and waits for Google to redirect back to that port with the
 code. This works fine on native Windows — no WSL localhost quirks — but the
-Cloud Console side isn't self-explanatory the first time through.
+Cloud Console side isn't self-explanatory the first time through. Also read
+`docs/email-ingest.md` §8 and the 7-day-token-expiry gotcha in `CLAUDE.md`
+before relying on this for anything long-running.
 
 **1. Google Cloud Console — one-time project setup**
 ([console.cloud.google.com](https://console.cloud.google.com)):
@@ -91,7 +124,7 @@ Cloud Console side isn't self-explanatory the first time through.
 **2. Run the CLI flow from PowerShell, repo root:**
 
 ```powershell
-.\.venv\Scripts\python.exe -m pipeline.cli auth
+.\.venv\Scripts\python.exe -m pipeline.cli auth --oauth
 ```
 
 - It prints `Please visit this URL to authorize this application: <url>` and
@@ -119,7 +152,7 @@ Test-Path .gmail_token.json   # should be True — gitignored, don't commit it
 
 If `backfill` reports 0 candidates, check `ALLOWLIST_DOMAINS` in
 `pipeline/config.py` against your real ATS senders before assuming the OAuth
-side is broken — ATS-domain misses are the expected first-run gap, not an
+flow is broken — ATS-domain misses are the expected first-run gap, not an
 auth failure.
 
 ## Key differences from the Linux/WSL docs

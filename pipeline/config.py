@@ -23,9 +23,12 @@ DATABASE_URL = os.environ.get("TRACKER_DATABASE_URL", "postgresql:///tracker")
 #   python -c "import secrets; print(secrets.token_urlsafe(32))"
 API_TOKEN = os.environ.get("TRACKER_API_TOKEN", "")
 
-# Gmail OAuth (design doc §6.2 / §11: readonly scope only).
+# Gmail OAuth (design doc §6.2 / §11: readonly scope only). Also the scope
+# list for the web OAuth flow (gmail_oauth.py) — defined here, not in
+# gmail_sync.py, so neither Gmail module needs to import the other for it.
 GMAIL_CREDENTIALS_FILE = Path(os.environ.get("TRACKER_GMAIL_CREDENTIALS", "credentials.json"))
 GMAIL_TOKEN_FILE = Path(os.environ.get("TRACKER_GMAIL_TOKEN", ".gmail_token.json"))
+GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 
 # Candidate pre-filter (§6.2). Domain match is suffix-based, so "jobs.lever.co"
 # matches "lever.co". Grows over time — additions here are config, not code.

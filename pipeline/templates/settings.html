@@ -19,17 +19,60 @@
 </form>
 
 <h2>Gmail</h2>
-{% if gmail_connected %}
-<p>Connected. Status emails sync on the next <span class="mono">sync</span> run.</p>
+{% if gmail_kind == 'imap' %}
+<p>Connected over IMAP as <span class="mono">{{ gmail_address or '' }}</span>.
+Status emails sync on the next <span class="mono">sync</span> run.</p>
 <form method="post" action="/settings/gmail/disconnect"><button>Disconnect Gmail</button></form>
-{% elif gmail_web_configured %}
-<p><a href="/oauth/gmail/start"><button class="primary" type="button">Connect Gmail</button></a>
-   <span style="color:var(--muted)">read-only scope; tokens stored encrypted</span></p>
+{% if gmail_legacy_file %}
+<p class="empty" style="text-align:left">Disconnecting here does not stop sync — a legacy
+<span class="mono">.gmail_token.json</span> file is also present on this server and is used
+as a fallback. Delete that file too if you want Gmail fully disconnected.</p>
+{% endif %}
+
+{% elif gmail_kind == 'oauth' %}
+<p>Connected via OAuth. Status emails sync on the next <span class="mono">sync</span> run.</p>
+<form method="post" action="/settings/gmail/disconnect"><button>Disconnect Gmail</button></form>
+{% if gmail_legacy_file %}
+<p class="empty" style="text-align:left">Disconnecting here does not stop sync — a legacy
+<span class="mono">.gmail_token.json</span> file is also present on this server and is used
+as a fallback. Delete that file too if you want Gmail fully disconnected.</p>
+{% endif %}
+
 {% else %}
-<p class="empty" style="text-align:left">No web OAuth client configured on this server.
-Single-user installs can keep using <span class="mono">python -m pipeline.cli auth</span>;
-to enable Connect Gmail, add a Google web-application client JSON as
-<span class="mono">credentials-web.json</span>.</p>
+{% if gmail_kind == 'unreadable' %}
+<p class="empty" style="text-align:left">Stored Gmail credentials can't be decrypted —
+<span class="mono">TRACKER_SECRET_KEY</span> changed since they were saved. Reconnect below.</p>
+{% endif %}
+
+<form method="post" action="/settings/gmail/imap" style="display:grid;gap:.5rem;max-width:28rem">
+  <label>Gmail address
+    <input name="gmail_address" type="email" autocomplete="off"
+      value="{{ gmail_address_default or '' }}" placeholder="you@gmail.com"></label>
+  <label>App password
+    <input name="app_password" type="password" autocomplete="off" placeholder="16 characters"></label>
+  <div><button class="primary">Connect Gmail</button></div>
+  <p style="color:var(--muted);margin:0">Grants full mailbox access (read, modify, delete,
+  and send) — broader than a read-only scope, but nothing is ever sent, and this stays on
+  your own server. Generate one at
+  <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">myaccount.google.com/apppasswords</a>
+  (requires 2-Step Verification). Not available for Workspace/school accounts, Advanced
+  Protection, or security-key-only 2-Step Verification — use OAuth below instead.</p>
+</form>
+
+<details style="margin-top:.75rem">
+  <summary style="cursor:pointer;color:var(--muted)">Workspace or Advanced Protection account? Use OAuth instead</summary>
+  <div style="margin-top:.5rem">
+    {% if gmail_web_configured %}
+    <p><a href="/oauth/gmail/start"><button class="primary" type="button">Connect Gmail via OAuth</button></a>
+       <span style="color:var(--muted)">read-only scope; tokens stored encrypted</span></p>
+    {% else %}
+    <p class="empty" style="text-align:left">No web OAuth client configured on this server.
+    Single-user installs can use <span class="mono">python -m pipeline.cli auth --oauth</span>;
+    to enable Connect Gmail via OAuth here, add a Google web-application client JSON as
+    <span class="mono">credentials-web.json</span>.</p>
+    {% endif %}
+  </div>
+</details>
 {% endif %}
 
 <h2>Appearance</h2>

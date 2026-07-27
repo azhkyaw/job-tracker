@@ -83,6 +83,17 @@ ambiguity:**
   **Internal** user-type app is exempt from verification *and* the 100-user cap
   entirely. Useless for personal Gmail accounts, which is most self-hosters.
 
+**Resolved 28 Jul 2026, differently than originally scoped.** Rather than
+patching around this problem, `docs/email-ingest.md` proposes and ships
+Gmail IMAP with an app password as the *default* ingest path — no Cloud
+project, no consent screen, no refresh token to expire. `invalid_grant` /
+`RefreshError` still surfaces as a visible `mailbox.MailboxAuthError`
+(shared with IMAP's own auth-failure path) for the accounts that keep using
+OAuth — Workspace and Advanced Protection, where an app password isn't an
+option. The production-status empirical test above was never run; it no
+longer gates anything, since this account's own sync no longer depends on
+the answer.
+
 ## 3. Legal and account risk: the extension
 
 This is the finding that most changes the plan, and it deserves to be
@@ -375,7 +386,8 @@ Audit results, run 26 July 2026:
 Ordered work:
 
 1. LICENSE (Apache-2.0), and a README maintenance-posture statement.
-2. `invalid_grant` handling + honest token documentation (§2).
+2. ~~`invalid_grant` handling + honest token documentation~~ (done, 28 Jul
+   2026 — superseded by shipping IMAP as the default; see §2).
 3. Split the extension into its own repo (§3.1.2); scrub platform framing from
    the main repo's pitch (§3.1.3–4).
 4. ~~Genericise test fixtures~~ and ~~rewrite history~~ (both done,
@@ -416,7 +428,7 @@ history. If the direction ever reverses, that analysis is still valid.
 |---|---|---|
 | LinkedIn C&D over the extension | Low–Medium, rising with visibility | §3.1: separate repo, no store listing during the job search, no logos, capability-first framing |
 | Author's own LinkedIn account restricted mid-search | Low, but the highest-consequence outcome | Load-unpacked only (random per-install ID); defer store listing entirely |
-| Self-hosters hit the 7-day token expiry and churn | **High if undocumented** | §2: test, document honestly, handle `invalid_grant` visibly |
+| Self-hosters hit the 7-day token expiry and churn | Low — resolved 28 Jul 2026 | §2: IMAP is now the default (no refresh token to expire); OAuth's `invalid_grant` still handled visibly for the Workspace/Advanced-Protection accounts that keep using it |
 | Repo gets no traction | High | Expected; §5 accepts it. Profile value comes from readability and the narrative, not stars |
 | Support burden exceeds appetite | Medium | §10: stated posture, CI, issue templates. Archiving later is acceptable and normal |
 | A §4 competitor is simply better for self-hosters | Likely already true on setup friction | Don't compete there (§5); differentiate on the pipeline and the engineering record |

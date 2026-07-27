@@ -2,7 +2,10 @@
 
 Distinct from the CLI's Desktop-app flow: this uses a Web-application OAuth
 client and a redirect back to /oauth/gmail/callback. Tokens are stored
-Fernet-encrypted on the user row; state is stored per user for CSRF checking.
+Fernet-encrypted on the user row (bare Credentials.to_json(), same slot the
+IMAP path uses with a "kind" discriminator — see pipeline/mailbox.py);
+state is stored per user for CSRF checking. Disconnecting either kind of
+credential is kind-agnostic and lives in mailbox.disconnect(), not here.
 """
 
 from __future__ import annotations
@@ -12,7 +15,6 @@ import secrets
 from google_auth_oauthlib.flow import Flow
 
 from . import auth, config
-from .gmail_sync import SCOPES
 
 _REDIRECT_PATH = "/oauth/gmail/callback"
 
@@ -23,7 +25,7 @@ def configured() -> bool:
 
 def _flow(state: str | None = None) -> Flow:
     return Flow.from_client_secrets_file(
-        str(config.GMAIL_WEB_CREDENTIALS), scopes=SCOPES, state=state,
+        str(config.GMAIL_WEB_CREDENTIALS), scopes=config.GMAIL_SCOPES, state=state,
         redirect_uri=config.BASE_URL + _REDIRECT_PATH,
     )
 
@@ -47,10 +49,3 @@ def finish(conn, user, code: str, state: str) -> None:
     conn.execute(
         "UPDATE users SET gmail_credentials = %s, oauth_state = NULL WHERE id = %s",
         (auth.encrypt(flow.credentials.to_json()), user["id"]))
-
-
-def disconnect(conn, user_id) -> None:
-    conn.execute(
-        "UPDATE users SET gmail_credentials = NULL, oauth_state = NULL WHERE id = %s",
-        (user_id,))
-    conn.execute("DELETE FROM gmail_sync_state WHERE user_id = %s", (user_id,))

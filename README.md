@@ -31,7 +31,11 @@ prompts/cover_letter_v1.txt      Grounded cover letter drafting
 pipeline/config.py               Allowlist, thresholds, backoff — all env-overridable
 pipeline/db.py                   psycopg 3 helpers, enqueue
 pipeline/email_classifier.py     Both LLM stages + norm_company()
-pipeline/gmail_sync.py           OAuth, backfill, incremental History-API sync
+pipeline/mailbox.py              Provider-agnostic ingest: candidate filter, storage,
+                                 query building, cursor persistence (docs/email-ingest.md)
+pipeline/gmail_imap.py           Gmail IMAP + app password provider — the default
+pipeline/gmail_sync.py           Gmail API + OAuth provider — the alternative for
+                                 Workspace / Advanced Protection accounts
 pipeline/matcher.py              §8 scoring, auto-match / create / triage dispatch
 pipeline/ingest.py               job+posting+application upsert — the shared write
                                  path behind /captures AND manual entry
@@ -43,7 +47,7 @@ pipeline/dedup.py                §10 blocking/thresholds + job merging
 pipeline/covers.py               Cover letters from your resume profile
 pipeline/analytics.py            Funnel SQL over the event log + reminders
 pipeline/auth.py                 Passwords, sessions, API tokens, encryption
-pipeline/gmail_oauth.py          Per-user Connect Gmail (web OAuth flow)
+pipeline/gmail_oauth.py          Per-user Connect Gmail (web OAuth flow, the alternative)
 pipeline/worker.py               SKIP LOCKED claim loop, savepoints, backoff
 pipeline/cli.py                  auth / backfill / sync / work / serve / status
 pipeline/web.py                  FastAPI app: applications, detail, manual entry, triage
@@ -54,6 +58,8 @@ tests/test_integration.py        End-to-end with LLM stages stubbed
 tests/test_web.py                UI render + triage resolve actions
 tests/test_captures.py           /captures auth, upsert, enrichment, idempotency
 tests/test_phase3.py             Extraction chain, dedup bands, covers, analytics
+tests/test_email_ingest.py       Gmail IMAP provider against a fake server: protocol
+                                 invariants, hex-identity, ordering, idempotency
 tests/test_phase4.py             Accounts, tokens, RLS isolation (run LAST)
 ```
 
@@ -69,19 +75,25 @@ psql tracker -f migrations/001_init.sql -f migrations/002_gmail_sync_state.sql \
              -f migrations/005_posting_ats.sql -f migrations/006_user_timezone.sql \
              -f migrations/007_user_theme.sql -f migrations/008_application_origin.sql
 
-# 2. Python deps
+# 2. Python deps. google-api-python-client/google-auth-oauthlib are only
+#    needed for the OAuth alternative in step 3b — safe to skip if you're
+#    IMAP-only.
 pip install anthropic "psycopg[binary]" google-api-python-client google-auth-oauthlib \
             fastapi "uvicorn[standard]" jinja2 python-multipart
 export ANTHROPIC_API_KEY=sk-ant-...
 export TRACKER_SECRET_KEY=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
 #    ^ set ONCE and keep forever — losing it orphans encrypted Gmail creds/sessions.
+#    This secret now also protects an IMAP app password (full mailbox access:
+#    read, modify, delete, and send), not just a read-only OAuth token — treat
+#    it accordingly.
 
-# 3. Gmail OAuth: create a Desktop-app OAuth client in Google Cloud Console
-#    (Gmail API enabled, scope gmail.readonly), download credentials.json into
-#    the project root. The app is unverified, so also add your Google account
-#    under OAuth consent screen -> Test users, or auth fails with
-#    "Error 403: access_denied". Then:
-python -m pipeline.cli auth        # prints a URL — WSL-friendly, no browser launch
+# 3. Gmail — IMAP with an app password (the default; no Google Cloud project,
+#    no OAuth consent screen, no token-expiry trap). Requires 2-Step
+#    Verification on your Google account; NOT available for Workspace/school
+#    accounts, Advanced Protection, or security-key-only 2-Step Verification
+#    (use 3b instead). Generate one at myaccount.google.com/apppasswords,
+#    then:
+python -m pipeline.cli auth        # prompts for address + the app password (hidden input)
 
 # 4. Start the server, then create your account in the browser.
 python -m pipeline.cli serve
@@ -92,6 +104,27 @@ python -m pipeline.cli serve
 #    -> select the extension/ folder. Open its Options page, set the API base
 #    (http://127.0.0.1:8000) and paste the token from step 4.
 ```
+
+### 3b. Gmail OAuth (alternative — Workspace / Advanced Protection accounts)
+
+```bash
+# Create a Desktop-app OAuth client in Google Cloud Console (Gmail API
+# enabled, scope gmail.readonly), download credentials.json into the project
+# root. The app is unverified, so also add your Google account under OAuth
+# consent screen -> Test users, or auth fails with "Error 403: access_denied".
+python -m pipeline.cli auth --oauth   # prints a URL — WSL-friendly, no browser launch
+```
+
+**Read this before relying on it:** a Google Cloud project with an external
+consent screen at publishing status "Testing" issues refresh tokens that
+expire after **7 days**, unless the only scopes requested are name/email/
+profile — `gmail.readonly` doesn't qualify, so sync will die weekly with
+`invalid_grant` (surfaced visibly, not a traceback — see `docs/email-ingest.md`
+§8). Whether flipping to "In production" while unverified stops the clock is
+undocumented for restricted scopes. If you have Google Workspace, an
+**Internal** user-type app is exempt from both verification and the 7-day
+expiry — the better path for Workspace accounts specifically. Full analysis:
+`docs/open-source.md` §2, `docs/email-ingest.md`.
 
 ## Run
 
@@ -107,6 +140,11 @@ python -m pipeline.cli serve            # web UI at http://127.0.0.1:8000
 # after adding keys or backlog:  python -m pipeline.cli scan
 ```
 
+`sync` iterates every connected account, reports each one's provider kind
+(`[imap]`/`[gmail_api]`), and exits non-zero if any account failed — so a
+cron failure is visible in your job runner's own alerting rather than
+silently dying.
+
 No confirmation email and the posting's gone (applied before this existed,
 notifications were off, or the extension missed it)? Open
 `/applications/new` — same dedup-aware write path as `/captures`, so pasting
@@ -116,28 +154,23 @@ duplicating.
 ## Test
 
 ```bash
-createdb tracker_test
-psql tracker_test -f migrations/001_init.sql -f migrations/002_gmail_sync_state.sql \
-     -f migrations/003_multi_tenant.sql -f migrations/004_posting_listing_meta.sql \
-     -f migrations/005_posting_ats.sql -f migrations/006_user_timezone.sql \
-     -f migrations/007_user_theme.sql -f migrations/008_application_origin.sql \
-     -c "INSERT INTO users (email) VALUES ('test@local');"
-TRACKER_DATABASE_URL=postgresql:///tracker_test python3 tests/test_integration.py
-TRACKER_DATABASE_URL=postgresql:///tracker_test python3 tests/test_web.py   # run second
-TRACKER_API_TOKEN=testtok TRACKER_DATABASE_URL=postgresql:///tracker_test \
-    python3 tests/test_captures.py
-TRACKER_API_TOKEN=testtok TRACKER_DATABASE_URL=postgresql:///tracker_test \
-    python3 tests/test_phase3.py
-TRACKER_API_TOKEN=testtok TRACKER_SECRET_KEY=x TRACKER_DATABASE_URL=postgresql:///tracker_test \
-    python3 tests/test_phase4.py   # run last: creates a second user
+./scripts/test.sh          # Linux/WSL — creates a throwaway tracker_test DB,
+                            # applies every migration, runs all six suites
+scripts\test.ps1           # native Windows equivalent (Docker Postgres, uv)
 ```
-(Apply migration 003 to the test database too.)
+
+Both scripts are the single source of truth for suite order — `test_email_ingest`
+must run before `test_phase4`, which must run last (it creates a second user,
+which kills the legacy single-token fallback `test_captures` depends on).
+Suites stub every LLM/embedding call and the IMAP suite fakes the network
+socket entirely, so a full run costs zero API calls.
 
 Covers: auto-match with event provenance, the create/backfill path (including
 stated event dates beating received timestamps, and recruiter contact capture),
-pending triage (no silent guesses), non-job mail ignored, failure backoff, and
+pending triage (no silent guesses), non-job mail ignored, failure backoff,
 manual entry (timezone-anchored dates, URL-based merge instead of duplication,
-and the near-duplicate confirm guard).
+and the near-duplicate confirm guard), and the Gmail IMAP provider's protocol
+invariants and hex-identity guarantee against a fake server.
 
 ## Design notes worth knowing before writing more code
 
@@ -201,12 +234,16 @@ even for queries with no WHERE clause, and the `application_status` view is
 tables stay admin-only. The worker and Gmail sync run as trusted admin batch
 jobs.
 
-**Per-user Gmail (multi-user):** create a *Web application* OAuth client in
-Google Cloud Console with redirect URI `<TRACKER_BASE_URL>/oauth/gmail/callback`,
-save its JSON as `credentials-web.json`, set `TRACKER_BASE_URL`, and users
-connect from Settings. Tokens are Fernet-encrypted at rest; `sync` iterates
-every connected account. Single-user installs can keep the Desktop-client
-`cli auth` flow — nothing to change.
+**Per-user Gmail (multi-user):** users connect from Settings — IMAP with an
+app password by default, or OAuth if a *Web application* OAuth client is
+configured (Google Cloud Console, redirect URI
+`<TRACKER_BASE_URL>/oauth/gmail/callback`, saved as `credentials-web.json`,
+with `TRACKER_BASE_URL` set). Both kinds share one Fernet-encrypted column
+(`users.gmail_credentials`), discriminated by a `"kind"` field in the stored
+JSON — `pipeline/mailbox.provider_for_user()` is the single dispatch point;
+`sync` iterates every connected account regardless of kind. Single-user
+installs can keep the CLI flows — `cli auth` (IMAP) or `cli auth --oauth`
+(Desktop client) — nothing to change.
 
 **Deploying beyond localhost:** run behind TLS (Caddy/nginx or Fly.io) — the
 session cookie switches to Secure automatically when `TRACKER_BASE_URL` is

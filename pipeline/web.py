@@ -32,7 +32,7 @@ from pydantic import BaseModel
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from . import analytics, auth, config, db, dedup, gmail_oauth, ingest, joburl, matcher
+from . import analytics, auth, config, db, dedup, gmail_imap, gmail_oauth, ingest, joburl, mailbox, matcher
 from .email_classifier import norm_company
 
 app = FastAPI(title="Job Tracker")
@@ -1431,6 +1431,7 @@ def logout(request: Request):
 # --------------------------------------------------------------------------- settings
 
 def _settings_ctx(user: dict, new_token: str | None = None, msg: str | None = None):
+    gmail_kind, gmail_address = mailbox.describe_credential(user.get("gmail_credentials"))
     return {"email": user["email"],
             "resume_profile": user.get("resume_profile") or "",
             "timezone": user.get("timezone") or "",
@@ -1440,6 +1441,13 @@ def _settings_ctx(user: dict, new_token: str | None = None, msg: str | None = No
             # key "theme" would silently make base.html call a string.
             "theme_pref": user.get("theme") or "",
             "gmail_connected": bool(user.get("gmail_credentials")),
+            # "unreadable": credentials exist but TRACKER_SECRET_KEY can no
+            # longer decrypt them — without this, that state renders as a
+            # plain "Connected" while sync silently fails every run.
+            "gmail_kind": gmail_kind,             # "imap" | "oauth" | "unreadable" | None
+            "gmail_address": gmail_address,       # IMAP address, or None
+            "gmail_address_default": user["email"],
+            "gmail_legacy_file": config.GMAIL_TOKEN_FILE.exists(),
             "gmail_web_configured": gmail_oauth.configured(),
             "new_token": new_token, "msg": msg, "pending": 0}
 
@@ -1535,6 +1543,42 @@ def settings_token(request: Request):
 
 # --------------------------------------------------------------------------- gmail connect
 
+@app.post("/settings/gmail/imap")
+def gmail_imap_connect(request: Request, gmail_address: str = Form(""),
+                       app_password: str = Form("")):
+    # Form("") + manual validation, not Form(...) — an empty-but-present
+    # field would 422 before this friendly message ever runs.
+    user = _login_user(request)
+    address = gmail_address.strip()
+    password = "".join(app_password.split())  # Google displays it space-grouped
+    if not address or not password:
+        return templates.TemplateResponse(
+            request=request, name="settings.html",
+            context=_settings_ctx(user, msg="Enter both your Gmail address and "
+                                  "a 16-character app password."),
+            status_code=400)
+    err = gmail_imap.verify(address, password)
+    if err:
+        return templates.TemplateResponse(request=request, name="settings.html",
+                                          context=_settings_ctx(user, msg=err),
+                                          status_code=400)
+    import json as _json
+    from datetime import datetime as _datetime, timezone as _timezone
+    payload = _json.dumps({
+        "kind": "imap", "provider": "gmail", "address": address,
+        "app_password": password,
+        "connected_at": _datetime.now(_timezone.utc).isoformat(),
+    })
+    with db.connect() as conn, conn.transaction():
+        conn.execute("UPDATE users SET gmail_credentials = %s WHERE id = %s",
+                     (auth.encrypt(payload), user["id"]))
+    return templates.TemplateResponse(
+        request=request, name="settings.html",
+        context=_settings_ctx(_fresh_user(user["id"]),
+                              msg=f"Gmail connected over IMAP as {address}. Sync picks it "
+                                  f"up on the next run; run backfill to reconstruct history."))
+
+
 @app.get("/oauth/gmail/start")
 def gmail_start(request: Request):
     user = _login_user(request)
@@ -1569,5 +1613,5 @@ def gmail_callback(request: Request, code: str | None = None,
 def gmail_disconnect(request: Request):
     user = _login_user(request)
     with db.connect() as conn, conn.transaction():
-        gmail_oauth.disconnect(conn, user["id"])
+        mailbox.disconnect(conn, user["id"])
     return RedirectResponse("/settings", status_code=303)

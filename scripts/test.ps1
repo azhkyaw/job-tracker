@@ -46,7 +46,7 @@ if (-not $env:ANTHROPIC_API_KEY) { $env:ANTHROPIC_API_KEY = 'test-dummy-key' }
 # deprecation warning) to a terminating error — so drop to 'Continue' and
 # merge stderr into the per-suite log.
 $ErrorActionPreference = 'Continue'
-$suites = 'test_integration', 'test_web', 'test_captures', 'test_phase3', 'test_phase4'
+$suites = 'test_integration', 'test_web', 'test_captures', 'test_phase3', 'test_email_ingest', 'test_phase4'
 foreach ($t in $suites) {
     Write-Host ("== {0,-18} " -f $t) -NoNewline
     $log = Join-Path $env:TEMP "$t.log"

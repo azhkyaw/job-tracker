@@ -5,21 +5,27 @@ phases built (Jul 2026) and test-driven. Full design rationale: `docs/design.md`
 — read it before any structural change. Direction: **open-source release**, not
 SaaS — `docs/open-source.md` (LinkedIn extension-fingerprinting risk, the
 7-day OAuth token trap, release checklist). Feature priorities with the market
-research behind them: `docs/features.md`. How mail gets in, and why IMAP +
-app password is proposed as the default over the Gmail API:
+research behind them: `docs/features.md`. How mail gets in — Gmail IMAP +
+app password is the default ingest path (shipped 28 Jul 2026), OAuth the
+alternative for Workspace/Advanced Protection accounts:
 `docs/email-ingest.md`. `docs/monetization.md` is
 superseded but retained for its Gmail restricted-scope compliance analysis.
 
 ## Commands
 
 - **Run ALL tests: `./scripts/test.sh`** — creates a throwaway `tracker_test`
-  DB, applies all migrations, runs the five suites in the required order.
-  Run after every change; suites stub every LLM/embedding call (zero API cost)
-  and have caught every regression in this project so far.
+  DB, applies all migrations, runs the six suites in the required order
+  (`test_email_ingest` before `test_phase4`, which must stay last). Run after
+  every change; suites stub every LLM/embedding call and fake the IMAP socket
+  entirely (zero API cost) and have caught every regression in this project
+  so far.
 - Serve UI: `python -m pipeline.cli serve` (http://127.0.0.1:8000)
 - Worker: `python -m pipeline.cli work [--once]`
-- Gmail: `python -m pipeline.cli auth` (single-user desktop flow),
-  `backfill -m 12 [--email x]`, `sync` (the 15-min cron entry)
+- Gmail: `python -m pipeline.cli auth` (IMAP app password, the default —
+  prompts for address + hidden password, verifies before storing) or
+  `auth --oauth` (legacy single-user desktop OAuth flow), then
+  `backfill -m 12 [--email x]`, `sync` (the 15-min cron entry, exits non-zero
+  if any account failed)
 - Backlog: `python -m pipeline.cli scan` (enqueue JD extraction/embeddings)
 - Account bootstrap/recovery: `python -m pipeline.cli passwd <email>`
 - Requires Postgres running: `sudo service postgresql start` (WSL doesn't autostart)
@@ -92,6 +98,16 @@ superseded but retained for its Gmail restricted-scope compliance analysis.
    `classification != 'recruiter_outreach'`, not `== 'confirmation'` — a
    rejection/interview_invite with no prior record still implies the user
    applied; only recruiter_outreach doesn't.
+10. **Mail ingest has one orchestrator.** `pipeline/mailbox.py` owns candidate
+    filtering, body storage, enqueueing, query building, and cursor
+    persistence for every provider. A provider (`gmail_imap.ImapProvider`,
+    `gmail_sync.GmailApiProvider`) only connects, searches, and returns the
+    normalised `{id, sender, subject, body_text, received_at}` dict — `id` is
+    `gmail_message_id` as lowercase hex, identical on both paths since
+    IMAP's `X-GM-MSGID` (decimal) and the API's message id (hex) are the same
+    64-bit value. Never copy `is_candidate` / `store_message` / a query
+    builder into a provider — that is exactly how two ingest paths silently
+    diverge, the same class of bug invariant #3 guards against elsewhere.
 
 ## Gotchas learned the hard way in the original build
 
@@ -201,13 +217,58 @@ superseded but retained for its Gmail restricted-scope compliance analysis.
   before asserting either way. Handle `invalid_grant` visibly regardless:
   tokens also die on Google-password change (Gmail scopes specifically), six
   months of disuse, and user revocation. See `docs/open-source.md` §2.
+  **Handled as of 28 Jul 2026:** `GmailApiProvider.from_stored` catches
+  `RefreshError` and raises `mailbox.MailboxAuthError`, the same type an IMAP
+  login failure raises — one shared error path surfaces in the CLI, `sync`,
+  and Settings for both credential kinds. The empirical production-status
+  flip test itself was never run; this handling doesn't depend on its result.
+- **`imaplib.IMAP4._command()` does zero quoting.** Every argument is
+  concatenated onto the wire verbatim — `select("[Gmail]/All Mail")` sends
+  two unquoted atoms and gets `BAD`, and an `X-GM-RAW` query containing
+  `subject:"your application"` is a malformed quoted string unless escaped
+  first. `gmail_imap.py`'s `_quote()` (backslash- and quote-escaping) wraps
+  every mailbox name and search query; nothing reaches `conn.select()`/
+  `conn.uid()` unquoted.
+- **`imaplib.Internaldate2tuple()` returns `time.localtime(utc)`** — a NAIVE
+  struct in the *host's* timezone, not the message's. Using it for
+  `received_at` would silently shift every stored email by the host's UTC
+  offset. `gmail_imap._parse_internaldate()` parses the `imaplib.InternalDate`
+  regex groups directly and builds a tz-aware UTC datetime instead — verified
+  against a real `+0800` INTERNALDATE stamp before this was trusted.
+- **`UID SEARCH UID n:*` returns the highest existing UID even when `n`
+  exceeds it** (RFC 3501 range semantics) — without a client-side
+  `uid > last_uid` filter, every incremental sync would re-fetch the newest
+  matching message forever. Invisible in practice (the insert is a no-op via
+  `ON CONFLICT`) except as a permanent, silent bandwidth leak.
+  `gmail_imap.ImapProvider.incremental_handles()` filters this client-side;
+  `tests/test_email_ingest.py` asserts the stale UID is never fetched.
+- **`BODY.PEEK[]` and `readonly=True` (EXAMINE, not SELECT) are both
+  mandatory, together.** Either one missing marks the operator's mail
+  `\Seen` — a live, unrecoverable side effect no fake can fully stand in for.
+  Verified against a real inbox (28 Jul 2026): noted specific unread emails,
+  ran backfill against them twice, confirmed still unread both times.
+- **Two more places IMAP diverges silently from the Gmail API if copied
+  carelessly:** the API returns headers already MIME-decoded, but raw IMAP
+  `FETCH` does not — skip `email.header.decode_header` and a candidate email
+  with an RFC 2047-encoded subject (non-ASCII, so Q-encoding replaces spaces
+  with `_`) is invisible to `is_candidate`'s keyword match even though a
+  human reading the same subject in Gmail would see the keyword plainly.
+  Separately, `[Gmail]/All Mail` is a *localised* folder name (different per
+  account language) — found via the `\All` SPECIAL-USE flag in `LIST`, never
+  hard-coded, and deliberately All Mail rather than `INBOX` since that's the
+  parity set with the API's `messages.list` (excludes Spam/Trash, includes
+  archived and filter-routed mail — most accounts with job alerts route them
+  somewhere other than INBOX).
 
 ## Environment
 
 Python 3.12 · Postgres 15+ with `pgvector` + `pg_trgm` · `pip install -r requirements.txt`
 
 Env vars: `ANTHROPIC_API_KEY` · `TRACKER_SECRET_KEY` (set ONCE, keep forever —
-losing it orphans encrypted Gmail creds) · `TRACKER_DATABASE_URL` (default
+losing it orphans encrypted Gmail creds; since IMAP shipped this key can also
+protect a full-mailbox app password rather than only a `gmail.readonly`
+token, so its blast radius on leak/loss is strictly larger than before) ·
+`TRACKER_DATABASE_URL` (default
 `postgresql:///tracker`) · `VOYAGE_API_KEY` (optional; absent = dedup simply
 off) · `TRACKER_API_TOKEN` (legacy single-user extension token; dies when a
 second account exists) · `TRACKER_BASE_URL` (needed for Gmail web OAuth).
@@ -231,12 +292,29 @@ win). No per-shell export needed for local dev.
   `vector(1024)`) on first use.
 - **Gmail web OAuth end-to-end** (`pipeline/gmail_oauth.py`) — flow code is
   tested for state/storage, not against Google.
-- **Gmail poller against a real inbox** — a 10-day test backfill (Jul 2026)
+- **Gmail API poller against a real inbox** — a 10-day test backfill (Jul 2026)
   already surfaced and fixed two real issues (see Gotchas): the
   `messages.list` newest-first ordering bug, and a same-employer/different-
   branding email that needed the new `refile_email` route rather than
   `merge_jobs`. Still unverified: the full `-m 12` window, `ALLOWLIST_DOMAINS`
   coverage, and match-threshold tuning against a larger real sample.
+- **Gmail IMAP poller — verified against a real inbox 28 Jul 2026.**
+  `backfill -d 14` against the author's real account: no crash on the real
+  `X-GM-RAW` search (the quoting concern in the Gotchas above was the biggest
+  unknown going in), 4 new candidates stored, zero collisions against the
+  102 rows the prior OAuth backfill had already written (proving the
+  hex-identity claim, not just asserting it), cursor came out
+  `uidvalidity:uidnext-1`-shaped, two `sync` runs both reported 0 new, a
+  deliberately wrong app password surfaced the same friendly message the
+  fake predicted (`[AUTHENTICATIONFAILED] Invalid credentials (Failure)` —
+  the real server's wire text matched the test fixture exactly), and noted
+  unread emails stayed unread across two backfill passes. Still unverified:
+  the full `-m 12` window on a real account (the 2,500 MB/day ceiling is not
+  a real concern at this account's scale per a rough extrapolation, but
+  never measured directly), and the **web** connect form
+  (`/settings/gmail/imap`) against a real app password — only the CLI path
+  (`cli auth`) was exercised live; the web route has FakeIMAP-suite and
+  browser-screenshot coverage but no real-credential run.
 
 ## Immediate next tasks (in order)
 
@@ -253,13 +331,20 @@ win). No per-shell export needed for local dev.
    the original plan:
    tune match thresholds against real `emails.match_score` values, and watch
    for more `ALLOWLIST_DOMAINS` gaps as new mail arrives.
-2. **OAuth token expiry — time-critical.** See the 7-day gotcha above; the
-   author's own sync breaks ~30 Jul – 2 Aug 2026. Needs `invalid_grant`
-   handled visibly in `gmail_sync.py` + honest setup docs, regardless of how
-   the production-status test goes. `docs/email-ingest.md` proposes the
-   structural fix — IMAP + app password as the default, which has no refresh
-   token to expire — but `invalid_grant` handling is still required either
-   way, because OAuth stays for Workspace accounts.
+   **Note (28 Jul 2026):** switching this account to IMAP and re-running
+   `backfill -d 14` (Step 7 of the IMAP rollout, see `docs/email-ingest.md`)
+   added 4 more real candidate emails, still `pending` in `job_queue` —
+   `work --once` hasn't been run against them yet, so `status` will show a
+   nonzero queue depth until it is.
+2. **OAuth token expiry — largely resolved.** See the 7-day gotcha above; IMAP
+   + app password is now the default (`docs/email-ingest.md`, shipped and
+   verified against a real inbox 28 Jul 2026), which has no refresh token to
+   expire, and `invalid_grant`/`RefreshError` now surfaces as the same
+   `mailbox.MailboxAuthError` an IMAP login failure does — handled visibly in
+   the CLI, `sync`, and Settings, not a traceback. What's still genuinely
+   open: the empirical test of whether flipping Google Cloud publishing
+   status to "In production" while unverified stops the 7-day clock — never
+   run, and this account no longer depends on the answer since it's on IMAP.
 3. **Release blockers** (`docs/open-source.md` §11, ordered there): LICENSE
    (Apache-2.0 recommended), extension split into its own repo, decide
    whether CLAUDE.md ships. Fixture names and git history are both done
@@ -287,4 +372,8 @@ win). No per-shell export needed for local dev.
    hygiene, not a compliance gate** — it is the self-hoster's own data on
    their own disk. It was a hard gate only on the (superseded) hosted path,
    where Google's restricted-scope limited-use policy applies
-   (`docs/monetization.md` §2.2).
+   (`docs/monetization.md` §2.2). IMAP shipping makes "re-fetch on demand"
+   more attractive than it was: `X-GM-MSGID` is a stable, searchable id, so a
+   body can be recovered without depending on a UID that `UIDVALIDITY` can
+   invalidate — see `docs/email-ingest.md` §9 q4. The IMAP work deliberately
+   did not decide this; it remains open.
