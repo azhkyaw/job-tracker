@@ -179,6 +179,14 @@ a.tl:hover{background:color-mix(in srgb,var(--accent) 5%,var(--mix));text-decora
 .tl-head{padding:.5rem .9rem .35rem}
 .tl-head .lab{font-family:'DM Mono',monospace;font-size:.66rem;
               text-transform:uppercase;letter-spacing:.12em;color:var(--muted)}
+/* Group label inside the list. Same mono marker as .tl-head's column labels,
+   because it does the same job — it names what the rows beneath it are. Grey,
+   not coloured: rule 1 reserves chroma for the state of a wait, and a heading
+   is not a wait. */
+.tl-sep{font-family:'DM Mono',monospace;font-size:.66rem;text-transform:uppercase;
+        letter-spacing:.12em;color:var(--muted);padding:.75rem .9rem .3rem;
+        border-bottom:1px solid var(--line)}
+.tl-sep:first-child{padding-top:.35rem}
 
 /* needs-follow-up block. Amber only on the wait length — the number IS the
    reason the row is here, and rule 1 says the colour marks time passing
@@ -189,6 +197,22 @@ a.tl:hover{background:color-mix(in srgb,var(--accent) 5%,var(--mix));text-decora
 .fu-h{display:flex;align-items:baseline;gap:.7rem;flex-wrap:wrap}
 .fu-h .quiet{text-transform:none;letter-spacing:0;
              font-family:Archivo,system-ui,sans-serif}
+/* The block is collapsed by default, so its summary carries the h2 that used
+   to stand alone: same mono section marker, plus a disclosure triangle. The
+   h2's own vertical margin moves to the <details> — a margin inside a
+   summary would push the marker off the heading's baseline. */
+.fu-block{margin:2rem 0 .6rem}
+.fu-block>summary{display:flex;align-items:baseline;gap:.45rem;
+                  cursor:pointer;list-style:none;width:max-content;
+                  max-width:100%}
+.fu-block>summary::-webkit-details-marker{display:none}
+.fu-block>summary::before{content:'▸';color:var(--muted);font-size:.8rem;
+                          line-height:1;flex:none}
+.fu-block[open]>summary::before{content:'▾'}
+.fu-block>summary h2{margin:0}
+.fu-block>summary:hover h2{color:var(--ink)}
+.fu-block>summary:hover::before{color:var(--ink)}
+.fu-block>.card{margin-top:.6rem}
 .fu-row{display:grid;grid-template-columns:minmax(0,1fr) 3.2rem max-content;
         align-items:center;gap:0 1rem;padding:.4rem .9rem;
         border-bottom:1px solid var(--line)}

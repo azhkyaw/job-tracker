@@ -271,7 +271,10 @@ that was never filled:
 - `artifacts.kind` permits **`prep_note`**; nothing generates one (§3.2).
 - `events.payload` JSONB is unused by most paths — the natural home for
   interview datetimes, follow-up metadata, and ghost-score provenance without
-  new columns.
+  new columns. **Partly filled 28 Jul 2026:** manual timeline events now carry
+  `reason` and `channel` there (`web.py:_EVENT_REASONS` / `_EVENT_CHANNELS`),
+  prompted by a visa rejection delivered over WhatsApp — news with no ingest
+  path, which the event log previously had no truthful way to record.
 - `postings.reposted` and `posted_label` (migration 004) are captured but read
   by nothing — both are ghost-job signals (§3.3).
 - `events.type` includes `follow_up_sent` and `interested`, both barely used.

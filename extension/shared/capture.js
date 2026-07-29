@@ -72,8 +72,9 @@
     return null;
   }
 
-  function buildPayload(trigger, external, ats, job, recruiter, answers, tags) {
+  function buildPayload(trigger, external, ats, job, recruiter, answers, tags, completed) {
     return {
+      completed: !!completed,
       platform: adapter.platform,
       platform_job_id: job.platform_job_id || null,
       url: job.url || location.href,
@@ -90,10 +91,47 @@
       location: job.location || null,
       posted_label: job.posted_label || null,
       reposted: job.reposted ?? null,
+      salary_raw: job.salary_raw || null,
+      work_type: job.work_type || null,
+      salary_match: job.salary_match ?? null,
       ats: ats || null,
       answers: (answers && answers.length) ? answers : null,
     };
   }
+
+  /* A completion signal by SELECTOR rather than by visible text — for
+   * platforms that expose a stable hook on the final submit (SEEK's
+   * data-automation attributes) and so don't need to be matched on wording
+   * that changes with the site's copy. Same composedPath walk as
+   * textMatchTarget, and the two are checked together. */
+  function completionTarget(ev) {
+    const sel = (adapter.completionSelectors || []).join(",");
+    if (!sel) return null;
+    const path = ev.composedPath ? ev.composedPath() : [ev.target];
+    for (const el of path) {
+      if (el && el.matches && el.matches(sel)) return el;
+    }
+    return null;
+  }
+
+  /* Visible text as a human reads it.
+   *
+   * JobStreet's submit button is literally "⁠Submit application" — a
+   * WORD JOINER (U+2060) glued to the front. It renders as nothing, and
+   * String.trim() does NOT remove it, because format characters (category Cf)
+   * are not whitespace. An exact === against "Submit application" therefore
+   * fails on a button that looks identical to the one it's meant to match,
+   * with no error anywhere. Found on the real review page 29 Jul 2026, before
+   * it ever cost a capture.
+   *
+   * Zero-width space/joiners, soft hyphens and BOM are the same hazard, and
+   * NBSP is the one that bites on wrapped labels — strip the invisibles,
+   * fold every kind of space to one. */
+  const INVISIBLE = /[­​-‏⁠-⁤﻿]/g;
+  const visibleText = (el) => ((el && el.textContent) || "")
+    .replace(INVISIBLE, "")
+    .replace(/\s+/g, " ")
+    .trim();
 
   function textMatchTarget(ev) {
     if (!adapter.applyTextMatches || !adapter.applyTextMatches.length) return null;
@@ -108,7 +146,7 @@
       const tag = el.tagName.toLowerCase();
       const isButtonish = tag === "button" || tag === "a" ||
         (el.getAttribute && el.getAttribute("role") === "button");
-      if (isButtonish && adapter.applyTextMatches.includes((el.textContent || "").trim())) {
+      if (isButtonish && adapter.applyTextMatches.includes(visibleText(el))) {
         return el;
       }
     }
@@ -197,6 +235,13 @@
   /* The receipt: shown AFTER the record is already saved. Everything on it is
    * optional, so losing it costs a tag, not an application. */
   function receiptPopover(d) {
+    // Delivered — drop the worker's held copy so it can't surface again on the
+    // next page this tab loads. Fire-and-forget; a failure here costs a
+    // duplicate receipt at worst.
+    try {
+      chrome.runtime.sendMessage({ type: "tracker-receipt-shown" },
+                                 () => void chrome.runtime.lastError);
+    } catch (e) { /* context gone */ }
     if (!d.ok) return failurePopover(d);
     const qa = d.answers
       ? `<div class="qa">${d.answers} form answer${d.answers === 1 ? "" : "s"} kept</div>`
@@ -320,13 +365,63 @@
       .then((r) => !!(r && r.ok)).catch(() => false);
   }
 
-  function capture(trigger, external, ats) {
+  /* Which job a stash belongs to. Reuses answerFormKey() — it already has to
+   * answer "same job or a different one?" for the Q&A store, and it already
+   * resolves on the apply pages as well as the listing. */
+  const jobKey = () => {
+    try {
+      return (adapter.answerFormKey && adapter.answerFormKey()) || location.href;
+    } catch (e) { return location.href; }
+  };
+
+  function stashJob() {
+    let job = null;
+    try { job = adapter.getJob(); } catch (e) { job = null; }
+    if (!job) return;
+    // Promise form, not the callback: this click navigates immediately, and
+    // the open port is what keeps the worker alive long enough to finish the
+    // write. The page dying before it resolves is fine — the port is the
+    // browser's, not the page's.
+    try {
+      chrome.runtime.sendMessage({ type: "tracker-stash-job", key: jobKey(), job })
+        .catch(() => {});
+    } catch (e) { /* worker unreachable — the submit page still has id and title */ }
+  }
+
+  // Fields the later pages of an apply flow no longer show. Verified on
+  // JobStreet's review page: id and title survive, company does not.
+  const CARRIED = ["company", "title", "jd_text", "url", "platform_job_id",
+                   "location", "posted_label", "reposted",
+                   // Printed on the listing and gone by the review page, the
+                   // same way company is — if it isn't carried, it's lost.
+                   "salary_raw", "work_type", "salary_match"];
+
+  function withStashedJob(job, completed) {
+    if (!completed) return Promise.resolve(job);
+    try {
+      return chrome.runtime.sendMessage({ type: "tracker-take-job", key: jobKey() })
+        .then((r) => {
+          const was = r && r.job;
+          // The page in front of us wins; the stash only fills the gaps it
+          // left behind. A stale snapshot must never overwrite what the submit
+          // page can actually see.
+          if (was) for (const k of CARRIED) if (!job[k] && was[k]) job[k] = was[k];
+          return job;
+        })
+        .catch(() => job);
+    } catch (e) { return Promise.resolve(job); }
+  }
+
+  function capture(trigger, external, ats, completed) {
     // Snapshot the job DOM NOW, not later: platforms routinely swap the page's
     // content out from under us — e.g. LinkedIn's Easy Apply replaces the top
     // card (title/company/location) with an "application sent" confirmation
     // within moments of the real submit click.
-    const job = adapter.getJob();
-    if (!job || (!job.title && !job.jd_text)) {
+    // A completion fires on a page deep in the apply flow, which may show far
+    // less than the listing did — the stash is expected to fill it in, so an
+    // empty read there is not yet a failure.
+    const job = adapter.getJob() || (completed ? {} : null);
+    if (!job || (!job.title && !job.jd_text && !completed)) {
       console.warn("[tracker] capture failed — adapter found no job on this page",
                    location.href);
       chrome.runtime.sendMessage({
@@ -343,12 +438,31 @@
     // torn out of the DOM the instant the submit lands. shared/answers.js has
     // been accumulating it step by step; take() sweeps the final step and
     // hands over everything, now, while it still exists.
+    // diagnostics() BEFORE take(), which clears the store. This is the only
+    // window in which "what did the sweep see, and what did it skip" still
+    // exists — the form is about to be gone, and a missing answer leaves no
+    // error behind to find later. Fire-and-forget into the popup's ring buffer.
+    if (window.__trackerAnswers && window.__trackerAnswers.diagnostics) {
+      try {
+        chrome.runtime.sendMessage(
+          { type: "tracker-sweep", url: location.href,
+            detail: window.__trackerAnswers.diagnostics() },
+          () => void chrome.runtime.lastError);
+      } catch (e) { /* worker asleep or context invalidated — never block the save */ }
+    }
     const answers = window.__trackerAnswers ? window.__trackerAnswers.take() : null;
+
+    // Every DOM read above is synchronous and already done; only now is it
+    // safe to wait on the worker. Merging first would risk the submit's own
+    // navigation tearing the page down before the form had been read.
+    const merged = withStashedJob(job, completed);
 
     if (external) {
       // Ask first, then write — see confirmPopover.
       confirmPopover((tags, report) => {
-        send(buildPayload(trigger, external, ats, job, recruiter, answers, tags))
+        merged
+          .then((j) => send(buildPayload(trigger, external, ats, j, recruiter,
+                                         answers, tags, completed)))
           .then((res) => {
             if (res && res.ok) {
               const qa = res.answers ? ` ${res.answers} form answers kept.` : "";
@@ -369,9 +483,11 @@
     // whole capture until a human answered a question is how real applications
     // used to get lost: 45 seconds of inattention, or closing the modal, and
     // it was gone with nothing recorded anywhere.
-    const payload = buildPayload(trigger, external, ats, job, recruiter, answers,
-                                 { focused: null, note: null });
-    send(payload).then((res) => showResult(payload, res));
+    merged.then((j) => {
+      const payload = buildPayload(trigger, external, ats, j, recruiter, answers,
+                                   { focused: null, note: null }, completed);
+      send(payload).then((res) => showResult(payload, res));
+    });
   }
 
   /* --------------------------------------------- apply detection (delegated) */
@@ -391,13 +507,25 @@
         capture("apply", external, ats);
         return;
       }
-      // deferInternalApply: this click only opened an in-page wizard (e.g.
-      // LinkedIn Easy Apply) — the applicant can still cancel or discard
-      // partway through, so wait for the real completion signal below
-      // instead of recording an application that may never happen.
+      // deferInternalApply: this click only opened the apply flow — the
+      // applicant can still cancel or discard partway through, so wait for the
+      // real completion signal below instead of recording an application that
+      // may never happen. Nothing is POSTed here.
+      //
+      // But DO remember the job, because on a platform whose flow is its own
+      // page this is the last screen that shows the company name. Costs
+      // nothing if the flow is abandoned: the stash expires unsent.
+      stashJob();
+      return;
     }
-    const submitHit = textMatchTarget(ev);
-    if (submitHit) capture("apply", false, null);
+    // The real completion. On LinkedIn this IS the capture (deferInternalApply
+    // suppressed the opening click). On JobStreet the record already exists
+    // from that opening click, and `completed` tells the server to move its
+    // applied time here — to when the application was actually sent, not when
+    // the form was opened. Harmless in the first case: with no event on record
+    // yet, there is nothing to correct.
+    const submitHit = textMatchTarget(ev) || completionTarget(ev);
+    if (submitHit) capture("apply", false, null, true);
   }, true);
 
   chrome.runtime.onMessage.addListener((msg, _sender, respond) => {
@@ -416,4 +544,16 @@
     }
     return false;
   });
+
+  /* Is this tab owed a receipt from a page that navigated before it could show
+   * one? Top frame only — a subframe rendering it would put the box inside
+   * whatever iframe happened to load, and the whole point is to outlive that.
+   * See background.js:stashReceipt. */
+  if (window === window.top) {
+    try {
+      chrome.runtime.sendMessage({ type: "tracker-claim-receipt" })
+        .then((r) => { if (r && r.detail) receiptPopover(r.detail); })
+        .catch(() => {});
+    } catch (e) { /* worker asleep on a cold start — nothing owed, then */ }
+  }
 })();

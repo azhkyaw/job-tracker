@@ -92,9 +92,15 @@ def merge_jobs(conn, user_id, keep_job, drop_job) -> None:
             "UPDATE artifacts SET application_id = %(w)s WHERE application_id = %(l)s",
             # Both sides may have answered the same screening question (two
             # postings of one job, applied to twice). UNIQUE (application_id,
-            # question_norm) would reject the move, so drop the loser's copy of
-            # any question the winner already has — its own answer is the one
-            # the winner's detail page should keep showing.
+            # question_norm, occurrence) would reject the move, so drop the
+            # loser's copy of any question the winner already has — its own
+            # answer is the one the winner's detail page should keep showing.
+            # Deliberately still matched on question_norm ALONE, not on
+            # (question_norm, occurrence): if the loser listed more repeat
+            # entries than the winner, per-occurrence matching would move the
+            # spare ones across and the winner's "City" list would become two
+            # form-fills spliced together. Whichever side the merge kept, its
+            # answers to a question are that question's answers, whole.
             "DELETE FROM application_answers l USING application_answers w "
             "WHERE l.application_id = %(l)s AND w.application_id = %(w)s "
             "  AND l.question_norm = w.question_norm",

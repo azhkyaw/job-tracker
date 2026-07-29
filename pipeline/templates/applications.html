@@ -32,8 +32,8 @@
         placeholder="Search company or role" aria-label="Search company or role"
         style="width:100%"></span>
   <select name="sort" aria-label="Sort by">
-    <option value="silence" {% if sort == 'silence' %}selected{% endif %}>quiet longest first</option>
     <option value="activity" {% if sort == 'activity' %}selected{% endif %}>most recent activity</option>
+    <option value="silence" {% if sort == 'silence' %}selected{% endif %}>quiet longest first</option>
     <option value="applied" {% if sort == 'applied' %}selected{% endif %}>date applied</option>
     <option value="company" {% if sort == 'company' %}selected{% endif %}>company A–Z</option>
   </select>
@@ -56,11 +56,19 @@
    follow_up_sent event, which drops the row out of this block on the reload
    (the query excludes anything with a follow-up) — the list shortens as you
    work through it. Capped at 8 with a disclosure: on a bad week this is 20
-   rows and the table below it still matters. #}
+   rows and the table below it still matters.
+
+   Collapsed by default: the summary still states the count, so the work is
+   never hidden, only its rows — this page is opened to read the record far
+   more often than to work the queue, and 15 rows of queue before the first
+   trace is a tax on every other visit. Once opened it STAYS open while you
+   work: the buttons redirect to /?fu=1, so clearing a row re-renders the
+   block expanded (server-side — this app has no JS). #}
 {% if reminders %}
-<h2 class="fu-h">Needs follow-up
+<details class="fu-block"{% if fu_open %} open{% endif %}>
+<summary class="fu-sum"><h2 class="fu-h">Needs follow-up
   <span class="quiet sm">{{ reminders | length }} applied over {{ reminder_days }}
-  days ago with no reply and nothing sent</span></h2>
+  days ago with no reply and nothing sent</span></h2></summary>
 <div class="card fu">
   {% for r in reminders[:8] %}
   <div class="fu-row">
@@ -71,7 +79,7 @@
     <span class="num fu-d">{{ r.days_waiting }}d</span>
     <form method="post" action="/applications/{{ r.id }}/events">
       <input type="hidden" name="type" value="follow_up_sent">
-      <input type="hidden" name="redirect_to" value="/">
+      <input type="hidden" name="redirect_to" value="/?fu=1">
       <button title="Log a follow-up and clear this row">Followed up</button>
     </form>
   </div>
@@ -88,7 +96,7 @@
       <span class="num fu-d">{{ r.days_waiting }}d</span>
       <form method="post" action="/applications/{{ r.id }}/events">
         <input type="hidden" name="type" value="follow_up_sent">
-        <input type="hidden" name="redirect_to" value="/">
+        <input type="hidden" name="redirect_to" value="/?fu=1">
         <button title="Log a follow-up and clear this row">Followed up</button>
       </form>
     </div>
@@ -96,6 +104,7 @@
   </details>
   {% endif %}
 </div>
+</details>
 {% endif %}
 
 {% if rows %}
@@ -108,7 +117,16 @@
     </span>
     <span class="lab" style="text-align:right">status · quiet for</span>
   </div>
+  {# Two groups, one list. The leads carry no applied date, so the trace and
+     the "quiet for" column are measuring nothing on them — the label is what
+     says why they're above everything else. Rendered only when the default
+     sort put them there; any other sort is taken literally. #}
   {% for r in rows %}
+  {%- if leads_pinned and r.lead and loop.first %}
+  <div class="tl-sep">Inbound · awaiting your call</div>
+  {%- elif leads_pinned and not r.lead and not loop.first and rows[loop.index0 - 1].lead %}
+  <div class="tl-sep">Applications</div>
+  {%- endif %}
   <a class="tl" href="/applications/{{ r.id }}" title="{{ r.trace_label }}">
     <span class="name">
       <span class="co">{{ r.company_display }}{% if r.origin == 'inbound' %}

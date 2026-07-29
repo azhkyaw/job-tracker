@@ -13,10 +13,12 @@ superseded but retained for its Gmail restricted-scope compliance analysis.
 
 A fourth thing the extension captures as of 28 Jul 2026: the **screening
 questions an apply form asks and the answers given** (`application_answers`,
-migration 009; `pipeline/answers.py` owns normalisation and the write). Per
-application on its detail page, and grouped per *question* across every
+migrations 009 + 010; `pipeline/answers.py` owns normalisation and the write).
+Per application on its detail page, and grouped per *question* across every
 application at `/answers` — the second view is the point, since the same
-questions recur almost verbatim between employers.
+questions recur almost verbatim between employers. A form may ask the same
+question more than once (a work-history **repeater**), so a row is identified
+by (application, question_norm, **occurrence**) — see invariant #11.
 
 ## Commands
 
@@ -58,12 +60,24 @@ questions recur almost verbatim between employers.
 2. **Status is an append-only event log** (`events`, real-world `occurred_at`).
    Current status is DERIVED via the `application_status` view. Never add a
    mutable status column; backfill inserts out of order safely.
+   Not every reply arrives on one of the three ingest paths — a recruiter
+   rings, or messages on WhatsApp — so the detail page's timeline form files
+   any of `web.py:_MANUAL_EVENTS` by hand, with `occurred_on` backdating it
+   (`ingest.local_date_to_utc`, local noon) and `payload.reason` /
+   `payload.channel` recording why it ended and where it came from
+   (`_EVENT_REASONS` / `_EVENT_CHANNELS`; JSONB, no columns — the home
+   `docs/features.md` §7 always intended). `_MANUAL_EVENTS` is a superset of
+   `_OUTCOME_TYPES` by assertion, so the timeline form and `/applications/new`
+   can't offer different outcomes. **A visa rejection does NOT auto-set
+   `extractions.visa_signal`** — that stays a deliberate second click on the
+   detail page's own select, scoped to that posting (decided 28 Jul 2026).
 3. **postings ≠ jobs ≠ applications.** One application per (user, job). Dedup
    merges at the job level; `pipeline/dedup.py:merge_jobs` is the ONLY place
    records combine (moves events/artifacts/answers/emails/contacts before
-   deleting — `application_answers` is UNIQUE per (application, question_norm),
-   so the loser's copy of a question the winner already answered is dropped,
-   not moved).
+   deleting — `application_answers` is UNIQUE per (application, question_norm,
+   occurrence), so the loser's copy of a question the winner already answered
+   is dropped, not moved; that drop matches on question_norm ALONE, so a loser
+   with more repeat entries can't splice its spares into the winner's list).
    `pipeline/ingest.py:upsert_record` is its sibling on the write side — the
    ONLY place job/posting/application records are *created* from a capture
    (extension `/captures` and manual entry both call it); it owns the
@@ -118,6 +132,17 @@ questions recur almost verbatim between employers.
     64-bit value. Never copy `is_candidate` / `store_message` / a query
     builder into a provider — that is exactly how two ingest paths silently
     diverge, the same class of bug invariant #3 guards against elsewhere.
+11. **A form label is not a question identifier.** Apply forms contain
+    REPEATERS — a work-history section asks "Company / Industry / City" once
+    per employer — so N fields legitimately share one label. `occurrence` (the
+    field's index among same-labelled fields, migration 010) is what separates
+    them; `question_norm` still groups them, which is what keeps `/answers`
+    showing one "Industry" row across every employer and every application.
+    Assigned in `answers.clean()` from arrival order, never sent by the client.
+    The extension's store is keyed `question_norm#occurrence` for the same
+    reason. **Never key an answer on the label alone** — that is precisely the
+    bug that reduced a real multi-employer work history to one row per label
+    (VANARSDEL, 27 Jul 2026), silently and with nothing logged.
 
 ## UI design system (redesigned 28 Jul 2026)
 
@@ -162,13 +187,36 @@ axis) + **DM Mono**, from Google Fonts.
 7. **Never print a rate on a thin sample.** `analytics.MIN_RATE_N` (5) gates
    every per-dimension `response_rate`; below it the row shows counts and an
    em dash. "0% on n=16" describes the sample, not the technology.
-8. The list sorts by **silence** by default (`_SORTS` in `web.py`) — longest
-   unanswered live thread first. That ordering is the page's whole argument.
+8. The list sorts by **most recent activity** by default (`_SORTS` /
+   `_DEFAULT_SORT` in `web.py`, changed 29 Jul 2026). It used to sort by
+   silence — longest unanswered first — and that was called the page's whole
+   argument, but on 52 real applications it put the single interview invite at
+   row 36, under 34 rows of nothing happening: `last_activity ASC` sinks
+   engaged threads by construction, because a reply IS recent activity. The
+   needs-follow-up block above still makes the silence argument, with rows and
+   a one-click action, so the list underneath no longer repeats it.
+   `?sort=silence` keeps the old ordering for anyone who wants it.
+   Two things ride with the default and NOT with an explicit sort choice
+   (`leads_pinned` in the context): **inbound leads awaiting a decision**
+   (`_LEADS_FIRST` — `origin='inbound' AND status='interested'`, gated on
+   status because origin is immutable, so a lead you pursued must not stay
+   pinned forever) lead the list under a `.tl-sep` label, since they have no
+   applied event and every time-based sort was ranking them by a number that
+   measures nothing; and a **tiebreaker** (`_TIEBREAK`), because a form date
+   anchors at local noon so a day's backfill shares one instant to the second
+   — 15 of those 52 rows sat in 3 tie groups with no defined order at all.
 9. **The needs-follow-up block is work; the table below it is a record.** It
    gets real rows and a one-click `follow_up_sent` (posting with
-   `redirect_to=/` so the list shortens as you clear it), because on real data
-   it IS the day's task list — 15 of 47 threads. Don't demote it back to a
-   sentence of links.
+   `redirect_to=/?fu=1` so the list shortens as you clear it), because on real
+   data it IS the day's task list — 18 of 48 threads. Don't demote it back to a
+   sentence of links. **Collapsed by default since 28 Jul 2026** — 18 rows of
+   queue before the first trace taxed every visit that came to read rather
+   than work, and the summary still states the count, so what folds away is
+   the rows, not the fact. It stays open while you work it: `fu=1` on the
+   query string is what `open`s the `<details>`, and the buttons redirect
+   there, so the reload that shortens the block doesn't also close it. That
+   URL param is the whole mechanism — no JS anywhere in these templates, and
+   no stored preference.
 10. **The name column takes the free space; the trace is capped** (`.tl`
    grid). Verified against 47 real applications: applied in one burst, so
    every trace is the same line at the same length while agency company/role
@@ -193,6 +241,30 @@ axis) + **DM Mono**, from Google Fonts.
   listener must use `ev.composedPath()`, never `ev.target.closest(...)` —
   LinkedIn's Easy Apply renders its controls inside a shadow root, which
   retargets `ev.target` to the shadow host for any listener outside that tree.
+- **JobStreet's split view puts 30 OTHER jobs' data next to the one you want.**
+  The results list and the detail pane use different `data-automation` names
+  for the same facts: the pane has `job-detail-salary` / `job-detail-location`
+  (1 each, document-unique even on the search page), the cards have `jobSalary`
+  (×18) and `jobLocation` (×30). A plain `querySelector` on the CARD name
+  returns the first card's value — reading `$7,000–$10,000 / Paya Lebar` for a
+  Central Region job paying `$10,000–$11,000`. Plausible, silent, wrong. Only
+  ever use the `job-detail-*` names; never the unprefixed ones.
+- **Never name a DOM-extracted variable `location`.** It shadows
+  `window.location`, so any `location.pathname` read ABOVE it in the same scope
+  hits the temporal dead zone and throws — killing the whole adapter. `node
+  --check` passes it happily, because it's a runtime error, not a syntax one.
+- **Salary is printed BESIDE the ad, not inside it** (migration 011). That's
+  why `extractions.salary_min` has been null on jobs whose pay is plainly on
+  the page: the LLM only ever sees `jd_text`. Platform-stated pay now lands in
+  `postings.salary_*` — kept separate from `extractions` on purpose, since a
+  figure the employer printed and one a model inferred are different kinds of
+  evidence, and re-running a prompt must not change a published number.
+  `pipeline/salary.py` owns parsing (invariant #4's rule applied to pay); the
+  extension sends only the displayed string. **`salary_period` is load-bearing**
+  — SEA quotes monthly where most markets quote annual, and this project's own
+  answer bank already holds 10,800 (monthly) beside 128,000 (annual) for one
+  person. Indonesia writes `15.000.000`, so that dot is a THOUSANDS separator;
+  parsing it as a decimal turns 15 million into 15.
 - **LinkedIn ships 3+ concurrent DOM layouts** (`/jobs/view/`, `/jobs/search-results/`,
   `/jobs/collections/recommended/`) with different CSS stability and even different
   `document.title` behavior — verify adapter changes live against more than one. Prefer
@@ -212,6 +284,73 @@ axis) + **DM Mono**, from Google Fonts.
   hence `*://*.linkedin.com/*` in host_permissions; `activeTab` does NOT cover
   it, since a click on the page's own button isn't an activeTab invocation),
   with an in-frame fallback when the relay fails.
+- **An apply control that NAVIGATES loses its receipt entirely.** JobStreet's
+  is a real `<a>`: the click captures synchronously, but the POST is async via
+  the service worker, so the page (and the content script waiting on the
+  `.then()`) is torn down before the response lands. The record saves — the
+  worker owns the fetch — and the receipt, with it the only offer to tag the
+  application, never renders. Confirmed on a real apply 29 Jul 2026: record
+  present, `focused = NULL`, no popover ever seen. The worker now stashes the
+  receipt per tab (`background.js:stashReceipt`, 5-minute TTL) and the next
+  content script to load claims it; rendering it in-page sends
+  `tracker-receipt-shown` so the held copy can't fire twice. This is a class
+  of bug, not a JobStreet quirk — any adapter whose apply control navigates has
+  it, and LinkedIn only escapes because Easy Apply stays in-page.
+- **An apply flow that spans PAGES must carry the job snapshot with it.**
+  JobStreet defers like LinkedIn (`deferInternalApply`) so the applied time is
+  the submit, not the opening click — but its flow is `/job/<id>` → `/apply` →
+  `/apply/profile` → `/apply/review`, and only the LISTING shows the company.
+  Verified on the real review page 29 Jul 2026: `getJob()` there returns the id
+  (URL) and the title (`<h1>`), but company is a bare `<span>` with no
+  `data-automation` on it or any ancestor. Capturing at submit alone would file
+  "unknown company". So the opening click stashes the snapshot through the
+  service worker (`background.js:stashPendingJob`, 2h TTL) and the submit
+  merges it in, gaps only — the page in front of you always wins over a stale
+  snapshot. Nothing is POSTed until the submit, so an abandoned flow expires
+  unsent instead of leaving a phantom application.
+  (This reverses the 28 Jul design, which captured on the opening click and
+  corrected the time afterwards via `completed`. That existed because the
+  submit hook was an unverified guess and a miss would have lost the
+  application; the hook is now verified against the real page. The `completed`
+  correction is KEPT server-side — it costs nothing and still fixes the time
+  when an applied event already exists, e.g. from a confirmation email.)
+- **An MV3 service worker can be killed mid-write, and `return false` is what
+  invites it.** A message handler that returns false tells Chrome it is
+  finished, so the worker may be terminated between an async handler's storage
+  READ and its WRITE — and every message the extension sends from an apply
+  click is sent milliseconds before the page navigates, the worst moment to be
+  racing a shutdown. A real JobStreet apply on 29 Jul 2026 filed
+  "unknown company": deferral worked, the submit captured, but the stashed job
+  snapshot was simply not there. Two rules now: an async handler **returns
+  `true` and calls `respond()`** (the open port is what keeps the worker
+  alive), and **every write goes through `setLocal()`** so it can be awaited —
+  an unawaited `chrome.storage.local.set` resolves nobody's promise, so even a
+  correct-looking `.then()` fires before the data lands. Content-script side,
+  send with the promise form (`.catch(() => {})`), not the callback.
+- **`trim()` does not remove invisible characters, and platforms ship them
+  inside button labels.** JobStreet's submit button reads
+  `"⁠Submit application"` — a WORD JOINER glued to the front. It renders
+  as nothing, `String.trim()` leaves it (format characters, category Cf, are
+  not whitespace), and `=== "Submit application"` fails against a button that
+  looks exactly right. Silent: no error, the capture simply never fires.
+  `shared/capture.js:visibleText()` strips U+00AD/200B–200F/2060–2064/FEFF and
+  folds all whitespace before comparing; every text match goes through it.
+  Assume any exact-text hook needs this — NBSP inside a wrapped label is the
+  same bug wearing a different hat.
+- **`aria-labelledby` often names an element AND its own wrapper**, so joining
+  every referenced element's text gives you the label twice: real captures
+  stored `"Country Country"` and `"Location (city) Location (city)"`. Cosmetic
+  in display, corrosive in the bank — `"City"` and `"City City"` normalise
+  differently, so one question splits into two rows and stops grouping.
+  `answers.js:labelFor()` now drops a part already contained in one it kept.
+- **A capture-phase sweep reads the DOM BEFORE the page's own handler runs** —
+  which is the entire point for a wizard (the step's fields are gone
+  afterwards) and exactly wrong for a **typeahead**: clicking a suggestion
+  doesn't advance anything, it writes the value asynchronously *after* your
+  handler. A real capture stored `"singa"` as a city. The click listener now
+  sweeps three times (capture phase, `setTimeout 0`, `setTimeout 300`); the
+  extra passes are safe because a sweep only overwrites questions it can
+  currently see, so an advanced step's stored answers are untouched.
 - **Extension: snapshot DOM data synchronously at the trigger event, not lazily.**
   `shared/capture.js`'s `capture()` used to read the job DOM inside the tag-popover's
   callback (fires whenever the human clicks, seconds later) — by then SPAs like LinkedIn's
@@ -261,9 +400,13 @@ axis) + **DM Mono**, from Google Fonts.
   errors='replace')` first.
 - **Migration filenames are hardcoded in FOUR places — there is no runner.**
   Adding `migrations/NNN_x.sql` also means editing `scripts/dev-setup.ps1`,
-  `scripts/test.ps1`, `scripts/test.sh`, and the two `psql -f` command
-  blocks in `README.md`. Miss one and `test.ps1` resets its DB without the
-  new column, so every page needing it 500s with no obvious cause.
+  `scripts/test.ps1`, `scripts/test.sh`, and the `psql -f` command block in
+  `README.md`. Miss one and `test.ps1` resets its DB without the new column,
+  so every page needing it 500s with no obvious cause. The dev DB is a fifth
+  place, in a different sense: it is not reset between runs, so apply the file
+  to it by hand (`MSYS_NO_PATHCONV=1 docker compose exec -T db psql -U postgres
+  -d tracker -f /migrations/NNN_x.sql`) or the running dev server 500s while
+  the suites stay green.
 - **A `TemplateResponse` context key can silently shadow a Jinja global of
   the same name.** `web.py` exposes per-request state (`theme()`, `dt`,
   `dtt`) as `templates.env.globals`/`filters`, reached via `request.state`
@@ -397,20 +540,44 @@ win). No per-shell export needed for local dev.
   thin adapter file, reload the unpacked extension, **and hard-refresh any
   already-open tab** — reloading the extension does not re-inject content
   scripts into tabs opened before the reload; the stale script keeps running.
-- **Easy Apply screening-Q&A capture** (`extension/shared/answers.js`, added
-  28 Jul 2026) — server side, UI, merge, and delete are all suite-covered, but
-  the DOM scrape itself has NEVER met a real Easy Apply wizard. It is
-  deliberately structural, not selector-based (walks form controls, resolves
-  each one's label through `aria-labelledby` → `label[for]` → wrapping
-  `<label>` → `aria-label` → `<fieldset><legend>`), so LinkedIn's hashed
-  atomic CSS shouldn't matter — but two things are guesses until observed:
-  whether the modal's fields sit in a CLOSED shadow root (the sweep can't
-  descend into one; the `change`/`input` listener is the backstop, and it only
-  sees fields the user actually touches — LinkedIn PREFILLS most answers, so a
-  closed root would silently cost the untouched ones), and whether
-  `answerFormRoot()`'s in-iframe assumption still holds. Verify by applying to
-  one real job and reading the popover's "N form answers kept" line, then
-  `/answers`.
+- **JobStreet's apply flow — one real submit completed 29 Jul 2026, and it
+  failed exactly as predicted.** A real apply (First Up Consultants ·
+  Generative AI Engineer) came back with `company_norm = 'unknown company'`:
+  deferral worked (applied time was the submit, no phantom record), but the
+  job snapshot stashed at the opening click was gone by the time the submit
+  merged it in. Root-caused to the MV3 service-worker race documented above
+  (`return false` let the worker die mid-write) and fixed in the same session
+  — the affected record was corrected by hand via `/edit`
+  (`jobs.company_norm` had to be fixed too, not just `postings.company_raw`,
+  or email matching would never have found this application). Also added
+  since: `postings.salary_*` / `work_type` / `salary_match` capture
+  (migration 011), verified extracting correctly on a live page.
+  **Still unverified: one clean end-to-end submit with the race fix AND the
+  salary fields both in place together.** Read it off the record afterwards —
+  applied time should equal the submit, `company_display` must not be
+  "unknown company", and `postings.salary_raw` should be populated if the ad
+  showed a figure. `answerFormRoot()` is still a pure guess; the popup's
+  "Recent form sweeps" line says whether it found a root at all. Note SEEK
+  Quick apply may ask **no screening questions** (two real postings now, both
+  asked none), so an empty answer capture is not by itself evidence of a bug.
+- **Easy Apply screening-Q&A capture** (`extension/shared/answers.js`) — **met
+  its first real wizard 27 Jul 2026** (VANARSDEL · AI Engineer, 11 answers
+  stored). Two of the three open questions are now answered: the modal's
+  fields are NOT in a closed shadow root (the sweep reached them, prefilled
+  and untouched alike), and `answerFormRoot()`'s in-iframe assumption held.
+  That run also found three real defects, all fixed 28 Jul — see the repeater
+  invariant (#11), the doubled-`aria-labelledby` gotcha, and the typeahead /
+  capture-phase gotcha.
+  **Still open: textareas.** That form had them; not one was stored, and no
+  code path between the DOM and the DB filters by type, so either the sweep
+  never saw them (wrong root for that step) or it couldn't resolve their
+  labels. Nothing in the record distinguishes the two, which is why the sweep
+  now reports its own counts — controls found, kept, unlabelled, empty,
+  disabled, textareas seen — into `chrome.storage.local.sweeps`, rendered
+  under "Recent form sweeps" in the extension popup. **Next real apply with a
+  textarea on the form: open the popup and read that line.** `0 textareas
+  seen` means the root is wrong; a nonzero count with `N unlabelled` means
+  `labelFor()` is.
 - **The redesigned palette, on a real screen.** Layout, type, spacing,
   responsive behaviour and contrast were all verified (contrast numerically —
   0 WCAG AA failures in both themes); the *rendered colour* never was,
@@ -480,19 +647,26 @@ win). No per-shell export needed for local dev.
    whether CLAUDE.md ships. Fixture names and git history are both done
    (26 Jul 2026) — the history rewrite was needed for personal data, not
    secrets; §11 records the method and the three false-positive traps.
-3b. **`applications.focused` — KEPT on a fair trial (decided 28 Jul 2026), not
-   dead after all.** It was null across all 45 applications, which read as a
-   dead field, but the diagnosis was wrong: it had never had a usable entry
-   point. It was asked *mid-apply, as a blocker* — the capture wouldn't save
-   until you answered — so the rational move was always to dismiss it. The
-   save-first receipt (see the popover gotcha) makes it one optional click on
-   an already-saved record, which is the first fair test it has had. Keep the
-   receipt buttons and the detail-page toggle (that's how you correct it);
-   `analytics.by_focus` stays gated on `length > 1` so it shows nothing until
-   the dimension actually splits. **Re-evaluate after ~20 more applications:
-   still all-null with a good entry point is a real answer, and then cut the
-   whole path** (field, toggle, edit input, `by_focus` + its
-   artifact-existence COALESCE fallback).
+3b. **`applications.focused` — the fair trial (started 28 Jul 2026) now has
+   data, and it's a different result than the trial was designed to detect.**
+   It was null across all 45 applications when the entry point was mid-apply,
+   as a blocker — the capture wouldn't save until you answered — so dismissing
+   it was always the rational move. The save-first receipt fixed that (one
+   optional click on an already-saved record), and by 29 Jul, 46 of 54
+   applications had it set — **all 46 to `generic`, zero `tailored`**. That
+   is population, which is what the entry-point fix was for, but it is a
+   CONSTANT, not a split, so `analytics.by_focus` (gated on `length > 1`)
+   still shows nothing.
+   **Two readings, not yet distinguished:** either this user genuinely applies
+   generically across the board (a real answer — cut `by_focus` and its
+   artifact-existence COALESCE fallback, keep the toggle only if the user still
+   wants to mark the rare tailored one), or a bulk write set most of them to
+   `false` at once rather than one click at a time (an artifact, not a
+   signal — `set_focused` writes `False` for ANY posted value that isn't the
+   literal `"yes"`, so a stray or empty POST silently marks "generic").
+   **Unresolved as of 29 Jul: check `events`/`captured_at` timestamps on the
+   46 to tell which.** Don't act on this dimension (report it, cut it, trust
+   it) until that's answered.
 4. **First feature: follow-up drafting** (`docs/features.md` §3.1) — best
    evidence-to-effort ratio in the backlog, and `REMINDER_DAYS = 10` already
    matches the researched 7–10 business-day window. **Half-built as of 28 Jul:**
@@ -501,7 +675,15 @@ win). No per-shell export needed for local dev.
    the block is where it belongs, next to the button that currently just marks
    it done.
 5. **One real apply via the extension** on each platform; fix whichever
-   adapter selectors have drifted. Keep this **load-unpacked only** — an
+   adapter selectors have drifted. **LinkedIn: done** (27 Jul, VANARSDEL — three
+   defects found and fixed). **JobStreet: two real applies, still not
+   clean.** 28 Jul (Baldwin Recruitment) surfaced the navigating-apply receipt
+   loss and the opening-click timestamp; 29 Jul (First Up Consultants)
+   surfaced an MV3 service-worker race that lost the stashed company name
+   entirely (`unknown company` on the record — corrected by hand). All three
+   fixed same-day; salary/work-type capture added alongside. **One more real
+   apply needed** to confirm the race fix holds — see known-untested.
+   **Indeed: never exercised.** Keep this **load-unpacked only** — an
    unpacked extension has a random per-install ID, while a Chrome Web Store
    listing mints a stable public one that LinkedIn's extension-fingerprinting
    script enumerates (`docs/open-source.md` §3). Do not publish to the store

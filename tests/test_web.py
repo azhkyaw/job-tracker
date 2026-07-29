@@ -322,6 +322,65 @@ check("inbound badge shown", ">inbound</span>" in r.text)
 r = client.get("/?origin=applied")
 check("applied filter excludes the lead", "Beacon Search" not in r.text)
 
+print("applications: default ordering")
+# Built as a burst on one day, the way a real backfill arrives: local-noon
+# anchoring gives every one of them the SAME last_activity to the second, which
+# is what made the old unti-tiebroken ORDER BY undefined across 15 of 52 real
+# rows.
+with db.connect() as conn, conn.transaction():
+    burst = []
+    for name in ("sortalpha", "sortbravo", "sortcharlie"):
+        jid = conn.execute(
+            "INSERT INTO jobs (user_id, company_norm, title_canonical) "
+            "VALUES (%s, %s, 'Engineer') RETURNING id", (user_id, name)).fetchone()["id"]
+        aid = conn.execute(
+            "INSERT INTO applications (user_id, job_id) VALUES (%s, %s) RETURNING id",
+            (user_id, jid)).fetchone()["id"]
+        conn.execute(
+            "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+            "VALUES (%s, %s, 'applied', 'manual', "
+            "        date_trunc('day', now() - interval '9 days') + interval '12 hours', '{}')",
+            (user_id, aid))
+        burst.append(aid)
+    # One of them then hears back — recent activity, and the whole point of the
+    # default: an engaged thread should not sink under the silent ones.
+    conn.execute(
+        "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+        "VALUES (%s, %s, 'interview_invite', 'email', now() - interval '1 hour', '{}')",
+        (user_id, burst[2]))
+
+
+def _order(path="/"):
+    """Company names in the order the list renders them."""
+    import re as _re
+    html = client.get(path).text
+    body = html.split('class="tl tl-head"')[1] if 'class="tl tl-head"' in html else html
+    return _re.findall(r'<span class="co">([^<]*?)(?:\s*<|</span>)', body)
+
+
+order = _order()
+check("default is most-recent-activity: the thread that just moved leads the "
+      "applications", order.index("sortcharlie") < order.index("sortalpha")
+      and order.index("sortcharlie") < order.index("sortbravo"), order[:8])
+check("the inbound lead is pinned above every application, whatever its date",
+      order.index("Beacon Search") < order.index("sortcharlie"), order[:8])
+r = client.get("/")
+check("and the group is labelled, so the pin isn't mysterious",
+      "Inbound &middot; awaiting your call" in r.text or "Inbound · awaiting your call" in r.text)
+
+# Identical timestamps, no tiebreaker = an order the planner picks. Asserting
+# stability is the point; which of the two comes first is not.
+check("a burst of identically-timed rows comes back in the same order every time",
+      _order() == _order() == _order())
+
+silence = _order("/?sort=silence")
+check("an explicit sort is taken literally — no lead pinning",
+      silence.index("Beacon Search") > 0, silence[:6])
+check("and it still means what it says: longest quiet first",
+      silence.index("sortalpha") < silence.index("sortcharlie"), silence[:8])
+check("an unknown sort falls back to the default, not an error",
+      _order("/?sort=nonsense") == order)
+
 print("manual entry: form + route-ordering guard")
 r = client.get("/applications/new")
 # If /applications/new were ever declared after /applications/{app_id}, this
@@ -1139,6 +1198,24 @@ check("stale thread appears in the block with its wait length",
       r.status_code == 200 and "Needs follow-up" in r.text
       and "quietcorp" in r.text and "30d" in r.text, r.status_code)
 check("block offers the action, not just a link", 'value="follow_up_sent"' in r.text)
+check("the block is collapsed by default — the count is still stated, only "
+      "the rows are folded away", '<details class="fu-block">' in r.text)
+check("its rows are still in the document (a disclosure, not a second query)",
+      "quietcorp" in r.text.split('class="fu-block"')[1].split("</details>")[0])
+check("the buttons keep it open across the reload that shortens it",
+      'name="redirect_to" value="/?fu=1"' in r.text)
+
+r = client.get("/?fu=1")
+check("fu=1 expands it", '<details class="fu-block" open>' in r.text)
+r = client.get("/?fu=nonsense")
+check("any other fu value leaves it collapsed",
+      '<details class="fu-block">' in r.text)
+
+r = client.post(f"/applications/{stale_app}/events",
+                data={"type": "note", "note": "still waiting", "redirect_to": "/?fu=1"})
+check("acting from the block returns to the list with the block still open",
+      r.status_code == 303 and r.headers["location"] == "/?fu=1",
+      r.headers.get("location"))
 
 r = client.post(f"/applications/{stale_app}/events",
                 data={"type": "follow_up_sent", "redirect_to": "/"})
@@ -1156,6 +1233,96 @@ r = client.post(f"/applications/{stale_app}/events",
                 data={"type": "note", "note": "from detail", "redirect_to": "/evil"})
 check("an unknown redirect falls back to the detail page, never followed",
       r.headers["location"] == f"/applications/{stale_app}", r.headers.get("location"))
+
+print("news that arrives off the ingest paths: manual status events")
+# A recruiter rings, or messages on WhatsApp, and the status genuinely changed
+# with nothing for the system to parse. Before this the only honest option was a
+# note, which leaves status at 'applied' — the row never leaves the follow-up
+# queue and analytics count it as never answered.
+with db.connect() as conn, conn.transaction():
+    wa_job = conn.execute(
+        "INSERT INTO jobs (user_id, company_norm, title_canonical) "
+        "VALUES (%s, 'sponsorless', 'AI Engineer') RETURNING id", (user_id,)).fetchone()["id"]
+    wa_app = conn.execute(
+        "INSERT INTO applications (user_id, job_id) VALUES (%s, %s) RETURNING id",
+        (user_id, wa_job)).fetchone()["id"]
+    conn.execute(
+        "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+        "VALUES (%s, %s, 'applied', 'manual', now() - interval '20 days', '{}')",
+        (user_id, wa_app))
+
+r = client.get("/")
+check("before: the untouched thread is in the follow-up block",
+      "sponsorless" in r.text.split('class="fu-block"')[1].split("</details>")[0], r.status_code)
+
+r = client.post(f"/applications/{wa_app}/events",
+                data={"type": "rejected", "reason": "visa", "channel": "whatsapp",
+                      "note": "they can't sponsor", "occurred_on": "2026-07-26"})
+check("a manual rejection is accepted", r.status_code == 303, r.text)
+with db.connect() as conn:
+    ev = conn.execute(
+        "SELECT type, source, occurred_at, payload FROM events "
+        "WHERE application_id = %s AND type = 'rejected'", (wa_app,)).fetchone()
+    check("stored as a manual rejected event", ev and ev["source"] == "manual", ev)
+    check("reason and channel land in the payload, note alongside them",
+          ev["payload"] == {"reason": "visa", "channel": "whatsapp",
+                            "note": "they can't sponsor"}, ev["payload"])
+    check("backdated to the day it happened, at local noon — not now, not midnight",
+          ev["occurred_at"].date().isoformat() == "2026-07-26"
+          and ev["occurred_at"].time() != datetime.min.time(), ev["occurred_at"])
+    check("derived status follows (invariant #2 — no status column was written)",
+          conn.execute("SELECT status FROM application_status WHERE application_id = %s",
+                       (wa_app,)).fetchone()["status"] == "rejected")
+
+r = client.get("/")
+check("the row leaves the follow-up queue, because it is genuinely answered now",
+      'class="fu-block"' not in r.text
+      or "sponsorless" not in r.text.split('class="fu-block"')[1].split("</details>")[0])
+
+r = client.get(f"/applications/{wa_app}")
+check("the timeline names the reason and the channel it came through",
+      "visa / sponsorship" in r.text and "WhatsApp" in r.text, r.status_code)
+
+# A reason is only meaningful on a rejection; there's no JS to hide the select.
+r = client.post(f"/applications/{wa_app}/events",
+                data={"type": "note", "reason": "salary", "channel": "phone",
+                      "note": "called to ask"})
+with db.connect() as conn:
+    p = conn.execute(
+        "SELECT payload FROM events WHERE application_id = %s AND type = 'note' "
+        "ORDER BY created_at DESC LIMIT 1", (wa_app,)).fetchone()["payload"]
+    check("reason dropped on a non-rejection, channel kept",
+          p == {"channel": "phone", "note": "called to ask"}, p)
+
+r = client.post(f"/applications/{wa_app}/events",
+                data={"type": "rejected", "channel": "carrier pigeon"})
+with db.connect() as conn:
+    n = conn.execute(
+        "SELECT count(*) AS n FROM events WHERE application_id = %s AND type = 'rejected'",
+        (wa_app,)).fetchone()["n"]
+    check("an unknown channel is dropped, not fatal — the event still lands", n == 2, n)
+
+r = client.post(f"/applications/{wa_app}/events",
+                data={"type": "interview_invite", "occurred_on": "2099-01-01"})
+check("a future date is refused with a message, not a 422",
+      r.status_code == 303 and "event_error" in r.headers["location"], r.headers.get("location"))
+r = client.post(f"/applications/{wa_app}/events",
+                data={"type": "interview_invite", "occurred_on": "not-a-date"})
+check("so is an unparseable one",
+      r.status_code == 303 and "event_error" in r.headers["location"], r.headers.get("location"))
+with db.connect() as conn:
+    check("neither stored anything", conn.execute(
+        "SELECT count(*) AS n FROM events WHERE application_id = %s "
+        "AND type = 'interview_invite'", (wa_app,)).fetchone()["n"] == 0)
+check("the message renders as a banner on the way back",
+      "Not recorded" in client.get(
+          f"/applications/{wa_app}?event_error=That+date+is+in+the+future.").text)
+
+r = client.post(f"/applications/{wa_app}/events", data={"type": "confirmation"})
+check("an event type the ingest paths own is still refused", r.status_code == 400, r.status_code)
+r = client.post(f"/applications/{wa_app}/events", data={"type": "recruiter_outreach"})
+check("so is recruiter_outreach — invariant #9 reserves it for triage",
+      r.status_code == 400, r.status_code)
 
 print("form answers: detail page + answer bank")
 with db.connect() as conn, conn.transaction():

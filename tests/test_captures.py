@@ -7,6 +7,7 @@ Run on a database with migrations + one user (independent of the other suites):
 
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-dummy-key")
@@ -117,6 +118,138 @@ with db.connect() as conn:
         (seeded_app,)).fetchone()["n"]
     check("email's applied event kept, no duplicate", n_applied == 1, n_applied)
 
+print("platform-stated salary: parsing (migration 011)")
+from pipeline import salary as _salary                              # noqa: E402
+
+SG = "https://sg.jobstreet.com/job/1"
+def _sal(raw, url=SG):
+    r = _salary.parse(raw, url)
+    return (r["salary_min"], r["salary_max"], r["salary_currency"], r["salary_period"])
+
+check("a range on the SG site", _sal("$10,000 – $11,000 per month")
+      == (10000, 11000, "SGD", "monthly"))
+check("a single figure fills both ends", _sal("$5,500 per month")
+      == (5500, 5500, "SGD", "monthly"))
+check("'up to' is a ceiling, not a floor", _sal("Up to $10,000 per month")
+      == (None, 10000, "SGD", "monthly"))
+check("'from' is a floor, not a ceiling", _sal("From $8,000 per month")
+      == (8000, None, "SGD", "monthly"))
+check("annual is not silently treated as monthly",
+      _sal("$120,000 – $150,000 per year") == (120000, 150000, "SGD", "annual"))
+# The separator trap: Indonesia writes 15.000.000 where Singapore writes
+# 15,000,000. Reading that dot as a decimal point turns 15 million into 15.
+check("Indonesian dot grouping is not a decimal point",
+      _sal("Rp15.000.000 – Rp20.000.000 per month",
+           "https://id.jobstreet.co.id/job/1") == (15000000, 20000000, "IDR", "monthly"))
+check("Malaysian RM", _sal("RM8,000 – RM12,000 per month",
+                           "https://my.jobstreet.com/job/1")
+      == (8000, 12000, "MYR", "monthly"))
+# A bare "$" means different currencies on different SEEK sites, so the host
+# decides — the symbol alone cannot.
+check("a bare $ resolves by site, not by symbol",
+      _salary.parse("$150,000 per annum",
+                    "https://www.seek.com.au/job/1")["salary_currency"] == "AUD")
+check("hourly rates survive the small-number floor",
+      _sal("$45 per hour") == (45, 45, "SGD", "hourly"))
+check("an unpriced ad keeps its words and stores no numbers",
+      _salary.parse("Competitive salary", SG)["salary_raw"] == "Competitive salary"
+      and _sal("Competitive salary")[:2] == (None, None))
+check("nothing in, nothing out", _salary.parse(None)["salary_raw"] is None)
+
+print("platform-stated salary: capture round-trip")
+r_sal = post({"platform": "jobstreet", "platform_job_id": "JS-pay",
+              "url": "https://sg.jobstreet.com/job/77001",
+              "company": "Lumen Systems", "title": "Platform Engineer",
+              "trigger": "apply", "salary_raw": "$10,000 – $11,000 per month",
+              "work_type": "Full time", "salary_match": True,
+              "posted_label": "1d ago", "location": "Central Region"})
+with db.connect() as conn:
+    p = conn.execute(
+        "SELECT salary_raw, salary_min, salary_max, salary_currency, salary_period, "
+        "       work_type, salary_match, location, posted_label "
+        "FROM postings WHERE platform_job_id = 'JS-pay'").fetchone()
+    check("the displayed string is kept verbatim",
+          p["salary_raw"] == "$10,000 – $11,000 per month", p["salary_raw"])
+    check("parsed into comparable numbers server-side",
+          (p["salary_min"], p["salary_max"], p["salary_currency"], p["salary_period"])
+          == (10000, 11000, "SGD", "monthly"), dict(p))
+    check("work type, salary match, location and posted label all land",
+          (p["work_type"], p["salary_match"], p["location"], p["posted_label"])
+          == ("Full time", True, "Central Region", "1d ago"), dict(p))
+
+# Re-capture fills gaps and never blanks what's already there — same contract
+# as every other posting column.
+post({"platform": "jobstreet", "platform_job_id": "JS-pay",
+      "company": "Lumen Systems", "title": "Platform Engineer", "trigger": "apply"})
+with db.connect() as conn:
+    p2 = conn.execute("SELECT salary_min, work_type FROM postings "
+                      "WHERE platform_job_id = 'JS-pay'").fetchone()
+    check("a later capture without salary doesn't erase it",
+          (p2["salary_min"], p2["work_type"]) == (10000, "Full time"), dict(p2))
+
+print("a submit signal corrects the applied time the opening click recorded")
+# JobStreet's apply button navigates, so the capture happens when the flow
+# OPENS and the record is minutes early — a real one came out at 01:20 for an
+# application sent at 01:25. The record is still written on that first click
+# (losing it would be far worse than an early timestamp); `completed` is the
+# later, genuine submit correcting when it happened.
+r_open = post({"platform": "jobstreet", "platform_job_id": "JS-late",
+               "url": "https://sg.jobstreet.com/job/8899",
+               "company": "Lantern Group", "title": "Platform Engineer",
+               "jd_text": "the JD", "trigger": "apply"})
+late_app = r_open.json()["application_id"]
+with db.connect() as conn, conn.transaction():
+    # Backdate it so "moved forward to now" is measurable at all.
+    conn.execute(
+        "UPDATE events SET occurred_at = now() - interval '5 minutes' "
+        "WHERE application_id = %s::uuid AND type = 'applied'", (late_app,))
+    opened_at = conn.execute(
+        "SELECT occurred_at FROM events WHERE application_id = %s::uuid "
+        "AND type = 'applied'", (late_app,)).fetchone()["occurred_at"]
+
+r_done = post({"platform": "jobstreet", "platform_job_id": "JS-late",
+               "company": "Lantern Group", "title": "Platform Engineer",
+               "trigger": "apply", "completed": True})
+check("the submit lands on the same application, not a second one",
+      r_done.json()["application_id"] == late_app, r_done.text)
+with db.connect() as conn:
+    rows = conn.execute(
+        "SELECT occurred_at, source FROM events WHERE application_id = %s::uuid "
+        "AND type = 'applied'", (late_app,)).fetchall()
+    check("still exactly one applied event", len(rows) == 1, rows)
+    check("its time moved forward to the submit", rows[0]["occurred_at"] > opened_at,
+          (opened_at, rows[0]["occurred_at"]))
+
+# Without the flag nothing moves — an ordinary re-capture is not a submit.
+with db.connect() as conn, conn.transaction():
+    conn.execute(
+        "UPDATE events SET occurred_at = now() - interval '5 minutes' "
+        "WHERE application_id = %s::uuid AND type = 'applied'", (late_app,))
+post({"platform": "jobstreet", "platform_job_id": "JS-late",
+      "company": "Lantern Group", "title": "Platform Engineer", "trigger": "apply"})
+with db.connect() as conn:
+    still = conn.execute(
+        "SELECT occurred_at FROM events WHERE application_id = %s::uuid "
+        "AND type = 'applied'", (late_app,)).fetchone()["occurred_at"]
+    check("a plain re-capture leaves the time alone",
+          (datetime.now(timezone.utc) - still).total_seconds() > 60, still)
+
+# The email path knows a truer time than a click ever does, and a stray match
+# on some other page must never drag it backwards or forwards.
+with db.connect() as conn:
+    email_time = conn.execute(
+        "SELECT occurred_at FROM events WHERE application_id = %s AND type = 'applied'",
+        (seeded_app,)).fetchone()["occurred_at"]
+post({"platform": "jobstreet", "platform_job_id": "JS-77",
+      "company": "Harborview Pte. Ltd.", "title": "Machine Learning Engineer (LLM)",
+      "trigger": "apply", "completed": True})
+with db.connect() as conn:
+    after = conn.execute(
+        "SELECT occurred_at, source FROM events WHERE application_id = %s "
+        "AND type = 'applied'", (seeded_app,)).fetchone()
+    check("an email-sourced applied event is never rewritten by a submit signal",
+          after["occurred_at"] == email_time and after["source"] == "email", after)
+
 print("Easy Apply form answers")
 from pipeline.answers import MAX_ANSWER, clean, norm_question   # noqa: E402
 
@@ -130,13 +263,23 @@ check("clean drops answerless and unlabelled rows",
           {"question": "Notice period", "answer": "1 month"},
           {"question": "Salary", "answer": "   "},
           {"question": "", "answer": "orphan"}])] == ["Notice period"])
-check("clean keeps the last answer to a repeated question, in its first slot",
+# Migration 010: a repeated label is a REPEATER (one "City" per employer in a
+# work history), not a correction. Before it, everything after the first was
+# silently overwritten and a real multi-employer history came out as one row.
+check("clean keeps every answer to a repeated question, numbered in form order",
       clean([{"question": "A", "answer": "1"}, {"question": "B", "answer": "2"},
              {"question": "A?", "answer": "3"}])
-      == [{"question": "A?", "question_norm": "a", "answer": "3",
-           "field_type": None, "ordinal": 0},
+      == [{"question": "A", "question_norm": "a", "answer": "1",
+           "field_type": None, "ordinal": 0, "occurrence": 0},
           {"question": "B", "question_norm": "b", "answer": "2",
-           "field_type": None, "ordinal": 1}])
+           "field_type": None, "ordinal": 1, "occurrence": 0},
+          {"question": "A?", "question_norm": "a", "answer": "3",
+           "field_type": None, "ordinal": 2, "occurrence": 1}])
+check("occurrence counts per question, not across the form",
+      [r["occurrence"] for r in clean([
+          {"question": "City", "answer": "SG"}, {"question": "Industry", "answer": "SaaS"},
+          {"question": "City", "answer": "JKT"}, {"question": "Industry", "answer": "Fin"},
+          {"question": "City", "answer": "KL"}])] == [0, 0, 1, 1, 2])
 
 QA = [
     {"question": "How many years of experience do you have with Python?",
@@ -184,6 +327,57 @@ with db.connect() as conn:
     check("earlier answers untouched", by_q["how many years of experience do you"
                                             " have with python"] == "8", by_q)
     check("new question appended", by_q["do you have a work pass"] == "EP", by_q)
+
+print("a repeater section keeps every entry (migration 010)")
+# Shaped like the real LinkedIn work-history repeater that lost data on
+# 27 Jul 2026: the same three labels, once per employer.
+REPEAT = [
+    {"question": "Company", "answer": "Humongous AI", "type": "text"},
+    {"question": "Industry", "answer": "ERP SaaS", "type": "text"},
+    {"question": "City", "answer": "Singapore", "type": "text"},
+    {"question": "Company", "answer": "Alpine Finance", "type": "text"},
+    {"question": "Industry", "answer": "Fintech", "type": "text"},
+    {"question": "City", "answer": "Jakarta", "type": "text"},
+    {"question": "Company", "answer": "Nod Media", "type": "text"},
+    {"question": "Industry", "answer": "Media", "type": "text"},
+    {"question": "City", "answer": "Kuala Lumpur", "type": "text"},
+]
+r8 = post({"platform": "linkedin", "platform_job_id": "LI-repeat-1",
+           "url": "https://www.linkedin.com/jobs/view/9911/",
+           "company": "Vanarsdel", "title": "AI Engineer", "trigger": "apply",
+           "answers": REPEAT})
+repeat_app = r8.json()["application_id"]
+check("all nine repeated fields counted, not three", r8.json()["answers"] == 9, r8.text)
+with db.connect() as conn:
+    rows = conn.execute(
+        "SELECT question_norm, answer, occurrence FROM application_answers "
+        "WHERE application_id = %s::uuid ORDER BY ordinal", (repeat_app,)).fetchall()
+    check("every entry survived", len(rows) == 9, len(rows))
+    check("cities kept in form order, each with its own occurrence",
+          [(r_["answer"], r_["occurrence"]) for r_ in rows if r_["question_norm"] == "city"]
+          == [("Singapore", 0), ("Jakarta", 1), ("Kuala Lumpur", 2)], rows)
+
+print("re-capturing a shorter work history prunes the entries it dropped")
+r9 = post({"platform": "linkedin", "platform_job_id": "LI-repeat-1",
+           "company": "Vanarsdel", "title": "AI Engineer", "trigger": "apply",
+           "answers": [{"question": "Company", "answer": "Humongous AI"},
+                       {"question": "Industry", "answer": "Enterprise SaaS"},
+                       {"question": "City", "answer": "Singapore"},
+                       {"question": "Company", "answer": "Alpine Finance"},
+                       {"question": "Industry", "answer": "Fintech"},
+                       {"question": "City", "answer": "Jakarta"}]})
+check("same application", r9.json()["application_id"] == repeat_app, r9.text)
+with db.connect() as conn:
+    rows = conn.execute(
+        "SELECT question_norm, answer, occurrence FROM application_answers "
+        "WHERE application_id = %s::uuid ORDER BY ordinal", (repeat_app,)).fetchall()
+    check("the third employer's three rows are gone, not orphaned", len(rows) == 6, rows)
+    check("occurrence 0 overwritten in place, not stacked",
+          [(r_["answer"], r_["occurrence"]) for r_ in rows
+           if r_["question_norm"] == "industry"]
+          == [("Enterprise SaaS", 0), ("Fintech", 1)], rows)
+    check("no trace of the dropped entry",
+          not any(r_["answer"] == "Kuala Lumpur" for r_ in rows), rows)
 
 print("a capture with no form answers is unchanged")
 r7 = post({"platform": "indeed", "platform_job_id": "IN-qa-none",

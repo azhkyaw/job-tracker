@@ -6,9 +6,16 @@ key, and a grouping key that two callers compute differently silently splits
 the answer bank in half. Same argument as `norm_company` (invariant #4) — one
 implementation, in Python, never in SQL.
 
-The write path is deliberately last-write-wins per (application, question):
-re-capturing a job you re-applied to should show what you told them THIS time,
-not accumulate a pile of near-identical rows nobody can read.
+The write path is deliberately last-write-wins per (application, question,
+occurrence): re-capturing a job you re-applied to should show what you told
+them THIS time, not accumulate a pile of near-identical rows nobody can read.
+
+`occurrence` is what lets one form ask the same question twice — a work-history
+repeater asks "Industry" once per employer (migration 010). It is assigned HERE
+from the order the capture arrived in, not taken from the client: the extension
+already sends the form's controls in DOM order, and deriving the index server-
+side means the two callers can't disagree about it, same argument as
+question_norm itself.
 """
 
 from __future__ import annotations
@@ -42,26 +49,34 @@ def norm_question(q: str) -> str:
 
 
 def clean(items) -> list[dict]:
-    """Normalise a capture's raw answer list: trim, cap, drop the unusable,
-    and collapse duplicate questions (last one wins, matching the DB's
-    ON CONFLICT). Returns items ready to insert, in form order."""
-    out: dict[str, dict] = {}
+    """Normalise a capture's raw answer list: trim, cap, drop the unusable, and
+    number repeats. Returns items ready to insert, in form order.
+
+    Repeats are KEPT, each with its own `occurrence` (0, 1, 2 … in form order)
+    — a repeater section asking "City" once per employer is N answers, not one
+    answer corrected N times. Before migration 010 this collapsed them and only
+    the last survived.
+    """
+    out: list[dict] = []
+    seen: dict[str, int] = {}
     for i, raw in enumerate(items or []):
         question = (raw.get("question") or "").strip()
         answer = (raw.get("answer") or "").strip()
         norm = norm_question(question)
         if not norm or not answer:
             continue
-        out[norm] = {
+        norm = norm[:MAX_QUESTION]
+        occurrence = seen.get(norm, 0)
+        seen[norm] = occurrence + 1
+        out.append({
             "question": question[:MAX_QUESTION],
-            "question_norm": norm[:MAX_QUESTION],
+            "question_norm": norm,
             "answer": answer[:MAX_ANSWER],
             "field_type": (raw.get("type") or None),
-            # First sighting keeps its place in the form; a later correction of
-            # the same question shouldn't jump to the end of the list.
-            "ordinal": out[norm]["ordinal"] if norm in out else i,
-        }
-    return sorted(out.values(), key=lambda r: r["ordinal"])[:MAX_ITEMS]
+            "ordinal": i,
+            "occurrence": occurrence,
+        })
+    return out[:MAX_ITEMS]
 
 
 def store(conn, user_id, application_id, posting_id, items) -> int:
@@ -72,9 +87,9 @@ def store(conn, user_id, application_id, posting_id, items) -> int:
             """
             INSERT INTO application_answers
                 (user_id, application_id, posting_id, question, question_norm,
-                 answer, field_type, ordinal)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (application_id, question_norm) DO UPDATE SET
+                 answer, field_type, ordinal, occurrence)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (application_id, question_norm, occurrence) DO UPDATE SET
                 question    = EXCLUDED.question,
                 answer      = EXCLUDED.answer,
                 field_type  = COALESCE(EXCLUDED.field_type, application_answers.field_type),
@@ -83,7 +98,22 @@ def store(conn, user_id, application_id, posting_id, items) -> int:
                 captured_at = now()
             """,
             (user_id, application_id, posting_id, r["question"], r["question_norm"],
-             r["answer"], r["field_type"], r["ordinal"]))
+             r["answer"], r["field_type"], r["ordinal"], r["occurrence"]))
+
+    # Re-capturing a form filled with FEWER repeat entries than last time (you
+    # deleted an employer from your work history) would otherwise leave the
+    # extra occurrences behind forever — nothing overwrites them, and they'd
+    # read as answers the user never gave. Scoped to questions this capture
+    # actually asked, so a capture that simply couldn't see part of the form
+    # can't delete the part an earlier one did see.
+    counts: dict[str, int] = {}
+    for r in rows:
+        counts[r["question_norm"]] = counts.get(r["question_norm"], 0) + 1
+    for norm, n in counts.items():
+        conn.execute(
+            "DELETE FROM application_answers "
+            "WHERE application_id = %s AND question_norm = %s AND occurrence >= %s",
+            (application_id, norm, n))
     return len(rows)
 
 
@@ -118,5 +148,5 @@ FROM application_answers aa
 JOIN applications a ON a.id = aa.application_id
 JOIN jobs j         ON j.id = a.job_id
 WHERE aa.question_norm = ANY(%s)
-ORDER BY aa.question_norm, aa.captured_at DESC
+ORDER BY aa.question_norm, aa.captured_at DESC, aa.occurrence
 """

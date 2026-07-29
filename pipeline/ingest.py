@@ -16,7 +16,7 @@ from __future__ import annotations
 from datetime import date, datetime, time, timezone
 from zoneinfo import ZoneInfo
 
-from . import db
+from . import db, salary
 from .email_classifier import norm_company
 
 # Prefer attaching to an email_only record for the same company/role (the
@@ -77,7 +77,8 @@ def local_date_to_utc(d: date, tz: ZoneInfo, t: time | None = None) -> datetime:
 def upsert_record(conn, user_id, *, platform, captured_via, platform_job_id=None,
                   url=None, company=None, title=None, jd_text=None, location=None,
                   posted_label=None, reposted=None, ats=None, captured_at=None,
-                  origin="applied") -> dict:
+                  origin="applied", salary_raw=None, work_type=None,
+                  salary_match=None) -> dict:
     """Create or enrich job + posting + application for one captured ad.
 
     Returns {job_id, posting_id, application_id, created, enriched,
@@ -97,6 +98,9 @@ def upsert_record(conn, user_id, *, platform, captured_via, platform_job_id=None
     to live here.
     """
     company_norm = norm_company(company or "") or None
+    # Parsed here, once, from the string the platform displayed — never in the
+    # extension and never in SQL (invariant #4's rule, applied to pay).
+    sal = salary.parse(salary_raw, url)
     created, enriched = False, False
 
     existing = None
@@ -122,11 +126,20 @@ def upsert_record(conn, user_id, *, platform, captured_via, platform_job_id=None
                 location     = COALESCE(%s, location),
                 posted_label = COALESCE(%s, posted_label),
                 reposted     = COALESCE(%s, reposted),
-                ats          = COALESCE(%s, ats)
+                ats          = COALESCE(%s, ats),
+                salary_raw      = COALESCE(%s, salary_raw),
+                salary_min      = COALESCE(%s, salary_min),
+                salary_max      = COALESCE(%s, salary_max),
+                salary_currency = COALESCE(%s, salary_currency),
+                salary_period   = COALESCE(%s, salary_period),
+                work_type       = COALESCE(%s, work_type),
+                salary_match    = COALESCE(%s, salary_match)
             WHERE id = %s
             """,
             (jd_text, url, title, company, company_norm, location, posted_label,
-             reposted, ats, existing["id"]))
+             reposted, ats, sal["salary_raw"], sal["salary_min"], sal["salary_max"],
+             sal["salary_currency"], sal["salary_period"], work_type, salary_match,
+             existing["id"]))
         posting_id, job_id = existing["id"], existing["job_id"]
         if jd_text and not had_jd:
             db.enqueue(conn, user_id, "extract_jd", {"posting_id": str(posting_id)})
@@ -154,14 +167,18 @@ def upsert_record(conn, user_id, *, platform, captured_via, platform_job_id=None
             INSERT INTO postings (user_id, job_id, platform, platform_job_id,
                                   url, company_raw, company_norm, title,
                                   jd_text, location, posted_label, reposted,
-                                  ats, captured_via, captured_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    COALESCE(%s, now()))
+                                  ats, salary_raw, salary_min, salary_max,
+                                  salary_currency, salary_period, work_type,
+                                  salary_match, captured_via, captured_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, COALESCE(%s, now()))
             RETURNING id
             """,
             (user_id, job_id, platform, platform_job_id, url, company,
              company_norm, title, jd_text, location, posted_label, reposted,
-             ats, captured_via, captured_at)).fetchone()["id"]
+             ats, sal["salary_raw"], sal["salary_min"], sal["salary_max"],
+             sal["salary_currency"], sal["salary_period"], work_type, salary_match,
+             captured_via, captured_at)).fetchone()["id"]
         if jd_text:
             db.enqueue(conn, user_id, "extract_jd", {"posting_id": str(posting_id)})
 

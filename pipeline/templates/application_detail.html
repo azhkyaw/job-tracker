@@ -61,20 +61,49 @@
           {% else %}— applied on-platform (Easy Apply / quick apply)
           {% endif %}
         {% endif %}
+        {%- if e.payload.get('reason') %}
+          <span class="mono quiet">· {{ event_reasons.get(e.payload['reason'], e.payload['reason']) }}</span>
+        {%- endif %}
+        {%- if e.payload.get('channel') %}
+          <span class="mono quiet">· via {{ event_channels.get(e.payload['channel'], e.payload['channel']) }}</span>
+        {%- endif %}
         {% if e.payload.get('note') %}— {{ e.payload['note'] }}{% endif %}
         {% if e.payload.get('status_detail') %}— {{ e.payload['status_detail'] }}{% endif %}</span></li>
     {% endfor %}
   </ul>
 </div>
 
+{# Not every reply arrives through an ingest path — a recruiter rings, or
+   messages on WhatsApp, and the status is now genuinely different with nothing
+   for the system to parse. The date defaults to blank (meaning now, the common
+   case) and exists for the other one: news you're logging days after it
+   happened. The reason select only means anything on a rejection; the route
+   drops it otherwise, since there's no JS here to hide it. #}
+{% if event_error %}
+<div class="note" style="--c:var(--rejected)"><strong>Not recorded</strong> — {{ event_error }}</div>
+{% endif %}
 <form method="post" action="/applications/{{ a.id }}/events"
       style="margin-top:.7rem;display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
   <span class="sm quiet">Record what happened:</span>
   <select name="type" aria-label="What happened">
-    <option value="follow_up_sent">I followed up</option>
-    <option value="note">Note to self</option>
-    <option value="withdrawn">I withdrew</option>
+    {% for value, label in manual_events.items() %}
+    <option value="{{ value }}">{{ label }}</option>
+    {% endfor %}
   </select>
+  <select name="reason" aria-label="Reason, if they rejected you">
+    <option value="">reason (if rejected)</option>
+    {% for value, label in event_reasons.items() %}
+    <option value="{{ value }}">{{ label }}</option>
+    {% endfor %}
+  </select>
+  <select name="channel" aria-label="How you heard">
+    <option value="">how you heard</option>
+    {% for value, label in event_channels.items() %}
+    <option value="{{ value }}">{{ label }}</option>
+    {% endfor %}
+  </select>
+  <input type="date" name="occurred_on" max="{{ today }}" aria-label="When it happened"
+         title="When it actually happened — leave blank for now">
   <input type="text" name="note" placeholder="optional detail" aria-label="Detail">
   <button class="primary">Add to timeline</button>
 </form>
@@ -83,8 +112,12 @@
 <h2>What the form asked</h2>
 <div class="card pad">
   <dl class="qa">
+    {# Repeats stay in FORM order rather than being grouped under one term:
+       a work-history repeater reads City/Industry, City/Industry, and that
+       interleaving is how you tell which employer an answer belongs to. The
+       marker is the only hint that a question came round again. #}
     {% for q in form_answers %}
-    <dt>{{ q.question }}</dt>
+    <dt>{{ q.question }}{% if q.occurrence %}<span class="mono quiet"> · entry {{ q.occurrence + 1 }}</span>{% endif %}</dt>
     <dd>{{ q.answer }}{% if q.field_type %}<span class="mono quiet"> · {{ q.field_type }}</span>{% endif %}</dd>
     {% endfor %}
   </dl>
@@ -160,11 +193,18 @@
 <h2>Postings</h2>
 {% if postings %}
 <div class="card"><table>
-  <thead><tr><th>platform</th><th>title</th><th>location</th><th>posted</th>
-    <th>ats</th><th>captured</th><th>jd</th><th></th></tr></thead>
+  <thead><tr><th>platform</th><th>title</th><th>location</th><th>pay</th>
+    <th>posted</th><th>ats</th><th>captured</th><th>jd</th><th></th></tr></thead>
   <tbody>{% for p in postings %}
   <tr><td class="mono">{{ p.platform }}</td><td>{{ p.title or "—" }}</td>
-      <td>{{ p.location or "—" }}</td>
+      <td>{{ p.location or "—" }}
+        {%- if p.work_type %} <span class="mono quiet">· {{ p.work_type }}</span>{% endif %}</td>
+      {# What the AD said, verbatim — deliberately not the extractor's numbers.
+         A figure the employer printed and one a model inferred from prose are
+         different kinds of evidence and shouldn't share a column. #}
+      <td>{% if p.salary_raw %}{{ p.salary_raw }}
+        {%- if p.salary_match %} <span class="mono quiet">· profile match</span>{% endif %}
+        {%- else %}—{% endif %}</td>
       <td class="mono">{% if p.posted_label %}{% if p.reposted %}reposted {% endif %}{{ p.posted_label }}{% else %}—{% endif %}</td>
       <td class="mono">{{ p.ats or "—" }}</td>
       <td class="mono">{{ p.captured_at | dt }} · {{ p.captured_via }}</td>

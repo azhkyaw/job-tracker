@@ -158,24 +158,54 @@ def _funnel(conn, user_id, origin: str | None = None) -> list[dict]:
 
 # --------------------------------------------------------------------------- applications
 
-# Sort keys the list accepts, mapped to their ORDER BY. "silence" is the
-# default and the reason the page exists: the longest-unanswered live thread
-# first, closed threads (nothing to chase) after them.
+# A lead is not a waiting application. An inbound approach the user hasn't acted
+# on has no `applied` event at all, so every time-based sort is ordering it by a
+# number that measures nothing — on real data the four of them landed at rows
+# 33, 34, 41 and 48, interleaved with applications as though they were also
+# waiting on someone. They lead the default list instead, because the only thing
+# they're waiting on is a decision from the user.
+#
+# Gated on status, not origin alone: `origin` is immutable provenance (invariant
+# #9), so a lead the user pursued keeps it forever — pinning on origin would
+# strand a long-finished application at the top of the page.
+_LEADS_FIRST = "(a.origin = 'inbound' AND s.status = 'interested') DESC"
+
+# Every time-based sort needs the same two tiebreakers. A date typed into a form
+# has no time-of-day, so `local_date_to_utc` anchors it at local noon — which
+# means every application backfilled for one day shares one instant to the
+# second (8 rows on 17 Jul, 4 on 22 Jul, 3 on 18 Jul in the author's data).
+# Without a tiebreaker their relative order is whatever the planner returns.
+_TIEBREAK = "applied_at DESC NULLS LAST, a.id"
+
+# Sort keys the list accepts, mapped to their ORDER BY. "activity" is the
+# default: the newest thing to move is the thing you came to see, and an
+# engaged thread — a reply, an interview invite — IS recent activity, so it
+# surfaces itself. The older ordering ("silence", longest-unanswered first)
+# buried them: with 52 real applications the single interview invite sat at row
+# 36, below 34 rows of nothing happening. Silence is still the argument the
+# needs-follow-up block above makes, with rows and actions; the list underneath
+# no longer repeats it.
 _SORTS = {
-    "silence": ("s.status IN ('rejected','offer','withdrawn') ASC, "
-                "last_activity ASC NULLS LAST"),
-    "activity": "last_activity DESC NULLS LAST",
-    "applied": "applied_at DESC NULLS LAST",
-    "company": "lower(company_display) ASC",
+    "activity": f"{_LEADS_FIRST}, last_activity DESC NULLS LAST, {_TIEBREAK}",
+    "silence": (f"s.status IN ('rejected','offer','withdrawn') ASC, "
+                f"last_activity ASC NULLS LAST, {_TIEBREAK}"),
+    "applied": f"applied_at DESC NULLS LAST, {_TIEBREAK}",
+    "company": "lower(company_display) ASC, a.id",
 }
+_DEFAULT_SORT = "activity"
 
 
 @app.get("/")
 def applications(request: Request, deleted: str | None = None, origin: str | None = None,
-                 q: str = "", sort: str = "silence"):
+                 q: str = "", sort: str = _DEFAULT_SORT, fu: str = ""):
+    """`fu=1` expands the needs-follow-up block, which is collapsed by default.
+    It exists so that working the queue doesn't fight the default: each
+    "Followed up" button redirects to /?fu=1, so the block is still open on
+    the reload that shortened it. No JS, no stored preference — the state
+    lives in the URL of the action that needs it."""
     user = _login_user(request)
     origin = origin if origin in ("applied", "inbound", "saved") else None
-    sort = sort if sort in _SORTS else "silence"
+    sort = sort if sort in _SORTS else _DEFAULT_SORT
     q = q.strip()
     with db.connect_scoped(user["id"]) as conn:
         user_id = user["id"]
@@ -206,6 +236,10 @@ def applications(request: Request, deleted: str | None = None, origin: str | Non
             """, {"user_id": user_id, "origin": origin,
                   "q": q, "like": f"%{q}%"}).fetchall()
         for r in rows:
+            # Flagged before _display() rewrites the status into a human label:
+            # the template needs to know which rows _LEADS_FIRST pinned, and it
+            # shouldn't have to re-derive that from display text.
+            r["lead"] = r["origin"] == "inbound" and r["status"] == "interested"
             r["status"] = _display(r["status"])
 
         # One query for every event on the page, grouped in Python — the trace
@@ -229,6 +263,10 @@ def applications(request: Request, deleted: str | None = None, origin: str | Non
             "pending": _pending_count(conn),
             "reminders": analytics.reminders(conn, user_id),
             "reminder_days": config.REMINDER_DAYS,
+            "fu_open": fu == "1",
+            # Only the default sort pins leads, so only it gets the divider —
+            # an explicitly chosen sort should be exactly what it says.
+            "leads_pinned": sort == _DEFAULT_SORT,
             "summary": analytics.summary(conn, user_id),
             "deleted": deleted,
             "origin": origin,
@@ -269,6 +307,58 @@ def _get_application(conn, app_id: str) -> dict:
 # declared after it would silently 404 rather than error loudly.
 
 _OUTCOME_TYPES = {"viewed", "interview_invite", "offer", "rejected", "withdrawn"}
+
+# What a human may file by hand on an application, and how the option reads.
+# Superset of _OUTCOME_TYPES by construction (asserted below) — manual entry and
+# the detail page must offer the same outcomes or the two forms drift, which is
+# the same one-source-of-truth argument as norm_company (invariant #4).
+#
+# Real news does not only arrive by the three ingest paths (invariant #1): a
+# recruiter rang, or messaged on WhatsApp, and the application's true status
+# changed with nothing to parse. Before this the only choices were "Note to
+# self" (truthful, but status stays `applied`, so the row sits in the
+# needs-follow-up queue forever and analytics score it as never answered) and
+# "I withdrew" (right status, false fact).
+#
+# Deliberately NOT here: `applied` and `confirmation`, owned by
+# ingest.upsert_record and the mail path; and `recruiter_outreach`, which
+# invariant #9 reserves for triage's inbound lane — a human resolving a lead is
+# the only thing allowed to create one.
+_MANUAL_EVENTS = {
+    "follow_up_sent":   "I followed up",
+    "note":             "Note to self",
+    "rejected":         "They rejected me",
+    "interview_invite": "They invited me to interview",
+    "offer":            "They made an offer",
+    "viewed":           "They viewed my application",
+    "withdrawn":        "I withdrew",
+}
+assert _OUTCOME_TYPES <= set(_MANUAL_EVENTS)
+
+# Why the employer stopped, when they said. Closed vocabulary so that "why do I
+# actually get rejected" becomes countable later instead of living in free text;
+# `unstated` is a real answer, distinct from an unrecorded one — most rejections
+# give no reason at all, and that fact is worth being able to measure.
+_EVENT_REASONS = {
+    "visa":        "visa / sponsorship",
+    "seniority":   "seniority mismatch",
+    "salary":      "salary expectations",
+    "skills":      "skills or experience",
+    "location":    "location",
+    "role_closed": "role filled or cancelled",
+    "other":       "other — see detail",
+    "unstated":    "no reason given",
+}
+
+# How the news arrived, for the events the tracker cannot see for itself.
+_EVENT_CHANNELS = {
+    "email":     "email",
+    "phone":     "phone call",
+    "whatsapp":  "WhatsApp",
+    "linkedin":  "LinkedIn message",
+    "in_person": "in person",
+    "other":     "other",
+}
 
 
 def _manual_ctx(conn, user, tz, *, form, error=None, added=None, merged=False):
@@ -491,7 +581,8 @@ def manual_entry_create(
 
 
 @app.get("/applications/{app_id}")
-def application_detail(request: Request, app_id: str, saved: str | None = None):
+def application_detail(request: Request, app_id: str, saved: str | None = None,
+                       event_error: str | None = None):
     user = _login_user(request)
     with db.connect_scoped(user["id"]) as conn:
         a = _get_application(conn, app_id)
@@ -500,7 +591,8 @@ def application_detail(request: Request, app_id: str, saved: str | None = None):
             "WHERE application_id = %s ORDER BY occurred_at DESC", (a["id"],)).fetchall()
         postings = conn.execute(
             "SELECT platform, url, title, captured_via, captured_at, location, "
-            "       posted_label, reposted, ats, jd_text "
+            "       posted_label, reposted, ats, jd_text, "
+            "       salary_raw, salary_period, work_type, salary_match "
             "FROM postings WHERE job_id = %s ORDER BY captured_at", (a["job_id"],)).fetchall()
         contacts = conn.execute(
             "SELECT id, name, role, url, approached, notes FROM contacts "
@@ -521,8 +613,9 @@ def application_detail(request: Request, app_id: str, saved: str | None = None):
         # Form order, not alphabetical: the sequence is part of how the form
         # read, and a question's neighbours are how you find it again.
         form_answers = conn.execute(
-            "SELECT question, answer, field_type, captured_at FROM application_answers "
-            "WHERE application_id = %s ORDER BY ordinal NULLS LAST, question",
+            "SELECT question, answer, field_type, occurrence, captured_at "
+            "FROM application_answers "
+            "WHERE application_id = %s ORDER BY ordinal NULLS LAST, question, occurrence",
             (a["id"],)).fetchall()
         # Most recent job only — a prior dead-lettered attempt shouldn't mask
         # a fresh retry the user kicked off after fixing whatever broke it.
@@ -549,6 +642,13 @@ def application_detail(request: Request, app_id: str, saved: str | None = None):
             "cover_job": cover_job, "cover_error": cover_error,
             "cover_max_attempts": config.MAX_ATTEMPTS, "pending": _pending_count(conn),
             "saved": bool(saved),
+            "event_error": event_error,
+            # The timeline form's vocabularies, so the template never hardcodes
+            # a second copy of what the route validates against.
+            "manual_events": _MANUAL_EVENTS,
+            "event_reasons": _EVENT_REASONS,
+            "event_channels": _EVENT_CHANNELS,
+            "today": datetime.now(request.state.tz).strftime("%Y-%m-%d"),
         })
 
 
@@ -824,24 +924,71 @@ def set_focused(request: Request, app_id: str, focused: str = Form(...)):
     return RedirectResponse(f"/applications/{app_id}", status_code=303)
 
 
+def _event_error(app_id: str, msg: str):
+    """Bad input on the timeline form. Re-rendering the detail page in place
+    would mean rebuilding every query application_detail runs, for one line of
+    text — the banner-redirect the delete and refile paths already use costs one
+    extra request and reads the same to the user."""
+    from urllib.parse import quote
+    return RedirectResponse(f"/applications/{app_id}?event_error={quote(msg)}",
+                            status_code=303)
+
+
 @app.post("/applications/{app_id}/events")
 def add_event(request: Request, app_id: str, type: str = Form(...), note: str = Form(""),
-              redirect_to: str = Form("")):
-    """`redirect_to` exists for the follow-up block on the list: ticking one of
+              reason: str = Form(""), channel: str = Form(""),
+              occurred_on: str = Form(""), redirect_to: str = Form("")):
+    """File one thing that happened, by hand.
+
+    `redirect_to` exists for the follow-up block on the list: ticking one of
     fifteen rows there should leave you looking at the remaining fourteen, not
     on that application's detail page. Constrained to known-good in-app
-    destinations rather than trusted, same as refile_email's."""
-    if type not in ("follow_up_sent", "note", "withdrawn"):
+    destinations rather than trusted, same as refile_email's. `/?fu=1` is the
+    same destination with the (default-collapsed) follow-up block still
+    open — see applications().
+
+    `occurred_on` is the REAL-WORLD date (invariant #2), not the moment of
+    typing: a phone call on Monday logged on Thursday is Monday's event, and
+    `analytics.avg_days_to_resp` measures exactly that gap. Blank means now,
+    which is the common case and stays the default.
+
+    `reason` and `channel` go in the payload rather than in new columns —
+    events.payload has been the intended home for this kind of metadata since
+    the original design (docs/features.md §7)."""
+    if type not in _MANUAL_EVENTS:
         raise HTTPException(400, "unsupported manual event type")
     from psycopg.types.json import Json
     user = _login_user(request)
+    tz = request.state.tz
+
+    occurred_at = None                       # None → now(), server-side
+    if occurred_on.strip():
+        try:
+            d = datetime.strptime(occurred_on.strip(), "%Y-%m-%d").date()
+        except ValueError:
+            return _event_error(app_id, "Enter a valid date, or leave it blank for now.")
+        if d > datetime.now(tz).date():
+            return _event_error(app_id, "That date is in the future.")
+        occurred_at = ingest.local_date_to_utc(d, tz)
+
+    payload = {}
+    if note.strip():
+        payload["note"] = note.strip()
+    # A reason only means anything on a rejection. These templates carry no JS,
+    # so the select can't hide itself for the other types — the server is what
+    # keeps a stray value out of the record.
+    if type == "rejected" and reason in _EVENT_REASONS:
+        payload["reason"] = reason
+    if channel in _EVENT_CHANNELS:
+        payload["channel"] = channel
+
     with db.connect_scoped(user["id"]) as conn, conn.transaction():
         a = _get_application(conn, app_id)
         conn.execute(
             "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
-            "VALUES (%s, %s, %s, 'manual', now(), %s)",
-            (a["user_id"], a["id"], type, Json({"note": note} if note else {})))
-    dest = redirect_to if redirect_to == "/" else f"/applications/{app_id}"
+            "VALUES (%s, %s, %s, 'manual', COALESCE(%s, now()), %s)",
+            (a["user_id"], a["id"], type, occurred_at, Json(payload)))
+    dest = redirect_to if redirect_to in ("/", "/?fu=1") else f"/applications/{app_id}"
     return RedirectResponse(dest, status_code=303)
 
 
@@ -1260,6 +1407,13 @@ class CaptureIn(BaseModel):
     jd_text: str | None = None
     trigger: str = "apply"              # apply | manual
     external: bool = False              # redirected to employer site to finish
+    # "this click was the SUBMIT, not the start". Platforms whose apply button
+    # navigates (JobStreet) are captured when the flow OPENS, because deferring
+    # to a completion signal that a live DOM change could silently break would
+    # risk losing the application entirely — the one failure this system will
+    # not accept. The record therefore exists from the first click, and this
+    # flag is what lets a later, genuine submit correct its timestamp.
+    completed: bool = False
     focused: bool | None = None
     note: str | None = None
     recruiter_name: str | None = None
@@ -1269,6 +1423,13 @@ class CaptureIn(BaseModel):
     posted_label: str | None = None     # platform's own relative-time text, e.g. "3 weeks ago"
     reposted: bool | None = None
     ats: str | None = None              # detected from an external apply's destination host
+    # Structured facts the platform prints BESIDE the ad, which the JD
+    # extractor can never see because they aren't in the ad body (migration
+    # 011). `salary_raw` is the displayed string verbatim — pipeline/salary.py
+    # owns turning it into numbers, so the extension never has to.
+    salary_raw: str | None = None
+    work_type: str | None = None
+    salary_match: bool | None = None
     # Screening Q&A read off the in-page apply form at submit time (LinkedIn
     # Easy Apply today). Absent on manual captures and on external applies —
     # the form lives on the employer's ATS, where the extension doesn't run.
@@ -1310,6 +1471,8 @@ def captures(payload: CaptureIn, authorization: str | None = Header(None)):
             company=payload.company, title=payload.title, jd_text=payload.jd_text,
             location=payload.location, posted_label=payload.posted_label,
             reposted=payload.reposted, ats=payload.ats, captured_via="extension",
+            salary_raw=payload.salary_raw, work_type=payload.work_type,
+            salary_match=payload.salary_match,
             origin="applied" if payload.trigger == "apply" else "saved")
         job_id, posting_id, app_id = r["job_id"], r["posting_id"], r["application_id"]
 
@@ -1323,6 +1486,24 @@ def captures(payload: CaptureIn, authorization: str | None = Header(None)):
                     "occurred_at, payload) VALUES (%s, %s, 'applied', 'extension', "
                     "now(), %s)",
                     (user_id, app_id, Json({"external": payload.external})))
+            elif payload.completed:
+                # The submit landed, and the event on record was written by the
+                # click that only OPENED the form — minutes earlier, on a
+                # platform whose apply flow is its own page. Correcting when it
+                # happened is the same operation /applications/{id}/edit
+                # already performs on this event; invariant #2 forbids a mutable
+                # STATUS, not fixing an occurred_at that was always meant to be
+                # the real-world instant.
+                #
+                # Forward only, and only over the extension's own event: a
+                # confirmation email that already set a truer time, or a date
+                # the user corrected by hand, must not be walked backwards by a
+                # stray click on a page that happens to match.
+                conn.execute(
+                    "UPDATE events SET occurred_at = now() "
+                    " WHERE application_id = %s AND type = 'applied' "
+                    "   AND source = 'extension' AND occurred_at < now()",
+                    (app_id,))
         else:
             has_any = conn.execute(
                 "SELECT 1 FROM events WHERE application_id = %s", (app_id,)).fetchone()
