@@ -20,6 +20,19 @@ questions recur almost verbatim between employers. A form may ask the same
 question more than once (a work-history **repeater**), so a row is identified
 by (application, question_norm, **occurrence**) — see invariant #11.
 
+## Key files
+
+- `pipeline/web.py` — all routes (FastAPI + Jinja, no JS)
+- `pipeline/ingest.py` — the only place job/posting/application rows are created
+- `pipeline/matcher.py` — matches inbound email to an application, fabricates events
+- `pipeline/mailbox.py` — mail-ingest orchestrator shared by IMAP + Gmail API
+- `pipeline/dedup.py` — the only place two jobs are merged (`merge_jobs`)
+- `pipeline/trace.py` — pure timeline/axis geometry for list + detail pages
+- `pipeline/analytics.py` — funnel, response-rate, weekly, reminders queries
+- `extension/` — browser capture (LinkedIn/JobStreet/Indeed adapters + shared/)
+- `migrations/` — append-only numbered schema files (invariant #8)
+- `tests/` — six suites, see Commands for run order
+
 ## Commands
 
 - **Run ALL tests: `./scripts/test.sh`** — creates a throwaway `tracker_test`
@@ -41,6 +54,7 @@ by (application, question_norm, **occurrence**) — see invariant #11.
 - **Native Windows (no WSL):** see `docs/windows-dev.md` — Docker Postgres
   (`docker compose up -d`, port 55432) + uv-managed Python;
   `scripts/dev-setup.ps1` once, `scripts/test.ps1` to run suites.
+- **Dev DB shell:** `docker compose exec db psql -U postgres -d tracker`
 - **Fast syntax check before a full suite run:** `python -c "import ast;
   ast.parse(open('path/to/file.py', encoding='utf-8').read())"` — catches
   typos without a DB reset/migration cycle.
@@ -393,14 +407,20 @@ axis) + **DM Mono**, from Google Fonts.
   Windows.** Format with `%d` and `.lstrip("0")` instead (`trace.py:_ticks`,
   `analytics.weekly`). Sibling of the cp1252 gotcha below — both are ways a
   Linux-shaped one-liner dies natively.
-- **Dark Reader in the dev Chrome profile defeats colour verification
-  entirely — including `getComputedStyle`.** Its dynamic mode injects real
-  overriding CSS, so resolved `background-color` comes back neutralised
-  (`.funnel .seg`, `.legend i`, `.spark .bar` all read as the card colour
-  while being correctly sized). `:root` custom properties, all geometry, and
-  font checks DO survive. Verify a palette numerically from the authored
-  hexes instead — computing WCAG contrast that way caught a real AA failure
-  on `--withdrawn` (3.43:1) that looking never would have.
+- **Dark Reader is installed in the dev Chrome profile, and when active it
+  defeats colour verification — including `getComputedStyle`.** Its dynamic
+  mode injects real overriding CSS, so resolved `background-color` comes back
+  neutralised (`.funnel .seg`, `.legend i`, `.spark .bar` all read as the card
+  colour while being correctly sized). **It is not always on, though** —
+  confirmed quiet against a locally-served page the same day, where resolved
+  colours matched the authored tokens exactly and tracked `data-theme` flips
+  correctly. Probe first (compare `getComputedStyle` on one element against
+  the `:root` token it should equal); if they match, resolved styles are
+  trustworthy and WCAG contrast can be computed straight from them — that's
+  what caught a real AA failure on `--withdrawn` (3.43:1) that looking never
+  would have. Only fall back to computing contrast from the authored hexes in
+  source when the probe shows a mismatch. `:root` custom properties, all
+  geometry, and font checks DO survive either way.
 - **Windows consoles default to cp1252.** A Python one-liner printing
   non-ASCII (em-dash, curly quotes) via Bash/PowerShell can raise
   `UnicodeEncodeError` — `sys.stdout.reconfigure(encoding='utf-8',
@@ -519,6 +539,27 @@ axis) + **DM Mono**, from Google Fonts.
   parity set with the API's `messages.list` (excludes Spam/Trash, includes
   archived and filter-routed mail — most accounts with job alerts route them
   somewhere other than INBOX).
+- **Widening `events.type`'s `CHECK` constraint means finding its
+  auto-generated name first.** An inline `CHECK` on a column has no name of
+  your choosing — Postgres calls it `<table>_<col>_check`
+  (`events_type_check`); confirm via `\d events` before
+  `DROP CONSTRAINT`/`ADD CONSTRAINT`. First time a migration needed this
+  (012) — every prior migration only ever added columns/tables.
+- **`application_status`'s CASE precedence uses gapped values** (multiples
+  of 10: 10/30/40/45/50/60/70), not consecutive integers, specifically so a
+  new event type can slot in between two existing ones without renumbering
+  everything else — done once already for `engaged` (migration 012).
+- **Testing an `application_status` precedence tie:** two manual events
+  filed with the SAME `occurred_on` date land at the EXACT same instant
+  (`ingest.local_date_to_utc` anchors every bare date to local noon), so
+  that's how to provoke a real CASE tie-break in a test rather than relying
+  on recency.
+- **`pipeline/analytics.py`'s response-type lists are two places, not one:**
+  `_RESPONSE_TYPES` (shared by `weekly()`) and `reminders()`'s separate
+  `NOT EXISTS` list. A new status-driving event type has to be added to
+  BOTH or it silently won't clear an application from the Needs-follow-up
+  queue — the exact bug the `engaged` type's own motivating use case would
+  have hit.
 
 ## Environment
 
