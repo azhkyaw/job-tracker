@@ -19,6 +19,7 @@ psql "$DB" -q -v ON_ERROR_STOP=1 \
   -f migrations/009_application_answers.sql \
   -f migrations/010_answer_occurrence.sql \
   -f migrations/011_posting_salary.sql \
+  -f migrations/012_engaged_event.sql \
   -c "INSERT INTO users (email) VALUES ('dev@test.local');" 2>/dev/null
 export TRACKER_DATABASE_URL="postgresql:///$DB"
 export TRACKER_API_TOKEN=testtok

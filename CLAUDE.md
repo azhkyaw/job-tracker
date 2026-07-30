@@ -68,7 +68,14 @@ by (application, question_norm, **occurrence**) — see invariant #11.
    (`_EVENT_REASONS` / `_EVENT_CHANNELS`; JSONB, no columns — the home
    `docs/features.md` §7 always intended). `_MANUAL_EVENTS` is a superset of
    `_OUTCOME_TYPES` by assertion, so the timeline form and `/applications/new`
-   can't offer different outcomes. **A visa rejection does NOT auto-set
+   can't offer different outcomes. **`engaged`** (added 31 Jul 2026) is the
+   status-driving type for an employer/recruiter reaching out directly (call,
+   WhatsApp, follow-up questions) with no concrete next step yet — distinct
+   from `viewed`, which `matcher.py` reserves for the passive, auto-detected
+   "your application was viewed" email signal. `application_status`'s
+   precedence ranks it strictly between the two (`viewed` < `engaged` <
+   `interview_invite`), using gapped values (multiples of 10) so a future
+   insertion doesn't force another renumbering. **A visa rejection does NOT auto-set
    `extractions.visa_signal`** — that stays a deliberate second click on the
    detail page's own select, scoped to that posting (decided 28 Jul 2026).
 3. **postings ≠ jobs ≠ applications.** One application per (user, job). Dedup

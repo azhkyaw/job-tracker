@@ -106,6 +106,139 @@ with db.connect() as conn:
         "SELECT payload FROM events WHERE application_id = %s AND type = 'follow_up_sent' "
         "AND source = 'manual'", (northwind_app,)).fetchone()
     check("manual follow-up logged with note", ev and ev["payload"].get("note") == "pinged recruiter", ev)
+    manual_event_id = conn.execute(
+        "SELECT id FROM events WHERE application_id = %s AND type = 'follow_up_sent' "
+        "AND source = 'manual'", (northwind_app,)).fetchone()["id"]
+
+print("timeline events: CRUD")
+r = client.get(f"/applications/{northwind_app}")
+check("manual event shows an edit link on the detail page",
+      f"/events/{manual_event_id}/edit" in r.text, r.text)
+
+r = client.get(f"/applications/{northwind_app}/events/{manual_event_id}/edit")
+check("edit form renders and prefills the note", r.status_code == 200
+      and 'value="pinged recruiter"' in r.text, r.text)
+
+r = client.post(f"/applications/{northwind_app}/events/{manual_event_id}/edit",
+                data={"type": "rejected", "reason": "salary", "channel": "phone",
+                      "occurred_on": "2026-07-25", "note": "recruiter called"})
+check("event edit redirects", r.status_code == 303, r.status_code)
+with db.connect() as conn:
+    ev = conn.execute(
+        "SELECT type, occurred_at, payload FROM events WHERE id = %s", (manual_event_id,)).fetchone()
+    check("edit changed type, date and payload",
+          ev["type"] == "rejected" and ev["payload"].get("reason") == "salary"
+          and ev["payload"].get("channel") == "phone" and ev["payload"].get("note") == "recruiter called",
+          ev)
+
+r = client.post(f"/applications/{northwind_app}/events/{manual_event_id}/edit",
+                data={"type": "not-a-real-type", "occurred_on": "2026-07-25"})
+check("editing to an unsupported type is rejected", r.status_code == 400, r.status_code)
+
+r = client.post(f"/applications/{northwind_app}/events/{manual_event_id}/edit",
+                data={"type": "rejected", "occurred_on": ""})
+check("blank date on edit is rejected rather than silently kept", r.status_code == 400, r.status_code)
+
+r = client.get("/applications/{}/events/{}/edit".format(
+    northwind_app, "00000000-0000-0000-0000-000000000000"))
+check("unknown event 404s", r.status_code == 404, r.status_code)
+
+with db.connect() as conn:
+    applied_event_id = conn.execute(
+        "SELECT id FROM events WHERE application_id = %s AND type = 'applied'",
+        (northwind_app,)).fetchone()["id"]
+r = client.get(f"/applications/{northwind_app}/events/{applied_event_id}/edit")
+check("the 'applied' event is not editable through this route (it has its own correction path)",
+      r.status_code == 404, r.status_code)
+
+with db.connect() as conn, conn.transaction():
+    other_app = conn.execute(
+        "SELECT a.id, a.user_id FROM applications a JOIN jobs j ON j.id = a.job_id "
+        "WHERE j.company_norm != 'northwind labs' LIMIT 1").fetchone()
+    foreign_event = conn.execute(
+        "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+        "VALUES (%s, %s, 'note', 'manual', now(), '{}') RETURNING id",
+        (other_app["user_id"], other_app["id"])).fetchone()["id"]
+r = client.get(f"/applications/{northwind_app}/events/{foreign_event}/edit")
+check("an event belonging to a different application 404s, even under a valid application id",
+      r.status_code == 404, r.status_code)
+
+r = client.post(f"/applications/{northwind_app}/events/{manual_event_id}/delete")
+check("event delete redirects", r.status_code == 303, r.status_code)
+with db.connect() as conn:
+    gone = conn.execute("SELECT 1 FROM events WHERE id = %s", (manual_event_id,)).fetchone()
+    check("deleted event is gone", gone is None, gone)
+
+print("engaged event type")
+with db.connect() as conn, conn.transaction():
+    vd_job = conn.execute(
+        "INSERT INTO jobs (user_id, company_norm, title_canonical) "
+        "VALUES (%s, 'vector dynamics', 'ml engineer') RETURNING id", (user_id,)
+    ).fetchone()["id"]
+    conn.execute(
+        "INSERT INTO postings (user_id, job_id, platform, platform_job_id, captured_via) "
+        "VALUES (%s, %s, 'linkedin', 'LI-vector-1', 'extension')", (user_id, vd_job))
+    engaged_app = conn.execute(
+        "INSERT INTO applications (user_id, job_id) VALUES (%s, %s) RETURNING id",
+        (user_id, vd_job)).fetchone()["id"]
+    conn.execute(
+        "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+        "VALUES (%s, %s, 'applied', 'extension', '2026-07-01 09:00+00', '{}')",
+        (user_id, engaged_app))
+
+r = client.post(f"/applications/{engaged_app}/events",
+                data={"type": "viewed", "occurred_on": "2026-07-10"})
+check("viewed event redirects", r.status_code == 303, r.status_code)
+with db.connect() as conn:
+    st = conn.execute("SELECT status FROM application_status WHERE application_id = %s",
+                      (engaged_app,)).fetchone()
+    check("status is viewed", st["status"] == "viewed", st)
+
+# Same occurred_on as the viewed event above: local-noon anchoring makes both
+# instants identical, so this is a real precedence tie, not just "more recent".
+r = client.post(f"/applications/{engaged_app}/events",
+                data={"type": "engaged", "channel": "whatsapp",
+                      "note": "follow-up screening questions", "occurred_on": "2026-07-10"})
+check("engaged event redirects", r.status_code == 303, r.status_code)
+with db.connect() as conn:
+    st = conn.execute("SELECT status FROM application_status WHERE application_id = %s",
+                      (engaged_app,)).fetchone()
+    check("engaged outranks viewed at the same instant", st["status"] == "engaged", st)
+    ev = conn.execute(
+        "SELECT payload FROM events WHERE application_id = %s AND type = 'engaged'",
+        (engaged_app,)).fetchone()
+    check("engaged event records channel and note",
+          ev["payload"].get("channel") == "whatsapp"
+          and ev["payload"].get("note") == "follow-up screening questions", ev)
+
+r = client.get(f"/applications/{engaged_app}")
+check("detail badge renders the engaged status token",
+      r.status_code == 200 and "var(--engaged)" in r.text and ">engaged<" in r.text, r.text)
+
+r = client.get("/")
+check("funnel shows an engaged segment", "engaged" in r.text, r.text)
+
+# Same occurred_on again: interview_invite must outrank engaged at the same instant.
+r = client.post(f"/applications/{engaged_app}/events",
+                data={"type": "interview_invite", "occurred_on": "2026-07-10"})
+with db.connect() as conn:
+    st = conn.execute("SELECT status FROM application_status WHERE application_id = %s",
+                      (engaged_app,)).fetchone()
+    check("interview_invite outranks engaged at the same instant",
+          st["status"] == "interview_invite", st)
+
+r = client.post("/applications/new",
+                data={"company": "Helix Analytics", "title": "Data Scientist",
+                      "platform": "linkedin", "applied_date": "2026-07-01",
+                      "outcome": "engaged", "outcome_date": "2026-07-15"})
+check("manual entry accepts outcome=engaged redirects", r.status_code == 303, r.status_code)
+with db.connect() as conn:
+    ev = conn.execute(
+        "SELECT e.type FROM events e JOIN applications a ON a.id = e.application_id "
+        "JOIN jobs j ON j.id = a.job_id WHERE j.company_norm = 'helix analytics'").fetchall()
+    types = {r["type"] for r in ev}
+    check("outcome=engaged stored as a status-driving event",
+          "engaged" in types and "applied" in types, types)
 
 print("contacts: CRUD")
 r = client.post(f"/applications/{northwind_app}/contacts",

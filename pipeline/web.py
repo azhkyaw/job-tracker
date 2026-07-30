@@ -116,7 +116,7 @@ def _login_user(request: Request) -> dict:
 
 # Display collapses the applied-family; the event log keeps the distinction.
 DISPLAY_STATUS = {"confirmation": "applied"}
-FUNNEL_ORDER = ["interested", "applied", "viewed", "interview_invite",
+FUNNEL_ORDER = ["interested", "applied", "viewed", "engaged", "interview_invite",
                 "offer", "rejected", "withdrawn"]
 STATUS_LABEL = {"interview_invite": "interviewing"}
 
@@ -306,7 +306,7 @@ def _get_application(conn, app_id: str) -> dict:
 # _get_application() catches the resulting UUID-parse error, a route
 # declared after it would silently 404 rather than error loudly.
 
-_OUTCOME_TYPES = {"viewed", "interview_invite", "offer", "rejected", "withdrawn"}
+_OUTCOME_TYPES = {"viewed", "engaged", "interview_invite", "offer", "rejected", "withdrawn"}
 
 # What a human may file by hand on an application, and how the option reads.
 # Superset of _OUTCOME_TYPES by construction (asserted below) — manual entry and
@@ -331,6 +331,7 @@ _MANUAL_EVENTS = {
     "interview_invite": "They invited me to interview",
     "offer":            "They made an offer",
     "viewed":           "They viewed my application",
+    "engaged":          "They reached out (call, message, follow-up questions)",
     "withdrawn":        "I withdrew",
 }
 assert _OUTCOME_TYPES <= set(_MANUAL_EVENTS)
@@ -587,7 +588,7 @@ def application_detail(request: Request, app_id: str, saved: str | None = None,
     with db.connect_scoped(user["id"]) as conn:
         a = _get_application(conn, app_id)
         events = conn.execute(
-            "SELECT type, source, occurred_at, payload FROM events "
+            "SELECT id, type, source, occurred_at, payload FROM events "
             "WHERE application_id = %s ORDER BY occurred_at DESC", (a["id"],)).fetchall()
         postings = conn.execute(
             "SELECT platform, url, title, captured_via, captured_at, location, "
@@ -687,7 +688,7 @@ def application_detail(request: Request, app_id: str, saved: str | None = None,
 # applied date past any of them would make the timeline incoherent. note /
 # follow_up_sent / recruiter_outreach are excluded: those genuinely can sit
 # anywhere, including before you applied.
-_POST_APPLY_TYPES = ("confirmation", "viewed", "interview_invite",
+_POST_APPLY_TYPES = ("confirmation", "viewed", "engaged", "interview_invite",
                      "offer", "rejected", "withdrawn")
 
 
@@ -934,6 +935,63 @@ def _event_error(app_id: str, msg: str):
                             status_code=303)
 
 
+def _parse_occurred_on(occurred_on: str, tz):
+    """Shared by add/edit: turn the form's date string into a UTC instant, or
+    an error message. Blank → (None, None), meaning now() on insert / leave
+    unchanged on edit — the two callers decide which."""
+    if not occurred_on.strip():
+        return None, None
+    try:
+        d = datetime.strptime(occurred_on.strip(), "%Y-%m-%d").date()
+    except ValueError:
+        return None, "Enter a valid date, or leave it blank for now."
+    if d > datetime.now(tz).date():
+        return None, "That date is in the future."
+    return ingest.local_date_to_utc(d, tz), None
+
+
+def _manual_event_payload(type: str, note: str, reason: str, channel: str) -> dict:
+    payload = {}
+    if note.strip():
+        payload["note"] = note.strip()
+    # A reason only means anything on a rejection. These templates carry no JS,
+    # so the select can't hide itself for the other types — the server is what
+    # keeps a stray value out of the record.
+    if type == "rejected" and reason in _EVENT_REASONS:
+        payload["reason"] = reason
+    if channel in _EVENT_CHANNELS:
+        payload["channel"] = channel
+    return payload
+
+
+def _get_manual_event(conn, a, event_id: str) -> dict:
+    """Only a hand-filed event (source='manual', a _MANUAL_EVENTS type) is
+    eligible for edit/delete through this route. `applied` is deliberately
+    excluded even when its source is 'manual' — that field has its own
+    correction path on the edit-application form (invariant: one place per
+    fact), and an email-derived event (a real message the matcher parsed) is
+    never user-editable here regardless of its type — see the events CHECK
+    constraint and matcher.py's inserts for why 'rejected'/'viewed'/etc. can
+    arrive with source='email' too."""
+    try:
+        row = conn.execute(
+            "SELECT id, type, source, occurred_at, payload FROM events "
+            "WHERE id = %s::uuid AND application_id = %s",
+            (event_id, a["id"])).fetchone()
+    except psycopg.errors.InvalidTextRepresentation:
+        row = None
+    if row is None or row["source"] != "manual" or row["type"] not in _MANUAL_EVENTS:
+        raise HTTPException(404, "event not found")
+    return row
+
+
+def _event_ctx(conn, a, event, tz, *, form, error=None):
+    return {"a": a, "event": event, "form": form, "error": error,
+            "manual_events": _MANUAL_EVENTS, "event_reasons": _EVENT_REASONS,
+            "event_channels": _EVENT_CHANNELS, "today": datetime.now(tz).strftime("%Y-%m-%d"),
+            "pending": _pending_count(conn)}
+
+
 @app.post("/applications/{app_id}/events")
 def add_event(request: Request, app_id: str, type: str = Form(...), note: str = Form(""),
               reason: str = Form(""), channel: str = Form(""),
@@ -961,26 +1019,10 @@ def add_event(request: Request, app_id: str, type: str = Form(...), note: str = 
     user = _login_user(request)
     tz = request.state.tz
 
-    occurred_at = None                       # None → now(), server-side
-    if occurred_on.strip():
-        try:
-            d = datetime.strptime(occurred_on.strip(), "%Y-%m-%d").date()
-        except ValueError:
-            return _event_error(app_id, "Enter a valid date, or leave it blank for now.")
-        if d > datetime.now(tz).date():
-            return _event_error(app_id, "That date is in the future.")
-        occurred_at = ingest.local_date_to_utc(d, tz)
-
-    payload = {}
-    if note.strip():
-        payload["note"] = note.strip()
-    # A reason only means anything on a rejection. These templates carry no JS,
-    # so the select can't hide itself for the other types — the server is what
-    # keeps a stray value out of the record.
-    if type == "rejected" and reason in _EVENT_REASONS:
-        payload["reason"] = reason
-    if channel in _EVENT_CHANNELS:
-        payload["channel"] = channel
+    occurred_at, err = _parse_occurred_on(occurred_on, tz)
+    if err:
+        return _event_error(app_id, err)
+    payload = _manual_event_payload(type, note, reason, channel)
 
     with db.connect_scoped(user["id"]) as conn, conn.transaction():
         a = _get_application(conn, app_id)
@@ -990,6 +1032,66 @@ def add_event(request: Request, app_id: str, type: str = Form(...), note: str = 
             (a["user_id"], a["id"], type, occurred_at, Json(payload)))
     dest = redirect_to if redirect_to in ("/", "/?fu=1") else f"/applications/{app_id}"
     return RedirectResponse(dest, status_code=303)
+
+
+@app.get("/applications/{app_id}/events/{event_id}/edit")
+def edit_event_form(request: Request, app_id: str, event_id: str):
+    user = _login_user(request)
+    with db.connect_scoped(user["id"]) as conn:
+        a = _get_application(conn, app_id)
+        e = _get_manual_event(conn, a, event_id)
+        tz = request.state.tz
+        form = {"type": e["type"], "note": e["payload"].get("note", ""),
+                "reason": e["payload"].get("reason", ""),
+                "channel": e["payload"].get("channel", ""),
+                "occurred_on": e["occurred_at"].astimezone(tz).strftime("%Y-%m-%d")}
+        return templates.TemplateResponse(
+            request=request, name="event_edit.html",
+            context=_event_ctx(conn, a, e, tz, form=form))
+
+
+@app.post("/applications/{app_id}/events/{event_id}/edit")
+def edit_event(
+    request: Request, app_id: str, event_id: str,
+    type: str = Form(...), note: str = Form(""), reason: str = Form(""),
+    channel: str = Form(""), occurred_on: str = Form(""),
+):
+    from psycopg.types.json import Json
+    user = _login_user(request)
+    tz = request.state.tz
+    form = {"type": type, "note": note, "reason": reason, "channel": channel,
+            "occurred_on": occurred_on}
+    with db.connect_scoped(user["id"]) as conn:
+        a = _get_application(conn, app_id)
+        e = _get_manual_event(conn, a, event_id)
+        if type not in _MANUAL_EVENTS:
+            raise HTTPException(400, "unsupported manual event type")
+        occurred_at, err = _parse_occurred_on(occurred_on, tz)
+        if err:
+            return templates.TemplateResponse(
+                request=request, name="event_edit.html",
+                context=_event_ctx(conn, a, e, tz, form=form, error=err), status_code=400)
+        if occurred_at is None:
+            return templates.TemplateResponse(
+                request=request, name="event_edit.html",
+                context=_event_ctx(conn, a, e, tz, form=form,
+                                    error="Enter the date this happened."), status_code=400)
+        payload = _manual_event_payload(type, note, reason, channel)
+        with conn.transaction():
+            conn.execute(
+                "UPDATE events SET type = %s, occurred_at = %s, payload = %s WHERE id = %s",
+                (type, occurred_at, Json(payload), e["id"]))
+    return RedirectResponse(f"/applications/{app_id}", status_code=303)
+
+
+@app.post("/applications/{app_id}/events/{event_id}/delete")
+def delete_event(request: Request, app_id: str, event_id: str):
+    user = _login_user(request)
+    with db.connect_scoped(user["id"]) as conn, conn.transaction():
+        a = _get_application(conn, app_id)
+        e = _get_manual_event(conn, a, event_id)
+        conn.execute("DELETE FROM events WHERE id = %s", (e["id"],))
+    return RedirectResponse(f"/applications/{app_id}", status_code=303)
 
 
 # --------------------------------------------------------------------------- contacts

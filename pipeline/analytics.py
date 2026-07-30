@@ -9,7 +9,7 @@ from datetime import timedelta
 
 from . import config
 
-_RESPONSE_TYPES = "('viewed','interview_invite','rejected','offer')"
+_RESPONSE_TYPES = "('viewed','engaged','interview_invite','rejected','offer')"
 
 _APPS_CTE = f"""
 WITH apps AS (
@@ -122,11 +122,10 @@ def weekly(conn, user_id, weeks: int = 14):
     percentages of each panel's OWN peak, and each panel direct-labels that
     peak so the scale is never implied.
     """
-    rows = conn.execute("""
+    rows = conn.execute(f"""
         SELECT date_trunc('week', e.occurred_at)::date          AS wk,
                count(*) FILTER (WHERE e.type = 'applied')       AS applied,
-               count(*) FILTER (WHERE e.type IN ('viewed','interview_invite',
-                                                 'rejected','offer')) AS replied
+               count(*) FILTER (WHERE e.type IN {_RESPONSE_TYPES}) AS replied
         FROM events e
         JOIN applications a ON a.id = e.application_id
         WHERE a.user_id = %(user_id)s
@@ -181,7 +180,7 @@ def reminders(conn, user_id):
                         AND e.occurred_at < now() - make_interval(days => %(days)s))
           AND NOT EXISTS (SELECT 1 FROM events e
                           WHERE e.application_id = a.id
-                            AND e.type IN ('viewed','interview_invite','rejected',
+                            AND e.type IN ('viewed','engaged','interview_invite','rejected',
                                            'offer','withdrawn','follow_up_sent'))
         ORDER BY applied_at
     """, {"user_id": user_id, "days": config.REMINDER_DAYS}).fetchall()

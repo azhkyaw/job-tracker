@@ -264,4 +264,27 @@ check("stale application flagged for follow-up",
       "Needs follow-up" in r.text and "stale co" in r.text)
 check("responded application not flagged", "vantage tech" not in r.text.split("Needs follow-up")[1].split("</div>")[0])
 
+print("logging an engaged event clears a stale application from the follow-up queue")
+with db.connect() as conn:
+    job2 = conn.execute(
+        "INSERT INTO jobs (user_id, company_norm, title_canonical) "
+        "VALUES (%s, 'stale eng co', 'Backend Engineer') RETURNING id", (user_id,)).fetchone()
+    stale2 = conn.execute(
+        "INSERT INTO applications (user_id, job_id) VALUES (%s, %s) RETURNING id",
+        (user_id, job2["id"])).fetchone()["id"]
+    conn.execute(
+        "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+        "VALUES (%s, %s, 'applied', 'manual', now() - interval '20 days', '{}')",
+        (user_id, stale2))
+    conn.commit()
+r = client.get("/")
+check("newly-stale application flagged for follow-up before any response",
+      "stale eng co" in r.text)
+r = client.post(f"/applications/{stale2}/events",
+                data={"type": "engaged", "channel": "whatsapp", "note": "recruiter followed up"})
+check("engaged event redirects", r.status_code == 303, r.status_code)
+r = client.get("/")
+check("logging an engaged event clears the application from Needs follow-up",
+      "stale eng co" not in r.text.split("Needs follow-up")[1].split("</div>")[0])
+
 print("\nALL PHASE 3 PATHS PASS")

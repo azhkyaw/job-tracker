@@ -170,7 +170,7 @@ Logically separate, physically the same worker process. See §11 for the algorit
 
 FastAPI + HTMX + a lightweight component library (or Next.js if a separate frontend feels worth it — decision deferred, HTMX is the default for one maintainer). Views:
 
-- **Kanban** by derived status (latest event per application): interested → applied → viewed → interviewing → offer / rejected / stale.
+- **Kanban** by derived status (latest event per application): interested → applied → viewed → engaged → interviewing → offer / rejected / stale.
 - **Table** with inline verification: extraction fields shown with a confirm/edit control that flips `verified`.
 - **Triage queue:** unmatched emails and borderline duplicate pairs, each resolvable in one click.
 - **Job detail:** JD text, extraction panel, status timeline, contacts, artifacts, duplicate links.
@@ -217,7 +217,7 @@ applications(
 -- Append-only status timeline; current status is derived, never stored
 events(
   id, user_id, application_id,
-  type,        -- applied | confirmation | viewed | rejected |
+  type,        -- applied | confirmation | viewed | engaged | rejected |
                -- interview_invite | recruiter_outreach | follow_up_sent |
                -- offer | withdrawn | note
   source,      -- email | extension | manual | system

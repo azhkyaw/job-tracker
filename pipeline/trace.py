@@ -23,6 +23,7 @@ TERMINAL = {"rejected", "offer", "withdrawn"}
 _ROLE = {
     "applied": "applied",
     "viewed": "viewed",
+    "engaged": "viewed",
     "interview_invite": "interview_invite",
     "offer": "offer",
     "rejected": "rejected",

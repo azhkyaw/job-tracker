@@ -68,7 +68,10 @@
           <span class="mono quiet">· via {{ event_channels.get(e.payload['channel'], e.payload['channel']) }}</span>
         {%- endif %}
         {% if e.payload.get('note') %}— {{ e.payload['note'] }}{% endif %}
-        {% if e.payload.get('status_detail') %}— {{ e.payload['status_detail'] }}{% endif %}</span></li>
+        {% if e.payload.get('status_detail') %}— {{ e.payload['status_detail'] }}{% endif %}
+        {% if e.source == 'manual' and e.type in manual_events %}
+          <span class="sm quiet">· <a href="/applications/{{ a.id }}/events/{{ e.id }}/edit">edit</a></span>
+        {% endif %}</span></li>
     {% endfor %}
   </ul>
 </div>

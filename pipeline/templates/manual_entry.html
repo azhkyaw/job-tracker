@@ -51,6 +51,7 @@ fine; it helps future emails match this record automatically.</p>
   <select name="outcome" id="outcome" aria-label="Outcome">
     <option value="">— still waiting —</option>
     <option value="viewed" {% if form.outcome == 'viewed' %}selected{% endif %}>viewed by employer</option>
+    <option value="engaged" {% if form.outcome == 'engaged' %}selected{% endif %}>recruiter/employer engaged</option>
     <option value="interview_invite" {% if form.outcome == 'interview_invite' %}selected{% endif %}>interviewing</option>
     <option value="offer" {% if form.outcome == 'offer' %}selected{% endif %}>offer</option>
     <option value="rejected" {% if form.outcome == 'rejected' %}selected{% endif %}>rejected</option>
