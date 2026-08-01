@@ -32,6 +32,12 @@
       {%- if e.match_score is not none %} · closest match scored {{ e.match_score }}{% endif %}
     {%- endif %}
   </div>
+  {% if e.body_text %}
+  <details style="margin:.3rem 0">
+    <summary class="quiet sm" style="cursor:pointer">Read email</summary>
+    <pre style="white-space:pre-wrap;font:inherit;margin:.5rem 0 0;max-width:70ch">{{ e.body_text }}</pre>
+  </details>
+  {% endif %}
   <form method="post" action="/triage/{{ e.id }}">
     <input type="hidden" name="lane" value="{{ lane }}">
     <select name="application_id" aria-label="Application to file this under">

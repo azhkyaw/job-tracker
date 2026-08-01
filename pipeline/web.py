@@ -1301,7 +1301,7 @@ def triage(request: Request, lane: str = "actionable"):
         all_pending = conn.execute(
             """
             SELECT id, sender, subject, received_at, classification,
-                   match_score, extraction
+                   match_score, extraction, body_text
             FROM emails
             WHERE user_id = %s AND triage_state = 'pending'
             ORDER BY received_at DESC

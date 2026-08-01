@@ -24,6 +24,7 @@ _ROLE = {
     "applied": "applied",
     "viewed": "viewed",
     "engaged": "viewed",
+    "recruiter_outreach": "viewed",
     "interview_invite": "interview_invite",
     "offer": "offer",
     "rejected": "rejected",
@@ -94,6 +95,8 @@ def _describe(row, silent) -> str:
     bits = [f'{row.get("company_display") or "?"} · {row.get("title_canonical") or "?"}']
     if row.get("applied_at"):
         bits.append(f'applied {row["applied_at"]:%d %b %Y}')
+    elif row.get("origin") == "inbound":
+        bits.append("inbound — not applied")
     if silent is not None:
         bits.append("no activity today" if silent == 0
                     else f"quiet {silent} day{'s' if silent != 1 else ''}")

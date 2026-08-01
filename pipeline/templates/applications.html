@@ -117,10 +117,12 @@
     </span>
     <span class="lab" style="text-align:right">status · quiet for</span>
   </div>
-  {# Two groups, one list. The leads carry no applied date, so the trace and
-     the "quiet for" column are measuring nothing on them — the label is what
-     says why they're above everything else. Rendered only when the default
-     sort put them there; any other sort is taken literally. #}
+  {# Two groups, one list. Leads carry no applied date, but they do carry the
+     outreach email itself as an event — trace.py colours that "viewed" (blue,
+     someone-else-engaged) rather than the default "applied" grey, so a lead's
+     dot doesn't read as if the user had applied; the divider below is what
+     says why they're grouped above everything else. Rendered only when the
+     default sort put them there; any other sort is taken literally. #}
   {% for r in rows %}
   {%- if leads_pinned and r.lead and loop.first %}
   <div class="tl-sep">Inbound · awaiting your call</div>
