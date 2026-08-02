@@ -175,3 +175,50 @@ containers/installs. Override with `$env:TRACKER_DB_PORT` before
 docker compose down       # stop, keep data
 docker compose down -v    # stop, wipe the database volume
 ```
+
+## Managed Postgres (running the app from more than one machine)
+
+The dev DB can live on a managed provider (Neon, in this project's case)
+instead of the local Docker container, so the same data is reachable from any
+machine. Local Docker Postgres is still used for `scripts/test.ps1`'s
+throwaway `tracker_test` DB — only the dev database needs to move.
+
+- **Extensions:** the schema needs `pgvector` + `pg_trgm` (both supported by
+  Neon; `CREATE EXTENSION` runs as part of `001_init.sql`).
+- **Use the DIRECT (unpooled) connection string, not `-pooler`.**
+  `pipeline/db.py:connect_scoped` does `SET ROLE tracker_app` +
+  `SET app.user_id` on a plain `psycopg.connect()` per request, for RLS. If a
+  later statement in that same request lands on a different backend — which
+  Neon's pooler (PgBouncer, transaction mode) can do between separate
+  transactions on one client connection — the `SET ROLE` silently doesn't
+  carry over. Because `application_status`'s RLS policy fails closed on a
+  NULL `app.user_id` (invariant #2), the failure mode is empty results, not
+  an error. This app is single-user/low-traffic, so skipping the pooler costs
+  nothing.
+- **Bring up schema before data**, the same order `dev-setup.ps1` uses
+  locally — don't `pg_dump` the schema from Docker and restore it as-is,
+  since that dump won't recreate the `tracker_app` role migration `003`
+  creates, and restore will fail on the GRANT statements that reference it:
+
+  ```bash
+  export MSYS_NO_PATHCONV=1   # Git Bash mangles /migrations/... otherwise
+  for f in migrations/*.sql; do
+    docker compose exec -T db psql "$NEON_URL" -v ON_ERROR_STOP=1 -f "/migrations/$(basename "$f")"
+  done
+  ```
+
+- **Then copy data only** (schema already applied above):
+
+  ```bash
+  docker compose exec -T db pg_dump -U postgres -d tracker --data-only \
+    | docker compose exec -T db psql "$NEON_URL" -v ON_ERROR_STOP=1
+  ```
+
+- Point `.env`'s `TRACKER_DATABASE_URL` at the direct connection string
+  (`...neon.tech/<db>?sslmode=require`) and verify with
+  `python -m pipeline.cli status`.
+- `.env` is gitignored and per-machine — copy it (same `TRACKER_SECRET_KEY`,
+  `TRACKER_API_TOKEN`, `ANTHROPIC_API_KEY`, new `TRACKER_DATABASE_URL`) to
+  the second machine yourself; there's no other sync mechanism. Losing or
+  mismatching `TRACKER_SECRET_KEY` between machines orphans encrypted Gmail
+  creds stored by whichever machine wrote them.

@@ -396,6 +396,26 @@ axis) + **DM Mono**, from Google Fonts.
   root — cross-check via `Get-CimInstance Win32_Process -Filter
   "ProcessId=X"` and `taskkill //F //T //PID <true root>`, or the reloader
   just respawns a worker and the port stays bound.
+- **Starting the dev server from Claude Code's Bash tool: use
+  `run_in_background: true` + `TaskStop`, not `&` + `kill %1`.** The Bash
+  tool's shell state doesn't persist between separate tool calls, so a
+  `&`-backgrounded `uvicorn --reload` dies when that call's shell session
+  ends — the next call finds nothing listening, which looks like a crash.
+  `run_in_background` keeps it alive across calls; `TaskStop` tears down
+  the whole reloader tree cleanly, sidestepping the taskkill/PID gotcha
+  above too.
+- **Managed Postgres (e.g. Neon) needs the DIRECT/unpooled connection
+  string, not the pooler one.** `pipeline/db.py:connect_scoped` does
+  `SET ROLE tracker_app` + `SET app.user_id` on a plain per-request
+  `psycopg.connect()` for RLS; a transaction-mode pooler (Neon's default)
+  can hand a later statement on the same client connection a different
+  backend, silently dropping the `SET ROLE` — RLS then fails closed (empty
+  results, not an error). Migrating in also can't be a straight
+  `pg_dump`/restore of schema+data: GRANTs reference the `tracker_app`
+  role, which doesn't exist on a fresh instance — apply `migrations/*.sql`
+  first, then `pg_dump --data-only`. Full procedure in
+  `docs/windows-dev.md` "Managed Postgres" (dev DB moved here 2 Aug 2026;
+  local Docker still backs `scripts/test.ps1`'s throwaway DB).
 - **`.\scripts\test.ps1` via the PowerShell tool exits 1 even when every suite
   passes.** `psql` writes a NOTICE ("role postgres is already a member of
   tracker_app") to stderr during migration, and PowerShell 5.1 wraps a native
