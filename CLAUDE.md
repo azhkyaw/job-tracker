@@ -443,9 +443,12 @@ axis) + **DM Mono**, from Google Fonts.
   raises `TypeError: 'str' object is not callable`. Keep new
   global/filter names distinct from every context dict key.
 - **Verifying an authenticated page via claude-in-chrome:**
-  `document.cookie` silently can't overwrite an existing httponly session
-  cookie, and the browser tool blocks `file://`. Fetch the rendered HTML
-  with curl + a real session cookie, serve it via a local `python -m
+  Try navigating straight to the page first — the dev profile often already
+  has a live session from the user's own concurrent use of the app, which
+  makes this trivial. Only when there's no active session: `document.cookie`
+  silently can't overwrite an existing httponly
+  session cookie, and the browser tool blocks `file://`. Fetch the rendered
+  HTML with curl + a real session cookie, serve it via a local `python -m
   http.server`, then navigate/screenshot that. Mint the cookie directly via
   `pipeline.auth.create_session(conn, user_id)` in a one-off script rather
   than needing the real login password.
@@ -560,6 +563,14 @@ axis) + **DM Mono**, from Google Fonts.
   BOTH or it silently won't clear an application from the Needs-follow-up
   queue — the exact bug the `engaged` type's own motivating use case would
   have hit.
+- **`pipeline/trace.py`'s `_ROLE` map silently defaults an unmapped event
+  `type` to `"applied"` (neutral grey) rather than erroring.** `recruiter_outreach`
+  fell through this way until 2 Aug 2026 — every inbound lead's trace dot
+  rendered identically to a real application's, despite the "inbound" badge
+  and pinned divider already distinguishing them elsewhere on the row. A new
+  event type needs an explicit `_ROLE` entry (and a look at whether it's
+  "you did this" — add to `_OWN` too) or it inherits the wrong color instead
+  of failing loudly.
 
 ## Environment
 
