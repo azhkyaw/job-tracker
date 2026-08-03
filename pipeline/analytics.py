@@ -18,6 +18,7 @@ WITH apps AS (
            COALESCE(p.platform, 'unknown') AS platform,
            COALESCE(a.focused, EXISTS (SELECT 1 FROM artifacts ar
                                        WHERE ar.application_id = a.id)) AS focused_eff,
+           a.resume_file,
            (SELECT min(occurred_at) FROM events e
              WHERE e.application_id = a.id AND e.type = 'applied')      AS applied_at,
            (SELECT min(occurred_at) FROM events e
@@ -89,6 +90,22 @@ def by_focus(conn, user_id):
             dim="CASE WHEN focused_eff THEN 'focused' ELSE 'generic' END"),
         {"user_id": user_id}).fetchall())
     return rows
+
+
+def by_resume(conn, user_id):
+    """Response rate per resume actually sent (migration 014).
+
+    The dimension `focused` was meant to answer this shape of question and
+    couldn't — it came out a constant. This one is a genuine split, because it
+    is read off the form rather than asked for afterwards. Applications with no
+    picker (external ATS, manual entry) group under a null dim, which the
+    template drops: 'unknown' is not a resume, and padding the table with it
+    would invite comparing a real resume against the absence of data.
+    """
+    rows = _rate(conn.execute(
+        _APPS_CTE + _GROUPED.format(dim="resume_file"),
+        {"user_id": user_id}).fetchall())
+    return [r for r in rows if r["dim"]]
 
 
 def by_technology(conn, user_id, limit: int = 12):

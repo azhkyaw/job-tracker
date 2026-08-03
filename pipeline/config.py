@@ -64,6 +64,32 @@ SUBJECT_KEYWORDS = [
 # Matching thresholds (design doc §8). Tune against the first backfill run.
 COMPANY_TRGM_MIN = 0.6
 AUTO_MATCH_SCORE = 0.75
+
+# How alike two titles must be before a live capture is allowed to attach
+# itself to an email_only stub for the same company instead of creating its
+# own job (ingest.ENRICH_JOB_SQL). Was 0.5, hardcoded in that SQL; measured
+# against 52 real applications on 3 Aug 2026 after it silently fused a Northwind
+# Recruiting recruiter pitch ("Senior Software Engineer (AI & LLMOps)") with an
+# unrelated LinkedIn apply ("Senior AI Engineer") at 0.5588 similarity.
+#
+# What the real data says: the heuristic had fired exactly ONCE, and that once
+# was the false merge. Meanwhile 11 company_norms already cover 2-3 genuinely
+# different roles each — five recruitment agencies, plus employers hiring for
+# several openings at once — so
+# "same company, roughly similar title" is a weak signal by construction here.
+# Of the 15 same-company pairs of distinct jobs, 6 clear 0.50 and 3 still
+# clear 0.70; one employer's "AI-Native Engineer" vs "Senior AI-Native Engineer"
+# scores 0.7170, which is the shape trigrams cannot judge — one word decides
+# the role and it barely moves the number.
+#
+# 0.85 leaves only the two 1.0000 pairs eligible, and both of those are real
+# duplicates that SHOULD combine. It is set deliberately high rather than
+# "tuned to fit" because the errors are not symmetric: a wrong SPLIT is
+# visible and reversible (dedup.merge_jobs, the /triage duplicate band), while
+# a wrong MERGE is silent, corrupts provenance, and has no inverse in this
+# codebase at all — the Northwind Recruiting one needed hand-written surgery.
+# Prefer the recoverable failure.
+ENRICH_TITLE_MIN = 0.85
 AUTO_MATCH_MARGIN = 0.15
 DATE_DECAY_DAYS = 60
 W_TITLE, W_DATE, W_PLATFORM = 0.5, 0.3, 0.2

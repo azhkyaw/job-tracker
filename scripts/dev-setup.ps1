@@ -49,6 +49,8 @@ if ($hasTables -eq 't') {
     docker compose exec -T db psql -U postgres -v ON_ERROR_STOP=1 -d tracker -f /migrations/010_answer_occurrence.sql
     docker compose exec -T db psql -U postgres -v ON_ERROR_STOP=1 -d tracker -f /migrations/011_posting_salary.sql
     docker compose exec -T db psql -U postgres -v ON_ERROR_STOP=1 -d tracker -f /migrations/012_engaged_event.sql
+    docker compose exec -T db psql -U postgres -v ON_ERROR_STOP=1 -d tracker -f /migrations/013_status_precedence_order.sql
+    docker compose exec -T db psql -U postgres -v ON_ERROR_STOP=1 -d tracker -f /migrations/014_application_resume_file.sql
 }
 
 Write-Host ''

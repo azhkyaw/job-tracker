@@ -37,6 +37,8 @@ Psql @('-d', $DB, '-f', '/migrations/009_application_answers.sql')
 Psql @('-d', $DB, '-f', '/migrations/010_answer_occurrence.sql')
 Psql @('-d', $DB, '-f', '/migrations/011_posting_salary.sql')
 Psql @('-d', $DB, '-f', '/migrations/012_engaged_event.sql')
+Psql @('-d', $DB, '-f', '/migrations/013_status_precedence_order.sql')
+Psql @('-d', $DB, '-f', '/migrations/014_application_resume_file.sql')
 Psql @('-d', $DB, '-c', "INSERT INTO users (email) VALUES ('dev@test.local');")
 
 $dbPort = if ($env:TRACKER_DB_PORT) { $env:TRACKER_DB_PORT } else { '55432' }

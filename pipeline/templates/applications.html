@@ -2,6 +2,21 @@
 {% block title %}applications — tracker{% endblock %}
 {% block nav_apps %}active{% endblock %}
 {% block content %}
+{# Every link on this page that changes one filter needs to carry the OTHER
+   three (origin/q/sort/status) or picking a status would silently drop your
+   search, and vice versa — the exact bug the tabs already had for `q` before
+   this macro (fixed as a side effect of giving the funnel one place to build
+   a URL from). `sort` is omitted when it's the default so a plain filter
+   click doesn't clutter every href with `sort=activity`. #}
+{% macro list_url(status='', origin=None, q='', sort='activity') -%}
+{%- set parts = [] -%}
+{%- if origin %}{% set _ = parts.append('origin=' + origin) %}{% endif -%}
+{%- if q %}{% set _ = parts.append('q=' + (q | urlencode)) %}{% endif -%}
+{%- if sort and sort != 'activity' %}{% set _ = parts.append('sort=' + sort) %}{% endif -%}
+{%- if status %}{% set _ = parts.append('status=' + status) %}{% endif -%}
+/{{ '?' + (parts | join('&')) if parts else '' }}
+{%- endmacro %}
+
 {% if deleted %}
 <div class="note" style="--c:var(--rejected)">Deleted <strong>{{ deleted }}</strong>.</div>
 {% endif %}
@@ -14,20 +29,37 @@
 </div>
 
 {% if funnel %}
-<div class="funnel">
+{# The funnel is counted from `origin` alone, never `status` — so every
+   segment stays visible (and clickable) while one is selected. It's a filter
+   chip row, not a redraw of itself; narrowing the funnel to match its own
+   filter would leave no way to see, or click into, any other status. #}
+<div class="funnel{% if status %} filtered{% endif %}">
   {% for s in funnel %}
-  <div class="seg" style="--n:{{ s.n }};--c:var(--{{ s.key }})" title="{{ s.n }} {{ s.label }}">
+  {% set is_active = s.key == status %}
+  <a class="seg{% if is_active %} active{% endif %}"
+     href="{{ list_url(status=('' if is_active else s.key), origin=origin, q=q, sort=sort) }}"
+     style="--n:{{ s.n }};--c:var(--{{ s.key }})"
+     title="{{ s.n }} {{ s.label }}{% if is_active %} — click to clear{% endif %}">
     <span class="n">{{ s.n }}</span><span class="l">{{ s.label }}</span>
-  </div>
+  </a>
   {% endfor %}
 </div>
 <div class="legend">
-  {% for s in funnel %}<span><i style="--c:var(--{{ s.key }})"></i>{{ s.n }} {{ s.label }}</span>{% endfor %}
+  {% for s in funnel %}
+  {% set is_active = s.key == status %}
+  <a class="{% if is_active %}active{% endif %}"
+     href="{{ list_url(status=('' if is_active else s.key), origin=origin, q=q, sort=sort) }}">
+    <i style="--c:var(--{{ s.key }})"></i>{{ s.n }} {{ s.label }}</a>
+  {% endfor %}
+  {% if status %}
+  <a class="sm" href="{{ list_url(origin=origin, q=q, sort=sort) }}">show all statuses</a>
+  {% endif %}
 </div>
 {% endif %}
 
 <form class="bar" method="get" action="/">
   {% if origin %}<input type="hidden" name="origin" value="{{ origin }}">{% endif %}
+  {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
   <span class="grow"><input type="search" name="q" value="{{ q }}"
         placeholder="Search company or role" aria-label="Search company or role"
         style="width:100%"></span>
@@ -38,15 +70,15 @@
     <option value="company" {% if sort == 'company' %}selected{% endif %}>company A–Z</option>
   </select>
   <button>Apply</button>
-  {% if q %}<a class="sm" href="/{% if origin %}?origin={{ origin }}{% endif %}">Clear</a>{% endif %}
+  {% if q %}<a class="sm" href="{{ list_url(status=status, origin=origin, sort=sort) }}">Clear</a>{% endif %}
 </form>
 
 <div class="bar" style="justify-content:space-between">
   <span class="tabs">
-    <a href="/?sort={{ sort }}" class="{{ 'active' if not origin }}">all</a>
-    <a href="/?origin=applied&sort={{ sort }}" class="{{ 'active' if origin == 'applied' }}">applied</a>
-    <a href="/?origin=inbound&sort={{ sort }}" class="{{ 'active' if origin == 'inbound' }}">inbound</a>
-    <a href="/?origin=saved&sort={{ sort }}" class="{{ 'active' if origin == 'saved' }}">saved</a>
+    <a href="{{ list_url(status=status, q=q, sort=sort) }}" class="{{ 'active' if not origin }}">all</a>
+    <a href="{{ list_url(status=status, origin='applied', q=q, sort=sort) }}" class="{{ 'active' if origin == 'applied' }}">applied</a>
+    <a href="{{ list_url(status=status, origin='inbound', q=q, sort=sort) }}" class="{{ 'active' if origin == 'inbound' }}">inbound</a>
+    <a href="{{ list_url(status=status, origin='saved', q=q, sort=sort) }}" class="{{ 'active' if origin == 'saved' }}">saved</a>
   </span>
   <a class="sm" href="/applications/new">Add an application manually</a>
 </div>

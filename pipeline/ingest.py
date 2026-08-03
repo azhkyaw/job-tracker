@@ -16,7 +16,7 @@ from __future__ import annotations
 from datetime import date, datetime, time, timezone
 from zoneinfo import ZoneInfo
 
-from . import db, salary
+from . import config, db, salary
 from .email_classifier import norm_company
 
 # Prefer attaching to an email_only record for the same company/role (the
@@ -24,12 +24,23 @@ from .email_classifier import norm_company
 # duplicate job. Matches only when EVERY posting on the job is email_only —
 # once a real posting (extension/manual) exists, the job is no longer a bare
 # backfill placeholder and shouldn't silently absorb an unrelated capture.
+#
+# The title bar is config.ENRICH_TITLE_MIN and is deliberately strict: one
+# company_norm routinely covers several unrelated roles (every recruitment
+# agency, and any employer with more than one opening), so company agreement
+# alone carries almost no information and the title is doing all the work.
+# See that constant for the measurement behind the number — it was 0.5 here,
+# inline, and 0.5 silently fused two different Northwind Recruiting roles into one
+# application. Note this heuristic is unusual in having no inverse: dedup can
+# merge two jobs that should have been one, but nothing in the codebase can
+# split one job that should have been two.
 ENRICH_JOB_SQL = """
 SELECT j.id
 FROM jobs j
 WHERE j.user_id = %(user_id)s
   AND j.company_norm = %(company)s
-  AND similarity(coalesce(j.title_canonical, ''), coalesce(%(title)s::text, '')) >= 0.5
+  AND similarity(coalesce(j.title_canonical, ''), coalesce(%(title)s::text, ''))
+      >= %(title_min)s
   AND NOT EXISTS (SELECT 1 FROM postings p
                   WHERE p.job_id = j.id AND p.captured_via <> 'email_only')
 ORDER BY similarity(coalesce(j.title_canonical, ''), coalesce(%(title)s::text, '')) DESC
@@ -151,7 +162,8 @@ def upsert_record(conn, user_id, *, platform, captured_via, platform_job_id=None
         if company_norm:
             job = conn.execute(ENRICH_JOB_SQL, {
                 "user_id": user_id, "company": company_norm,
-                "title": title}).fetchone()
+                "title": title,
+                "title_min": config.ENRICH_TITLE_MIN}).fetchone()
         if job is None:
             job = conn.execute(
                 "INSERT INTO jobs (user_id, company_norm, title_canonical) "

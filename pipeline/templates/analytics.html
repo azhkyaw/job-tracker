@@ -85,6 +85,12 @@
 {{ dim_table("By platform", by_platform,
    "A rate needs at least " ~ min_rate_n ~ " applications before it means anything; thinner rows show counts only.") }}
 {{ dim_table("By technology (top extracted)", by_technology) }}
+{# Same gate as tailored-vs-generic below: one resume is a row of totals, not a
+   comparison. Unlike that one this dimension is read off the apply form rather
+   than asked for afterwards, which is why it actually splits. #}
+{% if by_resume | length > 1 %}
+{{ dim_table("By resume sent", by_resume) }}
+{% endif %}
 {# Only worth a section once the dimension actually splits — with everything
    marked one way it's a row of totals wearing a table. #}
 {% if by_focus | length > 1 %}

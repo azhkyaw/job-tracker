@@ -237,11 +237,23 @@ a.tl:hover{background:color-mix(in srgb,var(--accent) 5%,var(--mix));text-decora
    underneath carries them at a size that always fits. */
 .funnel{display:flex;gap:2px;height:.45rem;margin:0 0 .5rem;
         border-radius:3px;overflow:hidden}
-.funnel .seg{flex-grow:var(--n);flex-basis:0;min-width:3px;background:var(--c)}
+.funnel .seg{flex-grow:var(--n);flex-basis:0;min-width:3px;background:var(--c);
+        display:block;cursor:pointer;transition:opacity .12s}
 .funnel .seg .n,.funnel .seg .l{position:absolute;width:1px;height:1px;
         overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+/* A segment is a filter chip, not a redraw: selecting one dims its siblings
+   rather than narrowing the bar, since rule 1 reserves chroma for the state
+   of a wait — "selected" has to read through opacity, not a new hue.
+   :has() (no JS in this app, ever) previews the same dimming on hover,
+   before a click commits to it. */
+.funnel.filtered .seg{opacity:.3}
+.funnel.filtered .seg.active{opacity:1}
+.funnel:has(.seg:hover) .seg:not(:hover){opacity:.55}
 .legend{display:flex;flex-wrap:wrap;gap:.15rem 1rem;margin:0 0 1.5rem;
         font-family:'DM Mono',monospace;font-size:.72rem;color:var(--muted)}
+.legend a{color:inherit}
+.legend a:hover{color:var(--ink)}
+.legend a.active{color:var(--ink);font-weight:600}
 .legend i{display:inline-block;width:.45rem;height:.45rem;border-radius:50%;
           background:var(--c);margin-right:.4rem;vertical-align:.05rem}
 .stats{display:flex;flex-wrap:wrap;gap:.2rem 1.8rem;margin:.2rem 0 1.1rem;

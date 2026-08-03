@@ -197,16 +197,24 @@ _DEFAULT_SORT = "activity"
 
 @app.get("/")
 def applications(request: Request, deleted: str | None = None, origin: str | None = None,
-                 q: str = "", sort: str = _DEFAULT_SORT, fu: str = ""):
+                 q: str = "", sort: str = _DEFAULT_SORT, fu: str = "", status: str = ""):
     """`fu=1` expands the needs-follow-up block, which is collapsed by default.
     It exists so that working the queue doesn't fight the default: each
     "Followed up" button redirects to /?fu=1, so the block is still open on
     the reload that shortened it. No JS, no stored preference — the state
-    lives in the URL of the action that needs it."""
+    lives in the URL of the action that needs it.
+
+    `status` makes the funnel strip/legend clickable filters (29 Aug 2026) — the
+    keys are exactly `FUNNEL_ORDER`'s display-collapsed values, the same ones
+    the funnel already renders, so a segment's own href is `?status=<its key>`
+    with nothing new to keep in sync. The funnel itself stays computed from
+    `origin` alone (not `status`), so all the OTHER segments stay visible
+    (and clickable) while one is selected — a filter chip, not a redraw."""
     user = _login_user(request)
     origin = origin if origin in ("applied", "inbound", "saved") else None
     sort = sort if sort in _SORTS else _DEFAULT_SORT
     q = q.strip()
+    status = status if status in FUNNEL_ORDER else ""
     with db.connect_scoped(user["id"]) as conn:
         user_id = user["id"]
         rows = conn.execute(
@@ -232,8 +240,10 @@ def applications(request: Request, deleted: str | None = None, origin: str | Non
                    OR j.company_norm ILIKE %(like)s
                    OR EXISTS (SELECT 1 FROM postings p WHERE p.job_id = a.job_id
                                 AND p.company_raw ILIKE %(like)s))
+              AND (%(status)s::text = '' OR s.status = %(status)s
+                   OR (%(status)s = 'applied' AND s.status = 'confirmation'))
             ORDER BY {_SORTS[sort]}
-            """, {"user_id": user_id, "origin": origin,
+            """, {"user_id": user_id, "origin": origin, "status": status,
                   "q": q, "like": f"%{q}%"}).fetchall()
         for r in rows:
             # Flagged before _display() rewrites the status into a human label:
@@ -272,6 +282,7 @@ def applications(request: Request, deleted: str | None = None, origin: str | Non
             "origin": origin,
             "q": q,
             "sort": sort,
+            "status": status,
         })
 
 
@@ -1634,9 +1645,19 @@ def captures(payload: CaptureIn, authorization: str | None = Header(None)):
                 (user_id, job_id, payload.recruiter_name, payload.recruiter_url,
                  payload.recruiter_role, job_id, payload.recruiter_name))
 
-        n_answers = answers.store(
-            conn, user_id, app_id, posting_id,
-            [x.model_dump() for x in (payload.answers or [])])
+        raw_answers = [x.model_dump() for x in (payload.answers or [])]
+        n_answers = answers.store(conn, user_id, app_id, posting_id, raw_answers)
+
+        # Which resume the apply form had selected. It arrives inside the answer
+        # list (it's just another labelled control to the DOM sweep) but it is
+        # not a screening question, so answers.store() drops it and it lands
+        # here as a column instead — migration 014. Only written when this
+        # capture actually saw a picker: a re-capture from a page that no longer
+        # shows one must not erase what the original apply recorded.
+        resume = answers.resume_file(raw_answers)
+        if resume:
+            conn.execute("UPDATE applications SET resume_file = %s WHERE id = %s",
+                         (resume, app_id))
 
         return {"application_id": str(app_id), "posting_id": str(posting_id),
                 "created": r["created"], "enriched": r["enriched"],
@@ -1750,6 +1771,7 @@ def analytics_page(request: Request):
             "min_rate_n": analytics.MIN_RATE_N,
             "by_platform": analytics.by_platform(conn, user_id),
             "by_focus": analytics.by_focus(conn, user_id),
+            "by_resume": analytics.by_resume(conn, user_id),
             "by_technology": analytics.by_technology(conn, user_id),
             "pending": _pending_count(conn),
         })

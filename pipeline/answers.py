@@ -36,6 +36,57 @@ _NOISE = re.compile(r"[^a-z0-9]+")
 # chrome, not part of the question, and they come and go between layouts.
 _REQUIRED = re.compile(r"\s*(\*|\(required\)|required)\s*$", re.I)
 
+# The apply form's own CONTROLS, which the DOM sweep cannot tell apart from a
+# screening question — both are just labelled inputs. They are not questions an
+# employer asked, and /answers exists to show "the same question, asked by many
+# employers", so each one lands there as a group nobody was ever asked.
+#
+# The resume picker is a radio group whose selected member is labelled with the
+# action available on it — "Deselect resume <file>.pdf" — so the label and the
+# recorded value came out as the SAME string, 24 times over two groups. That
+# one is not dropped but PROMOTED: which resume you sent is real, useful, and
+# already captured (migration 014).
+_RESUME_RE = re.compile(r"^\s*(?:de)?select\s+resume\s+(.+?)\s*$", re.I)
+
+# The rest are LinkedIn UI toggles, answered by ticking a box rather than by
+# saying anything. "Follow <employer>" is the worst of them: the employer's
+# name is IN the label, so it never groups — one dead singleton row per company
+# you apply to. Matched as anchored patterns against the NORMALISED text, not
+# as loose prefixes: a bare "follow" prefix would also swallow a real question
+# that happens to open with the word.
+_CONTROL_NORM_RES = (
+    re.compile(r"^mark job as a top choice\b"),
+    re.compile(r"^follow .+ to stay up to date\b"),
+)
+
+
+def _control_kind(question: str) -> str | None:
+    """'resume', 'drop', or None for a genuine question."""
+    if _RESUME_RE.match(question or ""):
+        return "resume"
+    norm = norm_question(question)
+    if any(rx.match(norm) for rx in _CONTROL_NORM_RES):
+        return "drop"
+    return None
+
+
+def resume_file(items) -> str | None:
+    """Which resume the form had selected, from a capture's raw answer list.
+
+    LAST one wins. The extension accumulates across wizard steps in first-seen
+    order, so switching from A to B arrives as [A, B] and B is the live choice.
+    The one case this gets wrong is switching A -> B -> back to A: A keeps its
+    original position, so B still reads as last. Nothing in the arrival order
+    can distinguish that, and a single switch is the shape actually seen in the
+    data (6 applications), so it is left as a known edge rather than guessed at.
+    """
+    found = None
+    for raw in items or []:
+        m = _RESUME_RE.match((raw.get("question") or ""))
+        if m:
+            found = m.group(1).strip()
+    return found[:MAX_QUESTION] if found else None
+
 
 def norm_question(q: str) -> str:
     """Grouping key for 'the same question, asked again'.
@@ -64,6 +115,10 @@ def clean(items) -> list[dict]:
         answer = (raw.get("answer") or "").strip()
         norm = norm_question(question)
         if not norm or not answer:
+            continue
+        # Form chrome, not a question. The resume picker is read out of the
+        # same list by resume_file() and stored as a column instead.
+        if _control_kind(question):
             continue
         norm = norm[:MAX_QUESTION]
         occurrence = seen.get(norm, 0)
