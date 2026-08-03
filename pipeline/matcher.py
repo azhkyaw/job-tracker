@@ -28,7 +28,7 @@ EVENT_TYPE = {
     "other": "note",
 }
 
-_CANDIDATES_SQL = """
+_CANDIDATES_BASE = """
 SELECT a.id  AS application_id,
        j.id  AS job_id,
        j.company_norm,
@@ -43,8 +43,46 @@ SELECT a.id  AS application_id,
 FROM applications a
 JOIN jobs j ON j.id = a.job_id
 WHERE a.user_id = %(user_id)s
-  AND (j.company_norm = %(company)s
+  AND """
+
+_CANDIDATES_SQL = _CANDIDATES_BASE + """(j.company_norm = %(company)s
        OR similarity(j.company_norm, %(company)s) >= %(cmin)s)
+"""
+
+# Last resort when the company gate above admits NOBODY: the same title,
+# exactly, ignoring the company entirely.
+#
+# The gate is the only thing standing between an email and the application it
+# belongs to, and an employer that brands itself differently in mail than on
+# the job board walks straight past it. Three real duplicate applications came
+# from this, all confirmed 4 Aug 2026 (company_sim vs COMPANY_TRGM_MIN = 0.6):
+#
+#   contoso         <- "Contoso Markets"      0.467   employer's own ATS mail
+#   fabrikam group   <- "Fabrikam"              0.538   SuccessFactors mail
+#   litware singapore
+#                  <- "Litware International (Singapore) Pte Ltd"
+#                                           0.314   LinkedIn's OWN mail, four
+#                                                   seconds after the extension
+#                                                   captured the same job
+#
+# In every one the title was byte-identical and the timestamps within a minute,
+# so each would have scored ~0.8 and auto-matched correctly — find_match never
+# got to see the candidate. match_score came out NULL, which is how these are
+# told apart from a real low-confidence miss.
+#
+# Widening COMPANY_TRGM_MIN itself was the other option and is worse: it loosens
+# the net for EVERY email, and one title routinely spans several employers here
+# ("Senior AI Engineer" covers five), so a same-day confirmation could auto-match
+# the wrong company outright. This can only ADD candidates where there were
+# none, and everything downstream still applies — AUTO_MATCH_SCORE and
+# AUTO_MATCH_MARGIN both have to be satisfied, and several same-titled
+# applications will fail the margin and land in triage. That is the failure this
+# trades for: a visible triage item instead of a silent duplicate, which is the
+# same preference invariant #3 states for merges (a wrong split is recoverable,
+# a wrong merge is not). Nothing here can create a match the scorer wouldn't
+# have made on its own.
+_CANDIDATES_BY_TITLE_SQL = _CANDIDATES_BASE + """lower(btrim(coalesce(j.title_canonical, '')))
+      = lower(btrim(%(title)s))
 """
 
 
@@ -90,13 +128,19 @@ def find_match(conn, user_id, extraction: Extraction, occurred_at: datetime) -> 
     if not company:
         return MatchResult("pending")
     platform_identifiable = extraction.platform in ("linkedin", "jobstreet", "indeed")
-    cands = conn.execute(_CANDIDATES_SQL, {
+    params = {
         "user_id": user_id,
         "company": company,
         "title": extraction.role_title,
         "platform": extraction.platform,
         "cmin": config.COMPANY_TRGM_MIN,
-    }).fetchall()
+    }
+    cands = conn.execute(_CANDIDATES_SQL, params).fetchall()
+    if not cands and extraction.role_title:
+        # The company gate admitted nobody — try exact title instead, so a
+        # rebranded sender can still reach its own application rather than
+        # silently minting a second one. See _CANDIDATES_BY_TITLE_SQL.
+        cands = conn.execute(_CANDIDATES_BY_TITLE_SQL, params).fetchall()
     if not cands:
         return MatchResult("pending")
     scored = sorted(

@@ -117,6 +117,53 @@
   const text = (n) => ((n && (n.innerText || n.textContent)) || "")
     .replace(/\s+/g, " ").trim();
 
+  /* A label as assistive technology would read it: subtrees marked
+   * aria-hidden="true" are skipped.
+   *
+   * LinkedIn's Easy Apply labels carry the standard accessibility double — the
+   * visible copy is aria-hidden so a screen reader doesn't announce it twice,
+   * and a `.visually-hidden` twin beside it carries the accessible name:
+   *
+   *   <label for="…">
+   *     <span aria-hidden="true">Email address</span>
+   *     <span class="visually-hidden">Email address</span>
+   *   </label>
+   *
+   * BOTH are rendered — visually-hidden clips, it does not display:none — so
+   * innerText returns "Email address Email address". Confirmed live against a
+   * real Easy Apply form on 3 Aug 2026, and it had already reached the answer
+   * bank on 19 distinct questions. Cosmetic on one application, corrosive
+   * across many: "City" and "City City" normalise to different keys, so one
+   * question splits into two rows that never group again — and the grouped
+   * /answers view is the entire point of storing these.
+   *
+   * The 28 Jul aria-labelledby de-duplication could not have caught this. That
+   * one compares label PARTS against each other, and these fields carry no
+   * aria-labelledby at all; the doubling lives inside a single <label for=…>,
+   * which is a different branch of labelFor() entirely.
+   *
+   * Two deliberate guards: skip nodes with no client rects, so this keeps
+   * innerText's display:none behaviour rather than silently gaining
+   * textContent's (a visually-hidden span still HAS rects — that is exactly
+   * how it differs from a hidden one); and fall back to the raw text when
+   * skipping leaves nothing, so a label whose only content is aria-hidden with
+   * no visually-hidden twin still resolves instead of coming back empty. */
+  function labelText(node) {
+    if (!node) return "";
+    const walk = (n) => {
+      let out = "";
+      for (const c of n.childNodes) {
+        if (c.nodeType === 3) { out += c.textContent; continue; }
+        if (c.nodeType !== 1) continue;
+        if (c.getAttribute("aria-hidden") === "true") continue;
+        if (c.getClientRects && c.getClientRects().length === 0) continue;
+        out += " " + walk(c);
+      }
+      return out;
+    };
+    return walk(node).replace(/\s+/g, " ").trim() || text(node);
+  }
+
   // .closest() stops at a shadow boundary; hop to the host and keep going.
   function closestDeep(el, sel) {
     let node = el;
@@ -138,6 +185,18 @@
     return out;
   }
 
+  // Same shadow-piercing need as collect(), for the noRoot diagnostic's own
+  // "was a dialog actually open" check — a plain document.querySelector was
+  // confirmed live (3 Aug 2026) to report false even with a real dialog on
+  // screen, because it was inside an open shadow root. Open roots only.
+  function deepExists(root, selector) {
+    if (root.querySelector(selector)) return true;
+    for (const el of root.querySelectorAll("*")) {
+      if (el.shadowRoot && deepExists(el.shadowRoot, selector)) return true;
+    }
+    return false;
+  }
+
   function labelFor(el) {
     const root = el.getRootNode ? el.getRootNode() : document;
     const byId = (id) =>
@@ -153,7 +212,7 @@
       // bank in two. Drop a part already covered by one we kept, keeping
       // whichever text is fuller.
       const kept = [];
-      for (const part of ids.split(/\s+/).map(byId).filter(Boolean).map(text)) {
+      for (const part of ids.split(/\s+/).map(byId).filter(Boolean).map(labelText)) {
         if (!part) continue;
         const lp = part.toLowerCase();
         const at = kept.findIndex((k) => {
@@ -168,16 +227,16 @@
     }
     if (el.id && root.querySelector) {
       const l = root.querySelector(`label[for="${CSS.escape(el.id)}"]`);
-      if (l && text(l)) return text(l);
+      if (l && labelText(l)) return labelText(l);
     }
     const wrapping = closestDeep(el, "label");
-    if (wrapping && text(wrapping)) return text(wrapping);
+    if (wrapping && labelText(wrapping)) return labelText(wrapping);
     const aria = (el.getAttribute("aria-label") || "").trim();
     if (aria) return aria;
     const fs = closestDeep(el, "fieldset");
     if (fs) {
       const legend = fs.querySelector("legend");
-      if (legend && text(legend)) return text(legend);
+      if (legend && labelText(legend)) return labelText(legend);
     }
     return (el.getAttribute("placeholder") || el.name || "").trim() || null;
   }
@@ -218,12 +277,80 @@
    * `textareaSeen` and `noLabelMax` are maxima across the wizard's steps, not
    * just the final one: the interesting step is usually not the last. */
   function bump(s) {
-    if (!stats) stats = { sweeps: 0, noRoot: 0, textareaSeen: 0, noLabelMax: 0, last: null };
+    if (!stats) stats = { sweeps: 0, noRoot: 0, textareaSeen: 0, noLabelMax: 0, last: null,
+                          noRootHint: null };
     stats.sweeps++;
-    if (s.noRoot) { stats.noRoot++; return; }
+    if (s.noRoot) { stats.noRoot++; stats.noRootHint = s.hint; return; }
     stats.textareaSeen = Math.max(stats.textareaSeen, s.textarea);
     stats.noLabelMax = Math.max(stats.noLabelMax, s.noLabel);
     stats.last = s;
+  }
+
+  // A real apply (Bellows & Munson, 2 Aug 2026) swept 38 times and never once
+  // resolved a root, even with the modal demonstrably open — and there was
+  // nothing to look at afterwards to say why, since the application was
+  // already submitted by the time anyone went looking. This breadcrumb is
+  // adapter-agnostic on purpose (shared/ has no platform knowledge): it can't
+  // say the new selector is still wrong, but it separates "nothing dialog-like
+  // was ever open" from "something was open and unlabelled inputs existed
+  // right there on the page" — which is the difference between "the user
+  // wasn't in the form yet" and "the root selector needs another look".
+  // Confirmed on a second real miss (Relecloud, 3 Aug 2026, 5-7 varied
+  // screening questions, genuinely open) that `dialogPresent` alone isn't
+  // enough: it came back false the WHOLE session — that posting's modal used
+  // none of the four known markers, not just a missing <form>.
+  //
+  // Two position-based attempts at describing WHAT was there both failed,
+  // live-tested against the real page the same day: `controls[0]` (first
+  // control in document order) landed on LinkedIn's persistent top-nav search
+  // box every time, modal open or not — it's earlier in the DOM than any page
+  // content. The last control was Google reCAPTCHA's own hidden textarea,
+  // ALSO portalled to the end of <body>, with no modal open at all. Filtering
+  // both out still left 40+ candidates once a messaging panel happened to be
+  // open — a busy SPA has too many legitimate non-modal controls for position
+  // to mean anything.
+  //
+  // What actually works, live-tested the same day: a real Easy Apply modal on
+  // this page renders 3 levels deep inside an EXISTING wrapper (not a fresh
+  // top-level node), so watching `document.body` alone misses it — but a
+  // `subtree: true` observer catches the actual field elements
+  // (`fb-dash-form-element`, `artdeco-text-input`) arriving in real time, the
+  // instant the modal opens, regardless of where they end up in the tree or
+  // how much unrelated chrome surrounds them. That's a direct answer instead
+  // of a position guess, so it replaces the DOM-snapshot approach entirely.
+  // Only runs in the top frame (an iframe's `answerFormRoot()` always
+  // succeeds — see the adapter — so an iframe never has a noRoot miss to
+  // explain) and only past a config gate so JobStreet/Indeed pay nothing for
+  // a mechanism aimed at a LinkedIn-specific failure mode.
+  const recentFormInserts = [];
+  if (window === window.top && adapter.trackFormInserts) {
+    try {
+      new MutationObserver((muts) => {
+        for (const m of muts) {
+          for (const node of m.addedNodes) {
+            if (node.nodeType !== 1 || !node.querySelector) continue;
+            if (!node.querySelector("input,select,textarea,form")) continue;
+            let depth = 0, n = node;
+            while (n && n !== document.body) { n = n.parentElement; depth++; }
+            recentFormInserts.unshift({
+              tag: node.tagName,
+              cls: (typeof node.className === "string" ? node.className : "").slice(0, 80),
+              role: node.getAttribute && node.getAttribute("role"),
+              depthFromBody: depth,
+            });
+            if (recentFormInserts.length > 5) recentFormInserts.length = 5;
+          }
+        }
+      }).observe(document.body, { childList: true, subtree: true });
+    } catch (e) { /* document.body not ready at very early injection */ }
+  }
+
+  function noRootHint() {
+    return {
+      dialogPresent: deepExists(document, "[role='dialog']"),
+      controlsOnPage: document.querySelectorAll("input,select,textarea").length,
+      recentInserts: recentFormInserts.slice(0, 5),
+    };
   }
 
   function sweep() {
@@ -231,7 +358,7 @@
     let root = null;
     try { root = adapter.answerFormRoot(); } catch (e) { root = null; }
     if (!root) {
-      bump({ noRoot: 1 });
+      bump({ noRoot: 1, hint: noRootHint() });
       return;
     }
 
@@ -262,7 +389,7 @@
         if (!name) continue;
         const fs = closestDeep(el, "fieldset");
         const legend = fs && fs.querySelector("legend");
-        const question = (legend && text(legend)) || labelFor(el);
+        const question = (legend && labelText(legend)) || labelFor(el);
         const g = radioGroups.get(name) || { question, answer: null };
         if (!g.question) g.question = question;
         if (el.checked) g.answer = labelFor(el) || el.value;
@@ -364,7 +491,7 @@
         : { sweeps: (stats && stats.sweeps) || 0,
             noRoot: (stats && stats.noRoot) || 0,
             textareaSeen: 0, noLabelMax: 0, kept: Object.keys(items).length,
-            last: null };
+            last: null, noRootHint: stats && stats.noRootHint };
     },
     take() {
       try { sweep(); } catch (e) {}

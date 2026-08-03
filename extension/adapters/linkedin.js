@@ -1,7 +1,32 @@
 /* LinkedIn adapter. Selectors are layered fallbacks — LinkedIn re-skins often.
  * When capture fails, fix these first; everything else lives in shared code. */
+
+// document.querySelector never descends into a shadow root, open or closed —
+// confirmed live (3 Aug 2026) as the actual reason answerFormRoot() below was
+// missing Easy Apply modals opened from the standalone /jobs/view/ page: the
+// same .jobs-easy-apply-modal markup exists, just inside an open shadow host,
+// invisible to a plain selector. Closed roots stay genuinely unreachable —
+// same limit shared/answers.js's collect() already lives with.
+function deepQuerySelector(root, selector) {
+  const hit = root.querySelector(selector);
+  if (hit) return hit;
+  for (const el of root.querySelectorAll("*")) {
+    if (el.shadowRoot) {
+      const found = deepQuerySelector(el.shadowRoot, selector);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 window.__trackerAdapter = {
   platform: "linkedin",
+  // Opt-in for shared/answers.js's noRoot diagnostic (a MutationObserver that
+  // watches for real form-field insertions when the known modal selectors
+  // fail to match — see the gotcha there). LinkedIn-specific because this is
+  // the only platform where that miss has actually happened; JobStreet/Indeed
+  // don't pay for an observer aimed at a failure mode they haven't hit.
+  trackFormInserts: true,
   // Easy Apply is an in-page multi-step wizard (resume -> questions -> review
   // -> submit) — clicking its opener only starts the flow, and LinkedIn's own
   // "Save this application?" prompt lets the applicant cancel or discard
@@ -56,11 +81,28 @@ window.__trackerAdapter = {
   // document there would scrape LinkedIn's own search/filter inputs as if they
   // were application answers; the modal selectors are checked instead so that
   // a future non-iframe layout still works, and anything else yields null.
+  //
+  // ROOT CAUSE FOUND (3 Aug 2026), after two wrong guesses (a widened
+  // selector requiring no <form>, then several diagnostic-only attempts —
+  // see the CLAUDE.md gotcha for the full trail). Two real misses (Bellows &
+  // Munson, Relecloud) both traced back to the SAME cause, confirmed live: Easy
+  // Apply opened from the standalone `/jobs/view/<id>/` page renders the
+  // ENTIRE modal inside an OPEN shadow root (a `<div class="theme--dark">`
+  // host) — the exact same `.jobs-easy-apply-modal` / `role="dialog"`
+  // markup that matches fine when Easy Apply is opened from the split-pane
+  // search results view, which has no shadow root at all for the same
+  // company/job. `document.querySelector` never pierces a shadow boundary,
+  // open or closed, so every previous version of this selector was
+  // correctly failing to find something it fundamentally could not see —
+  // not a wrong selector, a wrong search space. `deepQuerySelector` recurses
+  // into open shadow roots the same way `answers.js`'s `collect()` already
+  // does for gathering fields once a root is found; closed shadow roots
+  // remain genuinely unreachable, same as everywhere else in this file.
   answerFormRoot() {
     if (window !== window.top) return document.querySelector("form") || document.body;
-    return document.querySelector(
+    return deepQuerySelector(document,
       ".jobs-easy-apply-modal, .jobs-easy-apply-content, " +
-      "[role='dialog'] form, [data-test-modal] form");
+      "[role='dialog'], [data-test-modal]");
   },
   // The job the form belongs to, so answers can't survive into the next one.
   // Read from the top frame's URL (cheap — this runs on every field edit)
@@ -215,6 +257,29 @@ window.__trackerAdapter = {
   // regenerated per build, same issue getJob() works around via document.title).
   // "Meet the hiring team" is plain visible copy though, so anchor on that text
   // instead of any class. Not verified against the classic /jobs/view/ layout.
+  //
+  // REWRITTEN 3 Aug 2026 against the real card, after the old version stored
+  //   name = "Jane Recruiter • 2ndSenior Consultant | Software and Data
+  //           Engineering @ Northwind RecruitingJob poster"
+  //   role = "Jane Recruiter"
+  // on a live capture — the whole blob as the name, and the name as the role.
+  // Both of its structural assumptions were simply wrong for this layout:
+  //
+  //  1. It expected a name-only <a> NESTED inside a card-sized <a> with the
+  //     same href, and picked the shorter one. There is exactly ONE such <a>.
+  //     With no nested pair, ownText() on it is empty (its text all lives in
+  //     descendants), so the fallback handed back the entire card blob.
+  //  2. It took the FIRST <span> carrying its own direct text as the role,
+  //     on the theory that everything else wraps its text further down. The
+  //     name is such a span too, and it comes first — hence role = the name.
+  //
+  // What is actually there, confirmed live: one <a href="/in/…">, and inside
+  // it the name and the headline are the first two <span>s with their own
+  // direct text, in that order. The connection degree ("• 2nd") and the "Job
+  // poster" badge did NOT surface as own-text spans on this card, but they are
+  // filtered by name anyway — they are the two things most likely to appear as
+  // a stray span on a layout this file hasn't met yet, and a wrong role is
+  // harder to notice than a missing one.
   getRecruiter() {
     let topWin = window;
     try {
@@ -227,29 +292,32 @@ window.__trackerAdapter = {
     if (!card) return null;
     const links = [...card.querySelectorAll("a[href*='/in/']")];
     if (!links.length) return null;
-    // The card nests a name-only <a> (its only content is the text "Ray Tan")
-    // inside a wrapping card-sized <a> with the same href whose textContent
-    // also picks up the role and the "Job poster" badge — same nested-anchor
-    // shape LinkedIn uses for the Easy Apply shadow-DOM controls. Own direct
-    // text (excluding descendant elements) isolates just the name; fall back
-    // to full textContent if that ever comes back empty for every candidate.
+
     const ownText = (el) => [...el.childNodes]
-      .filter((n) => n.nodeType === 3).map((n) => n.textContent).join("").trim();
-    let best = null;
+      .filter((n) => n.nodeType === 3).map((n) => n.textContent).join("")
+      .replace(/\s+/g, " ").trim();
+    const NOISE = /^(?:•\s*)?(?:1st|2nd|3rd)\s*\+?$|^job poster$|^ask about job$/i;
+
+    const parts = [];
     for (const l of links) {
-      const text = ownText(l) || l.textContent.trim();
-      if (text && (!best || text.length < best.text.length)) best = { text, href: l.href };
+      for (const s of l.querySelectorAll("span")) {
+        const t = ownText(s);
+        if (t && !NOISE.test(t) && !parts.includes(t)) parts.push(t);
+      }
     }
-    if (!best) return null;
-    // The role/headline text ("Talent Acquisition | Hiring top Tech talents
-    // across Migoo and Product") lives in a <span> inside the OTHER link — the
-    // outer, card-sized one, not the inner name-only one — as that span's own
-    // direct text. Everything else under the outer link (avatar, name, "•
-    // 2nd" connection degree, "Job poster" badge) wraps its text in further
-    // child elements instead, so this stays the only match.
-    const outer = links.reduce((a, b) => (a.textContent.length >= b.textContent.length ? a : b));
-    const roleSpan = [...outer.querySelectorAll("span")].find((s) => ownText(s));
-    const role = roleSpan ? ownText(roleSpan) : null;
-    return { name: best.text, url: best.href.split("?")[0], role };
+    let name = parts[0] || null;
+    let role = parts[1] || null;
+    // No usable spans at all — a layout neither shape fits. Fall back to the
+    // shortest link text, which is what the previous version reduced to, and
+    // claim no role rather than inventing one out of the blob.
+    if (!name) {
+      for (const l of links) {
+        const t = ownText(l) || l.textContent.replace(/\s+/g, " ").trim();
+        if (t && (!name || t.length < name.length)) name = t;
+      }
+      role = null;
+    }
+    if (!name) return null;
+    return { name, url: links[0].href.split("?")[0], role };
   },
 };

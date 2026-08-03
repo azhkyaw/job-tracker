@@ -34,8 +34,40 @@
   const adapter = window.__trackerAdapter;
   if (!adapter) return;
 
-  const send = (payload) =>
-    chrome.runtime.sendMessage({ type: "tracker-capture", payload });
+  /* Every message out of this frame, in a form that cannot throw.
+   *
+   * chrome.runtime.sendMessage throws SYNCHRONOUSLY once the extension context
+   * dies — "Extension context invalidated" — and a synchronous throw is not
+   * something a trailing .catch() on the returned promise can see. Reloading an
+   * unpacked extension does exactly that to every tab already open: content
+   * scripts are NOT re-injected, so the old script keeps running against a port
+   * that no longer exists (CLAUDE.md's known-untested note on adapter reloads,
+   * seen from the other side).
+   *
+   * The consequence was silent and total. capture() ends in send(payload)
+   * .then(showResult); if send() throws, the whole capture unwinds — no record,
+   * no receipt, no failure entry, nothing in the ring buffer, because
+   * recordFailure is itself another sendMessage. An apply just disappears, and
+   * that is indistinguishable from the click never having been detected, which
+   * is precisely the ambiguity that cost a whole debugging session on the
+   * wideworld.ai external apply.
+   *
+   * So: never throw, and say which failure this is — the fix is a page refresh,
+   * which the user has no way to guess from "not saved". */
+  const RELOADED = "extension was reloaded — refresh this page, then capture " +
+                   "again from the toolbar popup";
+  function tell(message) {
+    try {
+      const p = chrome.runtime.sendMessage(message);
+      return (p && typeof p.then === "function")
+        ? p.catch((e) => ({ ok: false, error: (e && e.message) || "no response" }))
+        : Promise.resolve(undefined);
+    } catch (e) {
+      return Promise.resolve({ ok: false, error: RELOADED, dead: true });
+    }
+  }
+
+  const send = (payload) => tell({ type: "tracker-capture", payload });
 
   // Hostname suffix -> ATS vendor. Only for genuinely external applies (the
   // employer's own domain never matches these) — an in-house/direct careers
@@ -59,6 +91,10 @@
     "recruitee.com": "recruitee",
     "teamtailor.com": "teamtailor",
     "jazzhr.com": "jazzhr",
+    // JazzHR serves customer job boards from applytojob.com, not jazzhr.com —
+    // a real external apply resolved to wideworld.applytojob.com (4 Aug 2026) and
+    // came back with no ATS despite being a textbook JazzHR board.
+    "applytojob.com": "jazzhr",
     "paylocity.com": "paylocity",
   };
 
@@ -132,6 +168,32 @@
     .replace(INVISIBLE, "")
     .replace(/\s+/g, " ")
     .trim();
+
+  /* The apply control the click landed on, searched through shadow boundaries.
+   *
+   * This is closest() with the one property closest() lacks: ev.target is
+   * retargeted to the shadow HOST for a click originating inside a shadow tree,
+   * so walking up from it starts above the boundary and can never reach a
+   * control inside. composedPath() carries the real path across every open or
+   * closed boundary, and matching each entry against the selector list is
+   * exactly what closest() does along the way.
+   *
+   * The submit-side hooks (textMatchTarget, completionTarget) were converted
+   * when Easy Apply's wizard buttons turned out to be shadowed; this branch was
+   * left on ev.target.closest() and kept the blind spot the whole time. It has
+   * cost nothing observable yet — the external-apply button is light DOM on
+   * every layout checked (0 shadow hosts on /jobs/collections/ and /jobs/view/,
+   * 4 Aug 2026) — but LinkedIn demonstrably wraps whole containers in open
+   * shadow roots on some entry paths, and this is the branch on which a miss is
+   * silent: no error, no record, no popover, nothing to find afterwards. */
+  function applyTarget(ev, sel) {
+    if (!sel) return null;
+    const path = ev.composedPath ? ev.composedPath() : [ev.target];
+    for (const el of path) {
+      if (el && el.matches && el.matches(sel)) return el;
+    }
+    return null;
+  }
 
   function textMatchTarget(ev) {
     if (!adapter.applyTextMatches || !adapter.applyTextMatches.length) return null;
@@ -208,20 +270,59 @@
     }`;
 
   let host = null;
+  let unmount = null;        // tears down the live popover's own listeners
   function mount(html) {
+    if (unmount) unmount();
     if (host) host.remove();
     host = document.createElement("div");
     const root = host.attachShadow({ mode: "closed" });
     root.innerHTML = `<style>${CSS}</style>${html}`;
     document.documentElement.appendChild(host);
-    const close = () => { if (host) { host.remove(); host = null; } };
-    const box = root.querySelector(".box");
+
     let timer = null;
+    let owed = null;         // countdown still owed, deferred while unseen
+
     // Auto-dismiss is a convenience, never a deadline: engaging with the box
     // at all cancels it, because the one thing this must not do is vanish
     // mid-sentence while someone is typing a note.
-    const fade = (ms) => { clearTimeout(timer); timer = setTimeout(close, ms); };
-    const hold = () => clearTimeout(timer);
+    //
+    // A HIDDEN tab is that same rule seen from the other side, and it cost a
+    // real capture (3 Aug 2026, verified live end to end). LinkedIn's "Apply
+    // on company website" opens the employer's site in a NEW TAB that takes
+    // focus at once, so this box is born on a page nobody is looking at —
+    // document.visibilityState already reads "hidden" by the time it mounts —
+    // and 45s later it deletes itself unseen, while the applicant is still
+    // filling in the real form on the other tab. On the external path the
+    // popover holds the ONLY copy of the capture, because that path asks
+    // before it writes (deliberately — see capture()), so the timer wasn't
+    // dropping a tag, it was dropping the whole application, silently. Same
+    // class as the navigating-apply receipt loss on JobStreet: the difference
+    // is only that LinkedIn backgrounds the tab instead of tearing it down.
+    //
+    // So the countdown runs only while the tab is actually visible, and coming
+    // back restarts it in full rather than resuming a remainder — the point is
+    // to give the reader the whole window from the moment they can see it.
+    function close() {
+      document.removeEventListener("visibilitychange", onVisibility);
+      clearTimeout(timer);
+      if (unmount === close) unmount = null;
+      if (host) { host.remove(); host = null; }
+    }
+    function onVisibility() {
+      if (document.visibilityState === "hidden") clearTimeout(timer);
+      else if (owed != null) { clearTimeout(timer); timer = setTimeout(close, owed); }
+    }
+    document.addEventListener("visibilitychange", onVisibility);
+    unmount = close;
+
+    const fade = (ms) => {
+      clearTimeout(timer);
+      owed = ms;
+      if (document.visibilityState !== "hidden") timer = setTimeout(close, ms);
+    };
+    const hold = () => { clearTimeout(timer); owed = null; };
+
+    const box = root.querySelector(".box");
     box.addEventListener("pointerenter", hold);
     box.addEventListener("focusin", hold);
     const xb = root.querySelector(".x");
@@ -266,7 +367,7 @@
     const status = ui.root.querySelector(".s");
     const note = ui.root.querySelector("input");
     const tag = (body, ok) =>
-      chrome.runtime.sendMessage({ type: "tracker-tag", id: d.id, body })
+      tell({ type: "tracker-tag", id: d.id, body })
         .then((r) => {
           if (r && r.ok) { status.textContent = ok; }
           else { status.textContent = `Couldn't save that: ${(r && r.error) || "no response"}`; }
@@ -314,6 +415,26 @@
     });
   }
 
+  /* The job could not be read, on a path where nothing has been written yet.
+   *
+   * Silence here is what made the wideworld.ai loss (4 Aug 2026) invisible: the
+   * external path writes nothing until the popover is answered, so returning at
+   * the job guard discards the application outright and leaves one line in a
+   * ring buffer the user has no reason to open. Reported by the user as "the
+   * popup didn't appear" — which is exactly what it looks like from the page.
+   * The tracker can't recover the application, but it can say so while the
+   * employer's form is still open and adding it by hand costs nothing. */
+  function notCapturedPopover() {
+    const ui = mount(`
+      <div class="box err">
+        <div class="hd"><span class="tick">!</span><span>Not captured</span>
+          <button class="x" title="Dismiss" aria-label="Dismiss">&times;</button></div>
+        <div class="sub">Couldn't read this job from the page.</div>
+        <div class="ft"><span class="s">Nothing was saved — add it by hand.</span></div>
+      </div>`);
+    ui.hold();
+  }
+
   /* External applies only: the click opened the employer's site, which is not
    * proof anything was submitted, so this one still asks before writing. */
   function confirmPopover(onDone) {
@@ -339,7 +460,23 @@
                  note: ui.root.querySelector("input").value.trim() },
                (msg, ok) => { status.textContent = msg; if (ok) ui.fade(2200); });
       }));
-    ui.fade(45000);
+    // NO auto-dismiss — the same rule failurePopover states, for the same
+    // reason: this box is the ONLY copy of the capture. Nothing has been POSTed
+    // yet on the external path, so a countdown that runs out doesn't drop a tag,
+    // it drops the application.
+    //
+    // The 3 Aug fix made the countdown wait for visibilityState, which covers
+    // the common geometry (employer site opens in a new tab of the SAME window,
+    // LinkedIn goes hidden, timer suspends — verified live again on a real
+    // external apply 4 Aug 2026). It does not cover the others, because
+    // visibilityState tracks tab OCCLUSION, not window FOCUS: with the employer
+    // site in a second Chrome window, or LinkedIn's tab dragged out into its
+    // own, the LinkedIn tab stays "visible" the entire time it is sitting
+    // unread behind another window — and the 45 seconds burn down exactly as
+    // they did before the fix, while the applicant fills in the real form.
+    // There is no event for "nobody is looking at this", so stop trying to time
+    // it. The × dismisses; until then it waits.
+    ui.hold();
   }
 
   /* ------------------------------------------------------------- capture */
@@ -361,8 +498,36 @@
 
   function relayToTop(detail) {
     if (window === window.top) return Promise.resolve(false);
-    return chrome.runtime.sendMessage({ type: "tracker-relay-receipt", detail })
-      .then((r) => !!(r && r.ok)).catch(() => false);
+    return tell({ type: "tracker-relay-receipt", detail }).then((r) => !!(r && r.ok));
+  }
+
+  /* An immediate apply detected in a SUBFRAME is handed to the tab's top frame
+   * to carry out, rather than handled where it was seen.
+   *
+   * A subframe is the wrong place for this capture twice over, and a real
+   * external apply (wideworld.ai, 4 Aug 2026) lost an application to the first of
+   * the two with nothing but one ring-buffer line to show for it:
+   *
+   *  1. It cannot READ the job. getJob() walks to window.top for the job DOM,
+   *     and a frame that can't reach its top gets ITSELF back with no error —
+   *     so it reads its own document, finds no title and no JD, and capture()
+   *     returns at the job guard BEFORE confirmPopover() is ever reached. The
+   *     recorded failure url is the frame's own address, which is how this one
+   *     is recognised: linkedin.com/preload/?_bprMode=vanilla. Same frame, same
+   *     unreachable top, as the Easy Apply capture lost on 3 Aug.
+   *  2. It cannot SHOW the popover. mount() appends to the frame's own
+   *     documentElement, so even when getJob() does succeed the box is rendered
+   *     inside a frame nobody is looking at — and on the external path that box
+   *     is the only copy of the capture, so it is not a lost tag, it is a lost
+   *     application. showResult() already relays the receipt to frame 0 for
+   *     precisely this reason; the ask-first path never got the same treatment.
+   *
+   * Frame 0 has the real page in front of the user, so it has both. Gated to
+   * the immediate-apply path: Easy Apply's deferred submit fires from inside
+   * the modal's iframe legitimately, and its answers only exist there. */
+  function relayApply(detail) {
+    if (window === window.top) return Promise.resolve(false);
+    return tell({ type: "tracker-relay-apply", detail }).then((r) => !!(r && r.ok));
   }
 
   /* Which job a stash belongs to. Reuses answerFormKey() — it already has to
@@ -424,10 +589,11 @@
     if (!job || (!job.title && !job.jd_text && !completed)) {
       console.warn("[tracker] capture failed — adapter found no job on this page",
                    location.href);
-      chrome.runtime.sendMessage({
+      tell({
         type: "tracker-capture-failure",
         detail: { platform: adapter.platform, url: location.href, at: Date.now() },
       });
+      if (external) notCapturedPopover();
       return;
     }
     // getRecruiter is optional — most platforms don't surface a named
@@ -494,7 +660,7 @@
 
   document.addEventListener("click", (ev) => {
     const sel = (adapter.applySelectors || []).join(",");
-    const hit = sel ? ev.target.closest(sel) : null;
+    const hit = applyTarget(ev, sel);
     if (hit) {
       const external = adapter.isExternal ? adapter.isExternal(hit) : false;
       // Only external applies have a resolvable ATS destination — Easy
@@ -504,7 +670,17 @@
         ? detectAts(adapter.resolveExternalUrl ? adapter.resolveExternalUrl(hit) : hit.href)
         : null;
       if (external || !adapter.deferInternalApply) {
-        capture("apply", external, ats);
+        // The top frame captures inline and SYNCHRONOUSLY — the DOM must be
+        // read in this tick, before the page's own handler runs and swaps it
+        // out. Only a subframe, which cannot do this correctly at all, pays the
+        // round trip; if frame 0 can't help either, it says so and we fall back
+        // to the local attempt, which at least records the failure.
+        if (window === window.top) {
+          capture("apply", external, ats);
+        } else {
+          relayApply({ trigger: "apply", external, ats })
+            .then((relayed) => { if (!relayed) capture("apply", external, ats); });
+        }
         return;
       }
       // deferInternalApply: this click only opened the apply flow — the
@@ -540,6 +716,17 @@
      * be spoofed from the page. */
     if (msg && msg.type === "tracker-receipt") {
       receiptPopover(msg.detail);
+      respond({ ok: true });
+    }
+    /* A subframe's apply, carried out here instead — see relayApply. Answering
+     * `false` when this frame can't see a job either hands the attempt back, so
+     * the failure is still recorded rather than swallowed by the handoff. */
+    if (msg && msg.type === "tracker-apply") {
+      let job = null;
+      try { job = adapter.getJob(); } catch (e) { job = null; }
+      if (!job || (!job.title && !job.jd_text)) { respond({ ok: false }); return false; }
+      const d = msg.detail || {};
+      capture(d.trigger || "apply", d.external, d.ats);
       respond({ ok: true });
     }
     return false;

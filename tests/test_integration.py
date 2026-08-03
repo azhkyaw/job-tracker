@@ -37,6 +37,7 @@ FAKE_CLASSIFY = {
     "newsletter": Classification(False, None, 0.98, "stub"),
     "recruiter-pitch": Classification(True, "recruiter_outreach", 0.9, "stub"),
     "recruiter-unknown": Classification(True, "recruiter_outreach", 0.85, "stub"),
+    "rebrand-confirmation": Classification(True, "confirmation", 0.93, "stub"),
 }
 def _fake_extraction(**kw):
     """Mirror the real extract_email(): raw always carries the full payload."""
@@ -66,6 +67,15 @@ FAKE_EXTRACT = {
                                         recruiter={"name": "Recruiter Ren", "email": None}),
     "recruiter-unknown": _fake_extraction(company="Totally New Agency",
                                           role_title="Backend Engineer"),
+    # The seeded Northwind application again, but the sender brands itself with
+    # a name that shares nothing with 'northwind labs' — the shape of three real
+    # duplicates on 4 Aug 2026, where an employer's ATS (or LinkedIn's own mail)
+    # named the company differently enough to fall under COMPANY_TRGM_MIN. The
+    # title is identical, which is what the fallback keys on; the case differs
+    # from the stored title_canonical on purpose.
+    "rebrand-confirmation": _fake_extraction(company="Vestbridge Holdings Pte Ltd",
+                                             role_title="Senior AI Engineer",
+                                             platform="linkedin"),
 }
 
 email_classifier.classify_email = lambda client, sender, subject, received, body: \
@@ -208,6 +218,29 @@ with db.connect() as conn:
         "SELECT 1 FROM jobs WHERE user_id = %s AND company_norm = 'totally new agency'",
         (user_id,)).fetchone()
     check("no job fabricated for the unknown recruiter pitch", ghost is None)
+
+    print("path 3d: a rebranded sender still reaches its own application")
+    # Without the exact-title fallback in matcher.find_match, the company gate
+    # admits nobody here and _create_application quietly mints a SECOND
+    # application for a job already tracked — silently, with match_score NULL.
+    # That is what produced three real duplicates (Contoso, Fabrikam, Litware).
+    e7 = seed_email(conn, user_id, "rebrand-confirmation")
+    conn.commit()
+    drain(conn)
+    s7 = email_state(conn, e7)
+    check("auto-matched despite the company name not matching at all",
+          s7["triage_state"] == "auto_matched"
+          and str(s7["matched_application_id"]) == str(app["id"]), s7)
+    check("scored on title/date/platform, above the bar",
+          s7["match_score"] and s7["match_score"] >= 0.75, s7)
+    dupe = conn.execute(
+        "SELECT 1 FROM jobs WHERE user_id = %s AND company_norm = 'vestbridge holdings'",
+        (user_id,)).fetchone()
+    check("no duplicate job created for the rebranded name", dupe is None)
+    ev7 = conn.execute(
+        "SELECT type FROM events WHERE source_email_id = %s AND application_id = %s",
+        (e7, app["id"])).fetchone()
+    check("confirmation landed on the existing timeline", ev7 is not None, ev7)
 
     print("path 4: failure backoff")
     db.enqueue(conn, user_id, "classify_email",

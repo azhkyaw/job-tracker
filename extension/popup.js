@@ -35,10 +35,36 @@ chrome.storage.local.get({ sweeps: [] }, ({ sweeps }) => {
       li.append(`${when} — `);
       const w = document.createElement("span");
       w.className = "warn";
-      w.textContent = s.noRoot
-        ? `no apply form found (${s.noRoot} attempts)`
-        : "form never swept";
+      let msg = s.noRoot ? `no apply form found (${s.noRoot} attempts)` : "form never swept";
+      // dialogPresent/controlsOnPage: was something dialog-like actually open
+      // with fields on the page, or did the sweep just never see a form at
+      // all? The first shape means the root selector needs a look; the second
+      // usually just means the click wasn't inside an apply flow.
+      if (s.noRootHint) {
+        msg += s.noRootHint.dialogPresent
+          ? ` — a dialog was open with ${s.noRootHint.controlsOnPage} field(s) on the page, but the root selector didn't match it`
+          : ` — no dialog was open (${s.noRootHint.controlsOnPage} field(s) elsewhere on the page)`;
+      }
+      w.textContent = msg;
       li.append(w);
+      // Real form-field elements that appeared on the page during the miss,
+      // caught as they were inserted (not guessed from position afterwards —
+      // position-based guessing was tried and confirmed wrong twice the same
+      // day, see answers.js). Each line is a genuine candidate for "this is
+      // what the real modal looks like".
+      const inserts = s.noRootHint && s.noRootHint.recentInserts;
+      if (inserts && inserts.length) {
+        for (const ins of inserts) {
+          const insEl = document.createElement("div");
+          insEl.style.fontFamily = "monospace";
+          insEl.style.fontSize = ".8em";
+          insEl.style.opacity = "0.8";
+          insEl.style.marginTop = "2px";
+          insEl.textContent =
+            `+${ins.tag}${ins.role ? " role=" + ins.role : ""} ${ins.cls} (depth ${ins.depthFromBody})`;
+          li.append(insEl);
+        }
+      }
       ul.appendChild(li);
       continue;
     }

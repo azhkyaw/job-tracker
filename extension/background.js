@@ -103,27 +103,60 @@ async function dropReceipt(tabId) {
  * simply expires, never a record. */
 const PENDING_JOB_TTL_MS = 2 * 60 * 60 * 1000;
 
+/* The key can DEGRADE between the stash and the take, and then the exact-match
+ * lookup finds nothing even though the right snapshot is sitting right there.
+ *
+ * Both sides call the adapter's answerFormKey(), which reads the job id out of
+ * the TOP frame's URL. A frame that cannot reach its top — a detached one
+ * returns itself for window.top, no error raised — falls through to its own
+ * href instead, so the submit asks for a key the opening click never wrote.
+ * A real Easy Apply (Proseware, 3 Aug 2026) landed exactly here: the submit
+ * fired from a frame whose own URL was linkedin.com/preload/?_bprMode=vanilla,
+ * getJob() came back null against that same unreachable top, and the record
+ * saved with no company, no title and no job id — while the correct snapshot,
+ * stashed minutes earlier under the real currentJobId, expired untouched.
+ *
+ * So a miss falls back to the most recent stash from the SAME TAB. That is a
+ * guess where the keyed hit is a fact, and it gets its own much shorter window
+ * to say so: long enough for a wizard someone is actually filling in, short
+ * enough that a stash from a job browsed earlier in the same tab is not still
+ * eligible to be pasted onto a different application. Note the fallback wins
+ * outright in practice rather than merely filling gaps — the caller merges
+ * gaps-only, but a frame this broken supplies no fields to lose to. */
+const PENDING_JOB_FALLBACK_MS = 30 * 60 * 1000;
+
 async function _pendingJobs() {
   const { pendingJobs = {} } = await new Promise((res) =>
     chrome.storage.local.get({ pendingJobs: {} }, res));
   return pendingJobs;
 }
 
-async function stashPendingJob(key, job) {
+async function stashPendingJob(key, job, tabId) {
   if (!key) return;
   const jobs = await _pendingJobs();
-  jobs[key] = { at: Date.now(), job };
+  jobs[key] = { at: Date.now(), job, tabId: tabId == null ? null : tabId };
   for (const [k, v] of Object.entries(jobs)) {
     if (Date.now() - v.at > PENDING_JOB_TTL_MS) delete jobs[k];
   }
   await setLocal({ pendingJobs: jobs });
 }
 
-async function takePendingJob(key) {
+async function takePendingJob(key, tabId) {
   if (!key) return null;
   const jobs = await _pendingJobs();
-  const rec = jobs[key];
-  delete jobs[key];
+  let hitKey = key in jobs ? key : null;
+  if (hitKey === null && tabId != null) {
+    // Newest eligible stash belonging to this tab. Tab ids are reused, which
+    // is what the tighter window guards against as much as the wrong-job case.
+    for (const [k, v] of Object.entries(jobs)) {
+      if (v.tabId !== tabId) continue;
+      if (Date.now() - v.at > PENDING_JOB_FALLBACK_MS) continue;
+      if (hitKey === null || v.at > jobs[hitKey].at) hitKey = k;
+    }
+  }
+  if (hitKey === null) return null;
+  const rec = jobs[hitKey];
+  delete jobs[hitKey];
   await setLocal({ pendingJobs: jobs });
   return rec && Date.now() - rec.at <= PENDING_JOB_TTL_MS ? rec.job : null;
 }
@@ -178,13 +211,19 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
   // immediately, which is the worst possible moment to be racing a shutdown.
   // A real JobStreet apply on 29 Jul 2026 came out as "unknown company"
   // exactly here: deferral worked, the submit captured, the stash was gone.
+  // sender.tab.id is the TAB, shared by every frame in it — which is the whole
+  // point: the opening click stashes from the top frame and the submit takes
+  // from the modal's subframe, so the tab is the one identifier both ends of a
+  // single apply agree on even when the key itself has degraded.
   if (msg && msg.type === "tracker-stash-job") {
-    stashPendingJob(msg.key, msg.job).then(() => respond({ ok: true }));
+    stashPendingJob(msg.key, msg.job, sender.tab && sender.tab.id)
+      .then(() => respond({ ok: true }));
     return true;
   }
 
   if (msg && msg.type === "tracker-take-job") {
-    takePendingJob(msg.key).then((job) => respond({ job }));
+    takePendingJob(msg.key, sender.tab && sender.tab.id)
+      .then((job) => respond({ job }));
     return true;
   }
 
@@ -230,6 +269,20 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     const tabId = sender.tab && sender.tab.id;
     if (tabId == null || sender.frameId === 0) { respond({ ok: false }); return false; }
     chrome.tabs.sendMessage(tabId, { type: "tracker-receipt", detail: msg.detail },
+                            { frameId: 0 })
+      .then((r) => respond({ ok: !!(r && r.ok) }))
+      .catch(() => respond({ ok: false }));
+    return true;
+  }
+
+  /* A subframe saw an apply it cannot handle — have the top frame do it. Same
+   * targeting rules and same host-permission requirement as the receipt relay
+   * above: the tab comes from the real sender, never from the message, and
+   * frame 0 is never allowed to relay to itself. See capture.js:relayApply. */
+  if (msg && msg.type === "tracker-relay-apply") {
+    const tabId = sender.tab && sender.tab.id;
+    if (tabId == null || sender.frameId === 0) { respond({ ok: false }); return false; }
+    chrome.tabs.sendMessage(tabId, { type: "tracker-apply", detail: msg.detail },
                             { frameId: 0 })
       .then((r) => respond({ ok: !!(r && r.ok) }))
       .catch(() => respond({ ok: false }));
