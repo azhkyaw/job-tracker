@@ -11,3 +11,7 @@ profile.md
 
 # per-machine Claude Code permission grants
 .claude/settings.local.json
+
+# Cygwin/MSYS crash dumps — dropped in the repo root when a bash.exe process
+# faults, which the Git Bash tooling does occasionally on this Windows setup
+*.stackdump
