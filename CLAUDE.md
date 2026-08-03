@@ -10,6 +10,9 @@ app password is the default ingest path (shipped 28 Jul 2026), OAuth the
 alternative for Workspace/Advanced Protection accounts:
 `docs/email-ingest.md`. `docs/monetization.md` is
 superseded but retained for its Gmail restricted-scope compliance analysis.
+Installing the extension on a second device (an existing account, not a
+fresh signup) — including the single-token-per-account gotcha regenerating
+it silently breaks other devices with: `docs/extension-install.md`.
 
 A fourth thing the extension captures as of 28 Jul 2026: the **screening
 questions an apply form asks and the answers given** (`application_answers`,
@@ -19,6 +22,13 @@ application at `/answers` — the second view is the point, since the same
 questions recur almost verbatim between employers. A form may ask the same
 question more than once (a work-history **repeater**), so a row is identified
 by (application, question_norm, **occurrence**) — see invariant #11.
+**Not every labelled control is a question.** The sweep can't tell a screening
+question from the form's own chrome, so `answers.py:_control_kind()` filters
+it: the resume picker is PROMOTED to `applications.resume_file` (migration
+014, feeding `analytics.by_resume`), while "Mark job as a top choice" and
+"Follow <employer>" are dropped. Match anchored patterns against
+`question_norm`, never loose prefixes — a bare `follow` prefix also swallows
+"Do you follow industry news to stay up to date?".
 
 ## Key files
 
@@ -54,10 +64,20 @@ by (application, question_norm, **occurrence**) — see invariant #11.
 - **Native Windows (no WSL):** see `docs/windows-dev.md` — Docker Postgres
   (`docker compose up -d`, port 55432) + uv-managed Python;
   `scripts/dev-setup.ps1` once, `scripts/test.ps1` to run suites.
-- **Dev DB shell:** `docker compose exec db psql -U postgres -d tracker`
+- **Dev DB shell:** the dev DB is Neon now (`docs/windows-dev.md` → Managed
+  Postgres), reached via `TRACKER_DATABASE_URL` in `.env` same as the app.
+  Local Docker Postgres is only `scripts/test.ps1`'s throwaway DB —
+  `docker compose exec db psql` connects to the wrong database.
+- **Quick read-only query against the dev DB:** `uv run python -c "from
+  pipeline import db; ..."` — faster than a psql shell for inspecting real
+  rows (dict results) while chasing a reported bug against live data; used
+  this repeatedly to confirm bugs against real applications before fixing.
 - **Fast syntax check before a full suite run:** `python -c "import ast;
   ast.parse(open('path/to/file.py', encoding='utf-8').read())"` — catches
   typos without a DB reset/migration cycle.
+- **Same idea for extension JS:** `node --check path/to/file.js` — catches
+  syntax errors before reloading the unpacked extension. Won't catch
+  runtime bugs (see the `location`-shadowing gotcha below).
 - **Suites always log full per-assertion output**, not just PASS/FAIL —
   `/tmp/<suite>.log` (WSL) or `$env:TEMP/<suite>.log` (native Windows), even
   on success.
@@ -104,6 +124,17 @@ by (application, question_norm, **occurrence**) — see invariant #11.
    (extension `/captures` and manual entry both call it); it owns the
    partial-unique-index lookup and the email_only job-reuse heuristic so
    those can't silently diverge between callers.
+   **There is NO inverse for a wrong merge.** `merge_jobs` combines; nothing
+   splits. A job wrongly fused needs hand-written surgery (done once — Northwind
+   Recruiting, 3 Aug 2026: an inbound recruiter pitch and an unrelated apply to
+   the same agency, joined by `ENRICH_JOB_SQL` at 0.5588 title similarity).
+   That asymmetry is why the enrich bar (`config.ENRICH_TITLE_MIN`, 0.85 since
+   3 Aug) is set high rather than tuned to fit: a wrong SPLIT is visible and
+   reversible via `merge_jobs`/the `/triage` duplicate band, a wrong MERGE is
+   silent and permanent. Prefer the recoverable failure. One `company_norm`
+   routinely covers several unrelated roles — every agency, and any employer
+   hiring more than one person — so company agreement carries almost no
+   information and the title is doing all the work.
    `web.py:refile_email` is a DIFFERENT tool for a different problem — one
    misfiled email (a real-world company-name mismatch the matcher can't
    detect — an ATS confirmation branded differently than the employer you
@@ -114,7 +145,14 @@ by (application, question_norm, **occurrence**) — see invariant #11.
    completely empty. Never reach for `merge_jobs` here — it moves *all* of a
    job's history, which would import the misfiled email's events as
    spurious duplicates (e.g. a second `applied` event) on the target
-   application.
+   application. Used in anger on three at once (Contoso, Fabrikam, Litware,
+   4 Aug 2026), where the email hadn't been *misfiled* so much as it had
+   created its own record after the `COMPANY_TRGM_MIN` gate hid the real one —
+   same remedy, since that record contained nothing but the email's own events
+   and `_job_is_empty` therefore cleared it. 98 → 95 applications. When a
+   duplicate has an extension-captured twin, keep the EXTENSION record: it
+   carries the `platform_job_id`, the JD and the answers, while the email-made
+   one has none of them.
 4. **`norm_company()`** in `pipeline/email_classifier.py` is the single source
    of truth for `company_norm`. Never reimplement it in SQL. It strips SEA
    corporate forms including Indonesian PT/CV *prefixes*.
@@ -244,6 +282,28 @@ axis) + **DM Mono**, from Google Fonts.
    names were being ellipsed. The trace still shares one axis (rule 4) and
    still earns its place on the detail page — it just doesn't get 40% of a
    list row to repeat "still nothing" 47 times.
+11. **The funnel strip and its legend are the status filter** (29 Aug 2026;
+    `web.py`'s `status` query param, validated against `FUNNEL_ORDER`) — not
+    a separate dropdown next to `sort`/`q`. A segment's own href is
+    `?status=<its key>`, so there was nothing new to keep in sync with what
+    the funnel already renders. The funnel is still computed from `origin`
+    alone, never `status`, so every OTHER segment stays visible and clickable
+    while one is selected — a filter chip row, not a redraw of itself.
+    Selection reads through **opacity**, not a new hue (`.filtered .seg
+    {opacity:.3}` / `.active{opacity:1}`) — rule 1 reserves chroma for the
+    state of a wait, so "selected" had to be expressed a different way; the
+    legend mirrors rule 8's `.tabs a.active` treatment instead (ink + bold)
+    since it's text, not a color block. A `:has()` rule previews the same
+    dimming on hover before a click commits to it — no JS, this app has none,
+    ever. `list_url()` (a template macro, not a Python helper) builds every
+    link on the page from `origin`/`q`/`sort`/`status` together — a genuine
+    fix alongside the new feature, not just a refactor: the origin tabs and
+    the search-clear link each had their own hand-built href before this,
+    and both silently dropped `q` on click. On the query side, `status`
+    matches `s.status = 'confirmation'` too when the filter is `applied` —
+    the same collapse `_display()` already applies to the funnel's own
+    counts, so a filter and the count that names it can't disagree about
+    what one status label covers.
 
 ## Gotchas learned the hard way in the original build
 
@@ -253,11 +313,43 @@ axis) + **DM Mono**, from Google Fonts.
   (`request=`, `name=`, `context=`).
 - When patching code with scripts, ASSERT the anchor matched — a silent
   no-op replace shipped a broken build once; the tests caught it.
+  **Assert the REPLACEMENT too.** A heredoc'd Python patcher adding migration
+  014 to `test.sh`/`README.md` (3 Aug 2026) mangled `\\\n` into a literal `\n`:
+  the anchor assertion passed and the script reported success, but the text it
+  wrote was corrupt. Prefer the Edit tool over shell-heredoc patchers for
+  anything containing backslashes. (CLAUDE.md itself is CRLF — match the file's
+  existing line wrapping when constructing an Edit `old_string`.)
 - Matching/dedup thresholds in `pipeline/config.py`
   (`AUTO_MATCH_SCORE`, `COMPANY_TRGM_MIN`, `DEDUP_*`) are FIRST DRAFTS,
   deliberately untuned — tune against real backfill data, not intuition.
+  **`COMPANY_TRGM_MIN` has now been measured, and it was silently creating
+  duplicate applications** (4 Aug 2026). It gates the CANDIDATE LOOKUP, so an
+  employer that brands itself differently in mail than on the job board is
+  never even considered and `_create_application` mints a second record:
+  `contoso` ← "Contoso Markets" (0.467), `fabrikam group` ← "Fabrikam" (0.538),
+  `litware singapore` ← "Litware International (Singapore) Pte Ltd"
+  (0.314 — LinkedIn's OWN confirmation, four seconds after the extension
+  captured the same job), all against 0.6. Every one had a byte-identical
+  title and timestamps within a minute, so each would have scored ~0.8 and
+  matched correctly had the candidate been visible. Note company similarity
+  is ONLY a gate — the score is title 0.5 + date 0.3 + platform 0.2, so
+  company agreement contributes nothing once past it (invariant #3's "company
+  carries almost no information", same fact from the other side).
+  Fixed by a fallback, NOT by moving the threshold: `_CANDIDATES_BY_TITLE_SQL`
+  retries on exact title, ignoring company, only when the gate yields zero
+  candidates. Widening `COMPANY_TRGM_MIN` itself loosens the net for every
+  email, and one title routinely spans several employers here ("Senior AI
+  Engineer" covers five), so it risks a silent WRONG auto-match; the fallback
+  can only ADD candidates where there were none, and `AUTO_MATCH_SCORE` +
+  `AUTO_MATCH_MARGIN` still both apply, so several same-titled applications
+  fail the margin and land in triage. A visible triage item beats a silent
+  duplicate — the same preference invariant #3 states for merges.
 - `emails.match_score` stores the best candidate score even for `pending`
-  rows — that's the tuning dataset.
+  rows — that's the tuning dataset. **`NULL` means something different and
+  more specific: ZERO candidates were found, not a low-confidence miss.** That
+  is how the three duplicates above were identified after the fact; on a
+  duplicate the email reads `triage_state = 'auto_matched'` with a NULL score,
+  which looks like success and is not.
 - **Shadow DOM breaks click delegation:** `shared/capture.js`'s apply-detection
   listener must use `ev.composedPath()`, never `ev.target.closest(...)` —
   LinkedIn's Easy Apply renders its controls inside a shadow root, which
@@ -317,6 +409,31 @@ axis) + **DM Mono**, from Google Fonts.
   `tracker-receipt-shown` so the held copy can't fire twice. This is a class
   of bug, not a JobStreet quirk — any adapter whose apply control navigates has
   it, and LinkedIn only escapes because Easy Apply stays in-page.
+- **LinkedIn does NOT escape it for EXTERNAL applies — it just loses the box a
+  different way.** "Apply on company website" opens the employer's site in a
+  NEW TAB that takes focus immediately, so the confirm popover is born on a
+  page nobody is looking at (`document.visibilityState` already reads `hidden`
+  when it mounts) and `ui.fade(45000)` deletes it unseen while the applicant is
+  still filling in the real form. On the external path the popover holds the
+  ONLY copy of the capture — that path asks BEFORE it writes, deliberately —
+  so the timer wasn't dropping a tag, it was dropping the whole application,
+  silently. Reported by the user, reproduced end to end 3 Aug 2026.
+  `mount()` now runs the countdown only while the tab is visible and restarts
+  it in full on return (the reader gets the whole window from the moment they
+  can see it); `hold()` still cancels outright, and the `visibilitychange`
+  listener is torn down on close so a replaced popover can't leak one.
+  Verified on a real external apply (Tailwind Tech, 3 Aug 2026): the record
+  saved WITH a tag, which on this path can only happen if the box survived.
+  **That fix covered one geometry, and the countdown is now gone entirely**
+  (4 Aug 2026). `visibilityState` tracks tab OCCLUSION, not window FOCUS: with
+  the employer site in a second Chrome window, or LinkedIn's tab dragged into
+  its own, the tab stays `visible` the whole time it sits unread behind
+  another window and the 45 seconds burn down exactly as before. There is no
+  event for "nobody is looking at this", so `confirmPopover` ends in `hold()`
+  rather than `fade()` — the same rule `failurePopover` already followed, for
+  the same reason (this box is the only copy). The × dismisses it; until then
+  it waits. Don't reintroduce a timer here on the grounds that an ignored box
+  is untidy.
 - **An apply flow that spans PAGES must carry the job snapshot with it.**
   JobStreet defers like LinkedIn (`deferInternalApply`) so the applied time is
   the submit, not the opening click — but its flow is `/job/<id>` → `/apply` →
@@ -348,6 +465,62 @@ axis) + **DM Mono**, from Google Fonts.
   an unawaited `chrome.storage.local.set` resolves nobody's promise, so even a
   correct-looking `.then()` fires before the data lands. Content-script side,
   send with the promise form (`.catch(() => {})`), not the callback.
+- **A frame that cannot reach `window.top` gets ITSELF back, with no error —
+  and that breaks `getJob()` and the stash key TOGETHER.** Both walk to the top
+  frame for job identity (`getJob()` reads its DOM, `answerFormKey()` its URL),
+  so one unreachable top degrades both at once: `getJob()` returns null, the
+  key falls through to the frame's own href, and the submit asks the stash for
+  a key the opening click never wrote. Root cause of a real Easy Apply filed
+  with no company, title or job id (Proseware, 3 Aug 2026) whose recorded url was
+  `linkedin.com/preload/?_bprMode=vanilla` — the frame's own address. The
+  correct snapshot was sitting in storage under the real `currentJobId` and
+  expired untouched. Note `completed = true` deliberately bypasses the
+  empty-job guard in `capture()` (a late apply page legitimately shows less
+  than the listing), so nothing stopped the write. Mitigated by
+  `background.js:takePendingJob(key, tabId)` falling back to the newest stash
+  from the SAME TAB when the key misses — `sender.tab.id` is shared by every
+  frame in a tab, which is the one identifier both ends still agree on. That
+  fallback is a guess where a keyed hit is a fact, so it gets its own much
+  shorter window (`PENDING_JOB_FALLBACK_MS`, 30 min vs the 2 h TTL).
+- **The same unreachable-top frame kills an EXTERNAL apply outright, and a
+  subframe is the wrong place to handle one even when the read succeeds.**
+  Found on a real loss the user reported as "the popup didn't appear"
+  (wideworld.ai, 4 Aug 2026): the click WAS detected, `capture()` ran inside
+  LinkedIn's hidden `linkedin.com/preload/?_bprMode=vanilla` iframe (same-origin,
+  so `all_frames: true` injects into it), `getJob()` came back null, and the job
+  guard returned BEFORE `confirmPopover()` — which on this path writes nothing,
+  so the whole application was discarded, leaving one "no job found" line in the
+  popup's ring buffer and nothing else. Two independent faults, one frame:
+  it cannot READ the job (unreachable top, per the bullet above), and it cannot
+  SHOW the popover, because `mount()` appends to that frame's own
+  `documentElement` — invisible even when the read works. `showResult()` had
+  already solved the second half for the RECEIPT via `relayToTop`; the ask-first
+  path never got it. Now `capture.js:relayApply` hands an immediate apply from
+  any subframe to frame 0 (`tracker-relay-apply` → `tracker-apply`, same
+  targeting rules as the receipt relay: tab from `sender`, never the message,
+  and frame 0 may not relay to itself), and frame 0 answers `false` when it
+  can't see a job either so the local attempt still records the failure.
+  **Gated to the immediate-apply path on purpose** — Easy Apply's deferred
+  submit legitimately fires inside the modal's iframe, and its answers only
+  exist there. Debugging note: the popover host is a bare `<div>` with no
+  attributes on `<html>` whose `shadowRoot` reads null (closed), so
+  `[...document.documentElement.children]` is how you check whether it mounted
+  without needing to see the page.
+- **`chrome.runtime.sendMessage` throws SYNCHRONOUSLY once the extension
+  context dies, and a synchronous throw is invisible to a trailing `.catch()`.**
+  Reloading an unpacked extension does exactly that to every tab already open —
+  content scripts are NOT re-injected, so the old script keeps running against a
+  dead port. `capture()` ends in `send(payload).then(showResult)`, so the throw
+  unwound the entire capture: no record, no receipt, AND no failure entry, since
+  `recordFailure` is itself a `sendMessage`. The result is indistinguishable
+  from the click never being detected — which is exactly the ambiguity that made
+  the wideworld.ai loss above take a full session to pin down. Every content-script
+  message now goes through `capture.js:tell()`, which returns a resolved promise
+  carrying `{ok:false, error, dead:true}` instead of throwing, and names the fix
+  in the popover ("refresh this page"). **When a capture goes missing right
+  after any extension edit, check this before anything else** — and remember
+  that a stale tab shows `Extension context invalidated` in its console, which
+  is the cheapest positive confirmation available.
 - **`trim()` does not remove invisible characters, and platforms ship them
   inside button labels.** JobStreet's submit button reads
   `"⁠Submit application"` — a WORD JOINER glued to the front. It renders
@@ -364,6 +537,23 @@ axis) + **DM Mono**, from Google Fonts.
   in display, corrosive in the bank — `"City"` and `"City City"` normalise
   differently, so one question splits into two rows and stops grouping.
   `answers.js:labelFor()` now drops a part already contained in one it kept.
+  **That fix did NOT cover the common case, and the bank kept doubling for
+  another week.** It compares label PARTS against each other, but LinkedIn's
+  Easy Apply fields carry no `aria-labelledby` at all — the doubling lives
+  inside a single `<label for=…>`, a different branch entirely:
+  `<span aria-hidden="true">Email address</span><span
+  class="visually-hidden">Email address</span>`. That is the standard a11y
+  pattern (visible copy hidden from screen readers, hidden copy carrying the
+  accessible name) and BOTH are rendered, because `visually-hidden` clips
+  rather than `display:none` — so `innerText` returns both. Confirmed live
+  3 Aug 2026; it had already reached 55 of 174 rows across 19 distinct
+  questions. `answers.js:labelText()` now reads labels the way assistive tech
+  does, skipping `aria-hidden="true"` subtrees, and is used by EVERY branch of
+  `labelFor()` plus the radio legend. Two guards it needs: skip nodes with no
+  client rects (keeps `innerText`'s display:none behaviour instead of silently
+  gaining `textContent`'s — a visually-hidden span still HAS rects, which is
+  exactly how it differs), and fall back to raw text when stripping leaves
+  nothing, so a label with an aria-hidden copy and no twin still resolves.
 - **A capture-phase sweep reads the DOM BEFORE the page's own handler runs** —
   which is the entire point for a wizard (the step's fields are gone
   afterwards) and exactly wrong for a **typeahead**: clicking a suggestion
@@ -441,6 +631,49 @@ axis) + **DM Mono**, from Google Fonts.
   would have. Only fall back to computing contrast from the authored hexes in
   source when the probe shows a mismatch. `:root` custom properties, all
   geometry, and font checks DO survive either way.
+- **A claude-in-chrome tab is usually HIDDEN, and Chrome freezes hidden tabs —
+  which looks exactly like the site rate-limiting you.** Cost several rounds on
+  3 Aug 2026: LinkedIn job pages came back as ~1,500-char skeletons (nav + top
+  card, no `#job-details`), reproducibly, and it was misdiagnosed as LinkedIn
+  throttling. It was not. In a background tab `requestAnimationFrame` never
+  fires and `setTimeout(fn, 100)` takes ~1000ms, so anything the page defers —
+  lazy-loaded JD, `IntersectionObserver`, hydration, polling loops — simply
+  never runs. The tell that should have settled it immediately: the USER was
+  applying to jobs on the same account in the same minutes, fine. A server-side
+  limit cannot be that selective.
+  **Probe before concluding anything about a slow page** (two seconds, no
+  side effects):
+  `visibilityState` / does rAF fire within 2s / does a 100ms timer take ~1s.
+  All three agreeing = frozen tab, not the site. Fixes, in order: `computer`
+  actions (real input events force layout and DID partially revive the page,
+  though not the deferred fetches), then ask the user to foreground the Chrome
+  window — a fresh `tabs_create_mcp` tab is ALSO hidden, so creating one does
+  not help. Once visible, the same URL loaded 11,362 chars on the first try.
+  **Two more symptoms of the same freeze, both seen 4 Aug 2026:** `innerText`
+  returns `""` even for elements that exist, because it needs layout and a
+  frozen tab has none (`textContent` is unaffected — and note `getJob()` reads
+  the JD via `innerText`, so a JD can come back empty rather than missing); and
+  `Page.captureScreenshot` times out, so you cannot screenshot your way out of
+  it. **`document.title` survives regardless** — on `/jobs/view/` it is
+  `"<title> | <company> | LinkedIn"`, which was enough to identify a job
+  (Lamna · Senior AI Engineer) for a by-hand refile when every top-card
+  selector returned null. Same last-resort path `getJob()` already trusts on
+  that layout.
+  Also: CDP JavaScript-evaluate 45s timeouts and `Page.captureScreenshot`
+  timeouts are downstream of this, not separate faults — poll loops written
+  as `setTimeout(…, 1000)` silently run at 1s+ and blow the deadline.
+  **Same mechanism, product side:** the capture popover's auto-dismiss burned
+  down unseen in a backgrounded tab (see the external-apply gotcha below).
+  Background-tab semantics bit the product and then bit the debugging of it.
+- **The browser tool BLOCKS base64 and cookie/query-string-looking output, and
+  truncates text results at ~1,000 chars.** Getting a 2,314-char JD out of a
+  page defeated `slice()` (truncated), `btoa()` (`[BLOCKED: Base64 encoded
+  data]`) and a selector string containing `[id^=…]` (`[BLOCKED: Cookie/query
+  string data]`). What works: `navigator.clipboard.writeText()` in the page,
+  then `Get-Clipboard -Raw` — but it needs `document.hasFocus()`, so click the
+  page via `computer` first, and it overwrites the user's clipboard (say so).
+  Verify the transfer with a checksum computed on BOTH sides; PowerShell adds
+  CRLF, so normalise before comparing.
 - **Windows consoles default to cp1252.** A Python one-liner printing
   non-ASCII (em-dash, curly quotes) via Bash/PowerShell can raise
   `UnicodeEncodeError` — `sys.stdout.reconfigure(encoding='utf-8',
@@ -472,6 +705,12 @@ axis) + **DM Mono**, from Google Fonts.
   http.server`, then navigate/screenshot that. Mint the cookie directly via
   `pipeline.auth.create_session(conn, user_id)` in a one-off script rather
   than needing the real login password.
+- **Testing a LinkedIn adapter fix without risking a real apply:** open Easy
+  Apply on any live posting via claude-in-chrome, inspect the DOM directly
+  with `javascript_tool` (`document.querySelector`, `el.shadowRoot`, etc.),
+  then close and **Discard** — never Save/Submit. Found and verified the
+  shadow-root bug this way (3 Aug 2026) without a single real application
+  created or harmed in the process.
 - **Jinja prints Python `None` as the literal string `"None"`**, not empty,
   when interpolated directly (`{{ x }}`). Bit us in
   `<input value="{{ e.extraction.company }}">` when `company` was `null` —
@@ -591,6 +830,72 @@ axis) + **DM Mono**, from Google Fonts.
   event type needs an explicit `_ROLE` entry (and a look at whether it's
   "you did this" — add to `_OWN` too) or it inherits the wrong color instead
   of failing loudly.
+- **`application_status`'s `ORDER BY` had recency as the PRIMARY sort key and
+  precedence as only a tiebreaker — backwards from what invariant #2 and the
+  gapped CASE values imply.** Caught on a real application (Tailspin
+  Consulting, 2 Aug 2026): `interview_invite` landed, then a later
+  lower-ranked `confirmation` email (a technical-assessment receipt) landed
+  a week after, and because the view sorted by `occurred_at DESC` first, the
+  newer-but-lower-ranked row won outright — status silently regressed from
+  "interviewing" to "applied". Fixed in migration 013 by swapping the sort
+  key order: precedence first, `occurred_at` only breaks ties between events
+  of EQUAL precedence (same-instant manual entries, per the tie-break gotcha
+  above). Since `application_status` is a pure view, the fix retroactively
+  corrected every application's derived status with no backfill needed —
+  the general lesson invariant #2's "current status is DERIVED" is meant to
+  buy you.
+- **`document.querySelector` never descends into a shadow root, open or
+  closed — and LinkedIn wraps the ENTIRE Easy Apply modal in one when it's
+  opened from the standalone `/jobs/view/<id>/` page, silently losing every
+  screening answer with zero error anywhere.** Root cause of a real,
+  two-application data loss (Bellows & Munson Asia, 2 Aug 2026 — a visa
+  sponsorship question; Relecloud, 3 Aug 2026 — 5-7 varied questions), found
+  and confirmed live on 3 Aug 2026 after three earlier attempts missed it:
+  1. First guess: `linkedin.js`'s `answerFormRoot()` required a literal
+     `<form>` descendant of `[role='dialog']`/`[data-test-modal]` — dropped
+     as a strict widening. **Did not fix it** (confirmed on the second real
+     miss, same day).
+  2. Two diagnostic-only attempts to describe *what was on the page* during
+     a miss were ALSO wrong, both confirmed live: walking up from
+     `controls[0]` (first control in document order) landed on LinkedIn's
+     persistent top-nav search box every time — it's earlier in the DOM than
+     any page content, modal open or not. Switching to the last control
+     landed on Google reCAPTCHA's own hidden textarea, also portalled to the
+     end of `<body>`. Filtering both out by class still left 40+ legitimate
+     non-modal candidates (an open messaging panel, filter dropdowns).
+     **Position cannot distinguish a real form field from page chrome on a
+     page this busy — three attempts confirmed that, not assumed it.**
+  3. A `MutationObserver({childList, subtree})` watching for real form-field
+     insertions did better (live-verified to catch `fb-dash-form-element`
+     nodes the instant a normal modal opens) but STILL reported nothing
+     useful on the real failing session — because the actual root cause
+     isn't about content being hard to find by position, it's that shadow
+     DOM makes it invisible to `document`-rooted APIs entirely: neither
+     `querySelector` nor a `document.body`-rooted `MutationObserver` can see
+     inside a shadow tree without explicitly recursing into `el.shadowRoot`.
+  The actual finding, confirmed live by opening the SAME job's Easy Apply
+  from both entry points back to back: from the split-pane search results
+  view, the modal is plain light DOM (`role="dialog"` found instantly). From
+  the standalone job-view page, the IDENTICAL `.jobs-easy-apply-modal`
+  markup exists, just inside an open shadow host (`<div
+  class="theme--dark">`) — LinkedIn's own dark-theme scoping, incidentally.
+  This is the SAME shadow-DOM behavior the "Shadow DOM breaks click
+  delegation" gotcha above already documented for individual controls;
+  it turns out to apply to the modal's own root container too, on this
+  entry path. Fixed with `deepQuerySelector()` in `linkedin.js` (recurses
+  into open shadow roots exactly like `answers.js`'s `collect()` already
+  does one step later, for gathering fields once a root is found) and a
+  matching `deepExists()` for the `noRootHint` diagnostic's `dialogPresent`
+  check, which had the identical blind spot. Verified live end-to-end:
+  `deepQuerySelector` finds the real modal, and `collect()` run against that
+  root correctly enumerates its actual fields with their real values.
+  **There is no way to manually add a missed answer after the fact** — only
+  the extension writes `application_answers`, and both real sessions' lost
+  answers (the visa question, and 5-7 questions on Relecloud) are
+  unrecoverable. **Lesson for next time a capture silently comes up short:**
+  check for an open shadow root wrapping the relevant container FIRST
+  (`el.shadowRoot` on anything in the ancestor chain) — cheaper to rule out
+  than three rounds of positional guessing, and it was the actual answer.
 
 ## Environment
 
@@ -657,6 +962,45 @@ win). No per-shell export needed for local dev.
   textarea on the form: open the popup and read that line.** `0 textareas
   seen` means the root is wrong; a nonzero count with `N unlabelled` means
   `labelFor()` is.
+  **The "NOT in a closed shadow root" claim above needed a correction**: an
+  OPEN shadow root wrapping the entire modal (not individual controls) turned
+  out to be exactly what broke two real applications on 2-3 Aug 2026 — see
+  the dedicated gotcha above. That was specific to Easy Apply opened from the
+  standalone `/jobs/view/<id>/` page; the split-pane search view never showed
+  it. Fixed (`deepQuerySelector`) and verified on a real apply 3 Aug 2026
+  (City Power & Light, opened from `/jobs/view/`): 9/9 answers stored, including
+  real screening questions (years of C#/C++ experience, real-time systems
+  experience, salary expectation) — the first real confirmation this path
+  works, not just that the mechanism looks right. Textareas remain untested.
+  **Label quality was separately wrong the whole time and is now fixed** — see
+  the `aria-hidden`/`visually-hidden` twin gotcha. Verified on live captures
+  3 Aug 2026 (Southridge APAC, Awesome Computers): 0 doubled labels and 0 form-control
+  leaks across the whole 178-row bank.
+- **`getRecruiter()` — rewritten 3 Aug 2026 and verified once.** The previous
+  version stored the entire card blob as the name and the name as the role, on
+  all 10 extension-captured contacts (repaired by hand). Both its structural
+  assumptions were wrong: there is ONE `<a href="/in/…">` in the card, not a
+  nested pair, and the first own-text `<span>` is the NAME, not the headline.
+  It now takes the first two own-text spans positionally, filtering the
+  connection degree and "Job poster" badge. Confirmed on a real capture (Southridge
+  APAC — name, headline and profile URL each in their own field). **One card is
+  the entire evidence base**; a second card-bearing job would say whether that
+  two-span shape is stable or just this layout.
+- **`ats` is never detected on a LinkedIn EXTERNAL apply whose control is a
+  `<button>`** (verified: `.jobs-apply-button` is a BUTTON with no href on that
+  layout, so `resolveExternalUrl()` returns null). The destination isn't in the
+  DOM — LinkedIn resolves it server-side on click — so reading it needs a
+  `tabs`/broad host permission, which `docs/open-source.md` §3 argues against
+  during the author's job search. 6 of 9 external applies have no ATS; at least
+  one demonstrably should (a Sourceability click opened a `gh_jid=` Greenhouse
+  URL). Cheaper alternative: infer it from the confirmation email's sender
+  domain, which already populates `ats` on some records.
+- **A LinkedIn `/jobs/view/` layout exists with NO `#job-details`,
+  `.jobs-description__content` or `.jobs-box__html-content`** (seen 3 Aug 2026
+  on the Proseware posting) — every JD selector in the adapter misses it. Not
+  fixed: 45 of 46 extension captures have a JD, so this has cost nothing real,
+  and a structural fallback would be exactly the speculative adapter change
+  that has misfired here before. Revisit only if a capture actually loses a JD.
 - **The redesigned palette, on a real screen.** Layout, type, spacing,
   responsive behaviour and contrast were all verified (contrast numerically —
   0 WCAG AA failures in both themes); the *rendered colour* never was,
@@ -707,6 +1051,11 @@ win). No per-shell export needed for local dev.
    the original plan:
    tune match thresholds against real `emails.match_score` values, and watch
    for more `ALLOWLIST_DOMAINS` gaps as new mail arrives.
+   **Threshold tuning has its first real result (4 Aug 2026)** — see the
+   `COMPANY_TRGM_MIN` gotcha: the gate, not the score, was the problem, and it
+   was fixed with a zero-candidate fallback rather than a new number. The
+   scoring thresholds themselves (`AUTO_MATCH_SCORE`, `AUTO_MATCH_MARGIN`)
+   remain untuned and still want a larger sample.
    **Note (28 Jul 2026):** switching this account to IMAP and re-running
    `backfill -d 14` (Step 7 of the IMAP rollout, see `docs/email-ingest.md`)
    added 4 more real candidate emails, still `pending` in `job_queue` —
@@ -746,6 +1095,15 @@ win). No per-shell export needed for local dev.
    **Unresolved as of 29 Jul: check `events`/`captured_at` timestamps on the
    46 to tell which.** Don't act on this dimension (report it, cut it, trust
    it) until that's answered.
+   **Overtaken by events, 3 Aug 2026.** The question stopped mattering because
+   a better dimension arrived: `applications.resume_file` (migration 014) is
+   read off the apply form rather than asked for afterwards, and it genuinely
+   splits — 10 AI-engineer vs 8 dotnet-engineer across 18 applications, driving
+   `analytics.by_resume`. That is what `focused` was meant to measure and
+   couldn't. **Remaining work is a deletion:** cut `focused`, `by_focus` and
+   its artifact-existence COALESCE fallback, and decide whether the receipt's
+   tailored/generic buttons are worth keeping for the rare marked one. Don't
+   re-run the timestamp forensics above — nothing depends on the answer now.
 4. **First feature: follow-up drafting** (`docs/features.md` §3.1) — best
    evidence-to-effort ratio in the backlog, and `REMINDER_DAYS = 10` already
    matches the researched 7–10 business-day window. **Half-built as of 28 Jul:**
@@ -762,6 +1120,20 @@ win). No per-shell export needed for local dev.
    entirely (`unknown company` on the record — corrected by hand). All three
    fixed same-day; salary/work-type capture added alongside. **One more real
    apply needed** to confirm the race fix holds — see known-untested.
+   **LinkedIn is now the well-exercised path** (3 Aug 2026): Easy Apply and
+   external both verified end to end on real applies, plus the screening-answer
+   labels, the recruiter card, the resume field and the external-apply popover.
+   JobStreet's race fix is still the one waiting on a real submit.
+   **Two real LinkedIn losses since, both refiled by hand** (4 Aug 2026):
+   wideworld.ai (external — root-caused to the preload-frame gotcha above, fixed
+   by `relayApply`) and Lamna · Senior AI Engineer (Easy Apply — **cause
+   never established**; it fell in the window right after an extension reload,
+   so the orphaned-context case is the leading candidate but was not confirmed,
+   and the popup's ring buffers were not read in time). Both records exist with
+   `captured_via='manual'`; the Easy Apply's screening answers are gone for
+   good. **Next Easy Apply is the one to watch** — with `tell()` in place a
+   dead context now announces itself instead of vanishing, so a repeat that is
+   STILL silent means a real detection miss on that form, not a stale tab.
    **Indeed: never exercised.** Keep this **load-unpacked only** — an
    unpacked extension has a random per-install ID, while a Chrome Web Store
    listing mints a stable public one that LinkedIn's extension-fingerprinting
