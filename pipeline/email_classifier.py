@@ -34,7 +34,35 @@ PROMPT_DIR = Path(__file__).resolve().parent.parent / "prompts"
 CLASSIFY_PROMPT_VERSION = "email_classify_v1"
 EXTRACT_PROMPT_VERSION = "email_extract_v1"
 
-CLASSIFY_MODEL = os.environ.get("TRACKER_CLASSIFY_MODEL", "claude-haiku-4-5-20251001")
+# Classification moved to Sonnet 5 on 4 Aug 2026; extraction stays on Haiku.
+#
+# Haiku got a Workday "Verify your candidate account" mail WRONG, and
+# reproducibly so — 3/3 runs called it a `confirmation` while calling a
+# near-identical one from a second employer `not_job_related` 3/3. It is an account-activation
+# link, not an application receipt. Sonnet 5 answered correctly 3/3 on the SAME
+# v1 prompt, and was MORE confident on the true positive it shares with Haiku
+# (0.98 vs 0.95), so this buys the fix without a prompt change.
+#
+# The prompt is genuinely underspecified here and that is worth fixing too:
+# rule 2 exempts "platform account mail" and lists only LinkedIn/JobStreet/
+# Indeed examples, so ATS account mail falls in a gap, while rule 7 ("a missed
+# rejection is worse than a false alarm") pushes toward flagging it. Sonnet
+# infers the intended answer; Haiku follows the text as written. An
+# email_classify_v2 rule would pin the definition for ANY model — still worth
+# writing, just no longer urgent.
+#
+# Cost, measured rather than assumed (count_tokens against both models on 12
+# real emails, since Sonnet 5's tokenizer runs ~21% higher on this content):
+# at ~141 classify calls/month this is ~$0.49 -> ~$1.74/month. The near-miss it
+# prevents was a 0.65-scoring duplicate `confirmation` on a live application.
+#
+# Extraction deliberately stays on Haiku: every extraction inspected so far has
+# been correct, including the Wingtip one that produced exactly the right company
+# and title while the MATCHER failed around it. Change what there is evidence
+# for. Both remain env-overridable, and emails.model records the model per row,
+# so old rows stay attributable and a selective re-run stays possible — the
+# same property invariant #5 buys for prompts.
+CLASSIFY_MODEL = os.environ.get("TRACKER_CLASSIFY_MODEL", "claude-sonnet-5")
 EXTRACT_MODEL = os.environ.get("TRACKER_EXTRACT_MODEL", "claude-haiku-4-5-20251001")
 
 STAGE1_BODY_CHARS = 4_000
