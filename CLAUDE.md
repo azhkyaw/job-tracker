@@ -149,16 +149,36 @@ it: the resume picker is PROMOTED to `applications.resume_file` (migration
    4 Aug 2026), where the email hadn't been *misfiled* so much as it had
    created its own record after the `COMPANY_TRGM_MIN` gate hid the real one —
    same remedy, since that record contained nothing but the email's own events
-   and `_job_is_empty` therefore cleared it. 98 → 95 applications. When a
-   duplicate has an extension-captured twin, keep the EXTENSION record: it
-   carries the `platform_job_id`, the JD and the answers, while the email-made
-   one has none of them.
+   and `_job_is_empty` therefore cleared it. 98 → 95 applications. Used a fourth
+   time the same way (Wingtip Talent Group, 4 Aug 2026, 96 → 95) after the gate
+   hid the real record from LinkedIn's own confirmation — same shape, same
+   remedy. When a duplicate has an extension-captured twin, keep the EXTENSION
+   record: it carries the `platform_job_id`, the JD and the answers, while the
+   email-made one has none of them.
+   **Driving `refile_email` without the UI:** it is a route, not a library
+   function, so reach it through the real code path rather than hand-writing the
+   UPDATEs — `starlette.testclient.TestClient(web.app, cookies={'session': sid})`
+   with `sid` from `auth.create_session(conn, user_id)` runs the actual route
+   against the dev DB. Snapshot the affected rows to JSON first; the route
+   deletes events and may delete an application.
 4. **`norm_company()`** in `pipeline/email_classifier.py` is the single source
    of truth for `company_norm`. Never reimplement it in SQL. It strips SEA
    corporate forms including Indonesian PT/CV *prefixes*.
 5. **Prompts are versioned files** in `prompts/`. Changing one = new file
    (`*_v2.txt`) + bump the constant; every DB row records its prompt version
    so selective re-runs are possible. Never edit a version file in place.
+   **The MODEL deserves the same discipline, and the schema already supports
+   it** — `emails.model` (and `extractions.model`) records the model per row
+   exactly as `prompt_version` does, so a model swap stays attributable and
+   selectively re-runnable. Treat it like a prompt version: change the default,
+   say why in a comment next to the constant, and leave existing rows on the
+   old model rather than mass re-running. `CLASSIFY_MODEL` moved to
+   `claude-sonnet-5` on 4 Aug 2026 (Haiku was reproducibly misclassifying ATS
+   account-activation mail as `confirmation` — see the constant's comment for
+   the measurement); `EXTRACT_MODEL` and `JD_MODEL` stay on Haiku, since every
+   extraction inspected has been correct. A model change is NOT a substitute
+   for a prompt fix where the prompt is genuinely underspecified: a stronger
+   model infers the intended answer, a rule states it for every model.
 6. **Tenancy:** request routes resolve the session on an admin connection,
    then run data queries via `db.connect_scoped(user_id)` (SET ROLE
    tracker_app + `app.user_id` GUC → Postgres RLS). `users`/`sessions` are
@@ -335,19 +355,46 @@ axis) + **DM Mono**, from Google Fonts.
   is ONLY a gate — the score is title 0.5 + date 0.3 + platform 0.2, so
   company agreement contributes nothing once past it (invariant #3's "company
   carries almost no information", same fact from the other side).
-  Fixed by a fallback, NOT by moving the threshold: `_CANDIDATES_BY_TITLE_SQL`
-  retries on exact title, ignoring company, only when the gate yields zero
-  candidates. Widening `COMPANY_TRGM_MIN` itself loosens the net for every
-  email, and one title routinely spans several employers here ("Senior AI
-  Engineer" covers five), so it risks a silent WRONG auto-match; the fallback
-  can only ADD candidates where there were none, and `AUTO_MATCH_SCORE` +
-  `AUTO_MATCH_MARGIN` still both apply, so several same-titled applications
-  fail the margin and land in triage. A visible triage item beats a silent
-  duplicate — the same preference invariant #3 states for merges.
+  Fixed by a fallback, NOT by moving the threshold: `_CANDIDATES_RESCUE_SQL`
+  runs only when the gate yields zero candidates, and admits a job on either of
+  two rules — an EXACT title (ignoring company entirely), or one company name's
+  WORDS containing the other's. Widening `COMPANY_TRGM_MIN` itself loosens the
+  net for every email, and one title routinely spans several employers here
+  ("Senior AI Engineer" covers five), so it risks a silent WRONG auto-match;
+  the fallback can only ADD candidates where there were none, and
+  `AUTO_MATCH_SCORE` + `AUTO_MATCH_MARGIN` still both apply, so several
+  same-titled applications fail the margin and land in triage. A visible
+  triage item beats a silent duplicate — the same preference invariant #3
+  states for merges.
+  **The word-containment rule is rule 2, added for a FOURTH case that walked
+  past rule 1 as well** (Wingtip Talent Group, 4 Aug 2026): LinkedIn's own
+  confirmation said "Wingtip Talent Group" while the extension had captured
+  "Wingtip Talent Group | Specialist Technology Recruitment" (0.375), and the
+  titles differed by a platform-added suffix — "Senior Full Stack .NET Engineer"
+  against "Senior Full Stack .NET Engineer- Hybrid - Singapore" — so the
+  byte-identical test missed it too. A tagline appended to an employer's name is
+  a strict word SUPERSET, which trigram similarity actively punishes: the extra
+  words dilute it toward zero however exact the shared prefix is. Measured
+  before it was written — across all 81 distinct `company_norm` values in the
+  real DB it admits exactly ONE new pair, the Wingtip one, so no false positives on
+  real data. It independently covers `contoso` ⊂ `contoso markets` and `fabrikam` ⊂
+  `fabrikam group`; Litware stays rule 1's, since `norm_company` drops its
+  parenthetical and leaves `litware singapore` against `litware
+  international`, neither a subset. Neither rule covers all four alone.
+  **The two rules are OR'd into ONE query rather than tried in sequence, and
+  that is load-bearing, not tidiness.** `find_match` computes
+  `margin_ok = len(scored) == 1 or …`, so a LONE rescued candidate auto-matches
+  with no margin check at all. Sequencing would have handed the Wingtip confirmation
+  exactly one candidate — "Fincher Talent", an unrelated agency holding the
+  byte-identical title `Senior Full Stack .NET Engineer`, captured three minutes
+  after the real Wingtip record — which scores 0.920 and would have auto-matched
+  onto the WRONG employer: silent, and worse than the duplicate being fixed.
+  OR'd, the true Wingtip rows compete, the margin falls to 0.094 and it lands in
+  triage instead. Any future rescue rule joins the same OR, for the same reason.
 - `emails.match_score` stores the best candidate score even for `pending`
   rows — that's the tuning dataset. **`NULL` means something different and
   more specific: ZERO candidates were found, not a low-confidence miss.** That
-  is how the three duplicates above were identified after the fact; on a
+  is how the four duplicates above were identified after the fact; on a
   duplicate the email reads `triage_state = 'auto_matched'` with a NULL score,
   which looks like success and is not.
 - **Shadow DOM breaks click delegation:** `shared/capture.js`'s apply-detection
@@ -1047,15 +1094,45 @@ win). No per-shell export needed for local dev.
    `AUTO_MATCH_SCORE`) but is really a receipt tied to that application —
    first real candidate for a `email_classify_v2.txt` few-shot example. Still
    open: one inbound lead (a recruitment agency that withheld the client
-   name) awaiting a company-name decision in the triage UI. Remaining from
-   the original plan:
+   name) awaiting a company-name decision in the triage UI.
+   **A second instance of that same shape, and it is structural, not a bug**
+   (an agency recruiter's InMail, "Software Developer Role - Singapore", 3-4 Aug 2026): a
+   LinkedIn **InMail notification** carries the recruiter's message text and
+   nothing else — no employer anywhere in the body, and the sender is always
+   `hit-reply@linkedin.com`, so the company can't come from the domain either.
+   The extraction correctly returns `company: null`, and `find_match` returns
+   `pending` on its FIRST line (`if not company`) — before the candidate gate,
+   so neither `COMPANY_TRGM_MIN` nor the rescue rules ever run and
+   `match_score` stays NULL for a third distinct reason. Expect every recruiter
+   InMail to land in triage permanently; that is correct behaviour, since only
+   a human knows which employer the recruiter meant (invariant #9: a
+   `recruiter_outreach` is never auto-created). Do NOT "fix" this by inventing
+   a company from the recruiter's own agency — the two are routinely
+   different, and the record would assert something the email never said.
+   Remaining from the original plan:
    tune match thresholds against real `emails.match_score` values, and watch
    for more `ALLOWLIST_DOMAINS` gaps as new mail arrives.
    **Threshold tuning has its first real result (4 Aug 2026)** — see the
    `COMPANY_TRGM_MIN` gotcha: the gate, not the score, was the problem, and it
    was fixed with a zero-candidate fallback rather than a new number. The
    scoring thresholds themselves (`AUTO_MATCH_SCORE`, `AUTO_MATCH_MARGIN`)
-   remain untuned and still want a larger sample.
+   remain untuned and still want a larger sample — though `AUTO_MATCH_MARGIN`
+   has now demonstrably earned its keep, since it is the only thing that stops
+   the rescue fallback auto-matching a same-titled unrelated employer (the
+   Fincher Talent near-miss in that gotcha).
+   **A second finding the same day, from comparing against LinkedIn's own job
+   tracker** (`/jobs-tracker/?stage=applied`, read by hand in the browser):
+   all 77 of its applied entries were present here, matched by
+   `postings.platform_job_id` against the `/jobs/view/<id>` links — zero
+   missing, which is the first external confirmation that capture coverage is
+   complete. The gaps run the other way and are all explained: LinkedIn has no
+   record of an EXTERNAL apply unless you answer its "did you apply?" prompt
+   (2 cases), and archiving a job removes it from the applied stage (2 more).
+   The one thing LinkedIn genuinely knows that this system does not is
+   "Application viewed" — 12 there against 7 `viewed` events here, its set a
+   strict superset of ours. That signal only reaches us as email, so the
+   remaining 5 are simply mail that never arrived or never classified; reading
+   it off the page would mean scraping, which invariant #1 forbids.
    **Note (28 Jul 2026):** switching this account to IMAP and re-running
    `backfill -d 14` (Step 7 of the IMAP rollout, see `docs/email-ingest.md`)
    added 4 more real candidate emails, still `pending` in `job_queue` —
