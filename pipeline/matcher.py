@@ -49,8 +49,13 @@ _CANDIDATES_SQL = _CANDIDATES_BASE + """(j.company_norm = %(company)s
        OR similarity(j.company_norm, %(company)s) >= %(cmin)s)
 """
 
-# Last resort when the company gate above admits NOBODY: the same title,
-# exactly, ignoring the company entirely.
+# Last resort when the company gate above admits NOBODY. Two independent rules,
+# OR'd into ONE query rather than tried in sequence, so the scorer sees every
+# rescued candidate at once and AUTO_MATCH_MARGIN arbitrates between them
+# instead of an arbitrary precedence between the rules:
+#
+#   1. the same title, exactly, ignoring the company entirely
+#   2. one company name's words are a strict subset of the other's
 #
 # The gate is the only thing standing between an email and the application it
 # belongs to, and an employer that brands itself differently in mail than on
@@ -70,6 +75,27 @@ _CANDIDATES_SQL = _CANDIDATES_BASE + """(j.company_norm = %(company)s
 # got to see the candidate. match_score came out NULL, which is how these are
 # told apart from a real low-confidence miss.
 #
+# Rule 2 exists because a FOURTH case (Wingtip Talent Group, 4 Aug 2026) walked
+# past rule 1 as well: LinkedIn's own confirmation said "Wingtip Talent Group"
+# while the extension had captured "Wingtip Talent Group | Global Niche
+# Technology Recruitment" (company_sim 0.375), and the titles differed by a
+# platform-added suffix — "Senior Full Stack .NET Engineer" against "Senior Full
+# Stack .NET Engineer- Hybrid - Singapore" — so the byte-identical test missed
+# it too. A tagline appended to an employer's name is a strict SUPERSET of the
+# name in word terms, which trigram similarity does not reward: the extra words
+# dilute it toward zero however exact the shared prefix is. Word containment is
+# the far more precise signal, and unlike a lower COMPANY_TRGM_MIN it does not
+# loosen anything for names that merely LOOK alike.
+#
+# Measured before it was written, against all 81 distinct company_norm values in
+# the author's real DB: rule 2 admits exactly ONE new pair — the Wingtip one — so on
+# real data it has no false positives at all. Against the three cases above it
+# would independently have caught Contoso ('contoso' ⊂ 'contoso markets') and
+# Fabrikam ('fabrikam' ⊂ 'fabrikam group'); Litware stays rule 1's, since
+# norm_company drops its parenthetical and leaves 'litware singapore' against
+# 'litware international', neither a subset of the other. The two rules cover
+# all four real failures together and neither covers them alone.
+#
 # Widening COMPANY_TRGM_MIN itself was the other option and is worse: it loosens
 # the net for EVERY email, and one title routinely spans several employers here
 # ("Senior AI Engineer" covers five), so a same-day confirmation could auto-match
@@ -81,8 +107,16 @@ _CANDIDATES_SQL = _CANDIDATES_BASE + """(j.company_norm = %(company)s
 # same preference invariant #3 states for merges (a wrong split is recoverable,
 # a wrong merge is not). Nothing here can create a match the scorer wouldn't
 # have made on its own.
-_CANDIDATES_BY_TITLE_SQL = _CANDIDATES_BASE + """lower(btrim(coalesce(j.title_canonical, '')))
-      = lower(btrim(%(title)s))
+_CANDIDATES_RESCUE_SQL = _CANDIDATES_BASE + """(
+          -- rule 1: the same title, exactly, whatever the company is called
+          (%(title)s::text IS NOT NULL
+           AND lower(btrim(coalesce(j.title_canonical, '')))
+             = lower(btrim(%(title)s)))
+          -- rule 2: one company name's words contain the other's, either way
+          -- round (the email may carry the longer or the shorter form)
+       OR string_to_array(j.company_norm, ' ') @> string_to_array(%(company)s, ' ')
+       OR string_to_array(j.company_norm, ' ') <@ string_to_array(%(company)s, ' ')
+      )
 """
 
 
@@ -136,11 +170,13 @@ def find_match(conn, user_id, extraction: Extraction, occurred_at: datetime) -> 
         "cmin": config.COMPANY_TRGM_MIN,
     }
     cands = conn.execute(_CANDIDATES_SQL, params).fetchall()
-    if not cands and extraction.role_title:
-        # The company gate admitted nobody — try exact title instead, so a
-        # rebranded sender can still reach its own application rather than
-        # silently minting a second one. See _CANDIDATES_BY_TITLE_SQL.
-        cands = conn.execute(_CANDIDATES_BY_TITLE_SQL, params).fetchall()
+    if not cands:
+        # The company gate admitted nobody — fall back to an exact title or a
+        # containing company name, so a rebranded sender can still reach its own
+        # application rather than silently minting a second one. This can only
+        # ADD candidates where there were none; AUTO_MATCH_SCORE and
+        # AUTO_MATCH_MARGIN still decide the outcome. See _CANDIDATES_RESCUE_SQL.
+        cands = conn.execute(_CANDIDATES_RESCUE_SQL, params).fetchall()
     if not cands:
         return MatchResult("pending")
     scored = sorted(

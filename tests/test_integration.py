@@ -38,6 +38,7 @@ FAKE_CLASSIFY = {
     "recruiter-pitch": Classification(True, "recruiter_outreach", 0.9, "stub"),
     "recruiter-unknown": Classification(True, "recruiter_outreach", 0.85, "stub"),
     "rebrand-confirmation": Classification(True, "confirmation", 0.93, "stub"),
+    "tagline-confirmation": Classification(True, "confirmation", 0.93, "stub"),
 }
 def _fake_extraction(**kw):
     """Mirror the real extract_email(): raw always carries the full payload."""
@@ -75,6 +76,15 @@ FAKE_EXTRACT = {
     # from the stored title_canonical on purpose.
     "rebrand-confirmation": _fake_extraction(company="Vestbridge Holdings Pte Ltd",
                                              role_title="Senior AI Engineer",
+                                             platform="linkedin"),
+    # The shape of the Wingtip Talent Group duplicate (4 Aug 2026), which walked
+    # past BOTH the company gate and the exact-title fallback: the mail carries
+    # the bare employer name while the job board carried the same name plus a
+    # marketing tagline (company_sim 0.453, under COMPANY_TRGM_MIN), and the
+    # board's title carries a suffix the mail does not, so the byte-identical
+    # test misses too. Only the company-word-containment rule reaches it.
+    "tagline-confirmation": _fake_extraction(company="Harbourline Consulting Group",
+                                             role_title="Staff Platform Engineer",
                                              platform="linkedin"),
 }
 
@@ -241,6 +251,41 @@ with db.connect() as conn:
         "SELECT type FROM events WHERE source_email_id = %s AND application_id = %s",
         (e7, app["id"])).fetchone()
     check("confirmation landed on the existing timeline", ev7 is not None, ev7)
+
+    print("path 3e: a tagline-padded company name still reaches its own application")
+    # Rule 1 (exact title) cannot save this one — the board's title carries a
+    # suffix the mail does not — so this fails unless rule 2 (company word
+    # containment) is in _CANDIDATES_RESCUE_SQL. The real one minted a third Wingtip
+    # Consulting Group record on 2 Aug 2026, again with match_score NULL.
+    tag_job = conn.execute(
+        "INSERT INTO jobs (user_id, company_norm, title_canonical) "
+        "VALUES (%s, %s, %s) RETURNING id",
+        (user_id, "harbourline consulting group global niche technology recruitment",
+         "staff platform engineer- hybrid - singapore")).fetchone()
+    conn.execute(
+        "INSERT INTO postings (user_id, job_id, platform, platform_job_id, captured_via) "
+        "VALUES (%s, %s, 'linkedin', 'LI-harbourline-1', 'extension')", (user_id, tag_job["id"]))
+    tag_app = conn.execute(
+        "INSERT INTO applications (user_id, job_id) VALUES (%s, %s) RETURNING id",
+        (user_id, tag_job["id"])).fetchone()
+    conn.execute(
+        "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+        "VALUES (%s, %s, 'applied', 'extension', %s, %s)",
+        (user_id, tag_app["id"], NOW, Json({})))
+    conn.commit()
+    e8 = seed_email(conn, user_id, "tagline-confirmation")
+    conn.commit()
+    drain(conn)
+    s8 = email_state(conn, e8)
+    check("auto-matched though company_sim is under the gate AND the title is not identical",
+          s8["triage_state"] == "auto_matched"
+          and str(s8["matched_application_id"]) == str(tag_app["id"]), s8)
+    check("scored on title/date/platform, above the bar",
+          s8["match_score"] and s8["match_score"] >= 0.75, s8)
+    dupe8 = conn.execute(
+        "SELECT 1 FROM jobs WHERE user_id = %s AND company_norm = 'harbourline consulting group'",
+        (user_id,)).fetchone()
+    check("no duplicate job created for the bare company name", dupe8 is None)
 
     print("path 4: failure backoff")
     db.enqueue(conn, user_id, "classify_email",
