@@ -16,16 +16,16 @@
   /* The sweep list is not an error list — it reports on captures that saved.
      Grey by default; only the line that names a real gap takes the warning
      colour, so a healthy form is visibly boring. */
-  ul#sweeps{color:#5A6873;font-variant-numeric:tabular-nums}
-  #sweeps b{font-weight:600;color:#141C24}
-  #sweeps .warn{color:#9A4231}
+  ul#sweeps,ul#prov{color:#5A6873;font-variant-numeric:tabular-nums}
+  #sweeps b,#prov b{font-weight:600;color:#141C24}
+  #sweeps .warn,#prov .warn{color:#9A4231}
   @media (prefers-color-scheme: dark){
     body{color:#DBE3EA;background:#181E25}
     button{border-color:#7FB0FF;background:#7FB0FF;color:#0A1017}
-    #out,h4,li.none,ul#sweeps{color:#8695A2}
+    #out,h4,li.none,ul#sweeps,ul#prov{color:#8695A2}
     ul{color:#E28D79}
-    #sweeps b{color:#DBE3EA}
-    #sweeps .warn{color:#E28D79}
+    #sweeps b,#prov b{color:#DBE3EA}
+    #sweeps .warn,#prov .warn{color:#E28D79}
   }
 </style>
 <button id="cap">Capture this job as interested</button>
@@ -34,4 +34,6 @@
 <ul id="fails"><li class="none">none</li></ul>
 <h4>Recent form sweeps</h4>
 <ul id="sweeps"><li class="none">none</li></ul>
+<h4>Title source</h4>
+<ul id="prov"><li class="none">none</li></ul>
 <script src="popup.js"></script>

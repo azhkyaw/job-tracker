@@ -232,6 +232,28 @@ window.__trackerAdapter = {
     const company = classCompany || structCompany || companyFromDocTitle;
     if (!title && !jdEl) return null;
 
+    // Which of the three sources actually won, recorded so a wrong title is
+    // diagnosable AFTER the fact instead of costing a live session.
+    //
+    // Two real captures stored a title belonging to no job on the page —
+    // Southridge APAC 3 Aug 2026 ("Senior AI/ML Engineer" for what LinkedIn calls
+    // "Data Scientist – Platform AI Squad") and Adatum 2 Aug ("AI Fullstack
+    // Engineer" for "Fullstack Software Engineer"). Both were Easy Apply, both
+    // kept the CORRECT company, and neither was reproducible: replaying all
+    // three layouts live on 4 Aug returned the right title every time, and the
+    // id/title pair was never observed out of sync across a selection change.
+    // Nothing in the record said which branch had produced the string, so
+    // there was no way to narrow it further. This field is that missing fact.
+    const _prov = {
+      title_source: classTitle ? "class" : structTitle ? "struct"
+                  : titleFromDocTitle ? "doctitle" : null,
+      company_source: classCompany ? "class" : structCompany ? "struct"
+                    : companyFromDocTitle ? "doctitle" : null,
+      layout: topLoc.pathname.startsWith("/jobs/collections/") ? "collections"
+            : topLoc.pathname.startsWith("/jobs/view/") ? "view"
+            : topLoc.pathname.startsWith("/jobs/search") ? "search" : "other",
+    };
+
     return {
       platform_job_id: idFromUrl,
       url: idFromUrl ? `https://www.linkedin.com/jobs/view/${idFromUrl}/` : topLoc.href,
@@ -241,6 +263,9 @@ window.__trackerAdapter = {
       location,
       posted_label,
       reposted,
+      // Diagnostic only. buildPayload() whitelists the fields it sends, so
+      // this never reaches the server — it exists for the popup buffer.
+      _prov,
     };
   },
   // "Meet the hiring team" job-poster card — only present when the poster

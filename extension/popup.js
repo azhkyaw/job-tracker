@@ -90,3 +90,39 @@ chrome.storage.local.get({ sweeps: [] }, ({ sweeps }) => {
     ul.appendChild(li);
   }
 });
+
+/* Where each recent capture's title came from, and whether the submit page
+ * and the stashed snapshot agreed about it.
+ *
+ * Exists because two real captures (Southridge APAC, Adatum — early Aug 2026)
+ * stored a title belonging to no job on the page, kept the right company, and
+ * could not be reproduced afterwards on any of the three LinkedIn layouts.
+ * Nothing recorded which branch had produced the string, so the trail ended
+ * there. A `disagreed` line is the thing to read: it means the page and the
+ * stash both had a value and they differed, so "gaps only" kept the page's —
+ * which is correct when the page is right and is exactly the failure when it
+ * isn't. Boring grey lines are healthy. */
+chrome.storage.local.get({ provenance: [] }, ({ provenance }) => {
+  if (!provenance.length) return;
+  const ul = document.getElementById("prov");
+  ul.innerHTML = "";
+  for (const p of provenance.slice(0, 6)) {
+    const li = document.createElement("li");
+    li.append(`${new Date(p.at).toLocaleString()} — `);
+    const b = document.createElement("b");
+    b.textContent = (p.page && p.page.title) || "(no title)";
+    li.append(b, ` via ${p.source || "?"}`);
+    if (p.layout) li.append(` on ${p.layout}`);
+    if (p.disagreed && p.disagreed.length) {
+      const w = document.createElement("span");
+      w.className = "warn";
+      w.textContent = ` — page and stash disagreed on ${p.disagreed.join(", ")}; `
+        + p.disagreed.map((k) => `page "${(p.page && p.page[k]) || ""}" beat stash `
+        + `"${(p.stash && p.stash[k]) || ""}"`).join("; ");
+      li.append(w);
+    } else if (p.stashed) {
+      li.append(" — agreed with stash");
+    }
+    ul.appendChild(li);
+  }
+});

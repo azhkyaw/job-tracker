@@ -570,7 +570,36 @@
           // The page in front of us wins; the stash only fills the gaps it
           // left behind. A stale snapshot must never overwrite what the submit
           // page can actually see.
+          //
+          // That rule has a sharp edge worth watching, which is why the
+          // comparison below is recorded. "Gaps only" tests !job[k] — EMPTY,
+          // not WRONG. A submit-page read that comes back non-empty and wrong
+          // therefore beats a correct stashed value and the stash is silently
+          // discarded. capture()'s own note names the mechanism that could
+          // produce one: Easy Apply swaps the top card for an "application
+          // sent" confirmation moments after the submit click. Two real
+          // captures (Southridge APAC, Adatum) came out with a title matching no
+          // job on the page while keeping the right company — the shape this
+          // edge predicts, though never reproduced. If it recurs, `disagreed`
+          // below names the field and shows both candidate values.
+          const pageSaw = { title: job.title || null, company: job.company || null };
           if (was) for (const k of CARRIED) if (!job[k] && was[k]) job[k] = was[k];
+          if (was) {
+            const disagreed = ["title", "company"].filter(
+              (k) => pageSaw[k] && was[k] && pageSaw[k] !== was[k]);
+            tell({
+              type: "tracker-provenance",
+              detail: {
+                at: Date.now(), url: location.href, id: job.platform_job_id || null,
+                source: (job._prov && job._prov.title_source) || null,
+                layout: (job._prov && job._prov.layout) || null,
+                stashed: !!was,
+                disagreed,
+                page: { title: pageSaw.title, company: pageSaw.company },
+                stash: { title: was.title || null, company: was.company || null },
+              },
+            });
+          }
           return job;
         })
         .catch(() => job);
@@ -595,6 +624,22 @@
       });
       if (external) notCapturedPopover();
       return;
+    }
+    // Same breadcrumb for the path that never consults a stash (an immediate
+    // apply), so "where did this title come from" is answerable for EVERY
+    // capture rather than only deferred ones. withStashedJob emits the richer
+    // page-vs-stash version when a snapshot exists.
+    if (!completed) {
+      tell({
+        type: "tracker-provenance",
+        detail: {
+          at: Date.now(), url: location.href, id: job.platform_job_id || null,
+          source: (job._prov && job._prov.title_source) || null,
+          layout: (job._prov && job._prov.layout) || null,
+          stashed: false, disagreed: [],
+          page: { title: job.title || null, company: job.company || null },
+        },
+      });
     }
     // getRecruiter is optional — most platforms don't surface a named
     // contact on the job page, and adapters that don't implement it just

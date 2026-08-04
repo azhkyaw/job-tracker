@@ -36,6 +36,23 @@ async function recordSweep(detail) {
   await setLocal({ sweeps: sweeps.slice(0, 10) });
 }
 
+/* Where a capture's title and company came from, one entry per capture.
+ *
+ * Third buffer, again separate: like `sweeps` these are not failures — the
+ * capture saved — but unlike sweeps they answer "is the value RIGHT" rather
+ * than "did we see the whole form". Kept deeper than the other two (25) for a
+ * specific reason: the two bad titles this exists to catch were noticed over a
+ * day after the fact, and the Lamna loss of 4 Aug 2026 was never
+ * root-caused precisely because the ring buffers had rolled over before anyone
+ * read them. chrome.storage.local survives a browser restart, so depth is the
+ * only thing standing between a rare bug and another unexplained record. */
+async function recordProvenance(detail) {
+  const { provenance = [] } = await new Promise((res) =>
+    chrome.storage.local.get({ provenance: [] }, res));
+  provenance.unshift(detail);
+  await setLocal({ provenance: provenance.slice(0, 25) });
+}
+
 /* A receipt whose page never got to show it.
  *
  * An apply control that is a real <a> — JobStreet's is — navigates the instant
@@ -246,6 +263,13 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
   if (msg && msg.type === "tracker-sweep") {
     recordSweep({ at: Date.now(), url: msg.url, ...(msg.detail || {}) })
       .then(() => respond({ ok: true }));
+    return true;
+  }
+
+  // Title/company provenance. Same worker-lifetime reasoning as the sweep
+  // above — it rides an apply click that is about to navigate.
+  if (msg && msg.type === "tracker-provenance") {
+    recordProvenance(msg.detail || {}).then(() => respond({ ok: true }));
     return true;
   }
 
