@@ -218,7 +218,22 @@ def classify_email(
         system=_load_prompt(CLASSIFY_PROMPT_VERSION),
         user_content=_email_block(sender, subject, received_at, body, STAGE1_BODY_CHARS),
         validate=_validate_classification,
-        max_tokens=300,
+        # 1500, not the 300 this used under Haiku. CLASSIFY_MODEL is a Sonnet 5
+        # and this call omits `thinking`, which on that family means ADAPTIVE
+        # THINKING IS ON at the default `high` effort — and max_tokens caps
+        # thinking plus response text together. Measured over 10 random real
+        # emails: output tokens 47 min / 66 mean / 199 max, with a thinking
+        # block on 1 of 10. Nothing truncated, but that one run had spent 66%
+        # of a 300 budget on a task whose JSON answer is ~60 tokens.
+        #
+        # DO NOT reclaim the headroom by disabling thinking. On Sonnet 5 a
+        # thinking-disabled call can leak `<thinking>` tags into the visible
+        # response, and _strip_fences() removes code fences ONLY — a leaked tag
+        # goes straight into json.loads and fails the call, then fails the
+        # repair retry the same way, then dead-letters. Output is billed on what
+        # is generated, so a ceiling that is never reached costs nothing;
+        # `effort` is the lever for spending less, not max_tokens.
+        max_tokens=1500,
     )
     return Classification(
         job_related=data["job_related"],
