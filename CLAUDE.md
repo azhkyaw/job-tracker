@@ -397,6 +397,33 @@ axis) + **DM Mono**, from Google Fonts.
   is how the four duplicates above were identified after the fact; on a
   duplicate the email reads `triage_state = 'auto_matched'` with a NULL score,
   which looks like success and is not.
+- **Omitting `thinking` means DIFFERENT things on Haiku and Sonnet 5, and this
+  pipeline omits it everywhere.** All four Anthropic stages call
+  `messages.create(model, max_tokens, system, messages)` and set no `thinking`,
+  no `output_config.effort`, no sampling params. On Haiku 4.5 that means no
+  thinking at all. On Sonnet 5 it means **adaptive thinking is ON at the
+  default `high` effort**, and `max_tokens` caps thinking PLUS response text
+  together — so moving a stage to Sonnet silently changes what its existing
+  `max_tokens` is budgeting for. Measured on classify (4 Aug 2026, 10 random
+  real emails): output 47 min / 66 mean / 199 max, a thinking block on 1 of 10,
+  nothing truncated — but that one run had spent 66% of the old 300 cap on a
+  ~60-token JSON answer. Caps raised to 1500 (classify) and 4000 (cover) for
+  headroom; output is billed on what is generated, so an unreached ceiling is
+  free. **Never reclaim headroom by disabling thinking on Sonnet 5** — it can
+  leak `<thinking>` tags into the visible response, and `_strip_fences()`
+  strips code fences ONLY, so a leaked tag fails `json.loads`, fails the repair
+  retry identically, and dead-letters.
+- **`effort` is not a cost lever on email classify — the workload is
+  INPUT-dominated**, and lowering it is not monotonically safe. Measured at
+  low/medium/high over 12 real emails: mean output 51/50/52 tokens, i.e. a
+  2-token spread, against ~3,810 INPUT tokens per call. Output is ~7% of
+  per-call cost, so tuning effort tunes the 7%. Worse, `medium` was the ONE
+  level that got a known-answer case wrong (one employer's "Verify your candidate
+  account" mail — `job_related/other` where low and high both correctly said
+  not-job-related), so "medium as a safe middle" is a bad guess here. `low`
+  matched `high` 12/12, but with no cost upside there is no reason to move off
+  the default. If classify cost ever needs cutting, the lever is input —
+  `STAGE1_BODY_CHARS`, or caching the system prompt — not effort.
 - **Shadow DOM breaks click delegation:** `shared/capture.js`'s apply-detection
   listener must use `ev.composedPath()`, never `ev.target.closest(...)` —
   LinkedIn's Easy Apply renders its controls inside a shadow root, which
@@ -958,6 +985,18 @@ off) · `TRACKER_API_TOKEN` (legacy single-user extension token; dies when a
 second account exists) · `TRACKER_BASE_URL` (needed for Gmail web OAuth).
 Secrets files are gitignored: `credentials.json`, `credentials-web.json`,
 `.gmail_token.json`, `.env`, `profile.md`.
+
+**`profile.md` is a DEAD fallback in practice — the resume profile that
+actually gets used lives in `users.resume_profile`.** `covers.py:load_profile()`
+still reads the file, but `worker.py:handle_generate_cover_letter` prefers the
+DB column and only falls through to the file when it is empty. That file does
+not exist on either of this author's machines, and a real cover-letter job on
+the desktop failed with `RuntimeError: resume profile not found at profile.md`
+before the column was populated. Fine for this install; a **release blocker
+shape** for anyone self-hosting from a clean checkout, since nothing tells them
+to seed the column and the file path in the error message is the one route that
+was never wired up. Decide before open-sourcing whether the file becomes real
+or the error message points at the DB instead.
 
 `TRACKER_*`/`ANTHROPIC_API_KEY`/etc. auto-load from a gitignored `.env` at
 repo root (`pipeline/config.py`, `override=False` — real shell vars still
