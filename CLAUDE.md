@@ -8,7 +8,9 @@ SaaS — `docs/open-source.md` (LinkedIn extension-fingerprinting risk, the
 research behind them: `docs/features.md`. How mail gets in — Gmail IMAP +
 app password is the default ingest path (shipped 28 Jul 2026), OAuth the
 alternative for Workspace/Advanced Protection accounts:
-`docs/email-ingest.md`. `docs/monetization.md` is
+`docs/email-ingest.md`. WHICH mail gets in is a separate switch:
+`config.INGEST_ALL` (invariant #10) takes everything, and is on for this
+author's job-only mailbox. `docs/monetization.md` is
 superseded but retained for its Gmail restricted-scope compliance analysis.
 Installing the extension on a second device (an existing account, not a
 fresh signup) — including the single-token-per-account gotcha regenerating
@@ -211,6 +213,16 @@ it: the resume picker is PROMOTED to `applications.resume_file` (migration
     64-bit value. Never copy `is_candidate` / `store_message` / a query
     builder into a provider — that is exactly how two ingest paths silently
     diverge, the same class of bug invariant #3 guards against elsewhere.
+    **`config.INGEST_ALL` (env `TRACKER_INGEST_ALL`, default False) bypasses
+    the candidate pre-filter entirely** for a mailbox that is job-related only:
+    `is_candidate` returns True immediately and `filter_query()` returns `""`.
+    Every caller must DROP an empty predicate, never pass it on (see the
+    `X-GM-RAW` gotcha). It is paired with a retention rule, not shipped alone —
+    `worker.handle_classify_email` purges `body_text` on a `not_job_related`
+    classification when the flag is on, so a widened net does not become a
+    widened retention footprint. Turning it on without that purge is the
+    mistake: the pre-filter was also the only thing enforcing "the body is
+    never sent to the LLM unless a rule hits" (`config.py` §11 comment).
 11. **A form label is not a question identifier.** Apply forms contain
     REPEATERS — a work-history section asks "Company / Industry / City" once
     per employer — so N fields legitimately share one label. `occurrence` (the
@@ -266,24 +278,40 @@ axis) + **DM Mono**, from Google Fonts.
 7. **Never print a rate on a thin sample.** `analytics.MIN_RATE_N` (5) gates
    every per-dimension `response_rate`; below it the row shows counts and an
    em dash. "0% on n=16" describes the sample, not the technology.
-8. The list sorts by **most recent activity** by default (`_SORTS` /
-   `_DEFAULT_SORT` in `web.py`, changed 29 Jul 2026). It used to sort by
-   silence — longest unanswered first — and that was called the page's whole
-   argument, but on 52 real applications it put the single interview invite at
-   row 36, under 34 rows of nothing happening: `last_activity ASC` sinks
-   engaged threads by construction, because a reply IS recent activity. The
-   needs-follow-up block above still makes the silence argument, with rows and
-   a one-click action, so the list underneath no longer repeats it.
-   `?sort=silence` keeps the old ordering for anyone who wants it.
-   Two things ride with the default and NOT with an explicit sort choice
-   (`leads_pinned` in the context): **inbound leads awaiting a decision**
-   (`_LEADS_FIRST` — `origin='inbound' AND status='interested'`, gated on
-   status because origin is immutable, so a lead you pursued must not stay
-   pinned forever) lead the list under a `.tl-sep` label, since they have no
-   applied event and every time-based sort was ranking them by a number that
-   measures nothing; and a **tiebreaker** (`_TIEBREAK`), because a form date
-   anchors at local noon so a day's backfill shares one instant to the second
-   — 15 of those 52 rows sat in 3 tie groups with no defined order at all.
+8. The list sorts by **submission date, newest first** by default (`_SORTS` /
+   `_DEFAULT_SORT` in `web.py` — `silence` until 29 Jul 2026, `activity` until
+   7 Aug 2026, `applied` since). Each replacement fixed the last one's failure.
+   `silence` (longest unanswered first) sank engaged threads by construction,
+   because a reply IS recent activity: on 52 real applications the single
+   interview invite sat at row 36 under 34 rows of nothing happening.
+   `activity` fixed that but ordered by a mix of what YOU did and what THEY
+   did, so a row's position answered no single question and an arriving
+   rejection pushed a dead thread to the top. Submission date is the one date
+   the user controls and can predict, which is what makes the page scannable as
+   the application log it is. Both older arguments are still made elsewhere and
+   neither needs the list to repeat it: silence by the needs-follow-up block
+   (rule 9, with rows and a one-click action), engagement by the trace's own
+   colour — which is the entire point of an achromatic-at-rest scheme (rule 1).
+   `?sort=activity` and `?sort=silence` keep the old orderings.
+   Two things ride with **whatever the default currently is**, and NOT with an
+   explicit sort choice (`leads_pinned` in the context): **inbound leads
+   awaiting a decision** (`_LEADS_FIRST` — `origin='inbound' AND
+   status='interested'`, gated on status because origin is immutable, so a lead
+   you pursued must not stay pinned forever) lead the list under a `.tl-sep`
+   label, since they have no applied event and every time-based sort was
+   ranking them by a number that measures nothing; and a **tiebreaker**
+   (`_TIEBREAK`), because a form date anchors at local noon so a day's backfill
+   shares one instant to the second — 15 of those 52 rows sat in 3 tie groups
+   with no defined order at all. **`_LEADS_FIRST` moves when the default
+   moves** — it is a property of the default, not of any sort key, and it
+   matters more under `applied` than it did under `activity`: a lead has no
+   `applied` event at all, so without the pin every one of them collapses into
+   the `NULLS LAST` bucket at the very BOTTOM of the page, which is a worse
+   answer than the interleaving that motivated the pin originally.
+   `_SORTS["applied"]` spells its ORDER BY out rather than composing
+   `_TIEBREAK`, whose own first key is `applied_at` — composing them would
+   repeat the sort's primary key, and a later edit to `_TIEBREAK` would
+   silently re-sort the default list.
 9. **The needs-follow-up block is work; the table below it is a record.** It
    gets real rows and a one-click `follow_up_sent` (posting with
    `redirect_to=/?fu=1` so the list shortens as you clear it), because on real
@@ -397,6 +425,33 @@ axis) + **DM Mono**, from Google Fonts.
   is how the four duplicates above were identified after the fact; on a
   duplicate the email reads `triage_state = 'auto_matched'` with a NULL score,
   which looks like success and is not.
+- **A boilerplate suffix shared by two titles INFLATES their similarity, and
+  `AUTO_MATCH_MARGIN` is what feels it.** Mirror image of the Wingtip case above:
+  there a tagline appended to a COMPANY name deflated similarity and hid a real
+  match; here boilerplate appended to a TITLE inflates it and blurs two real
+  ones. Adventure Works tags every posting `(Adventure Works Portfolio Company)`, which
+  lifts `Senior AI Engineer` vs `Agentic AI Engineer` from 0.462 to **0.714**.
+  Applying to both roles a day apart then produced best 0.900 / runner-up
+  0.752 — margin **0.148 against the required 0.15**, so a correct match landed
+  in triage, missed by 0.002. Note the platform term cancels out of a margin
+  whenever both candidates share a platform, so title does all the work.
+  **This is the margin working, not failing** (guessing would have filed the
+  Senior AI Engineer confirmation onto the Agentic AI Engineer application —
+  silent and wrong), and the same email's twin auto-matched a day earlier at
+  the identical 0.9 purely because it was then the only candidate and
+  `len(scored) == 1` waives the margin.
+  **A fix was measured and deliberately NOT implemented** (7 Aug 2026), so
+  re-measure before reopening rather than re-deriving: stripping a trailing
+  parenthetical ONLY when both titles carry the identical one fires once across
+  all 37 same-company title pairs, and replayed over 143 real scored emails it
+  touched 40 comparisons, changed 2 decisions, both correct (one matching an
+  application a human had already resolved to by hand), with zero regressions.
+  Stripping parentheticals ALWAYS is disqualified on real data — it collapses
+  `Senior Software Engineer (Backend)` vs `(Web)` and `AI Engineer (GenAI)` vs
+  `(Generative AI / AI-ML / Microsoft Copilot)` to similarity **1.000**, where
+  the parenthetical is the only thing distinguishing two live applications.
+  Note this rule pushes toward MORE auto-matching, i.e. the silent direction,
+  so the replay is the evidence that clears it, not the argument.
 - **Omitting `thinking` means DIFFERENT things on Haiku and Sonnet 5, and this
   pipeline omits it everywhere.** All four Anthropic stages call
   `messages.create(model, max_tokens, system, messages)` and set no `thinking`,
@@ -769,6 +824,26 @@ axis) + **DM Mono**, from Google Fonts.
   global), Jinja resolves the local context first, and `{{ theme() }}`
   raises `TypeError: 'str' object is not callable`. Keep new
   global/filter names distinct from every context dict key.
+  **A Jinja MACRO cannot see the render context at all**, which is why
+  `DEFAULT_SORT` (used by `applications.html`'s `list_url()` to decide whether
+  to omit `sort=` from an href) is a global and not a context key. Register a
+  global that derives from a module constant **next to that constant**, not up
+  with the others: `templates.env.globals[...]` at the top of `web.py` runs at
+  import, before `_DEFAULT_SORT` exists, and raises `NameError` at module load.
+- **Anything a template hardcodes about a DEFAULT will silently fight the
+  default when it moves.** `list_url()` compared `sort` against a literal
+  `'activity'` to decide what to omit from a URL; once the default became
+  `applied`, every funnel/tab/search-clear click would have carried
+  `sort=activity` and silently reset a chosen sort — the exact bug the macro
+  was introduced to fix for `q`. Compare against the constant, never a literal.
+- **The suite inherits the developer's `.env`, because `config.py` auto-loads
+  it.** A local `TRACKER_INGEST_ALL=true` made `test_email_ingest`'s
+  pre-filter assertions pass VACUOUSLY and broke `backfill_query`'s
+  byte-identity pin — and it stayed green until the next full run, because the
+  flag was added between two runs. That suite now pins `config.INGEST_ALL =
+  False` as its baseline right after the imports. Any future behaviour flag
+  read from the environment needs the same treatment: a test that depends on
+  ambient config is a test that means something different on each machine.
 - **Verifying an authenticated page via claude-in-chrome:**
   Try navigating straight to the page first — the dev profile often already
   has a live session from the user's own concurrent use of the app, which
@@ -838,6 +913,37 @@ axis) + **DM Mono**, from Google Fonts.
   login failure raises — one shared error path surfaces in the CLI, `sync`,
   and Settings for both credential kinds. The empirical production-status
   flip test itself was never run; this handling doesn't depend on its result.
+- **The candidate pre-filter drops mail BEFORE it is ever fetched, so a miss
+  leaves no row, no log line, and nothing to notice.** `is_candidate` matches
+  an allowlisted sender domain OR a `SUBJECT_KEYWORDS` substring **in the
+  subject only** — it never reads the body. Three independent ways that lost
+  real mail, all found 7 Aug 2026: (1) an employer mails from its OWN domain
+  (`humans@tailspin-consulting.com`), which is unbounded and un-allowlistable
+  in advance; (2) the subject splits a keyword — "Thank you for your
+  **Full-Stack Developer** application to Tailspin Consulting" contains
+  neither `your application` nor `thank you for applying`, while the
+  `not moving forward` phrasing that WOULD have matched sits in the body one
+  line below the only line the filter reads; (3) an allowlisted vendor sends
+  from a domain that is not a SUFFIX of the allowlisted one — `workable.com`
+  is listed, Workable mails from `candidates.workablemail.com`, and three real
+  confirmations were dropped by a list entry that looks correct. Case (1)'s
+  email was a REJECTION on an application the app was showing as
+  `interview_invite`: a tracker asserting an open thread on a closed role,
+  which is worse than a missing row. **Do not fix these by extending the
+  lists** — every entry is added retroactively, i.e. only after that case has
+  already been lost. `config.INGEST_ALL` (invariant #10) is the fix for a
+  job-only mailbox. Cost is not the counterargument (classify is ~3,810 input
+  tokens, ~$0.008/email on Sonnet 5) and neither is precision: 225 of 399
+  stored emails already classified `not_job_related`, so the filter was buying
+  a randomly holed corpus, not a clean one. First `-d 1` run under the flag
+  recovered 8 messages, 5 of them real.
+- **`filter_query()` returning `""` must make a caller DROP the criterion, not
+  send it.** Under `INGEST_ALL` there is no predicate, and
+  `gmail_imap.incremental_handles` passes `filter_query()` straight into its
+  incremental UID search: `X-GM-RAW ""` is a perfectly VALID quoted string that
+  matches nothing, so incremental sync would stall silently while backfill kept
+  working — the same invisible-failure shape the flag exists to fix. Pinned by
+  a test. Any future caller of `filter_query()` inherits this.
 - **`imaplib.IMAP4._command()` does zero quoting.** Every argument is
   concatenated onto the wire verbatim — `select("[Gmail]/All Mail")` sends
   two unquoted atoms and gets `BAD`, and an `X-GM-RAW` query containing
@@ -982,9 +1088,19 @@ token, so its blast radius on leak/loss is strictly larger than before) ·
 `TRACKER_DATABASE_URL` (default
 `postgresql:///tracker`) · `VOYAGE_API_KEY` (optional; absent = dedup simply
 off) · `TRACKER_API_TOKEN` (legacy single-user extension token; dies when a
-second account exists) · `TRACKER_BASE_URL` (needed for Gmail web OAuth).
+second account exists) · `TRACKER_BASE_URL` (needed for Gmail web OAuth) ·
+`TRACKER_INGEST_ALL` (invariant #10; job-only mailboxes).
 Secrets files are gitignored: `credentials.json`, `credentials-web.json`,
 `.gmail_token.json`, `.env`, `profile.md`.
+
+**`.env` now carries BEHAVIOUR flags, not only credentials, and it is
+per-machine** — this author runs the app from two machines against one shared
+Neon DB (`docs/windows-dev.md`). A missing `TRACKER_DATABASE_URL` fails loudly;
+a missing `TRACKER_INGEST_ALL` does not — that machine silently reverts to the
+old pre-filter and drops job mail the other machine ingests, against the same
+rows. When two machines behave differently, diff `.env` before diffing code,
+and prefer `config.py` (in git, shared) over `.env` for anything that isn't a
+secret or a genuinely per-machine path.
 
 **`profile.md` is a DEAD fallback in practice — the resume profile that
 actually gets used lives in `users.resume_profile`.** `covers.py:load_profile()`
@@ -1177,6 +1293,13 @@ win). No per-shell export needed for local dev.
    added 4 more real candidate emails, still `pending` in `job_queue` —
    `work --once` hasn't been run against them yet, so `status` will show a
    nonzero queue depth until it is.
+   **Outstanding as of 7 Aug 2026: a catch-up sweep under `INGEST_ALL`.** Only
+   `backfill -d 1` has been run since the flag went on, so every employer-domain
+   and `candidates.workablemail.com`-style email older than that is still
+   missing (the Workable gap has existed for the whole search). `backfill -d 21`
+   would recover them, at roughly 200-400 classify calls (~$2-3) and a longer
+   triage queue — deliberately deferred, not forgotten. Triage stood at 14
+   pending after the `-d 1` run.
 2. **OAuth token expiry — largely resolved.** See the 7-day gotcha above; IMAP
    + app password is now the default (`docs/email-ingest.md`, shipped and
    verified against a real inbox 28 Jul 2026), which has no refresh token to
@@ -1273,3 +1396,14 @@ win). No per-shell export needed for local dev.
    body can be recovered without depending on a UID that `UIDVALIDITY` can
    invalidate — see `docs/email-ingest.md` §9 q4. The IMAP work deliberately
    did not decide this; it remains open.
+   **Half-decided as of 7 Aug 2026, for the `not_job_related` half only.**
+   `INGEST_ALL` (invariant #10) had to answer this to ship at all — removing
+   the pre-filter means personal mail reaches the DB — so
+   `worker.handle_classify_email` now purges `body_text` once the classifier
+   rules a message out, keeping the row for ingest idempotency. That is the
+   easy half: nothing re-reads a `not_job_related` body. **Still open: bodies
+   of mail that IS job-related**, which is the recruiter names, salary figures
+   and personal details the original question was actually about, and which
+   `extract_email` and any future re-run genuinely need. Note the purge only
+   fires under `INGEST_ALL`, and only on newly-classified rows — pre-existing
+   `not_job_related` bodies were left in place rather than mass-deleted.
