@@ -177,22 +177,50 @@ _LEADS_FIRST = "(a.origin = 'inbound' AND s.status = 'interested') DESC"
 # Without a tiebreaker their relative order is whatever the planner returns.
 _TIEBREAK = "applied_at DESC NULLS LAST, a.id"
 
-# Sort keys the list accepts, mapped to their ORDER BY. "activity" is the
-# default: the newest thing to move is the thing you came to see, and an
-# engaged thread — a reply, an interview invite — IS recent activity, so it
-# surfaces itself. The older ordering ("silence", longest-unanswered first)
-# buried them: with 52 real applications the single interview invite sat at row
-# 36, below 34 rows of nothing happening. Silence is still the argument the
-# needs-follow-up block above makes, with rows and actions; the list underneath
-# no longer repeats it.
+# Sort keys the list accepts, mapped to their ORDER BY. "applied" is the
+# default (7 Aug 2026): newest submission first, so the list reads as the
+# application log it is — what you sent, most recent first.
+#
+# It replaced "activity" (newest event first), which was itself a fix for
+# "silence" (longest-unanswered first) burying the one interview invite at row
+# 36 of 52. "activity" solved that but sorted by a mix of what YOU did and what
+# THEY did, so a row's position answered no single question — a rejection
+# arriving pushed a dead thread to the top. Submission date is the one date the
+# user controls and can predict, which is what makes it scannable. The two
+# arguments the other orderings were making are both still made elsewhere on the
+# page and neither needs the list to repeat it: silence by the needs-follow-up
+# block (UI rule 9, with rows and a one-click action), and engagement by the
+# trace's own colour, which is the whole point of the achromatic-at-rest scheme.
+#
+# _LEADS_FIRST rides with the DEFAULT ONLY (see leads_pinned in the context and
+# the .tl-sep divider in the template), so it moves whenever the default moves —
+# it is not a property of any particular sort key. It matters more here than it
+# did under "activity": a lead has no `applied` event at all, so without the pin
+# every one of them collapses into the NULLS LAST bucket at the very bottom of
+# the page, which is a worse answer than the interleaving that motivated the pin
+# originally. 4 of the author's 140 applications are leads awaiting a decision;
+# 10 have no applied event.
 _SORTS = {
-    "activity": f"{_LEADS_FIRST}, last_activity DESC NULLS LAST, {_TIEBREAK}",
+    # Spelled out rather than reusing _TIEBREAK: its first key IS applied_at,
+    # so composing them would repeat the sort's own primary key, and a later
+    # edit to _TIEBREAK would silently re-sort the default list.
+    "applied": f"{_LEADS_FIRST}, applied_at DESC NULLS LAST, a.id",
+    "activity": f"last_activity DESC NULLS LAST, {_TIEBREAK}",
     "silence": (f"s.status IN ('rejected','offer','withdrawn') ASC, "
                 f"last_activity ASC NULLS LAST, {_TIEBREAK}"),
-    "applied": f"applied_at DESC NULLS LAST, {_TIEBREAK}",
     "company": "lower(company_display) ASC, a.id",
 }
-_DEFAULT_SORT = "activity"
+_DEFAULT_SORT = "applied"
+
+# The list template omits `sort` from every href when it equals the default, so
+# it needs to know what the default IS. A Jinja GLOBAL rather than a context
+# key: macros don't see the render context, and list_url() is a macro. The name
+# is deliberately distinct from every context key — a collision would shadow the
+# global and break at render time, the way a "theme" key once did. Registered
+# here, immediately after the constant, not up with the other globals: those run
+# at import before this line exists (NameError at module load, caught by
+# test_web on the first run of this change).
+templates.env.globals["DEFAULT_SORT"] = _DEFAULT_SORT
 
 
 @app.get("/")

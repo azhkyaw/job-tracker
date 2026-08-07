@@ -475,8 +475,23 @@ with db.connect() as conn, conn.transaction():
             "        date_trunc('day', now() - interval '9 days') + interval '12 hours', '{}')",
             (user_id, aid))
         burst.append(aid)
-    # One of them then hears back — recent activity, and the whole point of the
-    # default: an engaged thread should not sink under the silent ones.
+    # Applied a week later than the burst. The default sorts by submission date
+    # DESC, so this one leads them — the burst alone can't test that, since all
+    # three share an instant by construction.
+    _jid = conn.execute(
+        "INSERT INTO jobs (user_id, company_norm, title_canonical) "
+        "VALUES (%s, 'sortdelta', 'Engineer') RETURNING id", (user_id,)).fetchone()["id"]
+    _aid = conn.execute(
+        "INSERT INTO applications (user_id, job_id) VALUES (%s, %s) RETURNING id",
+        (user_id, _jid)).fetchone()["id"]
+    conn.execute(
+        "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+        "VALUES (%s, %s, 'applied', 'manual', "
+        "        date_trunc('day', now() - interval '2 days') + interval '12 hours', '{}')",
+        (user_id, _aid))
+    # One of the burst then hears back. Under the OLD default (most recent
+    # activity) this alone put it on top; under the current one it must not,
+    # which is the trade the default change made deliberately.
     conn.execute(
         "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
         "VALUES (%s, %s, 'interview_invite', 'email', now() - interval '1 hour', '{}')",
@@ -492,11 +507,17 @@ def _order(path="/"):
 
 
 order = _order()
-check("default is most-recent-activity: the thread that just moved leads the "
-      "applications", order.index("sortcharlie") < order.index("sortalpha")
-      and order.index("sortcharlie") < order.index("sortbravo"), order[:8])
+check("default is newest-applied-first: the later submission leads the burst",
+      order.index("sortdelta") < order.index("sortalpha")
+      and order.index("sortdelta") < order.index("sortcharlie"), order[:8])
+check("the default does NOT reorder on activity — a reply no longer promotes a "
+      "row past an application submitted after it",
+      order.index("sortdelta") < order.index("sortcharlie"), order[:8])
 check("the inbound lead is pinned above every application, whatever its date",
-      order.index("Beacon Search") < order.index("sortcharlie"), order[:8])
+      order.index("Beacon Search") < order.index("sortdelta"), order[:8])
+# The pin matters MORE under this default than the last one: a lead has no
+# `applied` event, so applied_at is NULL and NULLS LAST would otherwise drop it
+# to the very bottom of the page rather than merely interleave it.
 r = client.get("/")
 check("and the group is labelled, so the pin isn't mysterious",
       "Inbound &middot; awaiting your call" in r.text or "Inbound · awaiting your call" in r.text)
@@ -506,6 +527,20 @@ check("and the group is labelled, so the pin isn't mysterious",
 check("a burst of identically-timed rows comes back in the same order every time",
       _order() == _order() == _order())
 
+activity = _order("/?sort=activity")
+check("sort=activity still surfaces the engaged thread — the old default is "
+      "kept, demoted to an explicit choice",
+      activity.index("sortcharlie") < activity.index("sortalpha")
+      and activity.index("sortcharlie") < activity.index("sortbravo"), activity[:8])
+# Position can't test this one: the lead's own outreach event may legitimately
+# be the most recent activity on the page, so it can top this sort honestly.
+# The divider is the observable — it renders only when leads_pinned is set.
+_sep = "awaiting your call"
+check("and as an explicit sort it is taken literally — no lead pinning",
+      _sep not in client.get("/?sort=activity").text)
+check("...while the default does render the divider",
+      _sep in client.get("/").text)
+
 silence = _order("/?sort=silence")
 check("an explicit sort is taken literally — no lead pinning",
       silence.index("Beacon Search") > 0, silence[:6])
@@ -513,6 +548,17 @@ check("and it still means what it says: longest quiet first",
       silence.index("sortalpha") < silence.index("sortcharlie"), silence[:8])
 check("an unknown sort falls back to the default, not an error",
       _order("/?sort=nonsense") == order)
+check("the default is reachable by name and identical to the bare URL",
+      _order("/?sort=applied") == order)
+
+# The macro omits `sort` only when it equals DEFAULT_SORT. Hardcoding the old
+# literal there would have made every filter click silently reset a chosen sort.
+r = client.get("/?sort=activity&origin=applied")
+check("a non-default sort survives a filter link (sort= carried in hrefs)",
+      "sort=activity" in r.text, r.status_code)
+r = client.get("/?origin=applied")
+check("the default sort is omitted from hrefs rather than spelled out",
+      "sort=applied" not in r.text, r.status_code)
 
 print("manual entry: form + route-ordering guard")
 r = client.get("/applications/new")

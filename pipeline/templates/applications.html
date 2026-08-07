@@ -7,12 +7,14 @@
    search, and vice versa — the exact bug the tabs already had for `q` before
    this macro (fixed as a side effect of giving the funnel one place to build
    a URL from). `sort` is omitted when it's the default so a plain filter
-   click doesn't clutter every href with `sort=activity`. #}
-{% macro list_url(status='', origin=None, q='', sort='activity') -%}
+   click doesn't clutter every href with the default's own name — compared
+   against the DEFAULT_SORT global, never a literal, so moving the default in
+   web.py can't leave this silently resetting the user's chosen sort. #}
+{% macro list_url(status='', origin=None, q='', sort='') -%}
 {%- set parts = [] -%}
 {%- if origin %}{% set _ = parts.append('origin=' + origin) %}{% endif -%}
 {%- if q %}{% set _ = parts.append('q=' + (q | urlencode)) %}{% endif -%}
-{%- if sort and sort != 'activity' %}{% set _ = parts.append('sort=' + sort) %}{% endif -%}
+{%- if sort and sort != DEFAULT_SORT %}{% set _ = parts.append('sort=' + sort) %}{% endif -%}
 {%- if status %}{% set _ = parts.append('status=' + status) %}{% endif -%}
 /{{ '?' + (parts | join('&')) if parts else '' }}
 {%- endmacro %}
@@ -64,9 +66,9 @@
         placeholder="Search company or role" aria-label="Search company or role"
         style="width:100%"></span>
   <select name="sort" aria-label="Sort by">
+    <option value="applied" {% if sort == 'applied' %}selected{% endif %}>newest applied first</option>
     <option value="activity" {% if sort == 'activity' %}selected{% endif %}>most recent activity</option>
     <option value="silence" {% if sort == 'silence' %}selected{% endif %}>quiet longest first</option>
-    <option value="applied" {% if sort == 'applied' %}selected{% endif %}>date applied</option>
     <option value="company" {% if sort == 'company' %}selected{% endif %}>company A–Z</option>
   </select>
   <button>Apply</button>
