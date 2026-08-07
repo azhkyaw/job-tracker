@@ -122,6 +122,8 @@ def _sender_domain(from_header: str) -> str:
 
 
 def is_candidate(from_header: str, subject: str) -> bool:
+    if config.INGEST_ALL:
+        return True
     domain = _sender_domain(from_header)
     if any(domain == d or domain.endswith("." + d) for d in config.ALLOWLIST_DOMAINS):
         return True
@@ -146,14 +148,24 @@ def html_to_text(html: str) -> str:
 def filter_query() -> str:
     """The allowlist/subject-keyword predicate, without any date bound —
     shared by backfill (which adds an after: window) and incremental
-    (which ANDs it with a UID range instead)."""
+    (which ANDs it with a UID range instead).
+
+    Empty string under config.INGEST_ALL: there is no predicate to send, and
+    every caller must drop the criterion rather than pass "" to the server.
+    Callers: query_since below, and gmail_imap.incremental_handles."""
+    if config.INGEST_ALL:
+        return ""
     froms = " OR ".join(f"from:{d}" for d in sorted(config.ALLOWLIST_DOMAINS))
     subjects = " OR ".join(f'subject:"{kw}"' for kw in config.SUBJECT_KEYWORDS)
     return f"(({froms}) OR ({subjects}))"
 
 
 def query_since(day) -> str:
-    return f"after:{day.strftime('%Y/%m/%d')} {filter_query()}"
+    after = f"after:{day.strftime('%Y/%m/%d')}"
+    predicate = filter_query()
+    # Concatenation stays byte-identical to the pre-INGEST_ALL formula when a
+    # predicate exists — backfill_query's wire format is pinned by a test.
+    return f"{after} {predicate}" if predicate else after
 
 
 def backfill_query(months: int) -> str:

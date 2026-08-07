@@ -61,6 +61,35 @@ SUBJECT_KEYWORDS = [
     "not selected", "decided not to proceed", "other candidates",
 ]
 
+# Bypass the two filters above entirely and ingest EVERY message in the window.
+#
+# The pre-filter is a guess about which mail matters, and it is wrong in a
+# direction that costs real data: it drops silently, before the message is ever
+# fetched, so a miss leaves no row, no log line, and nothing to notice. Measured
+# on the author's real mailbox (7 Aug 2026) it had already eaten a Tailspin
+# Consulting REJECTION — sender `humans@tailspin-consulting.com` (an employer's
+# own domain, so not allowlistable without an unbounded per-employer list), and
+# a subject reading "Thank you for your Full-Stack Developer application to
+# Tailspin Consulting", which matches none of SUBJECT_KEYWORDS: "your
+# application" is split by the role title, and the "not moving forward" phrasing
+# that WOULD have matched is in the body, one line below the only line
+# is_candidate reads. The application sat at `interview_invite` — the tracker
+# asserting an open thread on a role that had closed. A false row is worse than
+# a missing one, and no keyword list survives that subject.
+#
+# Cost is not the counterargument: classify is ~3,810 input tokens on Sonnet 5,
+# ~$0.008/email, against 16.6 stored/day. Nor is precision — 225 of 399 stored
+# emails already classify not_job_related, so the filter is not buying a clean
+# corpus, only a randomly holed one.
+#
+# Default False because it is only correct for a mailbox that is job-related
+# only. Everyone else's inbox has their bank and their doctor in it, and this
+# also switches off the "the body is never sent to the LLM unless a rule hits"
+# property the comments above rely on. When True, worker.handle_classify_email
+# purges body_text on anything classified not_job_related, so the widened net
+# does not become a widened retention footprint (design doc §14 q4).
+INGEST_ALL = os.environ.get("TRACKER_INGEST_ALL", "").lower() in ("1", "true", "yes")
+
 # Matching thresholds (design doc §8). Tune against the first backfill run.
 COMPANY_TRGM_MIN = 0.6
 AUTO_MATCH_SCORE = 0.75

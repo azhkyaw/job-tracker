@@ -68,14 +68,22 @@ def handle_classify_email(conn, job: dict) -> None:
         )
         db.enqueue(conn, job["user_id"], "extract_email", {"email_id": str(email["id"])})
     else:
+        # INGEST_ALL removes the pre-filter, which was also the only thing
+        # keeping non-job mail out of the DB entirely. Once the classifier has
+        # ruled a message out, its body has no downstream use — nothing
+        # re-reads body_text on a not_job_related row — so drop it rather than
+        # retain personal mail indefinitely (design doc §14 q4). The row stays:
+        # gmail_message_id is what makes the ingest idempotent, and keeping it
+        # is what stops the message being re-fetched and re-classified forever.
         conn.execute(
             """
             UPDATE emails SET classification = 'not_job_related',
                               classify_confidence = %s, triage_state = 'ignored',
-                              model = %s, prompt_version = %s, processed_at = now()
+                              model = %s, prompt_version = %s, processed_at = now(),
+                              body_text = CASE WHEN %s THEN '' ELSE body_text END
             WHERE id = %s
             """,
-            (c.confidence, c.model, c.prompt_version, email["id"]),
+            (c.confidence, c.model, c.prompt_version, config.INGEST_ALL, email["id"]),
         )
 
 

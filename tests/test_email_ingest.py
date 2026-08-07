@@ -38,6 +38,13 @@ import imaplib
 
 from pipeline import auth, config, db, gmail_imap, gmail_sync, mailbox
 
+# config.py auto-loads the repo's gitignored .env, so a developer who has turned
+# INGEST_ALL on for their own mailbox would otherwise silently change what this
+# suite asserts — the pre-filter tests below would all pass vacuously, and
+# backfill_query's pinned wire format would fail. Pin the filter ON as the
+# baseline; the INGEST_ALL section flips it explicitly and restores it.
+config.INGEST_ALL = False
+
 TEST_ADDRESS = "test.imap.fixture@gmail.com"
 GOOD_PASSWORD = "abcdabcdabcdabcd"  # 16 chars, matches a real app password's length
 
@@ -217,6 +224,49 @@ def _reference_backfill_query(months: int) -> str:
 check("backfill_query(12) matches the pre-refactor formula byte-for-byte",
       mailbox.backfill_query(12) == _reference_backfill_query(12),
       (mailbox.backfill_query(12), _reference_backfill_query(12)))
+
+print("pure functions: INGEST_ALL")
+
+# The email that motivated the flag (Tailspin Consulting rejection, 7 Aug
+# 2026): an employer's own domain, and a subject whose only application-ish
+# phrase is split by the role title so no SUBJECT_KEYWORD matches. The
+# "not moving forward" wording that WOULD match is in the body, which
+# is_candidate never reads. Pinned in both directions so a future keyword
+# addition can't quietly make the off-case pass and hide the regression.
+_TAILSPIN_SENDER = "Humans of Tailspin <humans@tailspin-consulting.com>"
+_TAILSPIN_SUBJECT = ("[Be@Tailspin] Thank you for your Full-Stack Developer "
+                      "application to Tailspin Consulting")
+
+check("INGEST_ALL off: the real missed rejection is NOT a candidate (the bug)",
+      not mailbox.is_candidate(_TAILSPIN_SENDER, _TAILSPIN_SUBJECT))
+
+_saved_ingest_all = config.INGEST_ALL
+try:
+    config.INGEST_ALL = True
+    check("INGEST_ALL on: that same email IS a candidate",
+          mailbox.is_candidate(_TAILSPIN_SENDER, _TAILSPIN_SUBJECT))
+    check("INGEST_ALL on: even a sender and subject matching nothing at all",
+          mailbox.is_candidate("A Friend <friend@example.invalid>", "lunch?"))
+    check("INGEST_ALL on: filter_query() is empty, not a vacuous predicate",
+          mailbox.filter_query() == "", repr(mailbox.filter_query()))
+    from datetime import date as _date
+    _q = mailbox.query_since(_date(2026, 8, 6))
+    check("INGEST_ALL on: query_since is the bare date bound, no trailing space",
+          _q == "after:2026/08/06", repr(_q))
+    # gmail_imap builds its incremental UID search from filter_query() directly.
+    # An empty X-GM-RAW argument goes on the wire as a valid-but-empty quoted
+    # string and matches nothing, which would stall every incremental sync
+    # silently — the criterion has to be dropped, not blanked.
+    check("INGEST_ALL on: _quote() of the empty predicate is the trap being avoided",
+          gmail_imap._quote(mailbox.filter_query()) == '""',
+          gmail_imap._quote(mailbox.filter_query()))
+finally:
+    config.INGEST_ALL = _saved_ingest_all
+
+check("INGEST_ALL restored to the module default after the block",
+      config.INGEST_ALL == _saved_ingest_all)
+check("INGEST_ALL off again: backfill_query is byte-identical once more",
+      mailbox.backfill_query(12) == _reference_backfill_query(12))
 
 print("pure functions: credential_kind")
 check("credential_kind: imap", mailbox.credential_kind({"kind": "imap"}) == "imap")

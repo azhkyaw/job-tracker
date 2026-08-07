@@ -323,8 +323,15 @@ class ImapProvider:
                 # this filter every run would re-fetch the newest matching
                 # message forever: invisible (the insert is a no-op) except
                 # as a permanent bandwidth leak.
-                uids = self._search_uids("UID", f"{last_uid + 1}:*",
-                                         "X-GM-RAW", _quote(mailbox.filter_query()))
+                # Under INGEST_ALL there is no predicate: send the UID range
+                # alone. Passing the empty string as an X-GM-RAW argument would
+                # go on the wire as a valid-but-empty quoted string and match
+                # nothing, silently stalling every incremental sync.
+                criteria = ["UID", f"{last_uid + 1}:*"]
+                predicate = mailbox.filter_query()
+                if predicate:
+                    criteria += ["X-GM-RAW", _quote(predicate)]
+                uids = self._search_uids(*criteria)
                 return [u for u in uids if u > last_uid]
             # UIDVALIDITY changed — every previously-recorded UID is
             # meaningless. Fall through to a full filtered re-search.
