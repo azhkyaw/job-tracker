@@ -109,6 +109,18 @@ chrome.storage.local.get({ provenance: [] }, ({ provenance }) => {
   for (const p of provenance.slice(0, 6)) {
     const li = document.createElement("li");
     li.append(`${new Date(p.at).toLocaleString()} — `);
+    // An apply flow that OPENED but could not be read — nothing was stashed, so
+    // a later submit has nothing to fall back on. Distinct from a capture line:
+    // there is no title to print because that is the whole problem.
+    if (p.stage === "open") {
+      const w = document.createElement("span");
+      w.className = "warn";
+      w.textContent = "apply opened, but the job could not be read — nothing "
+        + "stashed for the submit to use";
+      li.append(w, ` (${p.url || "?"})`);
+      ul.appendChild(li);
+      continue;
+    }
     const b = document.createElement("b");
     b.textContent = (p.page && p.page.title) || "(no title)";
     li.append(b, ` via ${p.source || "?"}`);
@@ -122,6 +134,35 @@ chrome.storage.local.get({ provenance: [] }, ({ provenance }) => {
       li.append(w);
     } else if (p.stashed) {
       li.append(" — agreed with stash");
+    }
+    // The frame that submits can be one that cannot read the job at all (an
+    // Easy Apply modal inside linkedin.com/preload/). Say so, and say whether
+    // asking frame 0 rescued it — a capture with no stash AND nothing recovered
+    // is the one that saves as "unknown company", and it used to print no line
+    // here whatsoever.
+    if (p.askedTop) {
+      const s = document.createElement("span");
+      const got = [...(p.fromTop || []), ...(p.fromUrl || [])];
+      if (got.length) {
+        s.textContent = ` — ${p.stashed ? "stash short" : "no stash"}; recovered `
+          + `${got.join(", ")} from ${p.fromTop && p.fromTop.length ? "the job page" : "the tab URL"}`;
+      } else {
+        s.className = "warn";
+        s.textContent = ` — ${p.stashed ? "stash short" : "no stash"}, `
+          + (p.topFrame ? "no top frame to ask (this IS frame 0)"
+                        : "frame 0 had nothing to add")
+          + `; identity missing. tab was ${p.tabUrl || "unknown"}`;
+      }
+      li.append(s);
+    }
+    // A same-tab stash is a GUESS about which job was meant, used only for what
+    // a real read left empty. Worth seeing every time it supplies anything.
+    if (p.fromGuess && p.fromGuess.length) {
+      const g = document.createElement("span");
+      g.className = "warn";
+      g.textContent = ` — ${p.fromGuess.join(", ")} came from a same-tab guess, `
+        + `not this job's own stash; check the record`;
+      li.append(g);
     }
     ul.appendChild(li);
   }

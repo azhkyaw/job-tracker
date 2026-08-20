@@ -158,10 +158,25 @@ async function stashPendingJob(key, job, tabId) {
   await setLocal({ pendingJobs: jobs });
 }
 
+/* Returns { job, exact } — `exact` distinguishes a KEYED hit, which is a fact
+ * about this job, from the same-tab fallback, which is a guess. The caller
+ * ranks them differently and it matters: see capture.js:withStashedJob. */
 async function takePendingJob(key, tabId) {
-  if (!key) return null;
+  if (!key) return { job: null, exact: false };
   const jobs = await _pendingJobs();
+  // Expiry is enforced on READ as well as on write, because writes are exactly
+  // what stops happening when the opening click can't read the job — and the
+  // prune used to live only in stashPendingJob. Measured 18 Aug 2026: SEVEN
+  // stashes from 11 Aug were still in storage, 6.6 days into a 2-hour TTL,
+  // because nothing had been stashed since to trigger a prune. Only the
+  // 30-minute fallback window stood between them and being pasted onto an
+  // unrelated application.
+  let pruned = false;
+  for (const [k, v] of Object.entries(jobs)) {
+    if (Date.now() - v.at > PENDING_JOB_TTL_MS) { delete jobs[k]; pruned = true; }
+  }
   let hitKey = key in jobs ? key : null;
+  const exact = hitKey !== null;
   if (hitKey === null && tabId != null) {
     // Newest eligible stash belonging to this tab. Tab ids are reused, which
     // is what the tighter window guards against as much as the wrong-job case.
@@ -171,11 +186,14 @@ async function takePendingJob(key, tabId) {
       if (hitKey === null || v.at > jobs[hitKey].at) hitKey = k;
     }
   }
-  if (hitKey === null) return null;
+  if (hitKey === null) {
+    if (pruned) await setLocal({ pendingJobs: jobs });
+    return { job: null, exact: false };
+  }
   const rec = jobs[hitKey];
   delete jobs[hitKey];
   await setLocal({ pendingJobs: jobs });
-  return rec && Date.now() - rec.at <= PENDING_JOB_TTL_MS ? rec.job : null;
+  return { job: rec ? rec.job : null, exact };
 }
 
 async function api(path, body) {
@@ -240,7 +258,7 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
 
   if (msg && msg.type === "tracker-take-job") {
     takePendingJob(msg.key, sender.tab && sender.tab.id)
-      .then((job) => respond({ job }));
+      .then((r) => respond({ job: r.job, exact: r.exact }));
     return true;
   }
 
@@ -310,6 +328,41 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
                             { frameId: 0 })
       .then((r) => respond({ ok: !!(r && r.ok) }))
       .catch(() => respond({ ok: false }));
+    return true;
+  }
+
+  /* "Which frame am I?" — asked once per injection, because a content script
+   * cannot answer it reliably for itself: a frame that cannot reach its top
+   * gets ITSELF back from window.top with no error, so `window === window.top`
+   * reads true inside a subframe. sender.frameId is the browser's own record,
+   * and every relay below already trusts it over anything the message says. */
+  if (msg && msg.type === "tracker-whoami") {
+    respond({ frameId: sender.frameId, top: sender.frameId === 0 });
+    return false;
+  }
+
+  /* A subframe's submit asking frame 0 who the job is. Same targeting rules
+   * again — tab from the real sender, frame 0 never relays to itself.
+   *
+   * This is the rescue that does NOT depend on having remembered anything: the
+   * stash needs the opening click to have been seen and its key to have
+   * survived, and when either fails the record saves with no company, title or
+   * job id (18 Aug 2026, url linkedin.com/preload/?_bprMode=vanilla). Frame 0
+   * is still sitting on the job page throughout, so it can simply be asked. */
+  if (msg && msg.type === "tracker-relay-getjob") {
+    const tabId = sender.tab && sender.tab.id;
+    // `tabUrl` is read HERE, at capture time, from the browser's own record of
+    // the tab — not cached at injection, because LinkedIn is an SPA and rewrites
+    // its URL by pushState without ever re-injecting the content script, so a
+    // cached copy could name a different job entirely. It travels back even when
+    // there is no job to report: it is both the last-resort identity source
+    // (adapter.jobFromUrl) and the fact that says whether the tab is on a job
+    // page at all, which is the question the 20 Aug 2026 recurrence turns on.
+    const tabUrl = (sender.tab && sender.tab.url) || null;
+    if (tabId == null || sender.frameId === 0) { respond({ job: null, tabUrl }); return false; }
+    chrome.tabs.sendMessage(tabId, { type: "tracker-getjob" }, { frameId: 0 })
+      .then((r) => respond({ job: (r && r.job) || null, tabUrl }))
+      .catch(() => respond({ job: null, tabUrl }));
     return true;
   }
 

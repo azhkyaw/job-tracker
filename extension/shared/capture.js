@@ -69,6 +69,34 @@
 
   const send = (payload) => tell({ type: "tracker-capture", payload });
 
+  /* Whether this script is running in the tab's TOP frame.
+   *
+   * Seeded from the DOM, then CORRECTED by the browser — because the DOM's
+   * answer is exactly what fails in the frames this distinction exists for. A
+   * frame that cannot reach its top gets ITSELF back from `window.top` with no
+   * error raised, so `window === window.top` reads TRUE inside a subframe, and
+   * every decision hanging off it (relay this apply? ask frame 0 who the job
+   * is? claim a receipt?) silently takes the frame-0 branch in the one
+   * situation where it must not. That is a lie the whole preload-frame family
+   * of bugs is built on, and it was still load-bearing in the fix for them.
+   *
+   * `sender.frameId` is the browser's own record of the frame and cannot be
+   * fooled this way. Whether the 18 Aug 2026 frame was a discarded browsing
+   * context (window.top === window) or merely an unreadable one (window.top a
+   * different object whose document is unreachable) was never established, and
+   * this is correct under both, which is the point of asking rather than
+   * inferring.
+   *
+   * Deliberately a plain synchronous boolean, not a promise: the apply click
+   * must read the DOM in its own tick and cannot await anything. The question
+   * is asked at injection, thousands of milliseconds before any click, so the
+   * corrected value is in place long before it is read. */
+  let isTopFrame = window === window.top;
+  const frameKnown = tell({ type: "tracker-whoami" }).then((r) => {
+    if (r && typeof r.top === "boolean") isTopFrame = r.top;
+    return isTopFrame;                       // still the DOM's guess if unanswered
+  });
+
   // Hostname suffix -> ATS vendor. Only for genuinely external applies (the
   // employer's own domain never matches these) — an in-house/direct careers
   // page correctly yields no match rather than a guess.
@@ -497,7 +525,7 @@
   }
 
   function relayToTop(detail) {
-    if (window === window.top) return Promise.resolve(false);
+    if (isTopFrame) return Promise.resolve(false);
     return tell({ type: "tracker-relay-receipt", detail }).then((r) => !!(r && r.ok));
   }
 
@@ -526,7 +554,7 @@
    * the immediate-apply path: Easy Apply's deferred submit fires from inside
    * the modal's iframe legitimately, and its answers only exist there. */
   function relayApply(detail) {
-    if (window === window.top) return Promise.resolve(false);
+    if (isTopFrame) return Promise.resolve(false);
     return tell({ type: "tracker-relay-apply", detail }).then((r) => !!(r && r.ok));
   }
 
@@ -542,7 +570,20 @@
   function stashJob() {
     let job = null;
     try { job = adapter.getJob(); } catch (e) { job = null; }
-    if (!job) return;
+    if (!job) {
+      // The silent branch, made loud. On 18 Aug 2026 the dump proved no stash
+      // had been written for that apply, and nothing anywhere could say WHY:
+      // an opener that was never matched and an opener that was matched but
+      // couldn't read the job leave the identical trace, which is none. This
+      // is the second case saying so.
+      tell({
+        type: "tracker-provenance",
+        detail: { at: Date.now(), url: location.href, stage: "open",
+                  stashed: false, askedTop: false, fromTop: [], fromGuess: [],
+                  disagreed: [], page: { title: null, company: null } },
+      });
+      return;
+    }
     // Promise form, not the callback: this click navigates immediately, and
     // the open port is what keeps the worker alive long enough to finish the
     // write. The page dying before it resolves is fine — the port is the
@@ -561,12 +602,52 @@
                    // same way company is — if it isn't carried, it's lost.
                    "salary_raw", "work_type", "salary_match"];
 
+  /* Copy whatever `from` has that `job` lacks, and name what moved. Gaps only,
+   * never an overwrite — see withStashedJob's note on that rule's sharp edge. */
+  function fillGaps(job, from) {
+    const filled = [];
+    if (from) for (const k of CARRIED) if (!job[k] && from[k]) { job[k] = from[k]; filled.push(k); }
+    return filled;
+  }
+
+  /* Job identity read from frame 0, for a submit that fired in a frame which
+   * cannot read it for itself.
+   *
+   * The stash is the FIRST answer to that problem and it has a hole: it only
+   * exists if the opening click was seen, and its key degrades in precisely the
+   * frames that need it (jobKey() walks to the top too). A miss leaves the
+   * record with no company, no title and no job id at all — Proseware 3 Aug 2026,
+   * and again 18 Aug 2026, where the url came out
+   * linkedin.com/preload/?_bprMode=vanilla while the three screening answers
+   * and the resume file saved perfectly beside an otherwise empty job.
+   *
+   * Frame 0 has had the job page in front of the user the entire time, so ASK
+   * it rather than depend on having remembered. Deliberately LAST in the merge
+   * order: the stash was taken while the listing was definitely on screen,
+   * whereas this read happens after the submit, when the platform may already
+   * have swapped the top card for an "application sent" confirmation.
+   *
+   * The opposite direction to relayApply(), and for the opposite reason — there
+   * a subframe hands the WHOLE capture to frame 0, which would be wrong here,
+   * because the answers exist only in the frame that submitted. Identity comes
+   * over; nothing else moves. */
+  /* Sent even when this frame believes it IS frame 0 — the background answers
+   * `{job:null, tabUrl}` in that case, and the tab URL is worth the round trip
+   * on its own: it is the last-resort identity source below, and the only thing
+   * that can say whether the tab was even on a job page when a blind capture
+   * happened. `isTopFrame` decides nothing here; the background does. */
+  function askTopJob() {
+    return tell({ type: "tracker-relay-getjob" })
+      .then((r) => ({ job: (r && r.job) || null, tabUrl: (r && r.tabUrl) || null }));
+  }
+
   function withStashedJob(job, completed) {
     if (!completed) return Promise.resolve(job);
     try {
       return chrome.runtime.sendMessage({ type: "tracker-take-job", key: jobKey() })
-        .then((r) => {
-          const was = r && r.job;
+        .then((r) => ({ was: (r && r.job) || null, exact: !!(r && r.exact) }))
+        .catch(() => ({ was: null, exact: false }))
+        .then(({ was, exact }) => {
           // The page in front of us wins; the stash only fills the gaps it
           // left behind. A stale snapshot must never overwrite what the submit
           // page can actually see.
@@ -583,10 +664,46 @@
           // edge predicts, though never reproduced. If it recurs, `disagreed`
           // below names the field and shows both candidate values.
           const pageSaw = { title: job.title || null, company: job.company || null };
-          if (was) for (const k of CARRIED) if (!job[k] && was[k]) job[k] = was[k];
-          if (was) {
-            const disagreed = ["title", "company"].filter(
-              (k) => pageSaw[k] && was[k] && pageSaw[k] !== was[k]);
+          // Merge order is page > KEYED stash > frame 0 > same-tab guess, and
+          // the split between the two stash cases is measured, not tidiness.
+          // The 18 Aug 2026 dump held seven stashes from 11 Aug, all in one
+          // tab, none consumed: had that submit landed within the fallback
+          // window, the guess would have pasted "Fourth Coffee · Singapore Applied AI
+          // Solution Engineer" onto a Coho application — plausible, silent,
+          // and permanent, where the empty record it actually saved was
+          // repaired in a minute. A live read of the tab's own top frame is a
+          // fact about the page in front of the user; a same-tab stash is a
+          // guess about which job they meant. Rank them accordingly.
+          if (exact) fillGaps(job, was);
+          // Only when identity is still missing — a healthy deferred apply
+          // (JobStreet's review page, an Easy Apply whose stash hit) pays
+          // nothing for this. askTopJob() is itself a no-op in frame 0, so the
+          // round trip exists only for the frames that can't do it themselves.
+          const stillBlind = !job.platform_job_id || !job.title || !job.company;
+          const ask = stillBlind ? askTopJob()
+                                 : Promise.resolve({ job: null, tabUrl: null });
+          return ask.then(({ job: top, tabUrl }) => {
+            const fromTop = fillGaps(job, top);
+            // The tab's own URL, when every DOM read has failed. It carries no
+            // company and no title — but a job id makes the record findable,
+            // dedupable and repairable, where an empty one is none of those.
+            const fromUrl = (!job.platform_job_id && tabUrl && adapter.jobFromUrl)
+              ? fillGaps(job, adapter.jobFromUrl(tabUrl)) : [];
+            // Last resort, and only for what is still empty after a real read.
+            const fromGuess = exact ? [] : fillGaps(job, was);
+            // Keyed stashes only: this line exists to catch the page and the
+            // snapshot of THE SAME JOB disagreeing (the Southridge/Adatum wrong
+            // title). A same-tab guess is a different job by construction when
+            // it is wrong, so flagging it here would cry wolf.
+            const disagreed = (was && exact)
+              ? ["title", "company"].filter(
+                  (k) => pageSaw[k] && was[k] && pageSaw[k] !== was[k])
+              : [];
+            // Emitted for EVERY completed capture now, not only when a stash
+            // was found. The 18 Aug loss above wrote nothing here at all — the
+            // one shape the buffer most needed to show was the one it stayed
+            // silent about, which made "no stash" and "no capture" look
+            // identical from the popup.
             tell({
               type: "tracker-provenance",
               detail: {
@@ -594,13 +711,25 @@
                 source: (job._prov && job._prov.title_source) || null,
                 layout: (job._prov && job._prov.layout) || null,
                 stashed: !!was,
+                exact,
+                askedTop: stillBlind,
+                // Recorded because "frame 0 was asked and had nothing" and "I
+                // believed I WAS frame 0, so nobody was asked" produce the
+                // identical empty result, and they are different bugs: the
+                // first is a page that lost its job card, the second is a tab
+                // whose top document is the preload page itself.
+                topFrame: isTopFrame,
+                tabUrl,
+                fromTop,
+                fromUrl,
+                fromGuess,
                 disagreed,
                 page: { title: pageSaw.title, company: pageSaw.company },
-                stash: { title: was.title || null, company: was.company || null },
+                stash: was ? { title: was.title || null, company: was.company || null } : null,
               },
             });
-          }
-          return job;
+            return job;
+          });
         })
         .catch(() => job);
     } catch (e) { return Promise.resolve(job); }
@@ -720,7 +849,7 @@
         // out. Only a subframe, which cannot do this correctly at all, pays the
         // round trip; if frame 0 can't help either, it says so and we fall back
         // to the local attempt, which at least records the failure.
-        if (window === window.top) {
+        if (isTopFrame) {
           capture("apply", external, ats);
         } else {
           relayApply({ trigger: "apply", external, ats })
@@ -774,6 +903,15 @@
       capture(d.trigger || "apply", d.external, d.ats);
       respond({ ok: true });
     }
+    /* A subframe's submit asking who this job is — see askTopJob. Only the
+     * identity travels back; the capture itself stays where the answers are.
+     * Answering null is a legitimate outcome (a swapped-out top card), and the
+     * caller keeps whatever it already had either way. */
+    if (msg && msg.type === "tracker-getjob") {
+      let job = null;
+      try { job = adapter.getJob(); } catch (e) { job = null; }
+      respond({ job });
+    }
     return false;
   });
 
@@ -781,11 +919,16 @@
    * one? Top frame only — a subframe rendering it would put the box inside
    * whatever iframe happened to load, and the whole point is to outlive that.
    * See background.js:stashReceipt. */
-  if (window === window.top) {
+  // Waits for the browser's frame answer rather than reading the seeded guess:
+  // this runs at injection, the one moment the guess has not been corrected
+  // yet, and a subframe claiming the receipt renders it where nobody can see it
+  // AND drops the held copy (tracker-receipt-shown) so it can't fire again.
+  frameKnown.then((top) => {
+    if (!top) return;
     try {
       chrome.runtime.sendMessage({ type: "tracker-claim-receipt" })
         .then((r) => { if (r && r.detail) receiptPopover(r.detail); })
         .catch(() => {});
     } catch (e) { /* worker asleep on a cold start — nothing owed, then */ }
-  }
+  });
 })();

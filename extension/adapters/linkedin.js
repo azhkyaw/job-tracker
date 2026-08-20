@@ -113,6 +113,21 @@ window.__trackerAdapter = {
     return new URLSearchParams(loc.search).get("currentJobId") ||
            (loc.pathname.match(/\/jobs\/view\/(\d+)/) || [])[1] || loc.href;
   },
+  // Identity from a URL alone, for a capture where every DOM read has failed —
+  // the background supplies the tab's real URL, which survives a frame that
+  // cannot see the page it belongs to. No company and no title (they are not in
+  // the URL), but a job id is what makes a record findable and repairable.
+  jobFromUrl(href) {
+    if (!href) return null;
+    try {
+      const u = new URL(href);
+      if (!/(^|\.)linkedin\.com$/i.test(u.hostname)) return null;
+      const id = u.searchParams.get("currentJobId") ||
+                 (u.pathname.match(/\/jobs\/view\/(\d+)/) || [])[1] || null;
+      if (!id) return null;
+      return { platform_job_id: id, url: `https://www.linkedin.com/jobs/view/${id}/` };
+    } catch (e) { return null; }
+  },
   getJob() {
     // Easy Apply's "Submit application" click happens inside a same-origin
     // iframe (the modal) whose own document only has the contact-form/resume
@@ -230,7 +245,16 @@ window.__trackerAdapter = {
 
     const title = classTitle || structTitle || titleFromDocTitle;
     const company = classCompany || structCompany || companyFromDocTitle;
-    if (!title && !jdEl) return null;
+    // A job id read out of the URL is a FACT, and discarding it because the DOM
+    // has gone missing is how a capture ends up unidentifiable. LinkedIn swaps
+    // the top card for an "application sent" confirmation moments after an Easy
+    // Apply submit — which is exactly when frame 0 gets asked who the job is
+    // (capture.js:askTopJob) — so returning null there would hand back nothing
+    // at the one moment the surviving field is the one that identifies the job.
+    // Every caller guards on title/jd_text rather than on null (capture()'s
+    // empty-job check, the tracker-apply responder), so an id-only read still
+    // fails the checks meant to fail; it just stops being invisible.
+    if (!title && !jdEl && !idFromUrl) return null;
 
     // Which of the three sources actually won, recorded so a wrong title is
     // diagnosable AFTER the fact instead of costing a live session.
