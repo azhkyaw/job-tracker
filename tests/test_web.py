@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from fastapi.testclient import TestClient
 from psycopg.types.json import Json
 
-from pipeline import analytics, db
+from pipeline import analytics, db, web
 from pipeline.web import app
 
 client = TestClient(app, follow_redirects=False)
@@ -497,6 +497,30 @@ with db.connect() as conn, conn.transaction():
         "VALUES (%s, %s, 'interview_invite', 'email', now() - interval '1 hour', '{}')",
         (user_id, burst[2]))
 
+# Two more inbound rows. An inbound has no `applied` event by construction
+# (invariant #9), so the date the default sorts it by is the date THEY
+# approached. `sortecho` is a second pinned lead, approached long before Beacon
+# Search (whose outreach event is now()) — the two of them are what proves the
+# pinned block is ordered rather than left on insertion order. `sortfoxtrot` was
+# approached 5 days ago and already rejected, so it is inbound but NOT pinned,
+# and has to take its place among the applications by that same approach date
+# instead of falling into the NULLS-LAST bucket at the bottom of the page.
+with db.connect() as conn, conn.transaction():
+    for name, evs in (("sortecho", (("recruiter_outreach", "12 days"),)),
+                      ("sortfoxtrot", (("recruiter_outreach", "5 days"),
+                                       ("rejected", "1 day")))):
+        _jid = conn.execute(
+            "INSERT INTO jobs (user_id, company_norm, title_canonical) "
+            "VALUES (%s, %s, 'Engineer') RETURNING id", (user_id, name)).fetchone()["id"]
+        _aid = conn.execute(
+            "INSERT INTO applications (user_id, job_id, origin) "
+            "VALUES (%s, %s, 'inbound') RETURNING id", (user_id, _jid)).fetchone()["id"]
+        for _type, _ago in evs:
+            conn.execute(
+                "INSERT INTO events (user_id, application_id, type, source, occurred_at, "
+                f"payload) VALUES (%s, %s, %s, 'email', now() - interval '{_ago}', '{{}}')",
+                (user_id, _aid, _type))
+
 
 def _order(path="/"):
     """Company names in the order the list renders them."""
@@ -515,6 +539,15 @@ check("the default does NOT reorder on activity — a reply no longer promotes a
       order.index("sortdelta") < order.index("sortcharlie"), order[:8])
 check("the inbound lead is pinned above every application, whatever its date",
       order.index("Beacon Search") < order.index("sortdelta"), order[:8])
+check("the pinned block is itself ordered newest-approach-first — the lead "
+      "approached today leads the one approached 12 days ago",
+      order.index("Beacon Search") < order.index("sortecho"), order[:8])
+check("...and both stay above every application",
+      order.index("sortecho") < order.index("sortdelta"), order[:8])
+check("an inbound the user pursued isn't pinned, but is placed by the date of "
+      "the approach rather than stranded below every application",
+      order.index("sortdelta") < order.index("sortfoxtrot") < order.index("sortalpha"),
+      order[:10])
 # The pin matters MORE under this default than the last one: a lead has no
 # `applied` event, so applied_at is NULL and NULLS LAST would otherwise drop it
 # to the very bottom of the page rather than merely interleave it.
@@ -548,6 +581,21 @@ check("and it still means what it says: longest quiet first",
       silence.index("sortalpha") < silence.index("sortcharlie"), silence[:8])
 check("an unknown sort falls back to the default, not an error",
       _order("/?sort=nonsense") == order)
+
+# Every key in _SORTS, not the three that happened to have assertions. `company`
+# 500ed from the day it was written — `lower(company_display)` wraps an OUTPUT
+# ALIAS, which Postgres accepts in ORDER BY only as a bare name — and nothing
+# noticed for weeks because the tests named their sorts one at a time. Looping
+# the dict is what makes a new sort key testable by existing.
+for _key in web._SORTS:
+    _r = client.get(f"/?sort={_key}")
+    check(f"sort={_key} renders", _r.status_code == 200, _r.status_code)
+    # Same query, same ORDER BY, with each of the other filters layered on: the
+    # ORDER BY is interpolated into one f-string shared by all of them, so a key
+    # that only works unfiltered is a key that breaks on the next click.
+    for _extra in ("origin=applied", "status=applied", "q=sort"):
+        _r = client.get(f"/?sort={_key}&{_extra}")
+        check(f"sort={_key} + {_extra} renders", _r.status_code == 200, _r.status_code)
 check("the default is reachable by name and identical to the bare URL",
       _order("/?sort=applied") == order)
 

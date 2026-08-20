@@ -198,17 +198,34 @@ _TIEBREAK = "applied_at DESC NULLS LAST, a.id"
 # did under "activity": a lead has no `applied` event at all, so without the pin
 # every one of them collapses into the NULLS LAST bucket at the very bottom of
 # the page, which is a worse answer than the interleaving that motivated the pin
-# originally. 4 of the author's 140 applications are leads awaiting a decision;
-# 10 have no applied event.
+# originally. 4 of the author's 152 applications are leads awaiting a decision;
+# 11 have no applied event, and all 11 are inbound.
+#
+# Which is what `started_at` fixes (11 Aug 2026): applied_at was NULL for all of
+# those, so the pinned leads fell through to `a.id` — insertion order, i.e. the
+# OLDEST approach first, the reverse of every other row on the page — and the
+# seven pursued ones (two of them live interview threads) sat below 140
+# applications in that same arbitrary order. An inbound's date IS the date they
+# approached you; sorting it by that is the same rule the rest of the list
+# follows, not an exception to it.
 _SORTS = {
-    # Spelled out rather than reusing _TIEBREAK: its first key IS applied_at,
-    # so composing them would repeat the sort's own primary key, and a later
-    # edit to _TIEBREAK would silently re-sort the default list.
-    "applied": f"{_LEADS_FIRST}, applied_at DESC NULLS LAST, a.id",
+    # Spelled out rather than reusing _TIEBREAK: its first key IS started_at's
+    # own primary component, so composing them would repeat the sort's own key,
+    # and a later edit to _TIEBREAK would silently re-sort the default list.
+    #
+    # `started_at` is applied_at for anything the user applied to and the FIRST
+    # APPROACH for anything they didn't — see the column's comment. Identical to
+    # applied_at on every applied row, so this reads exactly as "newest
+    # submission first" for them; it only decides the rows that have no
+    # submission date, which on real data are the inbound ones, and which
+    # applied_at could only ever tie at NULL.
+    "applied": f"{_LEADS_FIRST}, started_at DESC NULLS LAST, a.id",
     "activity": f"last_activity DESC NULLS LAST, {_TIEBREAK}",
     "silence": (f"s.status IN ('rejected','offer','withdrawn') ASC, "
                 f"last_activity ASC NULLS LAST, {_TIEBREAK}"),
-    "company": "lower(company_display) ASC, a.id",
+    # Over the LATERAL's columns, not the output alias: ORDER BY only accepts an
+    # alias as a bare name, so wrapping one in lower() is an error, not a sort.
+    "company": "lower(COALESCE(pc.company_raw, j.company_norm)) ASC, a.id",
 }
 _DEFAULT_SORT = "applied"
 
@@ -248,13 +265,24 @@ def applications(request: Request, deleted: str | None = None, origin: str | Non
         rows = conn.execute(
             f"""
             SELECT a.id, a.focused, a.origin, j.company_norm, j.title_canonical, s.status,
-                   COALESCE(
-                     (SELECT p.company_raw FROM postings p
-                       WHERE p.job_id = a.job_id AND p.company_raw IS NOT NULL
-                       ORDER BY p.captured_at DESC LIMIT 1),
-                     j.company_norm) AS company_display,
+                   -- Sourced from the LATERAL below rather than an inline
+                   -- subquery so that ORDER BY can apply lower() to the same
+                   -- expression. An output alias is only usable in ORDER BY as
+                   -- a BARE name — `lower(company_display)` raises "column
+                   -- company_display does not exist", which is what ?sort=company
+                   -- did from the day it was written until 20 Aug 2026.
+                   COALESCE(pc.company_raw, j.company_norm) AS company_display,
                    (SELECT min(occurred_at) FROM events e
                      WHERE e.application_id = a.id AND e.type = 'applied') AS applied_at,
+                   -- The date the thread started, from whichever side started
+                   -- it: the submission if there was one, otherwise the first
+                   -- event on record — for an inbound that is the recruiter's
+                   -- approach (matcher never fabricates an `applied` event for
+                   -- one, invariant #9). Equal to applied_at whenever an
+                   -- applied event exists, so it changes nothing for them.
+                   (SELECT COALESCE(min(occurred_at) FILTER (WHERE e.type = 'applied'),
+                                    min(occurred_at))
+                      FROM events e WHERE e.application_id = a.id)         AS started_at,
                    (SELECT max(occurred_at) FROM events e
                      WHERE e.application_id = a.id)                        AS last_activity,
                    (SELECT string_agg(DISTINCT p.platform, ', ')
@@ -262,6 +290,15 @@ def applications(request: Request, deleted: str | None = None, origin: str | Non
             FROM applications a
             JOIN jobs j ON j.id = a.job_id
             JOIN application_status s ON s.application_id = a.id
+            -- The newest posting that names a company, as a joined row rather
+            -- than a scalar subquery: one definition of "which company do we
+            -- show", reachable from both the SELECT and the ORDER BY. LIMIT 1
+            -- keeps it at most one row, so no row multiplication.
+            LEFT JOIN LATERAL (
+              SELECT p.company_raw FROM postings p
+               WHERE p.job_id = a.job_id AND p.company_raw IS NOT NULL
+               ORDER BY p.captured_at DESC LIMIT 1
+            ) pc ON true
             WHERE a.user_id = %(user_id)s
               AND (%(origin)s::text IS NULL OR a.origin = %(origin)s)
               AND (%(q)s::text = '' OR j.title_canonical ILIKE %(like)s
