@@ -19,6 +19,15 @@ function deepQuerySelector(root, selector) {
   return null;
 }
 
+// "Did this document actually have the job on it?" — the same test capture.js
+// applies before it will save (a bare id is not enough to identify a record by
+// itself), so the frame that answers here is the frame that would have been
+// allowed to save. Kept as one named predicate rather than repeated inline:
+// when the bar moves it has to move for both.
+function usableJob(job) {
+  return !!(job && (job.title || job.jd_text));
+}
+
 window.__trackerAdapter = {
   platform: "linkedin",
   // Opt-in for shared/answers.js's noRoot diagnostic (a MutationObserver that
@@ -128,31 +137,77 @@ window.__trackerAdapter = {
       return { platform_job_id: id, url: `https://www.linkedin.com/jobs/view/${id}/` };
     } catch (e) { return null; }
   },
+  // The job identity, read from whichever document actually has it.
+  //
+  // "The outer page" was an assumption, and it is wrong on the layout that has
+  // been eating captures since 3 Aug 2026. Easy Apply's submit fires inside the
+  // modal's same-origin iframe, whose own document holds only the
+  // contact-form/resume fields, so reading the TOP frame is right there and has
+  // always been the reason this walks up. But LinkedIn also has a render mode
+  // in which the WHOLE PAGE — nav, job card, JD, apply button — is rendered
+  // inside a full-viewport iframe at linkedin.com/preload/?_bprMode=vanilla
+  // (confirmed live 21 Aug 2026: 2133x1050, same-origin, `render-mode-VANILLA`
+  // on its <html>, window.top reachable and pointing at the outer shell). In
+  // that mode the job is in THIS frame and the top is the leftover shell —
+  // walking up is walking away from the only document that has an answer.
+  //
+  // Every blind capture on record has this signature: the frame's own url is
+  // the preload page, window.top is readable (the recorded `layout` is
+  // "collections"/"view", read off the top's own pathname), and the top read
+  // comes back with no title, no company and no JD. It was diagnosed twice as
+  // an UNREACHABLE top and mitigated twice on that theory — the keyed stash,
+  // then asking frame 0 — and both mitigations ask the same shell that has
+  // nothing to say. Five "no job found" failures in the extension's own ring
+  // buffer share it (3 Aug x2, 4 Aug, 7 Aug, 21 Aug — the 10/11 Aug entries in
+  // that buffer carry an `error` and are save failures, a different thing),
+  // plus the three blind records repaired by hand (Coho, Trey, Lucerne
+  // Consultants) and one application lost outright (Woodgrove Finance, 21 Aug).
+  //
+  // So: try the top, and when it yields nothing usable, try this frame. Top
+  // still WINS every field it can answer, which is what keeps the Easy Apply
+  // modal case correct — that document has no job card, so it loses by having
+  // nothing, not by being distrusted.
   getJob() {
-    // Easy Apply's "Submit application" click happens inside a same-origin
-    // iframe (the modal) whose own document only has the contact-form/resume
-    // fields — the job title/company/JD live in the outer page. Since the
-    // script now runs in every frame (manifest all_frames), always read job
-    // identity from the top frame's document/location; when getJob() is
-    // itself called from the top frame (e.g. an external-apply click), top
-    // *is* window, so this is a no-op there.
     let topWin = window;
     try {
       if (window.top && window.top.document) topWin = window.top;
     } catch (e) { /* cross-origin top somehow — fall back to this frame */ }
-    const topDoc = topWin.document;
-    const topLoc = topWin.location;
+    const top = this.readJob(topWin.document, topWin.location);
+    if (topWin === window) return top;
+    if (usableJob(top)) return top;
 
+    const own = this.readJob(document, location);
+    if (!usableJob(own)) return top || own;
+    // The id and the url it was built from move together — own.url falls back
+    // to this frame's own href, which is truthy and WRONG (that is how a
+    // capture came to record linkedin.com/preload/?_bprMode=vanilla as the job
+    // url), so a gaps-only merge would keep it and drop the top's real id.
+    if (!own.platform_job_id && top && top.platform_job_id) {
+      own.platform_job_id = top.platform_job_id;
+      own.url = top.url;
+    }
+    for (const k of ["company", "title", "jd_text", "location", "posted_label"]) {
+      if (!own[k] && top && top[k]) own[k] = top[k];
+    }
+    if (own.reposted == null && top && top.reposted != null) own.reposted = top.reposted;
+    // Which document answered, and which page the tab was on — the two facts
+    // that make the next occurrence of this readable at a glance instead of
+    // costing another session.
+    own._prov.doc_source = "self";
+    if (top && top._prov) own._prov.layout = top._prov.layout;
+    return own;
+  },
+  readJob(doc, loc) {
     const q = (sels) => {
       for (const s of sels) {
-        const el = topDoc.querySelector(s);
+        const el = doc.querySelector(s);
         if (el && el.textContent.trim()) return el.textContent.trim();
       }
       return null;
     };
     const idFromUrl =
-      new URLSearchParams(topLoc.search).get("currentJobId") ||
-      (topLoc.pathname.match(/\/jobs\/view\/(\d+)/) || [])[1] || null;
+      new URLSearchParams(loc.search).get("currentJobId") ||
+      (loc.pathname.match(/\/jobs\/view\/(\d+)/) || [])[1] || null;
 
     // Try the classic, human-named classes first — still real on the
     // /jobs/collections/recommended/ layout (verified live 2026-07-23).
@@ -166,10 +221,10 @@ window.__trackerAdapter = {
       ".jobs-unified-top-card__company-name",
     ]);
     const jdEl =
-      topDoc.querySelector("#job-details") ||
-      topDoc.querySelector(".jobs-description__content") ||
-      topDoc.querySelector(".jobs-box__html-content") ||
-      topDoc.querySelector("[id^='JobDetails_AboutTheJob_']");
+      doc.querySelector("#job-details") ||
+      doc.querySelector(".jobs-description__content") ||
+      doc.querySelector(".jobs-box__html-content") ||
+      doc.querySelector("[id^='JobDetails_AboutTheJob_']");
 
     // Location / posted-time / repost line ("Singapore, Singapore · Reposted
     // 3 weeks ago · Over 100 people clicked apply"). Three layouts verified
@@ -193,12 +248,12 @@ window.__trackerAdapter = {
     //     a title/company source that's immune to that corruption.
     let location = null, posted_label = null, reposted = null;
     let tertiaryHost = null, structTitle = null, structCompany = null;
-    const classContainer = topDoc.querySelector(
+    const classContainer = doc.querySelector(
       ".job-details-jobs-unified-top-card__tertiary-description-container");
     if (classContainer && classContainer.children[0]) {
       tertiaryHost = classContainer.children[0];
     } else {
-      for (let node = jdEl || topDoc.body, hops = 0;
+      for (let node = jdEl || doc.body, hops = 0;
            hops < 12 && node && !tertiaryHost; hops++, node = node.parentElement) {
         const ps = [...node.querySelectorAll("p")];
         const idx = ps.findIndex((p) => {
@@ -234,8 +289,8 @@ window.__trackerAdapter = {
     // this string at all. Also unusable on /jobs/collections/recommended/,
     // where the tab title is the page's own ("Top job picks for you |
     // LinkedIn") regardless of which job is selected — verified live same day.
-    const docTitleTracksSelectedJob = !/\/jobs\/collections\//.test(topLoc.pathname);
-    const titleParts = topDoc.title.split(" | ");
+    const docTitleTracksSelectedJob = !/\/jobs\/collections\//.test(loc.pathname);
+    const titleParts = doc.title.split(" | ");
     const titleFromDocTitle =
       docTitleTracksSelectedJob && titleParts.length === 3 && titleParts[2] === "LinkedIn"
         ? titleParts[0].trim() : null;
@@ -269,18 +324,24 @@ window.__trackerAdapter = {
     // Nothing in the record said which branch had produced the string, so
     // there was no way to narrow it further. This field is that missing fact.
     const _prov = {
+      // Which DOCUMENT this read came from, alongside which SELECTOR won.
+      // getJob() overwrites it with "self" when the top frame had nothing and
+      // this frame did — the one distinction that separates a healthy capture
+      // from a rescued one, and the field to read first when the next blind
+      // record turns up.
+      doc_source: "top",
       title_source: classTitle ? "class" : structTitle ? "struct"
                   : titleFromDocTitle ? "doctitle" : null,
       company_source: classCompany ? "class" : structCompany ? "struct"
                     : companyFromDocTitle ? "doctitle" : null,
-      layout: topLoc.pathname.startsWith("/jobs/collections/") ? "collections"
-            : topLoc.pathname.startsWith("/jobs/view/") ? "view"
-            : topLoc.pathname.startsWith("/jobs/search") ? "search" : "other",
+      layout: loc.pathname.startsWith("/jobs/collections/") ? "collections"
+            : loc.pathname.startsWith("/jobs/view/") ? "view"
+            : loc.pathname.startsWith("/jobs/search") ? "search" : "other",
     };
 
     return {
       platform_job_id: idFromUrl,
-      url: idFromUrl ? `https://www.linkedin.com/jobs/view/${idFromUrl}/` : topLoc.href,
+      url: idFromUrl ? `https://www.linkedin.com/jobs/view/${idFromUrl}/` : loc.href,
       company,
       title,
       jd_text: jdEl ? jdEl.innerText.trim() : null,

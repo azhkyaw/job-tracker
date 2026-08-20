@@ -92,10 +92,31 @@ it: the resume picker is PROMOTED to `applications.resume_file` (migration
   the easy ones to wipe by accident; the form's HH:MM also drops seconds).
   Identity for the fix comes from `document.title` on `/jobs/view/<id>/`
   (`"<title> | <company> | LinkedIn"`), which survives a frozen background tab
-  when every selector returns null. Done twice: Coho 18 Aug 2026, Trey
-  Consulting 20 Aug 2026 — both kept their screening answers and resume file.
+  when every selector returns null. Done three times: Coho 18 Aug 2026,
+  Trey Consulting 20 Aug 2026, Lucerne Consultants 21 Aug 2026 — all three kept
+  their screening answers and resume file.
   Repair BEFORE running `sync`: against a blank record the confirmation email
   finds no candidate and mints a second application that then needs a refile.
+  When the capture saved NOTHING at all (the external-apply path writes only
+  after the popover is answered, so a failed read discards the application
+  outright) there is no record to `/edit` — drive `POST /applications/new`
+  through the same `TestClient`, which is the third ingest path and reaches the
+  identical `ingest.upsert_record`. Done once: Woodgrove Finance 21 Aug 2026.
+- **Reading the extension's ring buffers WITHOUT the popup.** The popup is the
+  documented way to read `failures` / `provenance` / `sweeps`, but it needs the
+  user, and `chrome-extension://` and `chrome://extensions` are both blocked to
+  claude-in-chrome — so a bug reported hours later stalls on a screenshot
+  request. The buffers are `chrome.storage.local`, which is a LevelDB on disk at
+  `<profile>/Local Extension Settings/<extension-id>/`, and they survive an
+  extension reload and a browser restart. The unpacked id is derivable, not
+  looked up: SHA-256 the absolute extension path **encoded UTF-16LE on Windows**,
+  take the first 16 bytes, map each hex nibble 0-f onto a-p —
+  `D:\projects\job-tracker\extension` → `apikfpnjpcpimjlfjlbjefflebfopohp`
+  (confirmed: that directory exists). Parse `000004.log` as a real LevelDB log
+  (32 KiB blocks, 7-byte record header, WriteBatch payload) rather than grepping
+  it — a value larger than a block is split across records and a naive text
+  scan silently truncates the JSON mid-string, which is exactly what happened
+  first. This settled the 21 Aug root cause in minutes with no user round trip.
 - **Fast syntax check before a full suite run:** `python -c "import ast;
   ast.parse(open('path/to/file.py', encoding='utf-8').read())"` — catches
   typos without a DB reset/migration cycle.
@@ -712,6 +733,45 @@ axis) + **DM Mono**, from Google Fonts.
   demonstrably was, the 18 Aug one has no recorded layout. The provenance buffer
   stores `layout` for every successful capture, so comparing the blind ones
   against the successes answers it without a live session.
+  **SETTLED 21 Aug 2026, and the premise of this whole bullet is WRONG: the top
+  is reachable, and the job is not in it.** Everything above is a correct
+  description of the symptom and three mitigations aimed at the wrong cause —
+  read it as the trail, not as the diagnosis. `linkedin.com/preload/?_bprMode=vanilla`
+  is not a hidden stub the frame is trapped inside. It is a **full-viewport,
+  same-origin iframe LinkedIn boots whole pages into** — measured live at
+  2133x1050, `position:absolute` at (0,0), `opacity:0; z-index:-1` while idle,
+  carrying `render-mode-VANILLA` / `app-loader--default` / `ember-application`
+  on its `<html>`, and `contentWindow.top === window` — i.e. LinkedIn renders
+  the next page in it and reveals it. While it is the revealed page, the job
+  card, the JD and the apply button are all in THAT document, the click lands
+  there, and `window.top` is the outer shell holding the page you just left.
+  Two facts already in the buffers say this and were misread: the 20 Aug
+  breadcrumb recorded `topFrame:false` with `layout:"collections"` — and
+  `layout` is read off `window.top.location.pathname`, so the top was
+  demonstrably readable, it just had no job on it — and the popover the user
+  saw was rendered BY that frame, which a 0x0 stub could not have shown.
+  **`getJob()` walking up was the bug**: it left the only document with an
+  answer to consult the one without. It now reads the top, and when that yields
+  no title and no JD reads THIS frame instead, merging gaps-only so the top
+  still wins every field it can answer — which is what keeps the Easy Apply
+  modal iframe correct, since that document loses by having nothing rather than
+  by being distrusted. `platform_job_id` and `url` move as a PAIR in that merge:
+  a self-read's `url` falls back to the frame's own href, which is truthy and
+  wrong, and keeping it is precisely how a record came to store
+  `linkedin.com/preload/?_bprMode=vanilla` as the job url. `_prov.doc_source`
+  (`"top"` | `"self"`) records which document answered.
+  Five "no job found" entries in the extension's own failure buffer share the
+  signature (3 Aug x2, 4 Aug, 7 Aug, 21 Aug), as do all three blind records
+  repaired by hand. **The 7 Aug 12:30 SG one is an application that was simply
+  lost** — nothing was applied to that day, and the record of that era holds no
+  job id and no tab URL, so it cannot be identified even now.
+  **The failure record is the reason it took three weeks**: it was
+  `{platform, url, at}`, which says which frame failed and nothing about why, so
+  five entries from two different bugs rendered as one identical line. It now
+  carries `topFrame`, `tabUrl`, `read` (`none` | `id` | `empty`), `docSource`
+  and `layout`, and the popup prints the subframe case in full. Same lesson as
+  the `withStashedJob` breadcrumb below, arrived at from the other direction:
+  write the diagnostic from the failing branch first.
   **And the first draft of that fix was built on the very check the bug is
   about**, which is the durable lesson: `askTopJob()` opened with
   `if (window === window.top) return null`, exactly like `relayApply()` and the
@@ -1335,8 +1395,21 @@ win). No per-shell export needed for local dev.
   healthy capture should say nothing alarming at all. Note the answers sweep and
   `resume_file` have never been the broken part — both losses kept them — so
   "answers stored" is not evidence the identity path worked. **Verify the code
-  is even live first** (`chrome://extensions` reads 0.6.0 AND the tab was opened
+  is even live first** (`chrome://extensions` reads 0.7.0 AND the tab was opened
   after the reload); a repeat from a stale tab proves nothing about the fix.
+  **Partly answered 20 Aug, and it ran without helping** — the Lucerne Consultants
+  capture shows `topFrame:false`, `askedTop:true`, `exact:true`, so
+  `tracker-whoami`, the keyed stash and the frame-0 ask all fired correctly and
+  the record still came out blank, because every one of them asks the outer
+  shell and the shell has no job (see the settled root cause in Gotchas). That
+  is the chain working and the question being wrong. **Still unverified, and now
+  the thing that matters: `getJob()`'s self-document fallback** (21 Aug,
+  extension 0.7.0), plus the immediate path's last-resort `jobFromUrl` off the
+  tab URL. What to read on the next apply: `doc_source` in the provenance line —
+  `"self"` means the frame rescued a capture the old code would have lost, and
+  is the first positive proof this path works. A `read:`/`docSource:` warn line
+  under Recent failures means both documents came up empty, which is a different
+  bug from every one recorded so far.
 - **`getRecruiter()` — rewritten 3 Aug 2026 and verified once.** The previous
   version stored the entire card blob as the name and the name as the role, on
   all 10 extension-captured contacts (repaired by hand). Both its structural
@@ -1362,6 +1435,21 @@ win). No per-shell export needed for local dev.
   fixed: 45 of 46 extension captures have a JD, so this has cost nothing real,
   and a structural fallback would be exactly the speculative adapter change
   that has misfired here before. Revisit only if a capture actually loses a JD.
+  **Seen again 21 Aug 2026, and it is broader than the JD** — on that
+  `/jobs/view/` layout there is not a single class anywhere in the document
+  containing the substring `job` (everything is hashed atomic CSS: `_5e9d0487`,
+  `f07fddc6`, …), so `classTitle`, `classCompany` and every JD selector miss
+  together, and there is no `<h1>` to anchor on either. `document.title` carries
+  it (`"<title> | <company> | LinkedIn"`) and is why this still captures — which
+  puts a load-bearing weight on the ONE source that is deliberately switched off
+  elsewhere: `docTitleTracksSelectedJob` is false on `/jobs/collections/`,
+  correctly, since the tab title there is the page's own. So a
+  collections-layout page rendered with this hashed CSS would have **no title
+  source at all**. Not observed together yet; the collections layout still had
+  the human-named classes on 20 and 21 Aug (three captures with
+  `_prov.title_source == "class"`). Worth watching, and `title_source` in the
+  provenance buffer is what will say when it happens — a run of `doctitle` on
+  `/jobs/view/` is the leading indicator.
 - **The redesigned palette, on a real screen.** Layout, type, spacing,
   responsive behaviour and contrast were all verified (contrast numerically —
   0 WCAG AA failures in both themes); the *rendered colour* never was,

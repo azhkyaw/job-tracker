@@ -69,6 +69,12 @@
 
   const send = (payload) => tell({ type: "tracker-capture", payload });
 
+  /* "Is this enough to save?" — a job id alone identifies a record but names
+   * nothing, so a read that produced only one is not yet an answer. The single
+   * definition every guard here shares (linkedin.js has the same predicate for
+   * choosing between documents); when the bar moves it moves everywhere. */
+  const usable = (j) => !!(j && (j.title || j.jd_text));
+
   /* Whether this script is running in the tab's TOP frame.
    *
    * Seeded from the DOM, then CORRECTED by the browser — because the DOM's
@@ -747,13 +753,63 @@
     if (!job || (!job.title && !job.jd_text && !completed)) {
       console.warn("[tracker] capture failed — adapter found no job on this page",
                    location.href);
-      tell({
-        type: "tracker-capture-failure",
-        detail: { platform: adapter.platform, url: location.href, at: Date.now() },
+      // Not a failure yet. The deferred path has had a fourth identity source
+      // since 20 Aug — the tab's own URL, read from sender.tab.url in the
+      // background, which survives a frame that cannot see the page it belongs
+      // to — and the immediate path simply never got it. That asymmetry cost a
+      // whole application on 21 Aug 2026 (Woodgrove Finance, external apply): the
+      // tab URL carried currentJobId=4419563851 the entire time, and this
+      // branch threw the apply away rather than spend one round trip on it.
+      //
+      // An id-only record has no company and no title, which is genuinely
+      // thin — but it is findable, dedupable and repairable through /edit,
+      // and a discarded application is none of those. Same argument the
+      // deferred path already accepted; this is it applied to the path that
+      // was missing it, not a new one.
+      askTopJob().then(({ job: top, tabUrl }) => {
+        const rescued = usable(top) ? top
+                      : (adapter.jobFromUrl ? adapter.jobFromUrl(tabUrl) : null);
+        if (rescued && rescued.platform_job_id) {
+          proceed(rescued, trigger, external, ats, completed);
+          return;
+        }
+        tell({
+          type: "tracker-capture-failure",
+          detail: {
+            platform: adapter.platform, url: location.href, at: Date.now(),
+            // Everything needed to tell the three shapes apart next time,
+            // rather than the three that all render as one line. Until 21 Aug
+            // this record was {platform, url, at} — enough to say WHICH FRAME
+            // failed and nothing about WHY, which is why five of these sat in
+            // the buffer for three weeks looking identical while two different
+            // bugs produced them.
+            topFrame: isTopFrame, tabUrl,
+            // What the DOM read managed before giving up. `read:"none"` means
+            // getJob() returned null outright — no title, no JD, and not even
+            // a job id in either document's URL; `read:"id"` means it found an
+            // id and nothing to name it with, which is a page that had not
+            // rendered rather than a page that was never a job. `docSource`
+            // says which document answered at all, and with a live `tabUrl`
+            // beside it, "the tab was on a job page and neither frame could
+            // see it" stops being a guess.
+            read: !job ? "none"
+                : (job.platform_job_id ? "id" : "empty"),
+            docSource: (job && job._prov && job._prov.doc_source) || null,
+            layout: (job && job._prov && job._prov.layout) || null,
+          },
+        });
+        if (external) notCapturedPopover();
       });
-      if (external) notCapturedPopover();
       return;
     }
+    proceed(job, trigger, external, ats, completed);
+  }
+
+  /* The capture proper, entered once a job has been identified — from the page
+   * (the normal case) or from the last-resort rescue above. Split out so the
+   * rescue can be awaited without the healthy path ever paying for a round
+   * trip, and without duplicating the send/receipt logic to serve it. */
+  function proceed(job, trigger, external, ats, completed) {
     // Same breadcrumb for the path that never consults a stash (an immediate
     // apply), so "where did this title come from" is answerable for EVERY
     // capture rather than only deferred ones. withStashedJob emits the richer

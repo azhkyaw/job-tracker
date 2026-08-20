@@ -15,6 +15,17 @@ chrome.storage.local.get({ failures: [] }, ({ failures }) => {
   for (const f of failures.slice(0, 5)) {
     const li = document.createElement("li");
     li.textContent = `${new Date(f.at).toLocaleString()} — ${f.error || "no job found"} — ${f.url || ""}`;
+    // A "no job found" entry used to say only which frame's url failed, which
+    // made five different sessions render as five identical lines. When the
+    // frame that failed is NOT the tab's top frame and the tab was on a real
+    // job page, that is the whole diagnosis in one sentence — say it.
+    if (!f.error && f.topFrame === false) {
+      const w = document.createElement("span");
+      w.className = "warn";
+      w.textContent = ` — ran in a subframe; tab was on ${f.tabUrl || "an unknown page"}` +
+                      (f.read ? ` (read: ${f.read}${f.docSource ? `, ${f.docSource}` : ""})` : "");
+      li.appendChild(w);
+    }
     ul.appendChild(li);
   }
 });
