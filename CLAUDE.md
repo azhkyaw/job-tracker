@@ -66,6 +66,13 @@ it: the resume picker is PROMOTED to `applications.resume_file` (migration
 - **Native Windows (no WSL):** see `docs/windows-dev.md` — Docker Postgres
   (`docker compose up -d`, port 55432) + uv-managed Python;
   `scripts/dev-setup.ps1` once, `scripts/test.ps1` to run suites.
+  **The Docker ENGINE is often not running** (Desktop exits between sessions),
+  and the failure reads as a psql error about dropping `tracker_test`, not as
+  "Docker is down". Start it and wait for the daemon before the suite:
+  `Start-Process "C:\Program Files\Docker\Docker\Docker Desktop.exe"`, then
+  `until docker info >/dev/null 2>&1; do sleep 3; done` (Bash tool,
+  `run_in_background`), then `docker compose up -d`. The dev DB is Neon and is
+  unaffected, so the app keeps working while the suites cannot run.
 - **Dev DB shell:** the dev DB is Neon now (`docs/windows-dev.md` → Managed
   Postgres), reached via `TRACKER_DATABASE_URL` in `.env` same as the app.
   Local Docker Postgres is only `scripts/test.ps1`'s throwaway DB —
@@ -74,6 +81,21 @@ it: the resume picker is PROMOTED to `applications.resume_file` (migration
   pipeline import db; ..."` — faster than a psql shell for inspecting real
   rows (dict results) while chasing a reported bug against live data; used
   this repeatedly to confirm bugs against real applications before fixing.
+- **Repairing a capture that saved blind** (no company/title/job id — the
+  preload-frame gotcha below): drive `POST /applications/{id}/edit` via
+  `TestClient`, same pattern as `refile_email` (invariant #3), NOT hand-written
+  UPDATEs — that route is the only place `jobs.company_norm`,
+  `postings.company_norm`, `platform_job_id` and the canonical URL stay
+  consistent, and it pre-checks the `platform_job_id` unique index. `/edit` is
+  FULL-STATE: a blank field CLEARS, so read every field off the record first and
+  override only what changed (`focused`, the applied instant, and `external` are
+  the easy ones to wipe by accident; the form's HH:MM also drops seconds).
+  Identity for the fix comes from `document.title` on `/jobs/view/<id>/`
+  (`"<title> | <company> | LinkedIn"`), which survives a frozen background tab
+  when every selector returns null. Done twice: Coho 18 Aug 2026, Trey
+  Consulting 20 Aug 2026 — both kept their screening answers and resume file.
+  Repair BEFORE running `sync`: against a blank record the confirmation email
+  finds no candidate and mints a second application that then needs a refile.
 - **Fast syntax check before a full suite run:** `python -c "import ast;
   ast.parse(open('path/to/file.py', encoding='utf-8').read())"` — catches
   typos without a DB reset/migration cycle.
@@ -312,6 +334,19 @@ axis) + **DM Mono**, from Google Fonts.
    `_TIEBREAK`, whose own first key is `applied_at` — composing them would
    repeat the sort's primary key, and a later edit to `_TIEBREAK` would
    silently re-sort the default list.
+   **The default sorts on `started_at`, not `applied_at`** (11 Aug 2026): the
+   submission when there is one, else the first event on record — which for an
+   inbound is the date the recruiter approached, since invariant #9 forbids
+   fabricating an `applied` event for one. Identical to `applied_at` on every
+   row that HAS an applied event (verified against all 152 real rows: zero
+   differ), so "newest submission first" is unchanged for them; it only decides
+   the rows where `applied_at` is NULL, which on real data are exactly the 11
+   inbound ones, and which previously fell through to `a.id` — insertion order,
+   i.e. OLDEST approach first, the reverse of the rest of the page. Both halves
+   were wrong: the 4 pinned leads were ordered backwards inside the pin, and the
+   7 pursued ones (two of them live interview threads) sat below 140
+   applications. An inbound's date is the date they approached; sorting by it is
+   the same rule the rest of the list follows, not an exception to it.
 9. **The needs-follow-up block is work; the table below it is a record.** It
    gets real rows and a one-click `follow_up_sent` (posting with
    `redirect_to=/?fu=1` so the list shortens as you clear it), because on real
@@ -357,6 +392,24 @@ axis) + **DM Mono**, from Google Fonts.
 
 - psycopg server-side binding cannot type a bare `%s IS NULL` — cast it
   (`%s::text IS NULL`). This bit us once in the matcher.
+- **An output-column alias works in `ORDER BY` only as a BARE NAME.** Wrap it in
+  anything — `lower(company_display)`, `COALESCE(applied_at, x)` — and Postgres
+  resolves the name against the FROM clause instead, raising `column
+  "company_display" does not exist`. `?sort=company` on the list 500ed this way
+  from the day it was written until 20 Aug 2026 (reported as a real traceback,
+  not found by a test). Two ways out, both used in `web.py`'s list query: expose
+  the whole expression as its own alias and order by that bare name
+  (`started_at`), or source the value from a `LEFT JOIN LATERAL` so ORDER BY can
+  compute over real FROM columns (`pc.company_raw`) — the latter also keeps one
+  definition of "which posting's company do we show" for the SELECT and the sort
+  to share. The trap is that the legal and illegal forms look identical, and
+  every OTHER key in `_SORTS` happened to be bare names.
+- **A registry of interchangeable things needs a test that LOOPS the registry.**
+  `_SORTS` had four keys; the suite named three of them by hand and the fourth
+  was broken for weeks. `tests/test_web.py` now iterates `web._SORTS` (crossed
+  with `origin`/`status`/`q`, since one f-string ORDER BY is shared by every
+  filter combination), so a new sort key is covered by existing. Same shape of
+  gap to look for anywhere else a dict maps names to SQL or handlers.
 - Starlette `TemplateResponse` must use keyword form
   (`request=`, `name=`, `context=`).
 - When patching code with scripts, ASSERT the anchor matched — a silent
@@ -611,6 +664,101 @@ axis) + **DM Mono**, from Google Fonts.
   frame in a tab, which is the one identifier both ends still agree on. That
   fallback is a guess where a keyed hit is a fact, so it gets its own much
   shorter window (`PENDING_JOB_FALLBACK_MS`, 30 min vs the 2 h TTL).
+  **It happened again on 18 Aug 2026, which retired the stash as the ONLY
+  rescue.** Same signature exactly — Easy Apply, `external:false`, recorded url
+  `linkedin.com/preload/?_bprMode=vanilla`, company/title/`platform_job_id`/JD
+  all null — while the 3 screening answers and `resume_file` saved perfectly
+  beside it, because those live in the submitting frame and only identity has to
+  travel. Every stash-based rescue shares one precondition, that something was
+  REMEMBERED at the opening click: it needs that click to have been seen
+  (`stashJob()` returns silently when `getJob()` is null, so a resumed draft or
+  an unmatched opener stashes nothing) and the take to fall inside the 30-min
+  same-tab window. Frame 0 has the job page in front of the user the whole time,
+  so `capture.js:askTopJob()` now ASKS it (`tracker-relay-getjob` →
+  `tracker-getjob` at frameId 0, the same targeting as the receipt/apply
+  relays), gaps-only and LAST in the merge order — the stash was taken while the
+  listing was definitely on screen, this read happens after the submit when the
+  top card may already read "application sent". Note the direction is the
+  opposite of `relayApply`: identity comes TO the submitting frame, the capture
+  never leaves it, because the answers exist nowhere else. `linkedin.js:getJob()`
+  stopped returning null when the DOM is gone but the URL still carries a job id
+  (`!title && !jdEl && !idFromUrl`) — an id is a fact and discarding it is what
+  made the record unidentifiable rather than merely thin.
+  **It recurred on 20 Aug 2026, identically** (Trey Consulting · Senior Dotnet
+  Developer): same preload url, same blank identity, 6 answers and the resume
+  file saved beside it. Two things came out of that one. First, the tab URL the
+  user supplied — `/jobs/collections/recommended/?currentJobId=4452411130` —
+  proves the tab's top document was NOT the preload page, so this really is a
+  subframe and the frame-0 ask is the right shape of fix (it kills the rival
+  hypothesis that the TAB itself had navigated to `/preload/`). Second, it is
+  still unknown whether the 18 Aug fix was even RUNNING: reloading an unpacked
+  extension does not re-inject content scripts into tabs opened before the
+  reload, so an apply from a pre-reload tab runs the old code no matter what
+  `chrome://extensions` says. The manifest is now bumped per change (0.6.0) so
+  the reload state is readable at a glance instead of inferred from behaviour —
+  do that with any extension fix whose verification depends on it being live.
+  **A FOURTH identity source now backs the other three**: the tab's own URL,
+  read from `sender.tab.url` in the service worker AT CAPTURE TIME (never cached
+  — LinkedIn rewrites its URL by pushState without re-injecting, so a cached
+  copy can name a different job) and parsed by `adapter.jobFromUrl()`. It
+  carries no company and no title, but a job id makes a record findable,
+  dedupable and repairable, where a blank one is none of those. Full merge
+  order: submitting page > keyed stash > frame 0 > tab URL > same-tab guess.
+  The breadcrumb also records `topFrame` and `tabUrl`, because "frame 0 was
+  asked and had nothing" and "this frame believed it WAS frame 0, so nobody was
+  asked" produce the identical empty result and are different bugs.
+  **Open, and cheap to settle next time**: both losses may be the
+  `/jobs/collections/recommended/` layout specifically — the 20 Aug one
+  demonstrably was, the 18 Aug one has no recorded layout. The provenance buffer
+  stores `layout` for every successful capture, so comparing the blind ones
+  against the successes answers it without a live session.
+  **And the first draft of that fix was built on the very check the bug is
+  about**, which is the durable lesson: `askTopJob()` opened with
+  `if (window === window.top) return null`, exactly like `relayApply()` and the
+  apply-click dispatch already did. If the frame's browsing context has been
+  DISCARDED, `window.top` is the frame's own window, so that guard reads TRUE
+  inside a subframe and every one of those relays quietly takes the frame-0
+  branch in the only situation it exists for — a fix that cannot fire on its own
+  bug. **Never decide frame identity from the DOM here; ask the browser.**
+  `capture.js` now holds one `isTopFrame`, seeded from `window === window.top`
+  and corrected at injection by `tracker-whoami` (`sender.frameId === 0`, the
+  browser's own record), and every frame decision reads it. The receipt claim
+  awaits that answer rather than reading the seed, since it runs at injection —
+  the one moment the seed has not been corrected yet. Note which hypothesis was
+  true of the 18 Aug frame (discarded, vs. merely unreadable) was NEVER
+  established; asking the browser is correct under both, which is why it was
+  done that way instead of settling the question first.
+  **The `pendingJobs` dump settled the rest of it, and argued the OPPOSITE of
+  the obvious fix** (18 Aug 2026). Seven stashes were in storage, every one from
+  11 Aug, every one in the same tab, none consumed — and NONE for the job that
+  had just been applied to. So (a) that opening click never stashed at all, which
+  makes the frame-0 ask the whole fix and widening `PENDING_JOB_FALLBACK_MS` a
+  fix for nothing; and (b) the 30-minute window is the only thing that stopped
+  the same-tab fallback pasting `Fourth Coffee · Singapore Applied AI Solution Engineer`
+  onto the Coho application — plausible, silent and permanent, against an
+  empty record that was repaired in a minute. **Never lengthen that window**;
+  the guess is load-bearing in the wrong direction. Two changes came out of the
+  measurement: `takePendingJob` now prunes on READ as well as write (the prune
+  lived only in `stashPendingJob`, and writes are exactly what stops happening
+  when openers can't read the job — hence 6.6-day-old entries under a 2 h TTL),
+  and it returns `{job, exact}` so the caller can rank a KEYED hit (a fact about
+  this job) above a live frame-0 read, and both above a same-tab GUESS. Merge
+  order is now page > keyed stash > frame 0 > same-tab guess, and the popup
+  prints a warn line naming any field a guess supplied.
+  Also added: `stashJob()` records a `stage:"open"` breadcrumb when the opener
+  fires but `getJob()` comes back null — the dump could prove no stash existed
+  but not WHY, because "opener never matched" and "opener matched, job
+  unreadable" leave the identical trace, which is none.
+- **A diagnostic that only fires on the healthy path is not a diagnostic.**
+  `withStashedJob` emitted its `tracker-provenance` breadcrumb inside
+  `if (was)`, i.e. only when a stash was FOUND, so the 18 Aug loss above — the
+  single shape the buffer most needed to explain — wrote nothing at all, leaving
+  "no stash" and "no capture" indistinguishable in the popup. It now emits for
+  every completed capture, carrying `stashed`, `askedTop` and `fromTop` (which
+  fields frame 0 supplied), and the popup prints a warn line for the one case
+  that matters: no stash, nothing recovered, identity missing. Worth generalising
+  — the ring buffers exist to explain failures, so any new one should be written
+  from the failing branch first and the happy path second.
 - **The same unreachable-top frame kills an EXTERNAL apply outright, and a
   subframe is the wrong place to handle one even when the read succeeds.**
   Found on a real loss the user reported as "the popup didn't appear"
@@ -1178,6 +1326,17 @@ win). No per-shell export needed for local dev.
   the `aria-hidden`/`visually-hidden` twin gotcha. Verified on live captures
   3 Aug 2026 (Southridge APAC, Awesome Computers): 0 doubled labels and 0 form-control
   leaks across the whole 178-row bank.
+- **The whole capture-identity rescue chain — `tracker-whoami`/`isTopFrame`,
+  the frame-0 ask, `jobFromUrl` off the tab URL, the TTL prune on read, the
+  keyed-vs-guess ranking — is UNVERIFIED against a real apply** (built 18 and
+  20 Aug 2026, extension 0.6.0). Every piece is reasoned from a real failure and
+  none has yet run during one. What to read on the next Easy Apply, in the
+  popup: the provenance line should name where identity came from, and a
+  healthy capture should say nothing alarming at all. Note the answers sweep and
+  `resume_file` have never been the broken part — both losses kept them — so
+  "answers stored" is not evidence the identity path worked. **Verify the code
+  is even live first** (`chrome://extensions` reads 0.6.0 AND the tab was opened
+  after the reload); a repeat from a stale tab proves nothing about the fix.
 - **`getRecruiter()` — rewritten 3 Aug 2026 and verified once.** The previous
   version stored the entire card blob as the name and the name as the role, on
   all 10 extension-captured contacts (repaired by hand). Both its structural
