@@ -1535,6 +1535,47 @@ win). No per-shell export needed for local dev.
    strict superset of ours. That signal only reaches us as email, so the
    remaining 5 are simply mail that never arrived or never classified; reading
    it off the page would mean scraping, which invariant #1 forbids.
+   **Re-run 21 Aug 2026 at 167 entries, and this time NOT on the join key
+   alone** — that is the upgrade worth keeping, because an id-only match calls a
+   record correct when it has the right id and the wrong title, which is a bug
+   this project has actually had. Method: page the tracker with a scripted
+   `Next` (10/page, ~17 pages, accumulate in `localStorage`), then compare an
+   FNV-1a digest of `norm(title + company)` per id — one number that checks both
+   fields, and a hash mismatch is loud where a silent field difference is not.
+   Verify the two hash implementations agree on one known row FIRST; if they
+   don't, EVERY row mismatches, which is at least an obvious failure rather than
+   a quiet one. Result: **167 on LinkedIn, 0 missing here** (176 of ours carry a
+   LinkedIn job id), and 153 of the 167 agree on title+company exactly. All 14
+   disagreements are explained and none is a wrong capture: 9 are company
+   BRANDING (`Phone Co` vs `Phone Co, Inc.`, `GDI` vs `Graphic Design Institute`,
+   `Fabrikam Group` vs `Fabrikam AG`, `Southridge APAC` vs `SouthridgeKelly`, `Litware
+   Singapore` vs `Litware International (Singapore) Pte Ltd` — i.e. the exact
+   fuel for the `COMPANY_TRGM_MIN` duplicates, seen from the board side), 2 are
+   cards where LinkedIn shows NO company at all and our record is the richer one,
+   2 are postings RENAMED after capture, and 1 is a title suffix our record lacks.
+   The rename pair is the interesting one and the evidence for it is local, not
+   inferred: Margie Group's stored `jd_text` opens with its own heading
+   `"Applied AI, Software Engineer (Full-Stack / GenAI Systems)"` — our title —
+   while LinkedIn now calls it `Machine Learning Engineer`, so title and JD came
+   from the same posting and the posting changed later. Best For You Talent is the same
+   shape (`Backend Engineer, AI` → `Python Engineer (AI)`, live page now reads
+   "Reposted 2 weeks ago" against the `3 weeks ago`/not-reposted we captured),
+   though its JD could not be re-read to prove it — a closed posting will not
+   render its description. **Checking the stored JD against both candidate
+   titles is the cheap discriminator here**, and it is available offline: a
+   wrong-title capture takes the title from a DIFFERENT job, so its JD names the
+   other title, whereas a rename leaves title and JD agreeing with each other.
+   Going the other way, 9 of ours are absent from LinkedIn's applied stage: 7
+   external applies (expected — LinkedIn cannot see one), and 2 Easy Apply
+   records that LinkedIn simply does not list. Neither of those two is ours to
+   fix: Coho's posting has been DELETED (`/jobs/view/<id>` returns "the job
+   posting has been removed"), and Consolidated Messenger's job page still says "Application
+   submitted" while the applied list omits it. Do NOT read LinkedIn's
+   "Go to company site" link on a submitted application as "you applied
+   off-platform" — it says that on the Consolidated Messenger one, which has 8 wizard-captured
+   `application_answers` and a `resume_file`, and those exist only for Easy
+   Apply. LinkedIn's own "Not seeing some jobs?" disclaimer is the honest
+   summary of its list.
    **Note (28 Jul 2026):** switching this account to IMAP and re-running
    `backfill -d 14` (Step 7 of the IMAP rollout, see `docs/email-ingest.md`)
    added 4 more real candidate emails, still `pending` in `job_queue` —
