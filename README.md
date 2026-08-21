@@ -161,7 +161,7 @@ duplicating.
 
 ```bash
 ./scripts/test.sh          # Linux/WSL — creates a throwaway tracker_test DB,
-                            # applies every migration, runs all six suites
+                            # applies every migration, runs all seven suites
 scripts\test.ps1           # native Windows equivalent (Docker Postgres, uv)
 ```
 

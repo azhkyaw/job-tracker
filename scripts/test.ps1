@@ -52,6 +52,25 @@ if (-not $env:ANTHROPIC_API_KEY) { $env:ANTHROPIC_API_KEY = 'test-dummy-key' }
 # deprecation warning) to a terminating error — so drop to 'Continue' and
 # merge stderr into the per-suite log.
 $ErrorActionPreference = 'Continue'
+
+# Extension adapter tests: pure Node, no DB. A missing node SKIPS rather than
+# fails (the Python suites must stay runnable without it) but says so out loud —
+# a silent skip is a test you only think you have.
+Write-Host ("== {0,-18} " -f 'test_extension') -NoNewline
+if (Get-Command node -ErrorAction SilentlyContinue) {
+    $log = Join-Path $env:TEMP 'test_extension.log'
+    & node 'tests/test_extension.js' 2>&1 | Out-File -FilePath $log -Encoding utf8
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host 'PASS'
+    } else {
+        Write-Host 'FAIL'
+        Get-Content $log
+        exit 1
+    }
+} else {
+    Write-Host 'SKIP (node not found - extension/ is untested in this run)'
+}
+
 $suites = 'test_integration', 'test_web', 'test_captures', 'test_phase3', 'test_email_ingest', 'test_phase4'
 foreach ($t in $suites) {
     Write-Host ("== {0,-18} " -f $t) -NoNewline

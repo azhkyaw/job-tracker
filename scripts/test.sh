@@ -23,6 +23,22 @@ psql "$DB" -q -v ON_ERROR_STOP=1 \
   -f migrations/013_status_precedence_order.sql \
   -f migrations/014_application_resume_file.sql \
   -c "INSERT INTO users (email) VALUES ('dev@test.local');" 2>/dev/null
+# Extension adapter tests: pure Node, no DB, ahead of the Python suites.
+# A missing node SKIPS rather than fails (the Python suites must stay runnable
+# without it) but says so out loud: a silent skip is a test you think you have.
+printf "== %-18s " "test_extension"
+if command -v node >/dev/null 2>&1; then
+  if node tests/test_extension.js > "/tmp/test_extension.log" 2>&1; then
+    echo PASS
+  else
+    echo FAIL
+    cat "/tmp/test_extension.log"
+    exit 1
+  fi
+else
+  echo "SKIP (node not found — extension/ is untested in this run)"
+fi
+
 export TRACKER_DATABASE_URL="postgresql:///$DB"
 export TRACKER_API_TOKEN=testtok
 export TRACKER_SECRET_KEY=test-secret

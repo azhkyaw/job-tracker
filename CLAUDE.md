@@ -43,12 +43,13 @@ it: the resume picker is PROMOTED to `applications.resume_file` (migration
 - `pipeline/analytics.py` — funnel, response-rate, weekly, reminders queries
 - `extension/` — browser capture (LinkedIn/JobStreet/Indeed adapters + shared/)
 - `migrations/` — append-only numbered schema files (invariant #8)
-- `tests/` — six suites, see Commands for run order
+- `tests/` — six Python suites + `test_extension.js` (Node, no DB), see Commands
 
 ## Commands
 
 - **Run ALL tests: `./scripts/test.sh`** — creates a throwaway `tracker_test`
-  DB, applies all migrations, runs the six suites in the required order
+  DB, applies all migrations, runs `test_extension.js` then the six Python
+  suites in the required order
   (`test_email_ingest` before `test_phase4`, which must stay last). Run after
   every change; suites stub every LLM/embedding call and fake the IMAP socket
   entirely (zero API cost) and have caught every regression in this project
@@ -123,6 +124,25 @@ it: the resume picker is PROMOTED to `applications.resume_file` (migration
 - **Same idea for extension JS:** `node --check path/to/file.js` — catches
   syntax errors before reloading the unpacked extension. Won't catch
   runtime bugs (see the `location`-shadowing gotcha below).
+- **`node tests/test_extension.js`** — the only real tests `extension/` has
+  (21 Aug 2026). Loads `adapters/linkedin.js` into a `node:vm` context with stub
+  documents, so a FRAME GEOMETRY is just a pair of stubs: top-frame, the preload
+  iframe holding the page while `window.top` is an empty shell, Easy Apply's
+  modal iframe, and nothing-anywhere. That second one is the shape that ate four
+  captures; it needs no browser to reproduce, which is the whole reason this
+  file can exist. `readJob(doc, loc)` taking its document as a PARAMETER is what
+  makes it testable — keep it that way. Selectors are matched by exact string in
+  the stub on purpose, so renaming one fails here rather than in the field.
+  **Validate a new case against the OLD code before trusting it**: reverting the
+  fix (`if (usableJob(top))` → `if (true)`) turns the preload case red with
+  `title: null, company: null, doc_source: "top"` — the exact signature of the
+  real records — while the modal-iframe guard stays green, which is how you know
+  the guard is real and not accidentally coupled to the thing it guards.
+  Wired into both `scripts/test.*` ahead of the Python suites; a missing `node`
+  prints a visible SKIP rather than passing quietly. `shared/capture.js` is
+  deliberately NOT covered — it is an IIFE that installs listeners and calls
+  `chrome.runtime.*` on load, so harnessing it costs more than the bugs it
+  would catch; the adapter is where the layout knowledge lives.
 - **Suites always log full per-assertion output**, not just PASS/FAIL —
   `/tmp/<suite>.log` (WSL) or `$env:TEMP/<suite>.log` (native Windows), even
   on success.
