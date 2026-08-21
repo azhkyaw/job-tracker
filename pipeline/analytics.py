@@ -1,7 +1,15 @@
 """Funnel analytics (design doc §6.6). Pure SQL over the event log — this is
 the payoff of status-as-events: response rates and time-to-response fall out
-of timestamps, and 'focused' falls back to artifact existence (§7) via
-COALESCE so untagged-but-prepped applications count correctly."""
+of timestamps.
+
+The per-dimension splits are `by_platform` and `by_resume`. A `by_focus` used
+to sit beside them, reading `applications.focused` with a COALESCE onto
+artifact existence so an untagged-but-prepped application still counted as
+focused. Both are gone (21 Aug 2026): the column never split — 175 `false`,
+22 null and zero `true` across every real application — so the dimension had
+one value and `_rate`'s own `len(rows) > 1` guard meant the panel never
+rendered. `by_resume` is the split that question actually wanted, and it is
+read off the apply form rather than asked for afterwards."""
 
 from __future__ import annotations
 
@@ -16,8 +24,6 @@ WITH apps AS (
     SELECT a.id,
            a.job_id,
            COALESCE(p.platform, 'unknown') AS platform,
-           COALESCE(a.focused, EXISTS (SELECT 1 FROM artifacts ar
-                                       WHERE ar.application_id = a.id)) AS focused_eff,
            a.resume_file,
            (SELECT min(occurred_at) FROM events e
              WHERE e.application_id = a.id AND e.type = 'applied')      AS applied_at,
@@ -82,14 +88,6 @@ def summary(conn, user_id) -> dict:
 def by_platform(conn, user_id):
     return _rate(conn.execute(_APPS_CTE + _GROUPED.format(dim="platform"),
                               {"user_id": user_id}).fetchall())
-
-
-def by_focus(conn, user_id):
-    rows = _rate(conn.execute(
-        _APPS_CTE + _GROUPED.format(
-            dim="CASE WHEN focused_eff THEN 'focused' ELSE 'generic' END"),
-        {"user_id": user_id}).fetchall())
-    return rows
 
 
 def by_resume(conn, user_id):

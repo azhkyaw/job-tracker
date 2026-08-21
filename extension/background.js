@@ -61,7 +61,7 @@ async function recordProvenance(detail) {
  * perfectly well because THIS worker owns the fetch. The visible result is an
  * application in the tracker that was never offered a tailored/generic tag.
  * (Confirmed on a real JobStreet apply, 29 Jul 2026: the record existed with
- * focused = NULL and no popover was ever seen.)
+ * no tag and no popover was ever seen.)
  *
  * So the receipt is held here, per tab, and the next content script to load in
  * that tab claims it. Nothing is lost if the claim never comes — a receipt is
@@ -291,7 +291,7 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
     return true;
   }
 
-  /* Tagging an already-saved capture: focused, or a note. Separate call per
+  /* Annotating an already-saved capture with a note. Separate call per
    * field, so one failing doesn't take the other with it. */
   if (msg && msg.type === "tracker-tag") {
     (async () => {

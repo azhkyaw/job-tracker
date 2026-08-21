@@ -89,8 +89,8 @@ it: the resume picker is PROMOTED to `applications.resume_file` (migration
   `postings.company_norm`, `platform_job_id` and the canonical URL stay
   consistent, and it pre-checks the `platform_job_id` unique index. `/edit` is
   FULL-STATE: a blank field CLEARS, so read every field off the record first and
-  override only what changed (`focused`, the applied instant, and `external` are
-  the easy ones to wipe by accident; the form's HH:MM also drops seconds).
+  override only what changed (the applied instant and `external` are the easy
+  ones to wipe by accident; the form's HH:MM also drops seconds).
   Identity for the fix comes from `document.title` on `/jobs/view/<id>/`
   (`"<title> | <company> | LinkedIn"`), which survives a frozen background tab
   when every selector returns null. Done three times: Coho 18 Aug 2026,
@@ -635,8 +635,9 @@ axis) + **DM Mono**, from Google Fonts.
   so a real application vanished if they ignored the box for 45s or closed the
   Easy Apply modal (which destroys the iframe the popover renders in). Now an
   *unambiguous* apply — Easy Apply's final submit, popup capture — writes
-  immediately with `focused = null` and the popover is a receipt;
-  `POST /captures/{id}/tag` carries the tag/note afterwards. An *ambiguous*
+  immediately and the popover is only a receipt; `POST /captures/{id}/tag`
+  carries the note afterwards (it carried a tailored/generic tag too until
+  that column was cut, task 3b). An *ambiguous*
   one — "Apply on company website", where you may never actually apply — still
   confirms first. Keep that split: it's about evidence, not UI taste. The
   receipt is relayed to frame 0 via the service worker
@@ -650,7 +651,7 @@ axis) + **DM Mono**, from Google Fonts.
   `.then()`) is torn down before the response lands. The record saves — the
   worker owns the fetch — and the receipt, with it the only offer to tag the
   application, never renders. Confirmed on a real apply 29 Jul 2026: record
-  present, `focused = NULL`, no popover ever seen. The worker now stashes the
+  present, untagged, no popover ever seen. The worker now stashes the
   receipt per tab (`background.js:stashReceipt`, 5-minute TTL) and the next
   content script to load claims it; rendering it in-page sends
   `tracker-receipt-shown` so the held copy can't fire twice. This is a class
@@ -1674,35 +1675,26 @@ win). No per-shell export needed for local dev.
    whether CLAUDE.md ships. Fixture names and git history are both done
    (26 Jul 2026) — the history rewrite was needed for personal data, not
    secrets; §11 records the method and the three false-positive traps.
-3b. **`applications.focused` — the fair trial (started 28 Jul 2026) now has
-   data, and it's a different result than the trial was designed to detect.**
-   It was null across all 45 applications when the entry point was mid-apply,
-   as a blocker — the capture wouldn't save until you answered — so dismissing
-   it was always the rational move. The save-first receipt fixed that (one
-   optional click on an already-saved record), and by 29 Jul, 46 of 54
-   applications had it set — **all 46 to `generic`, zero `tailored`**. That
-   is population, which is what the entry-point fix was for, but it is a
-   CONSTANT, not a split, so `analytics.by_focus` (gated on `length > 1`)
-   still shows nothing.
-   **Two readings, not yet distinguished:** either this user genuinely applies
-   generically across the board (a real answer — cut `by_focus` and its
-   artifact-existence COALESCE fallback, keep the toggle only if the user still
-   wants to mark the rare tailored one), or a bulk write set most of them to
-   `false` at once rather than one click at a time (an artifact, not a
-   signal — `set_focused` writes `False` for ANY posted value that isn't the
-   literal `"yes"`, so a stray or empty POST silently marks "generic").
-   **Unresolved as of 29 Jul: check `events`/`captured_at` timestamps on the
-   46 to tell which.** Don't act on this dimension (report it, cut it, trust
-   it) until that's answered.
-   **Overtaken by events, 3 Aug 2026.** The question stopped mattering because
-   a better dimension arrived: `applications.resume_file` (migration 014) is
-   read off the apply form rather than asked for afterwards, and it genuinely
-   splits — 10 AI-engineer vs 8 dotnet-engineer across 18 applications, driving
-   `analytics.by_resume`. That is what `focused` was meant to measure and
-   couldn't. **Remaining work is a deletion:** cut `focused`, `by_focus` and
-   its artifact-existence COALESCE fallback, and decide whether the receipt's
-   tailored/generic buttons are worth keeping for the rare marked one. Don't
-   re-run the timestamp forensics above — nothing depends on the answer now.
+3b. **`applications.focused` — CUT, 21 Aug 2026.** Migration 015 drops the
+   column; `analytics.by_focus` and its artifact-existence COALESCE fallback,
+   the detail-page toggle, the `/applications/{id}/focused` route, the
+   manual-entry and edit selects, the analytics panel, and the receipt's
+   Tailored/Generic buttons all went with it. The final tally is why: **175
+   `false`, 22 unset, zero `true`** across every real application, so the
+   dimension had exactly one value and `_rate`'s own `len(rows) > 1` guard meant
+   the panel had never rendered once. `applications.resume_file` (migration 014)
+   is what that question was reaching for and it genuinely splits, because it is
+   READ OFF the apply form instead of asked for afterwards — the general lesson,
+   and the reason not to try a third framing of the same question.
+   Two knock-on decisions worth knowing: `/captures/{id}/tag` survives carrying
+   only a note (still its own route, because the capture must not wait on a
+   human), and the external-apply confirm popover collapses from three tagging
+   buttons to one "Yes, capture it" — the tag used to BE the confirmation there,
+   so that box needed a button of its own or the ask-first path would have had
+   no way to say yes. `tests/test_phase3.py` now asserts the `by_resume` panel
+   in place of the old `by_focus` one, and seeds two resume files so the
+   dimension actually splits rather than asserting on an empty state.
+
 4. **First feature: follow-up drafting** (`docs/features.md` §3.1) — best
    evidence-to-effort ratio in the backlog, and `REMINDER_DAYS = 10` already
    matches the researched 7–10 business-day window. **Half-built as of 28 Jul:**

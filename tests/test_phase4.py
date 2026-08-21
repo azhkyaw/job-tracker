@@ -110,7 +110,7 @@ with db.connect() as admin:
 with db.connect_scoped(bob_id) as conn:
     n = conn.execute("SELECT count(*) AS n FROM applications").fetchone()["n"]
     check("bob's scoped SELECT with no WHERE sees zero rows", n == 0, n)
-    updated = conn.execute("UPDATE applications SET focused = true RETURNING id").fetchall()
+    updated = conn.execute("UPDATE applications SET origin = 'applied' RETURNING id").fetchall()
     check("bob's blanket UPDATE touches nothing", updated == [], updated)
     try:
         conn.execute("INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "

@@ -264,7 +264,7 @@ def applications(request: Request, deleted: str | None = None, origin: str | Non
         user_id = user["id"]
         rows = conn.execute(
             f"""
-            SELECT a.id, a.focused, a.origin, j.company_norm, j.title_canonical, s.status,
+            SELECT a.id, a.origin, j.company_norm, j.title_canonical, s.status,
                    -- Sourced from the LATERAL below rather than an inline
                    -- subquery so that ORDER BY can apply lower() to the same
                    -- expression. An output alias is only usable in ORDER BY as
@@ -355,7 +355,7 @@ def _get_application(conn, app_id: str) -> dict:
     try:
         row = conn.execute(
             """
-            SELECT a.id, a.user_id, a.job_id, a.focused, a.applied_via_posting_id,
+            SELECT a.id, a.user_id, a.job_id, a.applied_via_posting_id,
                    j.company_norm, j.title_canonical, s.status,
                    COALESCE(
                      (SELECT p.company_raw FROM postings p
@@ -477,7 +477,7 @@ def manual_entry_form(request: Request, company: str = "", title: str = "",
                 "applied_date": date or datetime.now(tz).strftime("%Y-%m-%d"),
                 "applied_time": "", "outcome": "", "outcome_date": "",
                 "outcome_time": "", "jd_text": "", "note": "",
-                "focused": "", "external": "", "confirm": ""}
+                "external": "", "confirm": ""}
         return templates.TemplateResponse(
             request=request, name="manual_entry.html",
             context=_manual_ctx(conn, user, tz, form=form,
@@ -495,7 +495,7 @@ def manual_entry_create(
     applied_date: str = Form(""), applied_time: str = Form(""), url: str = Form(""),
     location: str = Form(""), outcome: str = Form(""), outcome_date: str = Form(""),
     outcome_time: str = Form(""), jd_text: str = Form(""), note: str = Form(""),
-    focused: str = Form(""), external: str = Form(""), confirm: str = Form(""),
+    external: str = Form(""), confirm: str = Form(""),
     after: str = Form("view"),
 ):
     user = _login_user(request)
@@ -506,15 +506,12 @@ def manual_entry_create(
             "location": location, "applied_date": applied_date,
             "applied_time": applied_time, "outcome": outcome,
             "outcome_date": outcome_date, "outcome_time": outcome_time,
-            "jd_text": jd_text, "note": note, "focused": focused,
+            "jd_text": jd_text, "note": note,
             "external": external, "confirm": confirm}
 
     company_s, title_s, location_s = company.strip(), title.strip(), location.strip()
     company_norm = norm_company(company_s) or None
     outcome_s, note_s, jd_s = outcome.strip(), note.strip(), jd_text.strip()
-    # Same three-state semantics as /captures' payload.focused: bool | None —
-    # "" (unset) leaves focused untouched, anything else must be yes/no.
-    focused_val = {"yes": True, "no": False}.get(focused.strip().lower())
     # Same concept as /captures' payload.external — True = redirected to the
     # employer's site to finish, False = handled on-platform (LinkedIn's
     # "Easy Apply", Indeed Apply, etc.). "" (unset) omits the key entirely,
@@ -643,10 +640,6 @@ def manual_entry_create(
                     "occurred_at, payload) VALUES (%s, %s, 'note', 'manual', %s, %s)",
                     (user["id"], app_id, applied_at, Json({"note": note_s})))
 
-            if focused_val is not None:    # explicit tag always wins (§7), matches /captures
-                conn.execute("UPDATE applications SET focused = %s WHERE id = %s",
-                             (focused_val, app_id))
-
             merged = r["application_existed"]
 
     if after == "another":
@@ -743,7 +736,6 @@ def application_detail(request: Request, app_id: str, saved: str | None = None,
 #     captured_at) is never touched.
 #   platform / url / location / jd_text   describe ONE ad, so they're written
 #     only to the application's primary posting.
-#   focused   belongs to the APPLICATION (how you approached it), not the ad.
 #   applied date/time / external ("how you applied")   both live on the
 #     'applied' EVENT, corrected in place — external as that event's payload
 #     (its only key, from both /captures and manual entry). Fixing a mistyped
@@ -816,7 +808,6 @@ def edit_form(request: Request, app_id: str):
             "url": (p["url"] if p else "") or "",
             "location": (p["location"] if p else "") or "",
             "jd_text": (p["jd_text"] if p else "") or "",
-            "focused": {True: "yes", False: "no"}.get(a["focused"], ""),
             "applied_date": local.strftime("%Y-%m-%d") if local else "",
             "applied_time": local.strftime("%H:%M") if local else "",
             "external": {True: "yes", False: "no"}.get(
@@ -834,27 +825,25 @@ def edit_application(
     # field must reach our validation, not FastAPI's raw 422.
     company: str = Form(""), title: str = Form(""), platform: str = Form(""),
     url: str = Form(""), location: str = Form(""), jd_text: str = Form(""),
-    focused: str = Form(""), applied_date: str = Form(""), applied_time: str = Form(""),
+    applied_date: str = Form(""), applied_time: str = Form(""),
     external: str = Form(""),
 ):
     """Full-state submission: every field posts back and a blank one CLEARS the
     stored value (blanking the URL drops platform_job_id, and with it this
-    record's dedup key; blanking focused returns it to 'not set', which the
-    detail-page toggle can't do). Same contract as manual entry — the form
+    record's dedup key). Same contract as manual entry — the form
     always renders every field, so "absent" only ever means "the user emptied
     it", never "the user didn't mention it"."""
     user = _login_user(request)
     tz = request.state.tz
 
     form = {"company": company, "title": title, "platform": platform, "url": url,
-            "location": location, "jd_text": jd_text, "focused": focused,
+            "location": location, "jd_text": jd_text,
             "applied_date": applied_date, "applied_time": applied_time,
             "external": external}
 
     company_s, title_s, location_s = company.strip(), title.strip(), location.strip()
     jd_s = jd_text.strip()
     company_norm = norm_company(company_s) or None
-    focused_val = {"yes": True, "no": False}.get(focused.strip().lower())
     external_val = {"yes": True, "no": False}.get(external.strip().lower())
 
     error = None
@@ -869,8 +858,6 @@ def edit_application(
         error = "Enter the job title."
     elif platform not in ("linkedin", "jobstreet", "indeed", "other"):
         error = "Unknown platform."
-    elif focused.strip() and focused_val is None:
-        error = "Unknown focused value."
     elif external.strip() and external_val is None:
         error = "Unknown 'how you applied' value."
     elif not applied_date:
@@ -970,9 +957,6 @@ def edit_application(
                         db.enqueue(conn, a["user_id"], "extract_jd",
                                    {"posting_id": str(primary["id"])})
 
-            conn.execute("UPDATE applications SET focused = %s WHERE id = %s",
-                         (focused_val, a["id"]))
-
             from psycopg.types.json import Json
             external_payload = Json({"external": external_val} if external_val is not None else {})
             ev = _applied_event(conn, a["id"])
@@ -989,16 +973,6 @@ def edit_application(
                     (a["user_id"], a["id"], applied_at, external_payload))
 
     return RedirectResponse(f"/applications/{app_id}?saved=1", status_code=303)
-
-
-@app.post("/applications/{app_id}/focused")
-def set_focused(request: Request, app_id: str, focused: str = Form(...)):
-    user = _login_user(request)
-    with db.connect_scoped(user["id"]) as conn, conn.transaction():
-        a = _get_application(conn, app_id)
-        conn.execute("UPDATE applications SET focused = %s WHERE id = %s",
-                     (focused == "yes", a["id"]))
-    return RedirectResponse(f"/applications/{app_id}", status_code=303)
 
 
 def _event_error(app_id: str, msg: str):
@@ -1592,7 +1566,6 @@ class CaptureIn(BaseModel):
     # not accept. The record therefore exists from the first click, and this
     # flag is what lets a later, genuine submit correct its timestamp.
     completed: bool = False
-    focused: bool | None = None
     note: str | None = None
     recruiter_name: str | None = None
     recruiter_url: str | None = None
@@ -1691,9 +1664,6 @@ def captures(payload: CaptureIn, authorization: str | None = Header(None)):
                     "occurred_at, payload) VALUES (%s, %s, 'interested', 'extension', "
                     "now(), '{}')", (user_id, app_id))
 
-        if payload.focused is not None:        # explicit tag always wins (§7)
-            conn.execute("UPDATE applications SET focused = %s WHERE id = %s",
-                         (payload.focused, app_id))
         if payload.note:
             conn.execute(
                 "INSERT INTO events (user_id, application_id, type, source, "
@@ -1732,7 +1702,6 @@ def captures(payload: CaptureIn, authorization: str | None = Header(None)):
 
 
 class TagIn(BaseModel):
-    focused: bool | None = None         # None = leave as-is, NOT "generic"
     note: str | None = None
 
 
@@ -1746,18 +1715,17 @@ def capture_tag(application_id: str, payload: TagIn,
     ignoring the popover for 45 seconds, silently threw away a real
     application. Now the record is written the moment you apply and this
     route carries the optional extras afterwards, which means losing the
-    popover costs a tag instead of the application.
+    popover costs a note instead of the application.
 
-    Each call is one field. `focused=None` means "not saying" and leaves the
-    column alone (it is NOT the same as `false`, per applications.focused's
-    three-state contract); an empty note is ignored rather than logged.
+    The tailored/generic tag that motivated this route is gone (21 Aug 2026,
+    with applications.focused itself — it never split), so a note is all it
+    carries. Kept as its own route rather than folded into /captures for the
+    same reason it was split out: the capture must not wait on a human.
+    An empty note is ignored rather than logged.
     """
     user_id = _bearer_user_id(authorization)
     with db.connect_scoped(user_id) as conn, conn.transaction():
         a = _get_application(conn, application_id)
-        if payload.focused is not None:
-            conn.execute("UPDATE applications SET focused = %s WHERE id = %s",
-                         (payload.focused, a["id"]))
         note = (payload.note or "").strip()
         if note:
             from psycopg.types.json import Json
@@ -1765,7 +1733,7 @@ def capture_tag(application_id: str, payload: TagIn,
                 "INSERT INTO events (user_id, application_id, type, source, "
                 "occurred_at, payload) VALUES (%s, %s, 'note', 'extension', now(), %s)",
                 (user_id, a["id"], Json({"note": note})))
-        return {"ok": True, "focused": payload.focused, "note": bool(note)}
+        return {"ok": True, "note": bool(note)}
 
 
 # --------------------------------------------------------------------------- phase 3 routes
@@ -1835,7 +1803,6 @@ def analytics_page(request: Request):
             "weekly": analytics.weekly(conn, user_id),
             "min_rate_n": analytics.MIN_RATE_N,
             "by_platform": analytics.by_platform(conn, user_id),
-            "by_focus": analytics.by_focus(conn, user_id),
             "by_resume": analytics.by_resume(conn, user_id),
             "by_technology": analytics.by_technology(conn, user_id),
             "pending": _pending_count(conn),

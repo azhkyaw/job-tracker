@@ -153,7 +153,6 @@
       jd_text: job.jd_text || null,
       trigger,
       external: !!external,
-      focused: tags.focused,
       note: tags.note || null,
       recruiter_name: (recruiter && recruiter.name) || null,
       recruiter_url: (recruiter && recruiter.url) || null,
@@ -384,6 +383,11 @@
     const link = d.apiBase && d.id
       ? `<a href="${esc(d.apiBase.replace(/\/$/, ""))}/applications/${esc(d.id)}"
             target="_blank" rel="noreferrer">view in tracker</a>` : "";
+    // Tailored/Generic buttons stood here until 21 Aug 2026. They are gone with
+    // applications.focused itself: across every real application the column
+    // came out 175 `false`, 22 unset and not one `true`, so the question was
+    // being answered the same way every time and measured nothing. The note is
+    // what survives, because a note says something different each time.
     const ui = mount(`
       <div class="box">
         <div class="hd"><span class="tick">&#10003;</span>
@@ -391,10 +395,6 @@
           <button class="x" title="Dismiss" aria-label="Dismiss">&times;</button></div>
         <div class="sub">${esc(d.label || "")}</div>
         ${qa}
-        <div class="row">
-          <button class="t" data-f="true"  aria-pressed="false">Tailored</button>
-          <button class="t" data-f="false" aria-pressed="false">Generic</button>
-        </div>
         <input type="text" placeholder="add a note&hellip;" aria-label="Note">
         <div class="ft"><span class="s"></span>${link}</div>
       </div>`);
@@ -407,15 +407,6 @@
           else { status.textContent = `Couldn't save that: ${(r && r.error) || "no response"}`; }
         })
         .catch(() => { status.textContent = "Couldn't save that — is the server up?"; });
-
-    ui.root.querySelectorAll("button.t").forEach((b) =>
-      b.addEventListener("click", () => {
-        const focused = b.dataset.f === "true";
-        ui.root.querySelectorAll("button.t").forEach(
-          (o) => o.setAttribute("aria-pressed", String(o === b)));
-        tag({ focused }, focused ? "Tagged tailored." : "Tagged generic.")
-          .then(() => { if (!note.value.trim()) ui.fade(2500); });
-      }));
 
     let sent = "";
     const commitNote = () => {
@@ -472,28 +463,30 @@
   /* External applies only: the click opened the employer's site, which is not
    * proof anything was submitted, so this one still asks before writing. */
   function confirmPopover(onDone) {
+    // Three buttons stood here (Tailored / Generic / Skip tag) and ANY of them
+    // was what saved the record — the tag was the confirmation. With
+    // applications.focused cut (21 Aug 2026, it never split), that collapses to
+    // the one thing this box was ever really asking: did you actually apply?
+    // Note the answer must stay a real click. This path deliberately writes
+    // nothing until it gets one, because "Apply on company website" only proves
+    // a tab opened, not that anything was submitted.
     const ui = mount(`
       <div class="box">
         <div class="hd"><span>Capture this application?</span>
           <button class="x" title="Dismiss" aria-label="Dismiss">&times;</button></div>
         <div class="sub">You're applying on the employer's own site.</div>
         <div class="row">
-          <button class="t" data-f="true">Tailored</button>
-          <button class="t" data-f="false">Generic</button>
-          <button class="t" data-f="skip">Skip tag</button>
+          <button class="t" data-save="1">Yes, capture it</button>
         </div>
         <input type="text" placeholder="optional note&hellip;" aria-label="Note">
         <div class="ft"><span class="s"></span></div>
       </div>`);
     const status = ui.root.querySelector(".s");
-    ui.root.querySelectorAll("button.t").forEach((b) =>
-      b.addEventListener("click", () => {
-        const f = b.dataset.f;
-        status.textContent = "Saving…";
-        onDone({ focused: f === "skip" ? null : f === "true",
-                 note: ui.root.querySelector("input").value.trim() },
-               (msg, ok) => { status.textContent = msg; if (ok) ui.fade(2200); });
-      }));
+    ui.root.querySelector("button[data-save]").addEventListener("click", () => {
+      status.textContent = "Saving…";
+      onDone({ note: ui.root.querySelector("input").value.trim() },
+             (msg, ok) => { status.textContent = msg; if (ok) ui.fade(2200); });
+    });
     // NO auto-dismiss — the same rule failurePopover states, for the same
     // reason: this box is the ONLY copy of the capture. Nothing has been POSTed
     // yet on the external path, so a countdown that runs out doesn't drop a tag,
@@ -874,14 +867,13 @@
     }
 
     // Everything else — Easy Apply's final submit, an explicit capture from
-    // the popup — is unambiguous, so write it NOW with focused unset (NULL
-    // means "not said", not "generic") and let the tag follow. Holding the
-    // whole capture until a human answered a question is how real applications
-    // used to get lost: 45 seconds of inattention, or closing the modal, and
-    // it was gone with nothing recorded anywhere.
+    // the popup — is unambiguous, so write it NOW and let the note follow.
+    // Holding the whole capture until a human answered a question is how real
+    // applications used to get lost: 45 seconds of inattention, or closing the
+    // modal, and it was gone with nothing recorded anywhere.
     merged.then((j) => {
       const payload = buildPayload(trigger, external, ats, j, recruiter, answers,
-                                   { focused: null, note: null }, completed);
+                                   { note: null }, completed);
       send(payload).then((res) => showResult(payload, res));
     });
   }

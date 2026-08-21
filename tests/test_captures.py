@@ -38,7 +38,7 @@ BASE = {
     "url": "https://www.linkedin.com/jobs/view/999/",
     "company": "Sea Labs Pte. Ltd.", "title": "Senior AI Engineer",
     "jd_text": "Build LLM systems. Python, PyTorch.", "trigger": "apply",
-    "focused": True, "note": "referred by K",
+    "note": "referred by K",
 }
 
 print("auth")
@@ -54,13 +54,12 @@ check("created", r.status_code == 200 and r.json()["created"] is True, r.text)
 app_id = r.json()["application_id"]
 with db.connect() as conn:
     a = conn.execute(
-        """SELECT a.focused, j.company_norm, s.status
+        """SELECT j.company_norm, s.status
            FROM applications a JOIN jobs j ON j.id = a.job_id
            JOIN application_status s ON s.application_id = a.id
            WHERE a.id = %s::uuid""", (app_id,)).fetchone()
     check("company normalized", a["company_norm"] == "sea labs", a)
     check("status applied", a["status"] == "applied", a)
-    check("focused tag stored", a["focused"] is True)
     evs = [r_["type"] for r_ in conn.execute(
         "SELECT type FROM events WHERE application_id = %s::uuid ORDER BY type",
         (app_id,)).fetchall()]
@@ -68,7 +67,7 @@ with db.connect() as conn:
 
 print("re-capture upserts, never duplicates")
 r2 = post({**BASE, "jd_text": "Build LLM systems. Python, PyTorch. (updated)",
-           "focused": None, "note": None})
+           "note": None})
 check("same application returned", r2.json()["application_id"] == app_id, r2.text)
 check("flagged enriched, not created",
       r2.json()["enriched"] is True and r2.json()["created"] is False, r2.text)
@@ -77,9 +76,6 @@ with db.connect() as conn:
         "SELECT count(*) AS n FROM events WHERE application_id = %s::uuid "
         "AND type = 'applied'", (app_id,)).fetchone()["n"]
     check("applied event not duplicated", n_applied == 1, n_applied)
-    check("focused survives null re-capture", conn.execute(
-        "SELECT focused FROM applications WHERE id = %s::uuid",
-        (app_id,)).fetchone()["focused"] is True)
     jd = conn.execute(
         "SELECT jd_text FROM postings WHERE platform_job_id = 'LI-cap-1'"
     ).fetchone()["jd_text"]
@@ -412,33 +408,25 @@ with db.connect() as conn:
     check("answers deleted with the application", left == 0, left)
 
 print("save-first: capture writes before any tag, tag follows separately")
-# What the extension now sends on an Easy Apply submit: no focused, no note.
+# What the extension now sends on an Easy Apply submit: no note.
 r9 = post({"platform": "linkedin", "platform_job_id": "LI-tag-1",
            "company": "Lattice Robotics", "title": "Perception Engineer",
            "jd_text": "the JD", "trigger": "apply",
-           "focused": None, "note": None})
+           "note": None})
 tag_app = r9.json()["application_id"]
 check("record exists with no tag at all", r9.status_code == 200, r9.text)
 check("response carries a label for the receipt",
       r9.json()["label"] == "Lattice Robotics · Perception Engineer", r9.json())
 with db.connect() as conn:
-    row = conn.execute(
-        "SELECT focused FROM applications WHERE id = %s::uuid", (tag_app,)).fetchone()
-    check("focused is NULL — 'not said', not 'generic'", row["focused"] is None, row)
     st = conn.execute(
         "SELECT status FROM application_status WHERE application_id = %s::uuid",
         (tag_app,)).fetchone()
     check("already counts as applied without the tag", st["status"] == "applied", st)
 
-t = client.post(f"/captures/{tag_app}/tag", json={"focused": True}, headers=AUTH)
-check("tag accepted", t.status_code == 200 and t.json()["ok"] is True, t.text)
 t = client.post(f"/captures/{tag_app}/tag", json={"note": "  referred by K  "},
                 headers=AUTH)
-check("note accepted", t.status_code == 200, t.text)
+check("note accepted", t.status_code == 200 and t.json()["ok"] is True, t.text)
 with db.connect() as conn:
-    check("focused applied after the fact", conn.execute(
-        "SELECT focused FROM applications WHERE id = %s::uuid",
-        (tag_app,)).fetchone()["focused"] is True)
     notes = conn.execute(
         "SELECT payload FROM events WHERE application_id = %s::uuid AND type = 'note'",
         (tag_app,)).fetchall()
@@ -452,19 +440,13 @@ with db.connect() as conn:
         "AND type = 'note'", (tag_app,)).fetchone()["n"]
     check("blank note logs nothing", t.status_code == 200 and n == 1, n)
 
-t = client.post(f"/captures/{tag_app}/tag", json={"focused": None}, headers=AUTH)
-with db.connect() as conn:
-    check("focused=None leaves an existing tag alone", t.status_code == 200 and conn.execute(
-        "SELECT focused FROM applications WHERE id = %s::uuid",
-        (tag_app,)).fetchone()["focused"] is True)
-
 check("tag needs the bearer token",
-      client.post(f"/captures/{tag_app}/tag", json={"focused": True}).status_code == 401)
+      client.post(f"/captures/{tag_app}/tag", json={"note": "x"}).status_code == 401)
 check("tag 404s on an unknown application",
       client.post("/captures/00000000-0000-0000-0000-000000000000/tag",
-                  json={"focused": True}, headers=AUTH).status_code == 404)
+                  json={"note": "x"}, headers=AUTH).status_code == 404)
 check("tag 404s on a malformed id, never 500s",
-      client.post("/captures/not-a-uuid/tag", json={"focused": True},
+      client.post("/captures/not-a-uuid/tag", json={"note": "x"},
                   headers=AUTH).status_code == 404)
 
 print("manual capture -> interested")

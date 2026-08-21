@@ -104,7 +104,7 @@ def upsert_record(conn, user_id, *, platform, captured_via, platform_job_id=None
     (e.g. the extension re-capturing a lead you're now actually applying to).
 
     Caller owns the connection and its transaction, and is responsible for
-    everything after this: events, `focused`, notes, contacts — their
+    everything after this: events, notes, contacts — their
     semantics differ too much between callers (extension vs. manual entry)
     to live here.
     """

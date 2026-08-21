@@ -1,0 +1,24 @@
+-- 015: drop applications.focused.
+--
+-- The column asked "was this application tailored, or generic?" and was meant
+-- to become an analytics dimension (analytics.by_focus, §7). It was given a
+-- fair trial and it failed it, twice over.
+--
+-- First the entry point was wrong: until 28 Jul 2026 the capture would not save
+-- until the question was answered, so dismissing the box was always the
+-- rational move and the column stayed null on all 45 applications. The
+-- save-first receipt fixed that and the column populated — 46 of 54 within a
+-- day. But it populated to a CONSTANT. Final tally across every real
+-- application before this migration: 175 `false`, 22 unset, and not one `true`.
+-- A dimension with one value is not a dimension; analytics._rate's own
+-- `len(rows) > 1` guard meant the panel never rendered even once.
+--
+-- What it wanted to measure now has a better instrument. applications.resume_file
+-- (migration 014) is read off the apply form rather than asked for afterwards,
+-- and it genuinely splits — that is what drives analytics.by_resume. A fact the
+-- page already knows beats a question the user has to answer, every time; that
+-- is the general lesson here, not anything about this column.
+--
+-- Nothing derived depends on it: status comes from the event log (invariant #2)
+-- and this was never part of that. The data lost is 175 identical values.
+ALTER TABLE applications DROP COLUMN focused;

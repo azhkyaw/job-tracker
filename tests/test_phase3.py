@@ -238,11 +238,21 @@ with db.connect() as conn:   # give the merged app a response for the math
         "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
         "SELECT user_id, id, 'interview_invite', 'email', now(), '{}' "
         "FROM applications WHERE id = %s::uuid", (app_id,))
+    # by_resume renders only once the dimension actually splits — one resume is
+    # a row of totals, not a comparison — so give it two to compare. This
+    # replaced a by_focus assertion when applications.focused was cut; the
+    # panel it covers is the one that dimension was always trying to be.
+    ids = [r_["id"] for r_ in conn.execute(
+        "SELECT id FROM applications ORDER BY created_at").fetchall()]
+    for i, aid in enumerate(ids):
+        conn.execute("UPDATE applications SET resume_file = %s WHERE id = %s",
+                     (f"resume-variant-{i % 2}.pdf", aid))
     conn.commit()
 r = client.get("/analytics")
 check("analytics renders", r.status_code == 200, r.status_code)
 check("platform table populated", "linkedin" in r.text)
-check("focused split present (artifact implies focused)", "focused" in r.text)
+check("resume split renders once the dimension splits",
+      "By resume sent" in r.text and "resume-variant-0.pdf" in r.text, r.status_code)
 check("technology table populated", "Pytorch" in r.text or "PyTorch" in r.text)
 
 print("reminders")

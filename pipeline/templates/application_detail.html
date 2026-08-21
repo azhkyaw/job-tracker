@@ -10,20 +10,6 @@
 
 <div class="bar sm" style="margin-bottom:1.3rem;gap:.9rem">
   <a href="/applications/{{ a.id }}/edit">Edit details</a>
-  <span class="quiet">·</span>
-  <form method="post" action="/applications/{{ a.id }}/focused" style="display:inline">
-    {% if a.focused is none %}
-      <span class="quiet">Tailored to this role?</span>
-      <button name="focused" value="yes">Yes, tailored</button>
-      <button name="focused" value="no">No, generic</button>
-    {% elif a.focused %}
-      <span class="quiet">Tailored application —</span>
-      <button class="link" name="focused" value="no">mark it generic</button>
-    {% else %}
-      <span class="quiet">Generic application —</span>
-      <button class="link" name="focused" value="yes">mark it tailored</button>
-    {% endif %}
-  </form>
 </div>
 
 {% if saved %}

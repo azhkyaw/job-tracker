@@ -3,7 +3,7 @@
 Run AFTER the integration test on the same database:
   TRACKER_DATABASE_URL=postgresql:///tracker_test python3 tests/test_web.py
 
-Covers: applications table + funnel render, detail page, focused toggle,
+Covers: applications table + funnel render, detail page,
 manual event logging, triage listing, and all resolve actions (link appends
 an event with provenance; create builds a full record; ignore; lead files a
 recruiter_outreach email as an inbound application with origin='inbound' and
@@ -93,11 +93,6 @@ check("detail renders timeline", r.status_code == 200 and "rejected" in r.text, 
 check("404 on bad id", client.get("/applications/not-a-uuid").status_code == 404)
 
 print("detail actions")
-r = client.post(f"/applications/{northwind_app}/focused", data={"focused": "yes"})
-check("focused toggle redirects", r.status_code == 303, r.status_code)
-with db.connect() as conn:
-    check("focused persisted", conn.execute(
-        "SELECT focused FROM applications WHERE id = %s", (northwind_app,)).fetchone()["focused"] is True)
 r = client.post(f"/applications/{northwind_app}/events",
                 data={"type": "follow_up_sent", "note": "pinged recruiter"})
 check("manual event redirects", r.status_code == 303, r.status_code)
@@ -637,23 +632,19 @@ with db.connect() as conn:
         "SELECT count(*) AS n FROM events WHERE application_id = %s::uuid AND type = 'applied'",
         (manual_app_1,)).fetchone()["n"]
     check("exactly one applied event", n_applied == 1, n_applied)
-    check("focused left unset when omitted (matches /captures semantics)",
-          conn.execute("SELECT focused FROM applications WHERE id = %s::uuid",
-                      (manual_app_1,)).fetchone()["focused"] is None)
 
-print("manual entry: focused and location")
+print("manual entry: location")
 r = client.post("/applications/new", data={
-    "company": "Manual Entry Co", "title": "Focused Role", "platform": "linkedin",
-    "applied_date": "2026-04-12", "location": "Singapore, Remote", "focused": "yes",
+    "company": "Manual Entry Co", "title": "Located Role", "platform": "linkedin",
+    "applied_date": "2026-04-12", "location": "Singapore, Remote",
     "after": "view"})
-check("create with focused+location redirects", r.status_code == 303, r.text)
+check("create with location redirects", r.status_code == 303, r.text)
 focus_app = r.headers["location"].rsplit("/", 1)[1]
 with db.connect() as conn:
     row = conn.execute(
-        """SELECT a.focused, p.location FROM applications a
+        """SELECT p.location FROM applications a
            JOIN postings p ON p.id = a.applied_via_posting_id
            WHERE a.id = %s::uuid""", (focus_app,)).fetchone()
-    check("focused=yes stored as True", row["focused"] is True, row)
     check("location stored on the posting", row["location"] == "Singapore, Remote", row)
 
 print("manual entry: how you applied (external / Easy Apply)")
@@ -1058,40 +1049,6 @@ with db.connect() as conn:
         "ON a.applied_via_posting_id = p.id WHERE a.id = %s::uuid", (edit_app,)).fetchone()
     check("url and platform_job_id both cleared",
           p["url"] is None and p["platform_job_id"] is None, p)
-
-print("edit application: focused is settable, changeable and clearable")
-r = client.post(f"/applications/{edit_app}/edit", data={
-    "company": "Edit Test Co", "title": "Senior Backend Engineer", "platform": "linkedin",
-    "applied_date": "2026-05-12", "focused": "yes"})
-check("focused=yes accepted", r.status_code == 303, r.status_code)
-with db.connect() as conn:
-    check("focused stored as true", conn.execute(
-        "SELECT focused FROM applications WHERE id = %s::uuid", (edit_app,)
-        ).fetchone()["focused"] is True)
-check("focused prefilled as yes on the form",
-      '<option value="yes" selected>' in client.get(f"/applications/{edit_app}/edit").text)
-
-r = client.post(f"/applications/{edit_app}/edit", data={
-    "company": "Edit Test Co", "title": "Senior Backend Engineer", "platform": "linkedin",
-    "applied_date": "2026-05-12", "focused": "no"})
-with db.connect() as conn:
-    check("focused changed to false", conn.execute(
-        "SELECT focused FROM applications WHERE id = %s::uuid", (edit_app,)
-        ).fetchone()["focused"] is False)
-
-# Blank means "not set" — the one transition the detail-page toggle can't make.
-r = client.post(f"/applications/{edit_app}/edit", data={
-    "company": "Edit Test Co", "title": "Senior Backend Engineer", "platform": "linkedin",
-    "applied_date": "2026-05-12", "focused": ""})
-with db.connect() as conn:
-    check("blank focused clears back to not-set", conn.execute(
-        "SELECT focused FROM applications WHERE id = %s::uuid", (edit_app,)
-        ).fetchone()["focused"] is None)
-
-r = client.post(f"/applications/{edit_app}/edit", data={
-    "company": "Edit Test Co", "title": "Senior Backend Engineer", "platform": "linkedin",
-    "applied_date": "2026-05-12", "focused": "maybe"})
-check("unknown focused value rejected", r.status_code == 400, r.status_code)
 
 print("edit application: how you applied (external) is settable, changeable and clearable")
 r = client.post(f"/applications/{edit_app}/edit", data={

@@ -39,13 +39,6 @@ to add an outcome use the timeline on the
     <option value="yes" {% if form.external == 'yes' %}selected{% endif %}>redirected to the employer's website</option>
   </select>
 
-  <label for="focused">focused</label>
-  <select name="focused" id="focused" aria-label="Focused">
-    <option value="" {% if form.focused == '' %}selected{% endif %}>— not set —</option>
-    <option value="yes" {% if form.focused == 'yes' %}selected{% endif %}>yes — tailored/high-effort</option>
-    <option value="no" {% if form.focused == 'no' %}selected{% endif %}>no — generic application</option>
-  </select>
-
   <label>job description
     <textarea name="jd_text" rows="10"
       style="display:block;width:100%;font:inherit;border:1px solid var(--line);border-radius:6px;padding:.5rem;margin-top:.25rem"

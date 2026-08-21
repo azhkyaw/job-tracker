@@ -62,13 +62,6 @@ fine; it helps future emails match this record automatically.</p>
     <label>time (optional) <input type="time" name="outcome_time" value="{{ form.outcome_time }}"></label>
   </div>
 
-  <label for="focused">focused (optional)</label>
-  <select name="focused" id="focused" aria-label="Focused">
-    <option value="" {% if form.focused == '' %}selected{% endif %}>— not set —</option>
-    <option value="yes" {% if form.focused == 'yes' %}selected{% endif %}>yes — tailored/high-effort</option>
-    <option value="no" {% if form.focused == 'no' %}selected{% endif %}>no — generic application</option>
-  </select>
-
   <label>note (optional) <input type="text" name="note" value="{{ form.note }}"></label>
 
   <label>job description (optional)
