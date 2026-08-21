@@ -1344,7 +1344,9 @@ off) · `TRACKER_API_TOKEN` (legacy single-user extension token; dies when a
 second account exists) · `TRACKER_BASE_URL` (needed for Gmail web OAuth) ·
 `TRACKER_INGEST_ALL` (invariant #10; job-only mailboxes).
 Secrets files are gitignored: `credentials.json`, `credentials-web.json`,
-`.gmail_token.json`, `.env`, `profile.md`.
+`.gmail_token.json`, `.env`, `profile.md` (the last is no longer READ by
+anything — see below — but stays in `.gitignore` so a stray copy from before
+the change can't be committed).
 
 **`.env` now carries BEHAVIOUR flags, not only credentials, and it is
 per-machine** — this author runs the app from two machines against one shared
@@ -1355,17 +1357,22 @@ rows. When two machines behave differently, diff `.env` before diffing code,
 and prefer `config.py` (in git, shared) over `.env` for anything that isn't a
 secret or a genuinely per-machine path.
 
-**`profile.md` is a DEAD fallback in practice — the resume profile that
-actually gets used lives in `users.resume_profile`.** `covers.py:load_profile()`
-still reads the file, but `worker.py:handle_generate_cover_letter` prefers the
-DB column and only falls through to the file when it is empty. That file does
-not exist on either of this author's machines, and a real cover-letter job on
-the desktop failed with `RuntimeError: resume profile not found at profile.md`
-before the column was populated. Fine for this install; a **release blocker
-shape** for anyone self-hosting from a clean checkout, since nothing tells them
-to seed the column and the file path in the error message is the one route that
-was never wired up. Decide before open-sourcing whether the file becomes real
-or the error message points at the DB instead.
+**The resume profile lives in `users.resume_profile` and nowhere else**
+(since 21 Aug 2026). `covers.load_profile()` takes the column's value as an
+argument and raises `covers.ProfileMissing` naming **Settings -> Resume
+profile** when it is empty; `config.RESUME_PROFILE` / `TRACKER_RESUME_PROFILE`
+and the `profile.md` file fallback are gone. That fallback was wrong twice
+over. It was a **release blocker**: the file was the only route the error
+message and the README ever named, while the column — the one with a UI — was
+mentioned nowhere, so a self-hoster from a clean checkout hit `resume profile
+not found at profile.md` with no way to learn what actually feeds the
+generator (this author hit it too, on a real cover-letter job). And it was a
+**tenancy hole**: one file, no `user_id`, so a second account that had not
+filled in Settings would silently be handed the FIRST account's profile and
+have their letter written from someone else's career — every other per-user
+secret here is scoped by RLS (invariant #6), and a path on disk cannot be.
+`tests/test_phase3.py` seeds the column in `_bootstrap_session()` and asserts
+the missing-profile error names the page rather than a file.
 
 `TRACKER_*`/`ANTHROPIC_API_KEY`/etc. auto-load from a gitignored `.env` at
 repo root (`pipeline/config.py`, `override=False` — real shell vars still

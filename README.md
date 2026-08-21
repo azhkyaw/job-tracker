@@ -209,9 +209,11 @@ rather than creating a duplicate; full cross-posting dedup arrives in Phase 3.
 
 Two additions beyond Phases 1–2:
 
-- **Resume profile** for cover letters: write `profile.md` (your real
-  background, markdown, your words) or set `TRACKER_RESUME_PROFILE`. Letters
-  are grounded in this file only — the prompt forbids invention.
+- **Resume profile** for cover letters: paste your real background (markdown,
+  your words) into **Settings -> Resume profile**. It is stored per user, and
+  letters are grounded in it alone — the prompt forbids inventing beyond it, so
+  generation errors out naming that page rather than guessing until you have
+  saved one.
 - **Embeddings** (optional but required for dedup): set `VOYAGE_API_KEY`
   (voyage-3.5-lite, 1024-dim to match the schema). Without it everything else
   works; dedup simply never runs. After adding the key later, run

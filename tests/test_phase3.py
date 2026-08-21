@@ -9,14 +9,10 @@ fresh or existing test DB after the other suites:
 import math
 import os
 import sys
-import tempfile
 from pathlib import Path
 
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-dummy-key")
 os.environ.setdefault("TRACKER_API_TOKEN", "testtok")
-_profile = Path(tempfile.gettempdir()) / "test-profile.md"
-os.environ.setdefault("TRACKER_RESUME_PROFILE", str(_profile))
-_profile.write_text("# AZ\n12y software engineer; AI pivot.")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi.testclient import TestClient
@@ -36,6 +32,12 @@ def _bootstrap_session():
         if not u["password_hash"]:
             conn.execute("UPDATE users SET password_hash = %s WHERE id = %s",
                          (_auth.hash_password("testpass123"), u["id"]))
+        # The resume profile lives on the user row and nowhere else — the file
+        # fallback was removed 21 Aug 2026 (covers.py:load_profile). Seeding it
+        # here is what the cover-letter test needs; the missing-profile case is
+        # asserted separately below.
+        conn.execute("UPDATE users SET resume_profile = %s WHERE id = %s",
+                     ("# AZ\n12y software engineer; AI pivot.", u["id"]))
         sid = _auth.create_session(conn, u["id"])
     client.cookies.set("session", sid)
 
@@ -231,6 +233,24 @@ with db.connect() as conn:
         "AND kind = 'cover_letter'", (app_id,)).fetchone()
     check("artifact written", ar is not None and "Dear Hiring Team" in ar["content"], ar)
 check("detail shows the letter", "Show text" in client.get(f"/applications/{app_id}").text)
+
+# The release-blocker case: a clean install with nothing saved yet. The old
+# behaviour pointed at profile.md, a path nothing else in the product ever
+# wrote to, so the error named the one route that did not work. It must name
+# the page that does.
+try:
+    covers.load_profile(None)
+    raise SystemExit("FAIL: an empty profile generated a letter anyway")
+except covers.ProfileMissing as e:
+    check("missing profile names the Settings page, not a file path",
+          "Settings" in str(e) and "profile.md" not in str(e), e)
+try:
+    covers.load_profile("   ")
+    raise SystemExit("FAIL: a whitespace-only profile counted as set")
+except covers.ProfileMissing:
+    check("a whitespace-only profile is treated as missing", True)
+check("a real profile is returned verbatim",
+      covers.load_profile("# AZ\n12y") == "# AZ\n12y")
 
 print("analytics")
 with db.connect() as conn:   # give the merged app a response for the math

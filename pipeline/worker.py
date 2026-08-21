@@ -161,7 +161,7 @@ def handle_generate_cover_letter(conn, job: dict) -> None:
         raise ValueError(f"application {app_id} not found")
     prof_row = conn.execute("SELECT resume_profile FROM users WHERE id = %s",
                             (job["user_id"],)).fetchone()
-    profile = (prof_row and prof_row["resume_profile"]) or covers.load_profile()
+    profile = covers.load_profile(prof_row and prof_row["resume_profile"])
     text = covers.generate(_client(), profile,
                            row["company_raw"] or row["company_norm"],
                            row["title_canonical"], row["jd_text"])

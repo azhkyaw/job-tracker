@@ -11,12 +11,38 @@ from .email_classifier import _load_prompt
 PROMPT_VERSION = "cover_letter_v1"
 
 
-def load_profile() -> str:
-    if not config.RESUME_PROFILE.exists():
-        raise RuntimeError(
-            f"resume profile not found at {config.RESUME_PROFILE} — create it "
-            "(markdown, your real background) or set TRACKER_RESUME_PROFILE")
-    return config.RESUME_PROFILE.read_text(encoding="utf-8")
+class ProfileMissing(RuntimeError):
+    """No resume profile for this user — nothing to ground a letter in."""
+
+
+# There is ONE resume profile and it lives on the user row.
+#
+# There used to be a file fallback here (config.RESUME_PROFILE, default
+# `profile.md`), read whenever users.resume_profile was empty, and it was wrong
+# in two directions at once. It was a release blocker: the file was the only
+# route named in the error message and the only one the README described, while
+# `users.resume_profile` — the one with a UI, on the Settings page — was never
+# mentioned, so a self-hoster from a clean checkout hit
+# `resume profile not found at profile.md` with no way to learn what actually
+# feeds the generator. (This author hit it too, on a real cover-letter job.)
+#
+# And it was a tenancy hole. One file, no user_id: a second account that had not
+# filled in Settings would silently be handed the FIRST account's profile and
+# have their cover letter written from someone else's career. Every other
+# per-user secret on this system is scoped by RLS (invariant #6); this one
+# quietly was not, because a path on disk cannot be.
+#
+# Both are fixed by deleting it. A missing profile is now an error that names
+# the page which fixes it.
+def load_profile(resume_profile: str | None) -> str:
+    profile = (resume_profile or "").strip()
+    if not profile:
+        raise ProfileMissing(
+            "no resume profile saved — add one under Settings -> Resume profile "
+            "(markdown, your real background, in your words). Cover letters are "
+            "grounded in it and the prompt forbids inventing beyond it, so there "
+            "is nothing to generate from until it exists.")
+    return profile
 
 
 def generate(client: anthropic.Anthropic, profile_md: str, company: str | None,

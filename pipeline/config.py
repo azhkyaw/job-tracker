@@ -135,9 +135,11 @@ BACKFILL_MONTHS_DEFAULT = 12
 JD_MODEL = os.environ.get("TRACKER_JD_MODEL", "claude-haiku-4-5-20251001")
 COVER_MODEL = os.environ.get("TRACKER_COVER_MODEL", "claude-sonnet-5")
 
-# Candidate profile used for cover letters — a markdown file you maintain
-# by hand (design doc §9); never re-derived per call.
-RESUME_PROFILE = Path(os.environ.get("TRACKER_RESUME_PROFILE", "profile.md"))
+# The candidate profile that grounds cover letters (design doc §9) is NOT
+# configured here — it lives per user in `users.resume_profile`, edited on the
+# Settings page. A `TRACKER_RESUME_PROFILE` file used to be the fallback and was
+# removed 21 Aug 2026: one file cannot be per-user, so a second account picked up
+# the first one's career. See pipeline/covers.py:load_profile.
 
 # Embeddings (Voyage; §7 note on vector(1024)). Without a key, embed/dedup
 # jobs are simply never enqueued — everything else works.
