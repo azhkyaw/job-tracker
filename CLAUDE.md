@@ -1472,7 +1472,7 @@ win). No per-shell export needed for local dev.
   healthy capture should say nothing alarming at all. Note the answers sweep and
   `resume_file` have never been the broken part — both losses kept them — so
   "answers stored" is not evidence the identity path worked. **Verify the code
-  is even live first** (`chrome://extensions` reads 0.7.0 AND the tab was opened
+  is even live first** (`chrome://extensions` reads 0.8.0 AND the tab was opened
   after the reload); a repeat from a stale tab proves nothing about the fix.
   **Partly answered 20 Aug, and it ran without helping** — the Lucerne Consultants
   capture shows `topFrame:false`, `askedTop:true`, `exact:true`, so
@@ -1481,7 +1481,7 @@ win). No per-shell export needed for local dev.
   shell and the shell has no job (see the settled root cause in Gotchas). That
   is the chain working and the question being wrong. **Still unverified, and now
   the thing that matters: `getJob()`'s self-document fallback** (21 Aug,
-  extension 0.7.0), plus the immediate path's last-resort `jobFromUrl` off the
+  extension 0.8.0), plus the immediate path's last-resort `jobFromUrl` off the
   tab URL. What to read on the next apply: `doc_source` in the provenance line —
   `"self"` means the frame rescued a capture the old code would have lost, and
   is the first positive proof this path works. A `read:`/`docSource:` warn line
@@ -1707,6 +1707,12 @@ win). No per-shell export needed for local dev.
    whether CLAUDE.md ships. Fixture names and git history are both done
    (26 Jul 2026) — the history rewrite was needed for personal data, not
    secrets; §11 records the method and the three false-positive traps.
+   **The resume-profile blocker is CLEARED** (21 Aug 2026): a clean checkout
+   used to fail cover-letter generation with `resume profile not found at
+   profile.md`, a path nothing in the product ever wrote to, while the route
+   that works (Settings -> Resume profile) went unmentioned. The file fallback
+   is gone entirely — see the Environment section for why it was also a tenancy
+   hole. Remaining blockers are the three named above.
 3b. **`applications.focused` — CUT, 21 Aug 2026.** Migration 015 drops the
    column; `analytics.by_focus` and its artifact-existence COALESCE fallback,
    the detail-page toggle, the `/applications/{id}/focused` route, the
@@ -1756,6 +1762,15 @@ win). No per-shell export needed for local dev.
    a one-click `follow_up_sent`. What's missing is the draft itself — that page
    is where it belongs, next to the button that currently just marks it done,
    and it has more room for one since the queue stopped sharing the list.
+   **First check whether the SET is still the right one.** `REMINDER_DAYS = 10`
+   was chosen against the researched 7-10 business-day window and validated at
+   18 rows out of 48 applications. At 195 applications the same rule returns
+   **98**, which is not a day's task list by any reading — and a queue nobody
+   can finish stops being worked at all, which would waste the drafting feature
+   rather than justify it. Measure before building on top of it: how many of
+   the 98 are old enough that a follow-up is pointless, and does a second
+   threshold (or an age cap) cut it to something workable? The number moved
+   because the denominator did, not because the rule broke.
 5. **One real apply via the extension** on each platform; fix whichever
    adapter selectors have drifted. **LinkedIn: done** (27 Jul, VANARSDEL — three
    defects found and fixed). **JobStreet: two real applies, still not
@@ -1779,6 +1794,23 @@ win). No per-shell export needed for local dev.
    good. **Next Easy Apply is the one to watch** — with `tell()` in place a
    dead context now announces itself instead of vanishing, so a repeat that is
    STILL silent means a real detection miss on that form, not a stale tab.
+   **A third loss, 21 Aug 2026, and it was the last one of its family**: Woodgrove
+   Finance (external apply) saved NOTHING at all — the popover said so, which
+   is the one thing that went right. Root-caused for real this time, off the
+   extension's own LevelDB rather than a live session, and the answer retired
+   two earlier misdiagnoses: `getJob()` was walking UP to `window.top` from a
+   frame that HAD the job. Fixed in extension **0.8.0** along with the
+   immediate path's tab-URL fallback and a failure record that can tell the
+   remaining shapes apart. The record was recreated via `/applications/new`,
+   and the blind Lucerne Consultants capture from 20 Aug repaired via `/edit`.
+   Also settled by that dump: **one older loss, 7 Aug 12:30 SG, is
+   unidentifiable** — nothing was applied to that day and the failure record of
+   that era holds no job id and no tab URL.
+   **What to read on the next apply**: `doc_source` in the provenance line.
+   `"self"` is positive proof the new fallback rescued a capture the old code
+   would have lost, and nothing else demonstrates it — `tests/test_extension.js`
+   proves the LOGIC, not that it fires in a real frame. Verify 0.8.0 is live
+   and the tab was opened after the reload first.
    **Indeed: never exercised.** Keep this **load-unpacked only** — an
    unpacked extension has a random per-install ID, while a Chrome Web Store
    listing mints a stable public one that LinkedIn's extension-fingerprinting

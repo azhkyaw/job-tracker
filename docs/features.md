@@ -217,10 +217,17 @@ Changes worth making:
   that unedited AI cover letters are commonly auto-rejected is more useful than
   a better model.
 
-This also raises the value of the existing `focused` vs `generic` analytics:
-it measures precisely the variable the research says matters, on the author's
-own real data. That view was already built (`analytics.by_focus`) and is now
-better motivated than when it was designed.
+This also raises the value of measuring tailored vs generic on the author's
+own data: it is precisely the variable the research says matters. **There is
+currently no such measurement.** `applications.focused` and `analytics.by_focus`
+were built for it and cut on 21 Aug 2026 — across every real application the
+column came out 175 `false`, 22 unset and zero `true`, so it never split and
+its panel never rendered. `analytics.by_resume` is NOT a replacement: it
+records which of two standing resumes was sent (positioning), not whether an
+application was customised (effort). Anything built here needs an instrument
+read off something observable at apply time — a per-application cover letter
+existing, a resume filename that varies by employer rather than by track —
+because asking the question after the fact is exactly what failed.
 
 ## 5. Tier 2 — worth building, after Tier 1
 
