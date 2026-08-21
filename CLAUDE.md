@@ -513,6 +513,30 @@ axis) + **DM Mono**, from Google Fonts.
   onto the WRONG employer: silent, and worse than the duplicate being fixed.
   OR'd, the true Wingtip rows compete, the margin falls to 0.094 and it lands in
   triage instead. Any future rescue rule joins the same OR, for the same reason.
+  **The RESCUE ITSELF is gated on "the main gate returned zero rows", and that
+  gate decays as the DB grows** (measured 21 Aug 2026). One unrelated company
+  clearing `COMPANY_TRGM_MIN` is enough to suppress the whole fallback — and
+  "unrelated" is easy at 0.6: replaying the Wingtip confirmation against today's
+  195 applications, the gate returns `datum consulting group` (0.667) and
+  `liberty consulting group` (0.607), neither of them the employer, while the
+  real record sits at 0.375 and the rescue that would find it never runs. On
+  4 Aug the same email got zero candidates and the rescue fired; nothing about
+  the email changed, only the number of unrelated companies in the DB.
+  **This also breaks the `match_score` diagnostic below**: the suppressed shape
+  scores the WRONG companies, so it comes out non-NULL and reads as a
+  low-confidence miss rather than "no candidate was ever seen".
+  **Do NOT fix it by OR-ing the rescue into the main gate — that was measured
+  and it is much worse.** Replayed over all 296 stored, scored emails: always
+  OR'ing turns **29 correct auto-matches into triage items and prevents zero
+  wrong ones**, because rule 1 (exact title, any company) drags in the same
+  same-titled strangers the gate exists to keep out ("Senior AI Engineer" spans
+  five employers here) and they break the margin. Promoting ONLY rule 2 (word
+  containment, the precise one) into the gate is a wash: +1 correct
+  (`VANARSDEL AI TECHNOLOGIES` → the `vanarsdel` record, a real branding case) and −1
+  (a `title: null` email whose extra candidate breaks the margin), 177/1/118
+  either way. So it stands as-is. The number to watch is the suppression count:
+  **1 of 296 today**. Re-measure before touching it — the fix only becomes worth
+  its cost if that grows.
 - `emails.match_score` stores the best candidate score even for `pending`
   rows — that's the tuning dataset. **`NULL` means something different and
   more specific: ZERO candidates were found, not a low-confidence miss.** That
@@ -1542,6 +1566,34 @@ win). No per-shell export needed for local dev.
    has now demonstrably earned its keep, since it is the only thing that stops
    the rescue fallback auto-matching a same-titled unrelated employer (the
    Fincher Talent near-miss in that gotcha).
+   **MEASURED 21 Aug 2026, and the answer is LEAVE THEM.** Not "still untuned" —
+   swept, and 0.75/0.15 is a defensible spot, so re-derive nothing before
+   reading this. Method: every email with a stored `extraction` and a resolved
+   target (296 = 190 auto-matched + 106 human-resolved) replayed through the
+   real `_CANDIDATES_SQL` and `_score()`, candidates filtered to applications
+   that existed when the email arrived, thresholds swept 0.60-0.85 x 0.00-0.20.
+   The human-resolved 106 are the informative half — a human picked those
+   targets precisely BECAUSE the current bar sent them to triage, so they say
+   what loosening would buy and how often it would land somewhere wrong.
+   Relaxing the MARGIN at the current score is a bad trade under this project's
+   own asymmetry: 0.15 → 0.10 buys **+3 correct for +1 silent wrong**, and → 0.00
+   buys +10 for +3. Relaxing the SCORE is cheaper per error (0.75 → 0.60 at
+   margin 0.15 is +9 correct for +1 wrong) but a wrong auto-match is silent and
+   needs hand surgery while a triage item costs a click, so 9:1 is not obviously
+   a win either. TIGHTENING is expensive and immediate: 0.75 → 0.80 drops 16
+   already-correct auto-matches into triage, i.e. there is a real cluster of
+   true matches sitting between those two numbers and 0.75 is just under a cliff.
+   **Know what the replay cannot tell you**: it disagrees with recorded reality
+   on 38 of 296, but 21 of those are `dispatch`'s `create` path (no candidates →
+   it mints the application, which the replay does not model), leaving ~6%
+   genuine drift — fine for reading the SHAPE of the sweep, not fine for moving
+   a threshold on a 3-row difference. And thresholds cannot reach 46 of the 106
+   triage items at any setting, because those had no candidate at all: 18
+   `recruiter_outreach` (correct, invariant #9), 14 with no usable company (the
+   LinkedIn InMail class), 9 whose target did not exist yet, and 5 real gate
+   misses — of which 4 are one agency anonymising its client as "American Tech
+   Organisation" and therefore unmatchable by any string rule. Tuning the
+   thresholds was never going to fix that half.
    **A second finding the same day, from comparing against LinkedIn's own job
    tracker** (`/jobs-tracker/?stage=applied`, read by hand in the browser):
    all 77 of its applied entries were present here, matched by
