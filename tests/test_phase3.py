@@ -289,10 +289,17 @@ with db.connect() as conn:
         "VALUES (%s, %s, 'applied', 'manual', now() - interval '20 days', '{}')",
         (user_id, stale))
     conn.commit()
-r = client.get("/")
+r = client.get("/follow-ups")
 check("stale application flagged for follow-up",
       "Needs follow-up" in r.text and "stale co" in r.text)
-check("responded application not flagged", "vantage tech" not in r.text.split("Needs follow-up")[1].split("</div>")[0])
+check("responded application not flagged", "vantage tech" not in r.text)
+# "stale co" is an application, so it is legitimately in the table on "/" —
+# what must be gone is the QUEUE (its heading, its card, its action).
+list_html = client.get("/").text
+check("the list links to the queue with a count rather than carrying it",
+      "Needs follow-up" not in list_html
+      and 'value="follow_up_sent"' not in list_html
+      and 'href="/follow-ups"' in list_html)
 
 print("logging an engaged event clears a stale application from the follow-up queue")
 with db.connect() as conn:
@@ -307,14 +314,14 @@ with db.connect() as conn:
         "VALUES (%s, %s, 'applied', 'manual', now() - interval '20 days', '{}')",
         (user_id, stale2))
     conn.commit()
-r = client.get("/")
+r = client.get("/follow-ups")
 check("newly-stale application flagged for follow-up before any response",
       "stale eng co" in r.text)
 r = client.post(f"/applications/{stale2}/events",
                 data={"type": "engaged", "channel": "whatsapp", "note": "recruiter followed up"})
 check("engaged event redirects", r.status_code == 303, r.status_code)
-r = client.get("/")
+r = client.get("/follow-ups")
 check("logging an engaged event clears the application from Needs follow-up",
-      "stale eng co" not in r.text.split("Needs follow-up")[1].split("</div>")[0])
+      "stale eng co" not in r.text)
 
 print("\nALL PHASE 3 PATHS PASS")

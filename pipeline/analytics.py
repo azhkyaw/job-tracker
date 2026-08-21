@@ -185,6 +185,24 @@ def weekly(conn, user_id, weeks: int = 14):
     return out
 
 
+# "Applied > REMINDER_DAYS ago, no response, no follow-up, not withdrawn" —
+# written ONCE because two callers need it: the /follow-ups page wants the rows
+# and every other page wants only the count for its nav badge. Two hand-written
+# copies of this predicate is the same trap `_RESPONSE_TYPES` documents above,
+# and here it would be worse than a stale list: the badge would promise a
+# different number of rows than the page it links to.
+_REMINDER_WHERE = """
+        WHERE a.user_id = %(user_id)s
+          AND EXISTS (SELECT 1 FROM events e
+                      WHERE e.application_id = a.id AND e.type = 'applied'
+                        AND e.occurred_at < now() - make_interval(days => %(days)s))
+          AND NOT EXISTS (SELECT 1 FROM events e
+                          WHERE e.application_id = a.id
+                            AND e.type IN ('viewed','engaged','interview_invite','rejected',
+                                           'offer','withdrawn','follow_up_sent'))
+"""
+
+
 def reminders(conn, user_id):
     """Applied > REMINDER_DAYS ago, no response, no follow-up, not withdrawn."""
     return conn.execute(f"""
@@ -203,13 +221,15 @@ def reminders(conn, user_id):
                  WHERE e.application_id = a.id AND e.type = 'applied') AS days_waiting
         FROM applications a
         JOIN jobs j ON j.id = a.job_id
-        WHERE a.user_id = %(user_id)s
-          AND EXISTS (SELECT 1 FROM events e
-                      WHERE e.application_id = a.id AND e.type = 'applied'
-                        AND e.occurred_at < now() - make_interval(days => %(days)s))
-          AND NOT EXISTS (SELECT 1 FROM events e
-                          WHERE e.application_id = a.id
-                            AND e.type IN ('viewed','engaged','interview_invite','rejected',
-                                           'offer','withdrawn','follow_up_sent'))
+        {_REMINDER_WHERE}
         ORDER BY applied_at
     """, {"user_id": user_id, "days": config.REMINDER_DAYS}).fetchall()
+
+
+def reminder_count(conn, user_id) -> int:
+    """Just the number, for the nav badge — same predicate as reminders()."""
+    return conn.execute(f"""
+        SELECT count(*) AS n FROM applications a
+        JOIN jobs j ON j.id = a.job_id
+        {_REMINDER_WHERE}
+    """, {"user_id": user_id, "days": config.REMINDER_DAYS}).fetchone()["n"]

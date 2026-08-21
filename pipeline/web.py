@@ -242,12 +242,14 @@ templates.env.globals["DEFAULT_SORT"] = _DEFAULT_SORT
 
 @app.get("/")
 def applications(request: Request, deleted: str | None = None, origin: str | None = None,
-                 q: str = "", sort: str = _DEFAULT_SORT, fu: str = "", status: str = ""):
-    """`fu=1` expands the needs-follow-up block, which is collapsed by default.
-    It exists so that working the queue doesn't fight the default: each
-    "Followed up" button redirects to /?fu=1, so the block is still open on
-    the reload that shortened it. No JS, no stored preference — the state
-    lives in the URL of the action that needs it.
+                 q: str = "", sort: str = _DEFAULT_SORT, status: str = ""):
+    """The record. The WORK that used to sit on top of it — the needs-follow-up
+    queue — moved to /follow-ups on 21 Aug 2026, leaving a counted link in the
+    nav. It had been a `<details>` here, collapsed by default with an `fu=1`
+    param to keep it open across the reload that shortened it; a page of its
+    own needs neither, and the list stops opening with someone else's to-do
+    list above the first trace. UI rule 9 still holds — the queue is work and
+    still gets real rows and a one-click action, just not on this page.
 
     `status` makes the funnel strip/legend clickable filters (29 Aug 2026) — the
     keys are exactly `FUNNEL_ORDER`'s display-collapsed values, the same ones
@@ -285,6 +287,16 @@ def applications(request: Request, deleted: str | None = None, origin: str | Non
                       FROM events e WHERE e.application_id = a.id)         AS started_at,
                    (SELECT max(occurred_at) FROM events e
                      WHERE e.application_id = a.id)                        AS last_activity,
+                   -- How you applied, off the applied event's own payload —
+                   -- true = finished on the employer's site, false = handled
+                   -- on the platform (Easy Apply / quick apply), NULL = never
+                   -- recorded. Three states, and the template must keep them
+                   -- three: an unknown is not a "no". Read from the SAME event
+                   -- the date comes from (min occurred_at) so the two can't
+                   -- describe different submissions on a re-captured record.
+                   (SELECT (e.payload->>'external')::bool FROM events e
+                     WHERE e.application_id = a.id AND e.type = 'applied'
+                     ORDER BY e.occurred_at LIMIT 1)                       AS external,
                    (SELECT string_agg(DISTINCT p.platform, ', ')
                       FROM postings p WHERE p.job_id = a.job_id)          AS platforms
             FROM applications a
@@ -336,9 +348,8 @@ def applications(request: Request, deleted: str | None = None, origin: str | Non
             "axis": axis,
             "funnel": _funnel(conn, user_id, origin),
             "pending": _pending_count(conn),
-            "reminders": analytics.reminders(conn, user_id),
+            "follow_ups": analytics.reminder_count(conn, user_id),
             "reminder_days": config.REMINDER_DAYS,
-            "fu_open": fu == "1",
             # Only the default sort pins leads, so only it gets the divider —
             # an explicitly chosen sort should be exactly what it says.
             "leads_pinned": sort == _DEFAULT_SORT,
@@ -1048,12 +1059,13 @@ def add_event(request: Request, app_id: str, type: str = Form(...), note: str = 
               occurred_on: str = Form(""), redirect_to: str = Form("")):
     """File one thing that happened, by hand.
 
-    `redirect_to` exists for the follow-up block on the list: ticking one of
-    fifteen rows there should leave you looking at the remaining fourteen, not
-    on that application's detail page. Constrained to known-good in-app
-    destinations rather than trusted, same as refile_email's. `/?fu=1` is the
-    same destination with the (default-collapsed) follow-up block still
-    open — see applications().
+    `redirect_to` exists for the follow-up queue: ticking one of fifteen rows
+    there should leave you looking at the remaining fourteen, not on that
+    application's detail page. Constrained to known-good in-app destinations
+    rather than trusted, same as refile_email's. It was `/?fu=1` while the
+    queue lived on the list behind a `<details>`; the queue is its own page
+    now (`/follow-ups`), which is why that state no longer needs a URL param
+    to survive a reload.
 
     `occurred_on` is the REAL-WORLD date (invariant #2), not the moment of
     typing: a phone call on Monday logged on Thursday is Monday's event, and
@@ -1080,7 +1092,7 @@ def add_event(request: Request, app_id: str, type: str = Form(...), note: str = 
             "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
             "VALUES (%s, %s, %s, 'manual', COALESCE(%s, now()), %s)",
             (a["user_id"], a["id"], type, occurred_at, Json(payload)))
-    dest = redirect_to if redirect_to in ("/", "/?fu=1") else f"/applications/{app_id}"
+    dest = redirect_to if redirect_to in ("/", "/follow-ups") else f"/applications/{app_id}"
     return RedirectResponse(dest, status_code=303)
 
 
@@ -1810,6 +1822,31 @@ def analytics_page(request: Request):
 
 
 # --------------------------------------------------------------------------- answer bank
+
+@app.get("/follow-ups")
+def follow_ups_page(request: Request):
+    """The day's follow-up queue, on its own page since 21 Aug 2026.
+
+    It used to sit at the top of the applications list inside a
+    default-collapsed `<details>`. UI rule 9's argument for it hasn't changed —
+    on real data this IS the day's task list, so it gets real rows and a
+    one-click `follow_up_sent` rather than a sentence of links — but a list you
+    open to READ shouldn't lead with a queue you mostly aren't working.
+    Splitting them lets each be the whole page for what it is, which is also
+    why the 8-row cap and its "N more waiting" disclosure are gone: they only
+    existed to stop the queue burying the table underneath it.
+
+    No `?fu=1` here. That param existed to keep the block open across the
+    reload that shortened it; a page of its own is open by definition."""
+    user = _login_user(request)
+    with db.connect_scoped(user["id"]) as conn:
+        return templates.TemplateResponse(
+            request=request, name="follow_ups.html",
+            context={"reminders": analytics.reminders(conn, user["id"]),
+                     "reminder_days": config.REMINDER_DAYS,
+                     "pending": _pending_count(conn),
+                     "follow_ups": analytics.reminder_count(conn, user["id"])})
+
 
 @app.get("/answers")
 def answers_page(request: Request):

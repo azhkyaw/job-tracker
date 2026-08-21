@@ -352,7 +352,7 @@ axis) + **DM Mono**, from Google Fonts.
    rejection pushed a dead thread to the top. Submission date is the one date
    the user controls and can predict, which is what makes the page scannable as
    the application log it is. Both older arguments are still made elsewhere and
-   neither needs the list to repeat it: silence by the needs-follow-up block
+   neither needs the list to repeat it: silence by the `/follow-ups` queue
    (rule 9, with rows and a one-click action), engagement by the trace's own
    colour — which is the entire point of an achromatic-at-rest scheme (rule 1).
    `?sort=activity` and `?sort=silence` keep the old orderings.
@@ -388,18 +388,43 @@ axis) + **DM Mono**, from Google Fonts.
    7 pursued ones (two of them live interview threads) sat below 140
    applications. An inbound's date is the date they approached; sorting by it is
    the same rule the rest of the list follows, not an exception to it.
-9. **The needs-follow-up block is work; the table below it is a record.** It
-   gets real rows and a one-click `follow_up_sent` (posting with
-   `redirect_to=/?fu=1` so the list shortens as you clear it), because on real
-   data it IS the day's task list — 18 of 48 threads. Don't demote it back to a
-   sentence of links. **Collapsed by default since 28 Jul 2026** — 18 rows of
-   queue before the first trace taxed every visit that came to read rather
-   than work, and the summary still states the count, so what folds away is
-   the rows, not the fact. It stays open while you work it: `fu=1` on the
-   query string is what `open`s the `<details>`, and the buttons redirect
-   there, so the reload that shortens the block doesn't also close it. That
-   URL param is the whole mechanism — no JS anywhere in these templates, and
-   no stored preference.
+9. **The follow-up queue is work; the applications table is a record — and
+   since 21 Aug 2026 they are two PAGES.** The queue lives at `/follow-ups`
+   (`templates/follow_ups.html`), with a counted nav entry and an amber
+   `N need follow-up` link on the list. Its half of this rule is unchanged and
+   still load-bearing: it gets real rows and a one-click `follow_up_sent`
+   (posting `redirect_to=/follow-ups`, so the page shortens as you clear it),
+   because on real data it IS the day's task list. **Never demote it back to a
+   sentence of links.**
+   The staging tells the story: a plain block (Jul), then collapsed into a
+   `<details>` with an `fu=1` param to survive the reload that shortened it
+   (28 Jul), then out. Each step was the same complaint — the list is opened to
+   READ far more often than to work, and opening it with someone else's to-do
+   list above the first trace taxes every one of those visits. Collapsing
+   halved the tax; a separate page removes it, and lets each page be the whole
+   screen for what it is. Two things went with the move and should not come
+   back: the `fu=1` param (a page of its own is open by definition) and the
+   8-row cap with its "N more waiting" disclosure (that existed only to stop
+   the queue burying the table underneath it — there is no table underneath it
+   now). The number vindicates the split: the block was written for 18 rows and
+   the queue now stands at **98**.
+   `analytics.reminders()` and `reminder_count()` share one `_REMINDER_WHERE`
+   for a reason — two copies would let the nav badge promise a different number
+   of rows than the page it links to.
+9b. **How you applied is on the row, in GREY** (21 Aug 2026): `on-platform` /
+   `employer site`, read from the applied event's own `payload.external` — the
+   same event the date comes from, so the two can't describe different
+   submissions. Rule 1 is why it has no colour of its own: it is a property of
+   the SUBMISSION, not of anyone's response to it, and chroma here is reserved
+   for the state of the wait. **Three states stay three** — the template tests
+   `is sameas true` / `is sameas false`, never truthiness, because NULL means
+   "never recorded" and 11 real rows (every inbound lead, which has no applied
+   event at all) would otherwise be labelled as on-platform applies that never
+   happened. It also forced `.tl .ro` from an ellipsing block into a flex row:
+   a badge appended to `text-overflow:ellipsis` is clipped away entirely on
+   exactly the longest titles, silently and only where the column is tightest.
+   Measured after the fix — 199 rows, 0 badges clipped, and still 0 with the
+   name column forced to 560px where 182 titles truncate.
 10. **The name column takes the free space; the trace is capped** (`.tl`
    grid). Verified against 47 real applications: applied in one burst, so
    every trace is the same line at the same length while agency company/role
@@ -1727,10 +1752,10 @@ win). No per-shell export needed for local dev.
 4. **First feature: follow-up drafting** (`docs/features.md` §3.1) — best
    evidence-to-effort ratio in the backlog, and `REMINDER_DAYS = 10` already
    matches the researched 7–10 business-day window. **Half-built as of 28 Jul:**
-   the list's needs-follow-up block (UI rule 9) already surfaces the right set
-   and logs a one-click `follow_up_sent`. What's missing is the draft itself —
-   the block is where it belongs, next to the button that currently just marks
-   it done.
+   the `/follow-ups` queue (UI rule 9) already surfaces the right set and logs
+   a one-click `follow_up_sent`. What's missing is the draft itself — that page
+   is where it belongs, next to the button that currently just marks it done,
+   and it has more room for one since the queue stopped sharing the list.
 5. **One real apply via the extension** on each platform; fix whichever
    adapter selectors have drifted. **LinkedIn: done** (27 Jul, VANARSDEL — three
    defects found and fixed). **JobStreet: two real applies, still not

@@ -82,64 +82,16 @@
     <a href="{{ list_url(status=status, origin='inbound', q=q, sort=sort) }}" class="{{ 'active' if origin == 'inbound' }}">inbound</a>
     <a href="{{ list_url(status=status, origin='saved', q=q, sort=sort) }}" class="{{ 'active' if origin == 'saved' }}">saved</a>
   </span>
-  <a class="sm" href="/applications/new">Add an application manually</a>
+  <span class="sm">
+    {# The queue moved to its own page (21 Aug 2026); this is the nudge that
+       replaces 15 rows of it sitting above the first trace. Amber only when
+       there IS work, because --age is the "time passing, unanswered" token
+       (UI rule 1) and that is exactly what these rows are. #}
+    {% if follow_ups %}<a href="/follow-ups" style="color:var(--age)">{{ follow_ups }}
+      need follow-up</a> · {% endif %}
+    <a href="/applications/new">Add an application manually</a>
+  </span>
 </div>
-
-{# The one thing on this page that is work rather than record-keeping, so it
-   gets rows and a control instead of a sentence. Ticking one files a real
-   follow_up_sent event, which drops the row out of this block on the reload
-   (the query excludes anything with a follow-up) — the list shortens as you
-   work through it. Capped at 8 with a disclosure: on a bad week this is 20
-   rows and the table below it still matters.
-
-   Collapsed by default: the summary still states the count, so the work is
-   never hidden, only its rows — this page is opened to read the record far
-   more often than to work the queue, and 15 rows of queue before the first
-   trace is a tax on every other visit. Once opened it STAYS open while you
-   work: the buttons redirect to /?fu=1, so clearing a row re-renders the
-   block expanded (server-side — this app has no JS). #}
-{% if reminders %}
-<details class="fu-block"{% if fu_open %} open{% endif %}>
-<summary class="fu-sum"><h2 class="fu-h">Needs follow-up
-  <span class="quiet sm">{{ reminders | length }} applied over {{ reminder_days }}
-  days ago with no reply and nothing sent</span></h2></summary>
-<div class="card fu">
-  {% for r in reminders[:8] %}
-  <div class="fu-row">
-    <a class="fu-name" href="/applications/{{ r.id }}">
-      <span class="co">{{ r.company_display }}</span>
-      <span class="ro">{{ r.title_canonical }}</span>
-    </a>
-    <span class="num fu-d">{{ r.days_waiting }}d</span>
-    <form method="post" action="/applications/{{ r.id }}/events">
-      <input type="hidden" name="type" value="follow_up_sent">
-      <input type="hidden" name="redirect_to" value="/?fu=1">
-      <button title="Log a follow-up and clear this row">Followed up</button>
-    </form>
-  </div>
-  {% endfor %}
-  {% if reminders | length > 8 %}
-  <details>
-    <summary class="sm quiet">{{ reminders | length - 8 }} more waiting</summary>
-    {% for r in reminders[8:] %}
-    <div class="fu-row">
-      <a class="fu-name" href="/applications/{{ r.id }}">
-        <span class="co">{{ r.company_display }}</span>
-        <span class="ro">{{ r.title_canonical }}</span>
-      </a>
-      <span class="num fu-d">{{ r.days_waiting }}d</span>
-      <form method="post" action="/applications/{{ r.id }}/events">
-        <input type="hidden" name="type" value="follow_up_sent">
-        <input type="hidden" name="redirect_to" value="/?fu=1">
-        <button title="Log a follow-up and clear this row">Followed up</button>
-      </form>
-    </div>
-    {% endfor %}
-  </details>
-  {% endif %}
-</div>
-</details>
-{% endif %}
 
 {% if rows %}
 <div class="card">
@@ -167,7 +119,18 @@
     <span class="name">
       <span class="co">{{ r.company_display }}{% if r.origin == 'inbound' %}
         <span class="badge" style="--c:var(--interested)">inbound</span>{% endif %}</span>
-      <span class="ro">{{ r.title_canonical }}</span>
+      <span class="ro"><span class="ro-t">{{ r.title_canonical }}</span>
+        {# How you applied, from the applied event's payload. Three states and
+           they stay three: `is sameas true/false`, never truthiness, because
+           NULL means "never recorded" and rendering that as "on-platform"
+           would invent a fact about 111 older records. Grey on purpose —
+           UI rule 1 reserves chroma for the state of the wait, and this is a
+           property of the submission, not of anyone's response to it. #}
+        {%- if r.external is sameas true %}
+        <span class="badge" style="--c:var(--interested)">employer site</span>
+        {%- elif r.external is sameas false %}
+        <span class="badge" style="--c:var(--interested)">on-platform</span>
+        {%- endif %}</span>
     </span>
     <span class="trace" style="--week:{{ axis.week }}">
       {%- if r.tail %}<span class="seg{% if r.tail.aging %} aging{% endif %}"

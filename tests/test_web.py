@@ -76,7 +76,8 @@ print("pages render")
 r = client.get("/")
 check("applications table renders", r.status_code == 200 and "northwind labs" in r.text, r.status_code)
 check("funnel strip present", 'class="funnel"' in r.text)
-check("triage count pill shows", 'class="pill"' in r.text)
+check("triage count pill shows",
+      'class="pill"' in r.text.split('href="/triage"')[1].split("</a>")[0])
 check("default theme renders data-theme=\"auto\"", 'data-theme="auto"' in r.text)
 # Regression guard for the dark-mode retheme: every color-mix() tint must
 # blend into var(--mix), not a literal white that would never adapt.
@@ -396,15 +397,19 @@ with db.connect() as conn:
     ).fetchone()["n"]
 r = client.get("/")
 # Everything actionable was already resolved above, so the only pending item
-# left is the recruiter_outreach email just seeded — the nav pill (which
+# left is the recruiter_outreach email just seeded — the triage pill (which
 # hides itself at 0, base.html's {% if pending %}) should therefore be gone
 # entirely, proving the exclusion rather than just matching a nonzero count.
+# Scoped to the TRIAGE link: the nav gained a second counted entry
+# (follow-ups) on 21 Aug 2026, so "no pill anywhere on the page" stopped
+# being the same claim as "the triage badge is hidden".
+triage_link = r.text.split('href="/triage"')[1].split("</a>")[0]
 if expected_pending:
-    check(f"nav pill shows actionable-only count ({expected_pending})",
-          f'class="pill">{expected_pending}<' in r.text, r.text)
+    check(f"triage pill shows actionable-only count ({expected_pending})",
+          f'class="pill">{expected_pending}<' in triage_link, triage_link)
 else:
-    check("nav pill hidden — only a recruiter_outreach email is pending",
-          'class="pill"' not in r.text, r.text)
+    check("triage pill hidden — only a recruiter_outreach email is pending",
+          'class="pill"' not in triage_link, triage_link)
 
 print("triage: track as lead (agency company override, null extraction.company)")
 with db.connect() as conn:
@@ -681,6 +686,30 @@ with db.connect() as conn:
         "SELECT payload FROM events WHERE application_id = %s::uuid AND type = 'applied'",
         (unset_app,)).fetchone()["payload"]
     check("external omitted when not set", "external" not in payload, payload)
+
+print("list: how-you-applied flag, three states kept three")
+r = client.get("/")
+
+
+def row_for(app_id, text):
+    """The one list row for an application — the flag has to be read inside
+    its own row, not anywhere on a page that holds 200 of them."""
+    marker = f'href="/applications/{app_id}"'
+    check(f"{text} has a row on the list", marker in r.text, marker)
+    return r.text.split(marker)[1].split("</a>")[0]
+
+
+check("an on-platform apply is labelled on-platform",
+      "on-platform" in row_for(easy_app, "Easy Apply Role"))
+check("an employer-site apply is labelled employer site",
+      "employer site" in row_for(ext_app, "External Apply Role"))
+# The whole point of reading it with `is sameas`: 111 real records predate the
+# flag, and calling those "on-platform" would invent a fact about every one.
+unset_row = row_for(unset_app, "Unspecified Apply Role")
+check("an unrecorded apply is labelled NEITHER — unknown is not a no",
+      "on-platform" not in unset_row and "employer site" not in unset_row, unset_row)
+check("the flag is grey, not a new hue (UI rule 1 reserves chroma for the wait)",
+      "--c:var(--interested)" in row_for(ext_app, "External Apply Role"))
 
 print("manual entry: applied + outcome, including same-day ordering")
 r = client.post("/applications/new", data={
@@ -1378,27 +1407,30 @@ with db.connect() as conn, conn.transaction():
         (user_id, stale_app))
 
 r = client.get("/")
-check("stale thread appears in the block with its wait length",
+check("the list no longer carries the queue at all",
+      r.status_code == 200 and "Needs follow-up" not in r.text
+      and 'class="card fu"' not in r.text
+      and 'value="follow_up_sent"' not in r.text, r.status_code)
+check("it carries a counted link to them instead",
+      'href="/follow-ups"' in r.text and "need follow-up" in r.text, r.status_code)
+
+r = client.get("/follow-ups")
+check("the queue page lists the stale thread with its wait length",
       r.status_code == 200 and "Needs follow-up" in r.text
       and "quietcorp" in r.text and "30d" in r.text, r.status_code)
-check("block offers the action, not just a link", 'value="follow_up_sent"' in r.text)
-check("the block is collapsed by default — the count is still stated, only "
-      "the rows are folded away", '<details class="fu-block">' in r.text)
-check("its rows are still in the document (a disclosure, not a second query)",
-      "quietcorp" in r.text.split('class="fu-block"')[1].split("</details>")[0])
-check("the buttons keep it open across the reload that shortens it",
-      'name="redirect_to" value="/?fu=1"' in r.text)
-
-r = client.get("/?fu=1")
-check("fu=1 expands it", '<details class="fu-block" open>' in r.text)
-r = client.get("/?fu=nonsense")
-check("any other fu value leaves it collapsed",
-      '<details class="fu-block">' in r.text)
+check("it offers the action, not just a link", 'value="follow_up_sent"' in r.text)
+check("its buttons return to the queue, so clearing one shortens the page "
+      "you are still looking at", 'name="redirect_to" value="/follow-ups"' in r.text)
 
 r = client.post(f"/applications/{stale_app}/events",
-                data={"type": "note", "note": "still waiting", "redirect_to": "/?fu=1"})
-check("acting from the block returns to the list with the block still open",
-      r.status_code == 303 and r.headers["location"] == "/?fu=1",
+                data={"type": "note", "note": "still waiting", "redirect_to": "/follow-ups"})
+check("acting from the queue returns to the queue",
+      r.status_code == 303 and r.headers["location"] == "/follow-ups",
+      r.headers.get("location"))
+r = client.post(f"/applications/{stale_app}/events",
+                data={"type": "note", "note": "x", "redirect_to": "/?fu=1"})
+check("the retired fu=1 destination is no longer accepted",
+      r.status_code == 303 and r.headers["location"].startswith("/applications/"),
       r.headers.get("location"))
 
 r = client.post(f"/applications/{stale_app}/events",
@@ -1409,9 +1441,8 @@ with db.connect() as conn:
     check("follow-up recorded", conn.execute(
         "SELECT 1 FROM events WHERE application_id = %s AND type = 'follow_up_sent'",
         (stale_app,)).fetchone() is not None)
-r = client.get("/")
-check("row is gone from the block once followed up", "quietcorp" not in r.text.split(
-    'class="card fu"')[1].split("</div>")[0] if 'class="card fu"' in r.text else True)
+r = client.get("/follow-ups")
+check("row is gone from the queue once followed up", "quietcorp" not in r.text)
 
 r = client.post(f"/applications/{stale_app}/events",
                 data={"type": "note", "note": "from detail", "redirect_to": "/evil"})
@@ -1435,9 +1466,9 @@ with db.connect() as conn, conn.transaction():
         "VALUES (%s, %s, 'applied', 'manual', now() - interval '20 days', '{}')",
         (user_id, wa_app))
 
-r = client.get("/")
-check("before: the untouched thread is in the follow-up block",
-      "sponsorless" in r.text.split('class="fu-block"')[1].split("</details>")[0], r.status_code)
+r = client.get("/follow-ups")
+check("before: the untouched thread is in the follow-up queue",
+      "sponsorless" in r.text, r.status_code)
 
 r = client.post(f"/applications/{wa_app}/events",
                 data={"type": "rejected", "reason": "visa", "channel": "whatsapp",
@@ -1458,10 +1489,9 @@ with db.connect() as conn:
           conn.execute("SELECT status FROM application_status WHERE application_id = %s",
                        (wa_app,)).fetchone()["status"] == "rejected")
 
-r = client.get("/")
+r = client.get("/follow-ups")
 check("the row leaves the follow-up queue, because it is genuinely answered now",
-      'class="fu-block"' not in r.text
-      or "sponsorless" not in r.text.split('class="fu-block"')[1].split("</details>")[0])
+      "sponsorless" not in r.text)
 
 r = client.get(f"/applications/{wa_app}")
 check("the timeline names the reason and the channel it came through",

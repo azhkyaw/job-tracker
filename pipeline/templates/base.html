@@ -171,9 +171,17 @@ td.mono,th.mono{font-family:'DM Mono',monospace;font-size:.8rem;color:var(--mute
 .tl:last-child{border-bottom:0}
 a.tl:hover{background:color-mix(in srgb,var(--accent) 5%,var(--mix));text-decoration:none}
 .tl .name{min-width:0}
-.tl .co,.tl .ro{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tl .co{font-weight:600}
-.tl .ro{color:var(--muted);font-size:.82rem}
+.tl .co{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+        font-weight:600}
+/* The role line carries the how-you-applied flag, so it is a flex row rather
+   than one ellipsing block: the TITLE truncates and the badge never does.
+   Appending the badge to an ellipsing block would have clipped it away
+   entirely on exactly the longest titles — silently, and only for the rows
+   where the name column is tightest. */
+.tl .ro{display:flex;align-items:baseline;gap:.4rem;min-width:0;
+        color:var(--muted);font-size:.82rem}
+.tl .ro .ro-t{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tl .ro .badge{flex:none}
 .tl .out{display:flex;align-items:center;gap:.4rem;justify-content:flex-end;
          font-family:'DM Mono',monospace;font-size:.72rem;color:var(--muted)}
 .tl-head{padding:.5rem .9rem .35rem}
@@ -192,32 +200,14 @@ a.tl:hover{background:color-mix(in srgb,var(--accent) 5%,var(--mix));text-decora
    reason the row is here, and rule 1 says the colour marks time passing
    unanswered. The rest stays achromatic; a block of amber rows would just be
    a highlighted list. */
-/* h2 is an uppercase mono section marker; a sentence of explanation set in it
-   becomes a shouted paragraph. Opt the subtitle back out. */
-.fu-h{display:flex;align-items:baseline;gap:.7rem;flex-wrap:wrap}
-.fu-h .quiet{text-transform:none;letter-spacing:0;
-             font-family:Archivo,system-ui,sans-serif}
-/* The block is collapsed by default, so its summary carries the h2 that used
-   to stand alone: same mono section marker, plus a disclosure triangle. The
-   h2's own vertical margin moves to the <details> — a margin inside a
-   summary would push the marker off the heading's baseline. */
-.fu-block{margin:2rem 0 .6rem}
-.fu-block>summary{display:flex;align-items:baseline;gap:.45rem;
-                  cursor:pointer;list-style:none;width:max-content;
-                  max-width:100%}
-.fu-block>summary::-webkit-details-marker{display:none}
-.fu-block>summary::before{content:'▸';color:var(--muted);font-size:.8rem;
-                          line-height:1;flex:none}
-.fu-block[open]>summary::before{content:'▾'}
-.fu-block>summary h2{margin:0}
-.fu-block>summary:hover h2{color:var(--ink)}
-.fu-block>summary:hover::before{color:var(--ink)}
-.fu-block>.card{margin-top:.6rem}
+/* The follow-up queue. It was a collapsed <details> at the top of the
+   applications list until 21 Aug 2026 and is its own page now, so the
+   disclosure chrome that went with it (.fu-h, .fu-block and the summary
+   triangle) is gone — the rows themselves are unchanged and still shared. */
 .fu-row{display:grid;grid-template-columns:minmax(0,1fr) 3.2rem max-content;
         align-items:center;gap:0 1rem;padding:.4rem .9rem;
         border-bottom:1px solid var(--line)}
 .fu-row:last-child{border-bottom:0}
-.fu details .fu-row:first-of-type{border-top:1px solid var(--line)}
 .fu-name{min-width:0;color:inherit}
 .fu-name:hover{text-decoration:none}
 .fu-name:hover .co{color:var(--accent)}
@@ -227,7 +217,6 @@ a.tl:hover{background:color-mix(in srgb,var(--accent) 5%,var(--mix));text-decora
 .fu-name .ro{color:var(--muted);font-size:.82rem}
 .fu-d{color:var(--age);text-align:right;font-size:.78rem}
 .fu form{margin:0}
-.fu summary{cursor:pointer;padding:.45rem .9rem}
 
 /* --------------------------------------------------------------- the strip
    Counts as one restrained line, not five equal boxes pretending to be a
@@ -363,6 +352,11 @@ ul.timeline .when{font-family:'DM Mono',monospace;font-size:.76rem;
     <nav>
       <a href="/" class="{% block nav_apps %}{% endblock %}">applications</a>
       <a href="/triage" class="{% block nav_triage %}{% endblock %}">triage{% if pending %}<span class="pill">{{ pending }}</span>{% endif %}</a>
+      {# Counted like triage, but the count is OPTIONAL here: only the pages
+         that already compute it pass `follow_ups`, and everywhere else the
+         link still works and simply carries no number. A pill that silently
+         reads zero would be a lie; an absent one is just quiet. #}
+      <a href="/follow-ups" class="{% block nav_follow_ups %}{% endblock %}">follow-ups{% if follow_ups %}<span class="pill">{{ follow_ups }}</span>{% endif %}</a>
       <a href="/analytics" class="{% block nav_analytics %}{% endblock %}">analytics</a>
       <a href="/answers" class="{% block nav_answers %}{% endblock %}">answers</a>
       <a href="/settings" class="{% block nav_settings %}{% endblock %}">settings</a>

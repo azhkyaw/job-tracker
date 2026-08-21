@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}follow-ups — tracker{% endblock %}
+{% block nav_follow_ups %}active{% endblock %}
+{% block content %}
+{# The day's task list, on its own page since 21 Aug 2026 (it was a collapsed
+   <details> at the top of the applications list). UI rule 9's argument is
+   unchanged — this IS work, so it gets real rows and a one-click action rather
+   than a sentence of links — but the list is a RECORD, and leading it with a
+   queue taxed every visit that came to read.
+
+   No 8-row cap and no "N more waiting" disclosure here: both existed only to
+   stop the queue burying the table beneath it, and there is no table beneath
+   it now. Ticking a row files a real follow_up_sent event, which drops it out
+   of the query, so the page shortens as you work it. #}
+<h1>Needs follow-up</h1>
+{% if reminders %}
+<p class="sm quiet" style="margin:-.4rem 0 1.4rem;max-width:62ch">
+  {{ reminders | length }} applied over {{ reminder_days }} days ago with no
+  reply and nothing sent, oldest first. Ticking one files a real
+  <span class="mono">follow_up_sent</span> event and drops it off this page.
+</p>
+<div class="card fu">
+  {% for r in reminders %}
+  <div class="fu-row">
+    <a class="fu-name" href="/applications/{{ r.id }}">
+      <span class="co">{{ r.company_display }}</span>
+      <span class="ro">{{ r.title_canonical }}</span>
+    </a>
+    <span class="num fu-d">{{ r.days_waiting }}d</span>
+    <form method="post" action="/applications/{{ r.id }}/events">
+      <input type="hidden" name="type" value="follow_up_sent">
+      {# Back to this page, not the application's own — clearing one of fifteen
+         rows should leave you looking at the remaining fourteen. add_event()
+         validates this against a fixed list; it is not a trusted redirect. #}
+      <input type="hidden" name="redirect_to" value="/follow-ups">
+      <button title="Log a follow-up and clear this row">Followed up</button>
+    </form>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<p class="empty">Nothing is waiting on you — every application either got a
+reply, was followed up, or is younger than {{ reminder_days }} days.
+<a href="/">Back to the applications</a>.</p>
+{% endif %}
+{% endblock %}
