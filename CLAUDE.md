@@ -1689,10 +1689,32 @@ win). No per-shell export needed for local dev.
    Tailored/Generic buttons all went with it. The final tally is why: **175
    `false`, 22 unset, zero `true`** across every real application, so the
    dimension had exactly one value and `_rate`'s own `len(rows) > 1` guard meant
-   the panel had never rendered once. `applications.resume_file` (migration 014)
-   is what that question was reaching for and it genuinely splits, because it is
-   READ OFF the apply form instead of asked for afterwards — the general lesson,
-   and the reason not to try a third framing of the same question.
+   the panel had never rendered once. **That evidence is the whole case and it
+   stands alone** — a constant is not a dimension.
+   **Correction, same day: `by_resume` is NOT the successor, and saying so was
+   wrong.** The claim "resume_file is what focused was meant to measure"
+   originates in `migrations/014`'s header (3 Aug) and was repeated into
+   task 3b, `analytics.py` and the analytics template before anyone checked it
+   against the column's contents. They measure different things.
+   `focused` asked about EFFORT — was this application customised for this role.
+   `resume_file` records POSITIONING — which of two STANDING resumes was sent
+   (`…-resume-AI-engineer.pdf` 67, `…-resume-dotnet-engineer.pdf` 21), neither
+   of them written per employer. So `by_resume` answers "which framing gets
+   replies", not "does effort pay off". The narrow true version: this author
+   never wrote a bespoke resume, so the only thing `focused` could ever have
+   registered on their real behaviour is "did I send the resume matching this
+   role" — which `resume_file` does capture, better and without asking. That is
+   a much weaker claim than the one that was recorded.
+   **Consequence: "does tailoring pay off" is now UNMEASURED, not answered.**
+   If it is wanted back, the lesson from `focused` holds — it has to be read off
+   something observable at apply time (a per-application cover letter existing, a
+   resume filename that varies by EMPLOYER rather than by track), never asked for
+   afterwards. A third framing of the same question, asked the same way, fails
+   the same way.
+   `migrations/014` and `015` still carry the superseded claim in their header
+   comments and were deliberately left alone — invariant #8, never edit an
+   applied migration, and a comment is not worth making an exception for. This
+   entry is the correction of record.
    Two knock-on decisions worth knowing: `/captures/{id}/tag` survives carrying
    only a note (still its own route, because the capture must not wait on a
    human), and the external-apply confirm popover collapses from three tagging

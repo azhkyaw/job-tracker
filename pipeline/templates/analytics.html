@@ -88,8 +88,9 @@
 {# One resume is a row of totals, not a comparison, so this renders only once
    the dimension actually splits. A "tailored vs generic" panel used to sit
    below on the same gate and never once passed it — the answer was always the
-   same, because it was a question asked after the fact. This one is read off
-   the apply form, which is why it splits. #}
+   same. It was NOT the same question, though: that one asked about effort per
+   application, this one is which standing resume went out. See
+   analytics.by_resume. #}
 {% if by_resume | length > 1 %}
 {{ dim_table("By resume sent", by_resume) }}
 {% endif %}

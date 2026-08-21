@@ -5,11 +5,16 @@ of timestamps.
 The per-dimension splits are `by_platform` and `by_resume`. A `by_focus` used
 to sit beside them, reading `applications.focused` with a COALESCE onto
 artifact existence so an untagged-but-prepped application still counted as
-focused. Both are gone (21 Aug 2026): the column never split — 175 `false`,
-22 null and zero `true` across every real application — so the dimension had
-one value and `_rate`'s own `len(rows) > 1` guard meant the panel never
-rendered. `by_resume` is the split that question actually wanted, and it is
-read off the apply form rather than asked for afterwards."""
+focused. Both are gone (21 Aug 2026), on their own evidence: the column never
+split — 175 `false`, 22 null and zero `true` across every real application — so
+the dimension had one value and `_rate`'s own `len(rows) > 1` guard meant the
+panel never rendered once.
+
+`by_resume` did NOT replace it and does not answer its question. `focused`
+asked about EFFORT (was this application customised for this role);
+`resume_file` records POSITIONING (which of two standing resumes was sent —
+here AI-engineer 67, dotnet-engineer 21, neither written per employer). "Does
+tailoring pay off" is currently unmeasured, not answered."""
 
 from __future__ import annotations
 
@@ -93,12 +98,21 @@ def by_platform(conn, user_id):
 def by_resume(conn, user_id):
     """Response rate per resume actually sent (migration 014).
 
-    The dimension `focused` was meant to answer this shape of question and
-    couldn't — it came out a constant. This one is a genuine split, because it
-    is read off the form rather than asked for afterwards. Applications with no
-    picker (external ATS, manual entry) group under a null dim, which the
-    template drops: 'unknown' is not a resume, and padding the table with it
-    would invite comparing a real resume against the absence of data.
+    What this measures is POSITIONING — which of the candidate's standing
+    resumes went out, i.e. which specialisation they applied as. It is a real
+    split (AI-engineer 67 vs dotnet-engineer 21 on this author's data) and it
+    costs nothing, because the apply form already knows the answer.
+
+    It is NOT a tailoring metric, and the deleted `focused` dimension is not its
+    ancestor however often that got written down. `focused` asked whether an
+    application was customised for its role; neither resume here is written per
+    employer, so a split between them says which track gets replies, not whether
+    effort does. Read this panel as "AI framing vs .NET framing", nothing more.
+
+    Applications with no picker (external ATS, manual entry) group under a null
+    dim, which the template drops: 'unknown' is not a resume, and padding the
+    table with it would invite comparing a real resume against the absence of
+    data.
     """
     rows = _rate(conn.execute(
         _APPS_CTE + _GROUPED.format(dim="resume_file"),
