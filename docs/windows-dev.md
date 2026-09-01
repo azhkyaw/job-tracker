@@ -53,6 +53,11 @@ Then just run the CLI directly — no per-shell env setup needed:
 .\.venv\Scripts\python.exe -m pipeline.cli status
 ```
 
+`uv run python -m pipeline.cli <cmd>` is equivalent and shorter — with no
+`pyproject.toml` in the repo, uv acts as venv+pip rather than a project manager
+(so `uv sync` / `uv add` don't apply here), and `uv run` picks up the
+repo-root `.venv` on its own.
+
 The browser extension (Chrome on Windows) points at `http://127.0.0.1:8000`
 with the `TRACKER_API_TOKEN` from `.env` — same value, same as the Linux flow.
 
@@ -221,4 +226,17 @@ throwaway `tracker_test` DB — only the dev database needs to move.
   `TRACKER_API_TOKEN`, `ANTHROPIC_API_KEY`, new `TRACKER_DATABASE_URL`) to
   the second machine yourself; there's no other sync mechanism. Losing or
   mismatching `TRACKER_SECRET_KEY` between machines orphans encrypted Gmail
-  creds stored by whichever machine wrote them.
+  creds stored by whichever machine wrote them. `TRACKER_INGEST_ALL` matters
+  here too: it is the one flag that fails *quietly* when absent, so a second
+  machine without it reverts to the candidate pre-filter and drops job mail the
+  other machine ingests, against the same database.
+- **`.venv` does not travel between machines either, and the error doesn't say
+  so.** uv writes the base interpreter's absolute path into the venv's
+  `python.exe` trampoline, so a `.venv` created under a different Windows
+  profile fails with `(uv internal error) Failed to spawn the python child
+  process: entity not found`, and `uv run` quietly falls back to the bare
+  uv-managed interpreter — where every import fails as
+  `ModuleNotFoundError: No module named 'fastapi'`, which looks like a
+  dependency problem rather than a broken venv. Editing `pyvenv.cfg`'s `home`
+  does not help (the path is baked into the .exe). Rebuild it:
+  `uv venv --clear --python 3.12` then `uv pip install -r requirements.txt`.

@@ -3,7 +3,7 @@
 Stage 1 (classify_email) runs on every allowlist-filtered email with a cheap
 model. Stage 2 (extract_email) runs only on mail stage 1 marked job-related.
 
-Design-doc invariants implemented here (job-tracker-design.md §9):
+Design-doc invariants implemented here (docs/design.md §9):
   * JSON-only outputs validated against an explicit schema, with exactly one
     repair retry that feeds the parse/validation error back to the model.
   * Prompt files are versioned on disk; the version string travels with every

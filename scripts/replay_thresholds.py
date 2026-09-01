@@ -22,10 +22,12 @@ Fidelity caveats, stated rather than buried:
     today's values, so a record repaired since replays with its repaired text.
   * `applied_at` inside a candidate row is computed from today's events.
 """
-import sys, os
-from collections import defaultdict
+import sys
+from pathlib import Path
 
-sys.path.insert(0, r"D:/projects/job-tracker")
+# Derived, not hardcoded: this repo is checked out at a different absolute path
+# on each of the author's two machines.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from pipeline import db, matcher, config

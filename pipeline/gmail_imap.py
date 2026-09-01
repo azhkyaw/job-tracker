@@ -273,7 +273,7 @@ class ImapProvider:
     def _uid_command(self, *args: str):
         try:
             typ, data = self._conn.uid(*args)
-        except (imaplib.IMAP4.abort, OSError) as err:
+        except (imaplib.IMAP4.abort, OSError):
             self._reconnect()
             try:
                 typ, data = self._conn.uid(*args)

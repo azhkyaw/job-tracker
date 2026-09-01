@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi.testclient import TestClient
 
-from pipeline import covers, db, dedup, embeddings, jd_extraction, worker
+from pipeline import covers, db, embeddings, jd_extraction, worker
 from pipeline.jd_extraction import JdExtraction
 from pipeline.web import app
 

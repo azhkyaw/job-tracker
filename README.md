@@ -1,6 +1,6 @@
 # Job Application Tracker
 
-All four phases of the tracker described in `job-tracker-design.md`: the email
+All four phases of the tracker described in `docs/design.md`: the email
 backbone (schema, classifier prompts, two-stage LLM pipeline, Gmail poller
 with historical backfill, queue worker, §8 matcher), the web UI, the browser
 extension with its authenticated `/captures` endpoint, and the intelligence

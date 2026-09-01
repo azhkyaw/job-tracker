@@ -96,7 +96,8 @@ Contents, per the research on what actually helps:
   the competency rubric an async AI interviewer scores against.
 - **A STAR story bank mapped to JD requirements.** Research recommends 8–10
   situations with measurable outcomes, drawn from the user's own history
-  (`profile.md`), each mapped to a specific requirement rather than generic.
+  (`users.resume_profile`), each mapped to a specific requirement rather than
+  generic.
 - **Async/AI-interview specific guidance when the invite indicates one** —
   structured responses against the competency rubric, no rapport to build, no
   clarifying questions available. Given 81% video-interview adoption this is
@@ -200,7 +201,8 @@ CLAUDE.md). Effort: medium.
 This is the research finding that changes something already built rather than
 adding to the list.
 
-`covers.py` generates a cover letter from the JD plus `profile.md`. In a market
+`covers.py` generates a cover letter from the JD plus the user's resume profile
+(`users.resume_profile`, edited at Settings → Resume profile). In a market
 where **49% of hiring managers auto-dismiss résumés they suspect are
 AI-generated** and **62% reject AI output that lacks personalisation**, a
 one-click "generate cover letter" button is a liability if it yields anything
@@ -238,7 +240,7 @@ because asking the question after the fact is exactly what failed.
   isolates model choice; the client code is Anthropic-specific. Strong adoption
   lever, moderate effort.
 - **Requirement-gap view (JD vs profile).** Teal charges for keyword gap
-  analysis; here JD extraction and `profile.md` already exist, so the marginal
+  analysis; here JD extraction and the resume profile already exist, so the marginal
   cost is low. Frame as "decide whether to apply" and as input to the prep
   pack — *not* as a résumé rewriter (§6).
 - **Interview date + upcoming view.** Falls out of §3.2's payload change; a
@@ -334,7 +336,7 @@ gate publication.
    arrives too late for the decision it should inform. A manual "check this
    posting" path would fix that and is a genuinely new capability — but it is
    also the beginning of job discovery (§6).
-5. **How much of `profile.md` should the prep pack assume?** A STAR story bank
+5. **How much of the resume profile should the prep pack assume?** A STAR story bank
    needs richer input than a résumé profile. Either the prep pack extracts
    stories from a thin profile (lower quality) or the user maintains a fuller
    one (friction). Untested.

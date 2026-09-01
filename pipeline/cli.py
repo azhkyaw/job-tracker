@@ -136,7 +136,7 @@ def cmd_scan(_args) -> None:
     """Enqueue Phase 3 work for the backlog: extraction for postings with a JD
     but no extractions row; embedding (when VOYAGE_API_KEY is set) for postings
     with a JD but no vector."""
-    from . import config, embeddings
+    from . import embeddings
     with db.connect() as conn, conn.transaction():
         user_id = db.single_user_id(conn)
         need_x = conn.execute(

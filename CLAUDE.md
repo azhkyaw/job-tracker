@@ -1,16 +1,19 @@
 # Job Application Tracker
 
 Personal job-application tracker for LinkedIn / JobStreet / Indeed. All four
-phases built (Jul 2026) and test-driven. Full design rationale: `docs/design.md`
-— read it before any structural change. Direction: **open-source release**, not
-SaaS — `docs/open-source.md` (LinkedIn extension-fingerprinting risk, the
-7-day OAuth token trap, release checklist). Feature priorities with the market
-research behind them: `docs/features.md`. How mail gets in — Gmail IMAP +
-app password is the default ingest path (shipped 28 Jul 2026), OAuth the
-alternative for Workspace/Advanced Protection accounts:
-`docs/email-ingest.md`. WHICH mail gets in is a separate switch:
-`config.INGEST_ALL` (invariant #10) takes everything, and is on for this
-author's job-only mailbox. `docs/monetization.md` is
+phases built (Jul 2026) and test-driven. Design rationale, as of Jul 2026:
+`docs/design.md` — read it before any structural change, and read its header
+first: the reasoning holds, but its schema and endpoint inventories have gone
+stale (schema truth is `migrations/`, route truth is `pipeline/web.py`).
+Direction: **open-source release**, not SaaS — `docs/open-source.md` (LinkedIn
+extension-fingerprinting risk, the 7-day OAuth token trap, release checklist).
+Feature priorities with the market research behind them: `docs/features.md`.
+How mail gets in — Gmail IMAP + app password is the default ingest path
+(shipped 28 Jul 2026), OAuth the alternative for Workspace/Advanced Protection
+accounts: `docs/email-ingest.md`. WHICH mail gets in is a separate switch:
+`config.INGEST_ALL` (env `TRACKER_INGEST_ALL`, and in `.env.example` since
+2 Sep 2026 — invariant #10) takes everything, and is on for this author's
+job-only mailbox. `docs/monetization.md` is
 superseded but retained for its Gmail restricted-scope compliance analysis.
 Installing the extension on a second device (an existing account, not a
 fresh signup) — including the single-token-per-account gotcha regenerating
@@ -74,6 +77,24 @@ it: the resume picker is PROMOTED to `applications.resume_file` (migration
   `until docker info >/dev/null 2>&1; do sleep 3; done` (Bash tool,
   `run_in_background`), then `docker compose up -d`. The dev DB is Neon and is
   unaffected, so the app keeps working while the suites cannot run.
+- **`uv run` is how you run anything here, and the `.venv` is PER MACHINE.**
+  There is no `pyproject.toml`, so uv is venv+pip, not a project manager
+  (`uv sync` / `uv add` do not apply): `uv run python -m pipeline.cli serve`
+  discovers the repo-root `.venv`, and deps come from
+  `uv pip install -r requirements.txt`. **A `.venv` from the OTHER machine is
+  dead, and every symptom points somewhere else.** uv bakes the base
+  interpreter's absolute path into the venv's `python.exe` trampoline, so a
+  `pyvenv.cfg` reading `home = C:\Users\<other-machine>\...` under this machine's profile gives
+  `(uv internal error) Failed to spawn the python child process: entity not
+  found` — which never names the venv — and `uv run` then falls back SILENTLY
+  to the bare uv-managed interpreter, where everything dies as
+  `ModuleNotFoundError: No module named 'fastapi'`, i.e. it reads as a missing
+  dependency. Editing `pyvenv.cfg` does NOT fix it (the path is inside the
+  .exe); `uv venv --clear --python 3.12` + `uv pip install -r requirements.txt`
+  does. Same class as `.env` diverging per machine (Environment, below) and as
+  any script holding an absolute repo path — `scripts/replay_thresholds.py`
+  carried `D:/projects/job-tracker` and could not run on this machine at all
+  until 2 Sep 2026.
 - **Dev DB shell:** the dev DB is Neon now (`docs/windows-dev.md` → Managed
   Postgres), reached via `TRACKER_DATABASE_URL` in `.env` same as the app.
   Local Docker Postgres is only `scripts/test.ps1`'s throwaway DB —

@@ -1,9 +1,34 @@
 # Job Application Tracker — Design Document
 
 **Author:** AZ
-**Status:** Draft v1
+**Status:** Design record — the reasoning is current, the inventories are not.
+Schema truth is `migrations/`; route truth is `pipeline/web.py`; behavioural
+rules are CLAUDE.md's invariants.
 **Date:** 21 July 2026
 **Scope:** Single-user build first; multi-user productization as a later phase
+
+**Superseded since — statements below that are now false:**
+
+- §1 says two capture paths; there are three. Manual entry
+  (`/applications/new`) is part of invariant #1.
+- §7 lists `applications.focused` and its "null = infer from artifacts"
+  fallback. Dropped 21 Aug 2026 (migration 015): across every real application
+  it came out 175 false, 22 unset, zero true, so it never split.
+  `analytics.by_resume` is NOT its successor — it records which standing resume
+  was sent, not whether an application was tailored (CLAUDE.md task 3b).
+- §7's DDL is abridged and now trails reality by 4 tables
+  (`application_answers`, `sessions`, `gmail_sync_state`) and ~20 columns,
+  among them `applications.origin` (invariant #9) and
+  `applications.resume_file`.
+- §6.3's endpoint table is aspirational: 6 of its 8 endpoints were built under
+  different names (`PATCH /applications/{id}` never existed — it is
+  `POST /applications/{id}/edit`), and Phase 4 replaced the single-bearer-token
+  auth with sessions + Postgres RLS (invariant #6).
+- §12's Phase-3 exit criterion — "does focused prep improve my response
+  rate?" — is unmeasured, not answered.
+
+§14's open questions are NOT superseded; question 4 (email body retention) is
+still open.
 
 ---
 
