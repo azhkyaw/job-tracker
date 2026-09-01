@@ -21,8 +21,9 @@ Two blind spots, both seen on the first run (2 Sep 2026): a job that was
 browsed but never applied to leaves no posting, and an employer whose mail
 classified not_job_related leaves no extraction — neither reaches the name set,
 though both had been named in comments. A shortened form of a stored name
-("Bellows & Munson" for "Bellows & Munson Asia") can slip past too when its tokens are
-short. Read the comments around every hit; the names next to a real one are
+("Bellows & Munson" for "Bellows & Munson Asia") can slip past too when its
+tokens are short, and so can an employer's mail DOMAIN, which is stored only
+inside the sender header. Read the comments around every hit; the names next to a real one are
 usually real as well.
 
 What it does NOT do is write the rewrite rules. The July rewrite needed
