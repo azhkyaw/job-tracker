@@ -30,9 +30,9 @@ from .email_classifier import norm_company
 # agency, and any employer with more than one opening), so company agreement
 # alone carries almost no information and the title is doing all the work.
 # See that constant for the measurement behind the number — it was 0.5 here,
-# inline, and 0.5 silently fused two different Northwind Recruiting roles into one
-# application. Note this heuristic is unusual in having no inverse: dedup can
-# merge two jobs that should have been one, but nothing in the codebase can
+# inline, and 0.5 silently fused two different Northwind Recruiting roles into
+# one application. Note this heuristic is unusual in having no inverse: dedup
+# can merge two jobs that should have been one, but nothing in the codebase can
 # split one job that should have been two.
 ENRICH_JOB_SQL = """
 SELECT j.id

@@ -38,8 +38,9 @@ EXTRACT_PROMPT_VERSION = "email_extract_v1"
 #
 # Haiku got a Workday "Verify your candidate account" mail WRONG, and
 # reproducibly so — 3/3 runs called it a `confirmation` while calling a
-# near-identical one from a second employer `not_job_related` 3/3. It is an account-activation
-# link, not an application receipt. Sonnet 5 answered correctly 3/3 on the SAME
+# near-identical one from a second employer `not_job_related` 3/3. It is an
+# account-activation link, not an application receipt. Sonnet 5 answered
+# correctly 3/3 on the SAME
 # v1 prompt, and was MORE confident on the true positive it shares with Haiku
 # (0.98 vs 0.95), so this buys the fix without a prompt change.
 #

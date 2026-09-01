@@ -97,8 +97,8 @@ AUTO_MATCH_SCORE = 0.75
 # How alike two titles must be before a live capture is allowed to attach
 # itself to an email_only stub for the same company instead of creating its
 # own job (ingest.ENRICH_JOB_SQL). Was 0.5, hardcoded in that SQL; measured
-# against 52 real applications on 3 Aug 2026 after it silently fused a Northwind
-# Recruiting recruiter pitch ("Senior Software Engineer (AI & LLMOps)") with an
+# against 52 real applications on 3 Aug 2026 after it silently fused a
+# Northwind Recruiting pitch ("Senior Software Engineer (AI & LLMOps)") with an
 # unrelated LinkedIn apply ("Senior AI Engineer") at 0.5588 similarity.
 #
 # What the real data says: the heuristic had fired exactly ONCE, and that once

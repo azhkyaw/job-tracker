@@ -382,6 +382,23 @@ Audit results, run 26 July 2026:
   contains every real name, so it must never be published or committed.
 - `.claude/settings.local.json` contains the author's Windows username but is
   gitignored; the tracked `.claude/settings.json` is clean.
+- **Re-audited 2 Sep 2026, and the scrub had regressed.** The 37 commits since
+  26 July put real names back into tracked files through the ordinary habit of
+  naming the case that motivated a change: 129 hits in 15 files, among them a
+  named recruiter in a LinkedIn-adapter comment and a second in CLAUDE.md, real
+  employers as fixture values in two test files, and one in a migration header.
+  `scripts/audit_names.py` now derives the name set from the dev database
+  instead of a hand list (see CLAUDE.md, Commands) — that is what found them,
+  and it is the check to run before every publish from now on. The tree was
+  scrubbed the same day with placeholders from the Northwind/Contoso family,
+  each chosen to keep whatever structural property its comment relies on.
+  CLAUDE.md was scrubbed the same way, so §14 q1 is no longer a privacy
+  question about third parties — only about how much of the author's own
+  search narrative to publish. History still holds all of it: `--history`
+  reports 67 distinct names across blobs and 19 in commit messages, so a
+  SECOND rewrite is required before publishing. Its rules can be read off the
+  2 Sep scrub commit's diff, and `--history` is the zero-survivors check
+  afterwards — the verification the July rewrite did by hand.
 
 Ordered work:
 
@@ -391,7 +408,9 @@ Ordered work:
 3. Split the extension into its own repo (§3.1.2); scrub platform framing from
    the main repo's pitch (§3.1.3–4).
 4. ~~Genericise test fixtures~~ and ~~rewrite history~~ (both done,
-   26 Jul 2026); decide on CLAUDE.md.
+   26 Jul 2026 — and both undone by 2 Sep: the tree is scrubbed again, history
+   is not); decide on CLAUDE.md, then rewrite history a second time and run
+   `scripts/audit_names.py --history` until it reports clean.
 5. `docker compose up` path + a migration runner. The runner also retires the
    "migration filenames hardcoded in FOUR places" trap, which is a genuine
    contributor hazard.

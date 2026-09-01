@@ -95,6 +95,22 @@ it: the resume picker is PROMOTED to `applications.resume_file` (migration
   any script holding an absolute repo path — `scripts/replay_thresholds.py`
   carried `D:/projects/job-tracker` and could not run on this machine at all
   until 2 Sep 2026.
+- **Never write a real employer, agency or person into a tracked file.** Name a
+  real case by its date and a placeholder from the Northwind/Contoso family
+  (`Northwind Labs`, `Contoso Markets`, `Jane Recruiter`), keeping whatever
+  structural property the comment depends on — a short form inside a long one,
+  a dropped parenthetical, an all-caps brand. The 26 Jul 2026 scrub had to be
+  repeated on 2 Sep 2026: 37 commits of ordinary comment-writing had put about
+  35 real names back, two of them people. `uv run python scripts/audit_names.py`
+  derives the name set from the DEV database — every company, contact and
+  recruiter ever stored, plus the author's own identifiers — and greps the
+  tracked files; `--history` does the same over every blob and commit message
+  and is the zero-survivors check after a rewrite. Two blind spots need the
+  eye: a job browsed but never applied to, and an employer whose mail was not
+  job-related, never reach the database. CLAUDE.md was scrubbed the same day
+  with the same placeholders, so its case histories now read `Coho`,
+  `Wingtip Talent Group`, `Tailspin Consulting` and so on — the dates are
+  the real key to a case; the record itself is in the database.
 - **Dev DB shell:** the dev DB is Neon now (`docs/windows-dev.md` → Managed
   Postgres), reached via `TRACKER_DATABASE_URL` in `.env` same as the app.
   Local Docker Postgres is only `scripts/test.ps1`'s throwaway DB —

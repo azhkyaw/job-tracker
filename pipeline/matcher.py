@@ -60,10 +60,11 @@ _CANDIDATES_SQL = _CANDIDATES_BASE + """(j.company_norm = %(company)s
 # The gate is the only thing standing between an email and the application it
 # belongs to, and an employer that brands itself differently in mail than on
 # the job board walks straight past it. Three real duplicate applications came
-# from this, all confirmed 4 Aug 2026 (company_sim vs COMPANY_TRGM_MIN = 0.6):
+# from this, all confirmed 4 Aug 2026 (company_sim vs COMPANY_TRGM_MIN = 0.6;
+# the employer names are placeholders, the numbers are the real measurements):
 #
-#   contoso         <- "Contoso Markets"      0.467   employer's own ATS mail
-#   fabrikam group   <- "Fabrikam"              0.538   SuccessFactors mail
+#   contoso        <- "Contoso Markets"     0.467   employer's own ATS mail
+#   fabrikam group <- "Fabrikam"            0.538   SuccessFactors mail
 #   litware singapore
 #                  <- "Litware International (Singapore) Pte Ltd"
 #                                           0.314   LinkedIn's OWN mail, four
@@ -77,7 +78,7 @@ _CANDIDATES_SQL = _CANDIDATES_BASE + """(j.company_norm = %(company)s
 #
 # Rule 2 exists because a FOURTH case (Wingtip Talent Group, 4 Aug 2026) walked
 # past rule 1 as well: LinkedIn's own confirmation said "Wingtip Talent Group"
-# while the extension had captured "Wingtip Talent Group | Global Niche
+# while the extension had captured "Wingtip Talent Group | Specialist
 # Technology Recruitment" (company_sim 0.375), and the titles differed by a
 # platform-added suffix — "Senior Full Stack .NET Engineer" against "Senior Full
 # Stack .NET Engineer- Hybrid - Singapore" — so the byte-identical test missed
@@ -88,7 +89,7 @@ _CANDIDATES_SQL = _CANDIDATES_BASE + """(j.company_norm = %(company)s
 # loosen anything for names that merely LOOK alike.
 #
 # Measured before it was written, against all 81 distinct company_norm values in
-# the author's real DB: rule 2 admits exactly ONE new pair — the Wingtip one — so on
+# the author's real DB: rule 2 admits ONE new pair — the Wingtip one — so on
 # real data it has no false positives at all. Against the three cases above it
 # would independently have caught Contoso ('contoso' ⊂ 'contoso markets') and
 # Fabrikam ('fabrikam' ⊂ 'fabrikam group'); Litware stays rule 1's, since
