@@ -111,6 +111,17 @@ it: the resume picker is PROMOTED to `applications.resume_file` (migration
   with the same placeholders, so its case histories now read `Coho`,
   `Wingtip Talent Group`, `Tailspin Consulting` and so on — the dates are
   the real key to a case; the record itself is in the database.
+  Three things the 2 Sep rewrite taught, for the next one. Verify a rewrite by
+  the TIP'S TREE HASH: the tip is already scrubbed, so a correct rule set is a
+  no-op on it, and any change is either a name the scrub missed or a rule that
+  is too broad — it caught three misses, one of them an employer's mail domain
+  the database cannot know. Names WRAP across lines (`Morgan` ending one line,
+  `McKinley` starting the next — five such in history), which single-line
+  rules and single-line sweeps both miss, so scan for the wrapped form and add
+  fragment rules. And the scrub tooling's own docstrings, comments and commit
+  messages are tracked text too: both put a name back during the very session
+  that removed them. `git filter-repo` also drops the `origin` remote — re-add
+  it before the force-push, and re-clone the other machine afterwards.
 - **Dev DB shell:** the dev DB is Neon now (`docs/windows-dev.md` → Managed
   Postgres), reached via `TRACKER_DATABASE_URL` in `.env` same as the app.
   Local Docker Postgres is only `scripts/test.ps1`'s throwaway DB —
@@ -1021,6 +1032,18 @@ axis) + **DM Mono**, from Google Fonts.
   typed form date does not, so `ingest.local_date_to_utc` anchors it at local
   noon (`ingest.DEFAULT_TIME_OF_DAY`) rather than inventing the submission
   time — fabricated precision the user can't see or correct.
+- **A stated event date is right for a confirmation and wrong for an
+  interview invite, and `matcher._event_time` applies it to both** (found
+  2 Sep 2026, NOT yet fixed). `email_extract_v1` rule 4 defines `event_date`
+  to include "an interview scheduled for a specific date", so an invite's
+  timeline event lands on the INTERVIEW day rather than the day the invite
+  arrived: 4 of 37 invite events sit 1-14 days after their own email (mean 8),
+  and one was dated in the future when measured. Three consequences:
+  `avg_days_to_resp` is inflated on those rows; the list's trace axis
+  stretches past today while its right-edge label still reads "today"
+  (`trace.build` takes `t1 = max(now, last stamp)`); and `silent_days` reads
+  0 until the date passes. Fix shape: let a stated date move confirmations
+  and rejections only, and keep an interview date in the event payload.
 - **FastAPI `Form(...)` (no default) 422s on an empty-but-present field
   before your route body runs** — even one you meant to validate yourself
   with a friendly message. Use `Form("")` and validate manually (confirmed
@@ -1464,7 +1487,11 @@ win). No per-shell export needed for local dev.
   salary fields both in place together.** Read it off the record afterwards —
   applied time should equal the submit, `company_display` must not be
   "unknown company", and `postings.salary_raw` should be populated if the ad
-  showed a figure. `answerFormRoot()` is still a pure guess; the popup's
+  showed a figure. **As of 2 Sep 2026 `salary_raw` is NULL on all 210
+  postings**: only the JobStreet adapter reads a salary line, the LinkedIn
+  adapter never sends one, and the four JobStreet captures carried none, so
+  migration 011 and `pipeline/salary.py` have yet to store a single real row.
+  `answerFormRoot()` is still a pure guess; the popup's
   "Recent form sweeps" line says whether it found a root at all. Note SEEK
   Quick apply may ask **no screening questions** (two real postings now, both
   asked none), so an empty answer capture is not by itself evidence of a bug.
@@ -1744,6 +1771,11 @@ win). No per-shell export needed for local dev.
    whether CLAUDE.md ships. Fixture names and git history are both done
    (26 Jul 2026) — the history rewrite was needed for personal data, not
    secrets; §11 records the method and the three false-positive traps.
+   **Both had regressed by 2 Sep 2026** — 37 commits of ordinary
+   comment-writing put ~35 real names back, two of them people — and both
+   were redone that day, CLAUDE.md included. "Does CLAUDE.md ship" is now only
+   a question about publishing the author's own search narrative, and
+   `scripts/audit_names.py --history` is the pre-publish check (Commands).
    **The resume-profile blocker is CLEARED** (21 Aug 2026): a clean checkout
    used to fail cover-letter generation with `resume profile not found at
    profile.md`, a path nothing in the product ever wrote to, while the route
@@ -1808,6 +1840,16 @@ win). No per-shell export needed for local dev.
    the 98 are old enough that a follow-up is pointless, and does a second
    threshold (or an age cap) cut it to something workable? The number moved
    because the denominator did, not because the rule broke.
+   **MEASURED 2 Sep 2026, and an age cap is the fix.** 133 of 210
+   applications qualify, and not one `follow_up_sent` event has ever been
+   filed — the queue has never been worked, which is what an unworkable list
+   looks like. Reply latency over the 58 applications that got a first reply:
+   median 3 days, 90th percentile 8, slowest 22. So beyond three weeks no
+   application in this dataset has ever heard back, yet 93 of the 133 are
+   older than 21 days (58 at 22-30, 21 at 31-45, 14 beyond 45). A cap near
+   21 days leaves ~40, which is a day's list; the 10-day ENTRY threshold
+   itself agrees with the data. Build the drafting feature on the capped set,
+   not on the 133.
 5. **One real apply via the extension** on each platform; fix whichever
    adapter selectors have drifted. **LinkedIn: done** (27 Jul, VANARSDEL — three
    defects found and fixed). **JobStreet: two real applies, still not
@@ -1855,6 +1897,12 @@ win). No per-shell export needed for local dev.
    during the author's active job search.
 6. If enabling dedup: set `VOYAGE_API_KEY`, run `scan`, review duplicate
    bands in `/triage` on real cross-platform posts.
+   **Never enabled as of 2 Sep 2026**: 0 embeddings, 0 candidate pairs, and
+   every one of the 210 jobs has exactly one posting, so `merge_jobs` has only
+   ever run in tests. Extraction verification is similarly unused (0 of 192
+   rows verified) and 4 cover letters exist in total. For a release these are
+   surfaces the README presents as complete that no real data has exercised —
+   either exercise them once or label them experimental.
 7. **Decide the email body retention policy** (design doc §14 open
    question #4, `migrations/001_init.sql:86-87`) — overdue by its own stated
    trigger: the comment's "revisit before multi-user" passed when
@@ -1882,3 +1930,7 @@ win). No per-shell export needed for local dev.
    `extract_email` and any future re-run genuinely need. Note the purge only
    fires under `INGEST_ALL`, and only on newly-classified rows — pre-existing
    `not_job_related` bodies were left in place rather than mass-deleted.
+   Counted 2 Sep 2026: 225 such rows still hold a body, 2.5 MB of the 3.85 MB
+   of bodies stored, and nothing reads them. One UPDATE clears them —
+   deliberately not run, since it is a deletion and the author's call. The
+   other half, bodies of job-related mail, is still the open question.
