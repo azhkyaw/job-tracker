@@ -26,6 +26,13 @@
  *     same-labelled fields in that sweep. Keying on the label alone is what
  *     silently kept only the last entry of a real multi-employer history
  *     (VANARSDEL, 27 Jul 2026); see migration 010.
+ *  5. The control's NAME may live on an ARIA wrapper, not on the control. The
+ *     rebuilt Easy Apply (Aug 2026, measured live 2 Sep) renders
+ *     <div role="radio"|"checkbox"> around a bare native input whose own
+ *     <label for> is EMPTY; labelFor() reads the wrapper the way assistive
+ *     tech would, and radioOption()/radioQuestion() sort out which of the
+ *     wrapper's name and its visible text is the question and which the answer
+ *     — LinkedIn uses them both ways round on the same wizard.
  *
  * The store is mirrored into sessionStorage so a step that reloads the modal
  * iframe doesn't reset it (same origin + same tab = same store, whichever
@@ -176,6 +183,46 @@
     return null;
   }
 
+  // The accessible name an element carries on ITSELF — aria-labelledby, then
+  // aria-label. Nothing inferred from <label> elements or from content; that is
+  // labelFor()'s job, and the two are deliberately not the same question.
+  function ariaName(el) {
+    const ids = el.getAttribute("aria-labelledby");
+    if (ids) {
+      const root = el.getRootNode ? el.getRootNode() : document;
+      const t = ids.split(/\s+/)
+        .map((id) => (root.getElementById && root.getElementById(id)) ||
+                     document.getElementById(id))
+        .filter(Boolean).map(labelText).join(" ").trim();
+      if (t) return t;
+    }
+    return (el.getAttribute("aria-label") || "").trim() || null;
+  }
+
+  // ARIA widget roles a native control may be wrapped in on the rebuilt Easy
+  // Apply. The wrapper, not the input, is what carries the name there.
+  const WIDGET = "[role='radio'],[role='checkbox'],[role='switch']," +
+                 "[role='combobox'],[role='textbox'],[role='spinbutton']";
+
+  // The text block immediately BEFORE a control group — how the rebuilt Easy
+  // Apply labels a Yes/No question (<p>Will you…?*</p>, then a legendless
+  // <fieldset role="radiogroup">) and the resume picker (a heading block, then
+  // the cards). Two guards: a sibling that holds controls of its own is the
+  // PREVIOUS question, not this one's label, so it yields nothing; and a block
+  // of several children is read by its first child — the heading — so the
+  // description line under "Resume*" does not ride into the question text.
+  function precedingText(node) {
+    for (let n = node, hops = 0; n && hops < 3; n = n.parentElement, hops++) {
+      const prev = n.previousElementSibling;
+      if (!prev) continue;
+      if (prev.querySelector && prev.querySelector("input,select,textarea")) return null;
+      const kids = prev.children ? Array.from(prev.children) : [];
+      const head = kids.length >= 2 ? labelText(kids[0]) : "";
+      return (head.length > 1 ? head : labelText(prev)) || null;
+    }
+    return null;
+  }
+
   function collect(root, out) {
     if (!root || !root.querySelectorAll) return out;
     for (const el of root.querySelectorAll("input,select,textarea")) out.push(el);
@@ -233,12 +280,74 @@
     if (wrapping && labelText(wrapping)) return labelText(wrapping);
     const aria = (el.getAttribute("aria-label") || "").trim();
     if (aria) return aria;
+    // The rebuilt Easy Apply (Aug 2026) gives the native control NO name of its
+    // own — its <label for> exists and is empty — and hangs the name on an ARIA
+    // widget wrapping it: <div role="checkbox" aria-label="Mark job as a top
+    // choice"> around a bare <input type="checkbox">. Read the wrapper the way
+    // assistive tech would. This has to sit ABOVE the placeholder/name fallback:
+    // those inputs carry generated names ("radio-group-«rg»") that would
+    // otherwise be recorded as the question.
+    const widget = closestDeep(el, WIDGET);
+    if (widget && widget !== el) {
+      const t = ariaName(widget) || labelText(widget);
+      if (t) return t;
+    }
     const fs = closestDeep(el, "fieldset");
     if (fs) {
       const legend = fs.querySelector("legend");
       if (legend && labelText(legend)) return labelText(legend);
     }
     return (el.getAttribute("placeholder") || el.name || "").trim() || null;
+  }
+
+  /* A native radio's OPTION text and its group's QUESTION.
+   *
+   * Two layouts. The classic Easy Apply modal is textbook: <fieldset><legend>
+   * holds the question and each <input type="radio"> has a <label for> reading
+   * "Yes"/"No" (or, on the resume picker, "Deselect resume <file>.pdf"). The
+   * rebuilt one (Aug 2026, live-measured 2 Sep) wraps each input in a
+   * <div role="radio">, leaves the input's own <label for> EMPTY, and puts the
+   * name on the wrapper — inconsistently: a Yes/No option's wrapper has
+   * aria-label = the QUESTION with "Yes"/"No" as visible text inside it, while
+   * a resume card's wrapper has aria-label = the FILENAME and no text inside
+   * at all. The group's <fieldset role="radiogroup"> has no legend; the
+   * question sits in the sibling <p> (or heading block) just before it.
+   *
+   * So: option = the wrapper's visible text, else its own name. Question =
+   * legend, else the group's own name, else the wrapper's name when that is
+   * not the option just read, else the block before the group. Every step
+   * falls through to the classic path, which is what keeps the old modal
+   * correct — it has no wrappers, so none of the new steps fire. */
+  function radioOption(el) {
+    const w = closestDeep(el, "[role='radio']");
+    if (w && w !== el) {
+      const shown = labelText(w);
+      if (shown) return shown;
+      const own = ariaName(w);
+      if (own) return own;
+    }
+    return labelFor(el) || el.value || null;
+  }
+
+  function radioQuestion(el, option) {
+    const fs = closestDeep(el, "fieldset");
+    const legend = fs && fs.querySelector("legend");
+    if (legend && labelText(legend)) return labelText(legend);
+    const group = closestDeep(el, "[role='radiogroup'],fieldset");
+    if (group) {
+      const own = ariaName(group);
+      if (own) return own;
+    }
+    const w = closestDeep(el, "[role='radio']");
+    if (w && w !== el) {
+      const own = ariaName(w);
+      if (own && own !== option) return own;
+    }
+    if (group) {
+      const before = precedingText(group);
+      if (before) return before;
+    }
+    return labelFor(el);
   }
 
   // Placeholder options ("Select an option") are the absence of an answer, not
@@ -347,7 +456,11 @@
 
   function noRootHint() {
     return {
-      dialogPresent: deepExists(document, "[role='dialog']"),
+      // Both spellings of "a dialog": the classic role attribute and the
+      // native element the rebuilt Easy Apply uses (implicit role, so a
+      // `[role='dialog']` check reported "no dialog open" for two weeks of
+      // captures that were made inside one).
+      dialogPresent: deepExists(document, "dialog[open], [role='dialog']"),
       controlsOnPage: document.querySelectorAll("input,select,textarea").length,
       recentInserts: recentFormInserts.slice(0, 5),
     };
@@ -382,17 +495,15 @@
       if (el.tagName === "TEXTAREA") seen.textarea++;
       if (el.disabled) { seen.disabled++; continue; }
       if ((el.type || "").toLowerCase() === "radio") {
-        // The group's question is the fieldset legend; the answer is the label
-        // of whichever member is checked. Keyed by name so the group is
-        // recorded once, not once per option.
+        // One entry per GROUP, keyed by name: the question from the group, the
+        // answer from whichever member is checked — see radioOption() for the
+        // two layouts this has to read.
         const name = el.name || labelFor(el) || "";
         if (!name) continue;
-        const fs = closestDeep(el, "fieldset");
-        const legend = fs && fs.querySelector("legend");
-        const question = (legend && labelText(legend)) || labelFor(el);
-        const g = radioGroups.get(name) || { question, answer: null };
-        if (!g.question) g.question = question;
-        if (el.checked) g.answer = labelFor(el) || el.value;
+        const option = radioOption(el);
+        const g = radioGroups.get(name) || { question: null, answer: null };
+        if (!g.question) g.question = radioQuestion(el, option);
+        if (el.checked) g.answer = option || el.value;
         radioGroups.set(name, g);
         continue;
       }

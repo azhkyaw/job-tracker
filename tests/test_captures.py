@@ -277,6 +277,55 @@ check("occurrence counts per question, not across the form",
           {"question": "City", "answer": "JKT"}, {"question": "Industry", "answer": "Fin"},
           {"question": "City", "answer": "KL"}])] == [0, 0, 1, 1, 2])
 
+# Migration 014's resume promotion, on both Easy Apply layouts. The classic
+# modal labelled the picker's radios "Deselect resume <file>"; the rebuilt one
+# (Aug 2026, measured live 2 Sep) names each card by its bare filename under a
+# "Resume*" heading, so the filename arrives as the ANSWER and nothing in the
+# question says "picker" — for two weeks that pair reached the bank as a
+# question nobody asked, and resume_file stayed NULL.
+from pipeline.answers import resume_file   # noqa: E402
+check("resume: classic 'Deselect resume <file>' label",
+      resume_file([{"question": "Deselect resume Contoso-resume.pdf",
+                    "answer": "Deselect resume Contoso-resume.pdf", "type": "radio"}])
+      == "Contoso-resume.pdf")
+check("resume: rebuilt layout - heading as question, filename as answer",
+      resume_file([{"question": "Resume*", "answer": "Contoso-resume-AI.pdf",
+                    "type": "radio"}]) == "Contoso-resume-AI.pdf")
+check("resume: the heading block with its description line still counts",
+      resume_file([{"question": "Resume*Select or upload a resume in DOC, DOCX, or PDF "
+                                "format that is less than 2MB",
+                    "answer": "cv.docx", "type": "radio"}]) == "cv.docx")
+check("resume: last pick wins",
+      resume_file([{"question": "Resume*", "answer": "a.pdf", "type": "radio"},
+                   {"question": "Resume*", "answer": "b.pdf", "type": "radio"}]) == "b.pdf")
+check("resume: a 'Resume link' question answered with a URL is a question",
+      resume_file([{"question": "Resume link", "answer": "https://x.example/cv.pdf",
+                    "type": "text"}]) is None)
+check("clean drops the picker on both layouts and keeps the real question",
+      [r["question"] for r in clean([
+          {"question": "Deselect resume Contoso-resume.pdf",
+           "answer": "Deselect resume Contoso-resume.pdf", "type": "radio"},
+          {"question": "Resume*", "answer": "Contoso-resume-AI.pdf", "type": "radio"},
+          {"question": "Mark job as a top choice", "answer": "No", "type": "checkbox"},
+          {"question": "Resume link", "answer": "https://x.example/cv.pdf",
+           "type": "text"}])] == ["Resume link"])
+r_res = post({"platform": "linkedin", "platform_job_id": "LI-qa-resume",
+              "url": "https://www.linkedin.com/jobs/view/4243/",
+              "company": "Meridian Systems", "title": "Applied AI Engineer",
+              "jd_text": "the JD", "trigger": "apply",
+              "answers": [{"question": "Resume*", "answer": "Contoso-resume-AI.pdf",
+                           "type": "radio"},
+                          {"question": "Will you now or in the future require "
+                                       "sponsorship for employment visa status?",
+                           "answer": "No", "type": "radio"}]})
+check("rebuilt-layout picker lands in resume_file, not the answer bank",
+      r_res.status_code == 200 and r_res.json()["answers"] == 1, r_res.text)
+with db.connect() as conn:
+    check("resume_file promoted from the filename answer",
+          conn.execute("SELECT resume_file FROM applications WHERE id = %s::uuid",
+                       (r_res.json()["application_id"],)).fetchone()["resume_file"]
+          == "Contoso-resume-AI.pdf")
+
 QA = [
     {"question": "How many years of experience do you have with Python?",
      "answer": "8", "type": "number"},

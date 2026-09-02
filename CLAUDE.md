@@ -161,7 +161,16 @@ it: the resume picker is PROMOTED to `applications.resume_file` (migration
   looked up: SHA-256 the absolute extension path **encoded UTF-16LE on Windows**,
   take the first 16 bytes, map each hex nibble 0-f onto a-p —
   `D:\projects\job-tracker\extension` → `apikfpnjpcpimjlfjlbjefflebfopohp`
-  (confirmed: that directory exists). Parse `000004.log` as a real LevelDB log
+  (confirmed: that directory exists); this machine's
+  `C:\projects\job-tracker\extension` → `eeigcpnpbikhppjomninfjldeamiebba`
+  (confirmed 2 Sep 2026 — it held the `sweeps` buffer that root-caused the
+  `<dialog>` bug below). The hash is over the path BYTE FOR BYTE, so the drive
+  letter's CASE matters: a lowercase `c:` hashes to a completely different id
+  that looks just as plausible and names a directory that does not exist — so
+  confirm the directory before concluding the extension stored nothing. Parse
+  EVERY `*.log` in it (the number varies per profile — `000004` on one machine,
+  `000003` on the other — and a compaction can move keys into a `.ldb`; apply
+  deletes as well as puts, in order) as a real LevelDB log
   (32 KiB blocks, 7-byte record header, WriteBatch payload) rather than grepping
   it — a value larger than a block is split across records and a naive text
   scan silently truncates the JSON mid-string, which is exactly what happened
@@ -937,6 +946,16 @@ axis) + **DM Mono**, from Google Fonts.
   that matters: no stash, nothing recovered, identity missing. Worth generalising
   — the ring buffers exist to explain failures, so any new one should be written
   from the failing branch first and the happy path second.
+  **Its sibling, learned 2 Sep 2026: a diagnostic must not share the PREDICATE
+  of the thing it watches.** The sweep's `noRootHint` reported `dialogPresent`
+  by testing `[role='dialog']` — the same selector `answerFormRoot()` had just
+  failed on — so for two weeks the popup printed “no dialog was open” for
+  captures made inside an open dialog, and the one buffer written to explain
+  the failure instead corroborated it. Note it never lied: the statement was
+  true of the selector and false of the page. When writing a check that answers
+  “was the thing my code looked for actually there”, derive it INDEPENDENTLY —
+  a different selector, an attribute-free structural test, the browser's own
+  answer — or it can only ever agree with the code.
 - **The same unreachable-top frame kills an EXTERNAL apply outright, and a
   subframe is the wrong place to handle one even when the read succeeds.**
   Found on a real loss the user reported as "the popup didn't appear"
@@ -1414,6 +1433,62 @@ axis) + **DM Mono**, from Google Fonts.
   check for an open shadow root wrapping the relevant container FIRST
   (`el.shadowRoot` on anything in the ancestor chain) — cheaper to rule out
   than three rounds of positional guessing, and it was the actual answer.
+- **LinkedIn rebuilt Easy Apply as a native `<dialog>`, and `[role='dialog']`
+  does not match one — two weeks of screening answers were lost silently**
+  (found 2 Sep 2026, from a capture reported as "answers not saved"). From
+  about 18 Aug 2026 the wizard is `<dialog open data-testid="dialog"
+  aria-labelledby="dialog-header">` mounted straight under `#root` in the TOP
+  document: no `role` attribute (a `<dialog>`'s role is implicit), no shadow
+  root, no `<form>` inside, hashed atomic classes. `answerFormRoot()` matched
+  `.jobs-easy-apply-modal, [role='dialog'], [data-test-modal]` and nothing
+  else, so every sweep on the new layout came back noRoot — the 2 Sep capture
+  swept 30 times, found no root 30 times, and its `noRootHint` read
+  `dialogPresent:false` with 30 controls on the page, because that check used
+  the same selector. The numbers: 3-17 Aug, 71 Easy Apply captures, 0 with
+  zero answers, 3 without a resume file; 18 Aug-2 Sep, 35 captures, **19 with
+  zero answers, 28 without a resume file**. The ones that kept anything kept
+  ONLY free-text fields (`How many years…` x3 and nothing else) — those came
+  through `answers.js`'s change/input backstop, which fires when you TYPE, so
+  every prefilled field, every radio and the resume pick went missing while
+  the capture reported success. Both layouts ran side by side for days: a
+  20-21 Aug record with email/phone/radio rows is the classic modal, one with
+  only typed fields is the `<dialog>`. Read the extension's LevelDB (Commands)
+  before anything else next time — the `sweeps` buffer had the whole story.
+  **Three findings from walking the live wizard (2 Sep; a draft opened and
+  discarded, nothing submitted, the visa question left unanswered on
+  purpose since LinkedIn may prefill it next time):** (1) the native
+  `<input>` inside each option has a `<label for>` that is EMPTY and a
+  generated `name` (`radio-group-«rg»`, React `useId`), so `labelFor()`'s
+  last fallback would have recorded the name as the question; the accessible
+  name is on a WRAPPER — `<div role="radio">` / `<div role="checkbox">` —
+  as `aria-label`. (2) That wrapper's `aria-label` means different things on
+  the same wizard: on a Yes/No question it is the QUESTION and "Yes"/"No"
+  is the wrapper's visible text; on the resume picker it is the FILENAME and
+  the wrapper has no text at all. The group is a `<fieldset role="radiogroup">`
+  with NO legend; the question is the `<p>` (or heading block) immediately
+  before it. `answers.js:radioOption()`/`radioQuestion()` read exactly that,
+  falling through to the classic legend + `<label for>` path so the old modal
+  stays correct. (3) The picker no longer says "Deselect resume <file>", so
+  the server's `_RESUME_RE` never fires; `answers.py:_is_resume_pick()` now
+  also promotes a radio whose question opens with "resume" and whose answer
+  is a bare `.pdf`/`.doc(x)` filename. Native `<select>`s and text inputs on
+  the new layout still carry real `<label for>` text — why the typed fields
+  survived, and why the contact step needed nothing.
+  **The diagnostic told the truth and was misread**: the popup's "no dialog
+  was open (N fields elsewhere on the page)" line was correct for the
+  selector it ran and wrong about the page. `dialogPresent` now checks
+  `dialog[open]` too. `tests/test_extension.js` covers `answerFormRoot()` on a
+  `<dialog open>` stub and, new the same day, runs `shared/answers.js` against
+  a small fake DOM reproducing the measured wrapper shapes (Yes/No, resume
+  card, top-choice checkbox, contact step, classic legend radio, and a
+  properly-ARIA'd wrapper) — its header says what the fake does not model.
+  Extension 0.9.0. **Unverified on a real apply.** **Lost for good**: the
+  answers on the 19 zero-answer captures and the resume choice on all 28 —
+  only the extension writes `application_answers`, and there is nothing to
+  replay. One more thing to read off the next capture: the "Follow
+  <employer>" checkbox's new label — if it has lost its "to stay up to date"
+  tail, `_CONTROL_NORM_RES`'s anchored rule misses it and a dead singleton row
+  lands in the bank per employer.
 
 ## Environment
 
@@ -1527,6 +1602,12 @@ win). No per-shell export needed for local dev.
   the `aria-hidden`/`visually-hidden` twin gotcha. Verified on live captures
   3 Aug 2026 (Southridge APAC, Awesome Computers): 0 doubled labels and 0 form-control
   leaks across the whole 178-row bank.
+  **And the whole sweep was dead on the rebuilt `<dialog>` Easy Apply from
+  about 18 Aug to 2 Sep 2026** — see the `<dialog>` gotcha. Extension 0.9.0's
+  wrapper-aware sweep is UNVERIFIED on a real apply. What to read on the next
+  Easy Apply, in the popup's "Recent form sweeps": a `N kept of M controls`
+  line instead of `no apply form found`, radio rows among the answers, and a
+  `resume_file` on the record — the three things that have been missing.
 - **The whole capture-identity rescue chain — `tracker-whoami`/`isTopFrame`,
   the frame-0 ask, `jobFromUrl` off the tab URL, the TTL prune on read, the
   keyed-vs-guess ranking — is UNVERIFIED against a real apply** (built 18 and
@@ -1888,8 +1969,9 @@ win). No per-shell export needed for local dev.
    **What to read on the next apply**: `doc_source` in the provenance line.
    `"self"` is positive proof the new fallback rescued a capture the old code
    would have lost, and nothing else demonstrates it — `tests/test_extension.js`
-   proves the LOGIC, not that it fires in a real frame. Verify 0.8.0 is live
-   and the tab was opened after the reload first.
+   proves the LOGIC, not that it fires in a real frame. Verify 0.9.0 is live
+   and the tab was opened after the reload first. The same apply also
+   answers whether the `<dialog>` sweep fix works (Known-untested, above).
    **Indeed: never exercised.** Keep this **load-unpacked only** — an
    unpacked extension has a random per-install ID, while a Chrome Web Store
    listing mints a stable public one that LinkedIn's extension-fingerprinting

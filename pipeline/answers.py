@@ -47,6 +47,15 @@ _REQUIRED = re.compile(r"\s*(\*|\(required\)|required)\s*$", re.I)
 # one is not dropped but PROMOTED: which resume you sent is real, useful, and
 # already captured (migration 014).
 _RESUME_RE = re.compile(r"^\s*(?:de)?select\s+resume\s+(.+?)\s*$", re.I)
+# The rebuilt Easy Apply (Aug 2026) stopped saying so. Its resume cards are
+# <div role="radio" aria-label="<file>.pdf"> under a heading that reads
+# "Resume*", so the pair arrives as question "Resume…" / answer "<file>.pdf":
+# the filename is the ANSWER, and nothing in the label says "picker".
+# Recognised by the shape of the pair instead — a radio whose question opens
+# with the word and whose answer is a BARE document filename. Bare on purpose:
+# a genuine "Resume link" question answered with a URL is a question.
+_RESUME_HEAD = re.compile(r"^resume\b")
+_RESUME_FILE = re.compile(r"^[^/\\:]+\.(?:pdf|docx?)$", re.I)
 
 # The rest are LinkedIn UI toggles, answered by ticking a box rather than by
 # saying anything. "Follow <employer>" is the worst of them: the employer's
@@ -60,9 +69,19 @@ _CONTROL_NORM_RES = (
 )
 
 
-def _control_kind(question: str) -> str | None:
-    """'resume', 'drop', or None for a genuine question."""
+def _is_resume_pick(question: str, answer: str | None, field_type: str | None) -> bool:
+    """Either layout's resume picker — see _RESUME_RE and _RESUME_HEAD."""
     if _RESUME_RE.match(question or ""):
+        return True
+    return (field_type in (None, "radio")
+            and bool(_RESUME_HEAD.match(norm_question(question)))
+            and bool(_RESUME_FILE.match((answer or "").strip())))
+
+
+def _control_kind(question: str, answer: str | None = None,
+                  field_type: str | None = None) -> str | None:
+    """'resume', 'drop', or None for a genuine question."""
+    if _is_resume_pick(question, answer, field_type):
         return "resume"
     norm = norm_question(question)
     if any(rx.match(norm) for rx in _CONTROL_NORM_RES):
@@ -82,9 +101,12 @@ def resume_file(items) -> str | None:
     """
     found = None
     for raw in items or []:
-        m = _RESUME_RE.match((raw.get("question") or ""))
+        question = raw.get("question") or ""
+        m = _RESUME_RE.match(question)
         if m:
             found = m.group(1).strip()
+        elif _is_resume_pick(question, raw.get("answer"), raw.get("type")):
+            found = (raw.get("answer") or "").strip()
     return found[:MAX_QUESTION] if found else None
 
 
@@ -118,7 +140,7 @@ def clean(items) -> list[dict]:
             continue
         # Form chrome, not a question. The resume picker is read out of the
         # same list by resume_file() and stored as a column instead.
-        if _control_kind(question):
+        if _control_kind(question, answer, raw.get("type")):
             continue
         norm = norm[:MAX_QUESTION]
         occurrence = seen.get(norm, 0)

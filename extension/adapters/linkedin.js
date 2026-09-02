@@ -107,10 +107,27 @@ window.__trackerAdapter = {
   // into open shadow roots the same way `answers.js`'s `collect()` already
   // does for gathering fields once a root is found; closed shadow roots
   // remain genuinely unreachable, same as everywhere else in this file.
+  //
+  // SECOND ROOT CAUSE (2 Sep 2026), and this time it is the layout, not the
+  // search space. LinkedIn rebuilt Easy Apply around 18 Aug 2026: the wizard
+  // is now a native `<dialog open data-testid="dialog"
+  // aria-labelledby="dialog-header">` mounted directly under `#root` in the
+  // TOP document — no `role` attribute, no shadow root, no `<form>` inside,
+  // hashed atomic classes throughout (measured live, 2 Sep). A `[role='dialog']`
+  // selector does not match a `<dialog>` element: the implicit role is not an
+  // attribute. So every sweep on that layout came back noRoot — the capture
+  // that surfaced this swept 30 times, found no root 30 times, and reported
+  // `dialogPresent:false` with 30 controls on the page. Both layouts ran side
+  // by side for at least three days (classic-modal captures kept their answers
+  // on 20-21 Aug while `<dialog>` ones lost them), and the only answers that
+  // survived on the new layout came through answers.js's change-listener
+  // backstop, i.e. fields the applicant TYPED into — every prefilled field,
+  // every radio and the resume choice were lost, silently, for two weeks.
+  // `dialog[open]` goes first because it is the shape that is live today.
   answerFormRoot() {
     if (window !== window.top) return document.querySelector("form") || document.body;
     return deepQuerySelector(document,
-      ".jobs-easy-apply-modal, .jobs-easy-apply-content, " +
+      "dialog[open], .jobs-easy-apply-modal, .jobs-easy-apply-content, " +
       "[role='dialog'], [data-test-modal]");
   },
   // The job the form belongs to, so answers can't survive into the next one.
