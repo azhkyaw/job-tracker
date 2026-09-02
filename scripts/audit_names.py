@@ -214,19 +214,19 @@ def scan_history(pats: list[Pattern]):
             text = body.decode("utf-8")
         except UnicodeDecodeError:
             continue
-        for i, p in enumerate(pats):
+        for k, p in enumerate(pats):          # not `i` — that is the byte offset
             if p.rx.search(text):
                 for path in paths_by_sha[sha]:
-                    blob_hits[i][path].add(sha)
+                    blob_hits[k][path].add(sha)
     msg_hits: dict[int, set[str]] = defaultdict(set)
     log = _git("log", "--all", "--format=%H%x1e%B%x1f")
     for entry in log.split("\x1f"):
         if "\x1e" not in entry:
             continue
         sha, _, msg = entry.partition("\x1e")
-        for i, p in enumerate(pats):
+        for k, p in enumerate(pats):
             if p.rx.search(msg):
-                msg_hits[i].add(sha.strip())
+                msg_hits[k].add(sha.strip())
     return blob_hits, msg_hits
 
 
