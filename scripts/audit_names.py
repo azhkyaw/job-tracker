@@ -52,6 +52,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+# The repository to scan. Defaults to this checkout; --repo points it at
+# another one (a rewritten clone being verified before the rewrite is run for
+# real) while the database connection still comes from THIS checkout's .env.
+REPO = ROOT
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from pipeline import db  # noqa: E402
@@ -65,7 +69,7 @@ MIN_LEN = 4
 # --------------------------------------------------------------------------- names
 
 def _git(*args: str, binary: bool = False):
-    out = subprocess.run(["git", *args], cwd=ROOT, capture_output=True, check=True)
+    out = subprocess.run(["git", *args], cwd=REPO, capture_output=True, check=True)
     return out.stdout if binary else out.stdout.decode("utf-8", errors="replace")
 
 
@@ -91,10 +95,21 @@ def names_from_db(conn) -> dict[str, set[str]]:
 
 
 class Pattern:
-    __slots__ = ("label", "kind", "strong", "rx")
+    __slots__ = ("label", "kind", "strong", "rx", "needle", "ci")
 
-    def __init__(self, label: str, kind: str, strong: bool, rx: re.Pattern):
+    def __init__(self, label: str, kind: str, strong: bool, rx: re.Pattern,
+                 literal: str, ci: bool):
         self.label, self.kind, self.strong, self.rx = label, kind, strong, rx
+        self.needle, self.ci = (literal.lower() if ci else literal), ci
+
+    def hit(self, text: str, lowered: str) -> bool:
+        """A plain substring test first: ~700 patterns over every version of a
+        140 KB file is gigabytes of regex, and almost every pattern is absent
+        from almost every blob. `in` is a C loop; the regex only runs on the
+        few that survive it."""
+        if self.needle not in (lowered if self.ci else text):
+            return False
+        return self.rx.search(text) is not None
 
 
 def build_patterns(names: dict[str, set[str]], extra: list[str]) -> list[Pattern]:
@@ -108,7 +123,7 @@ def build_patterns(names: dict[str, set[str]], extra: list[str]) -> list[Pattern
             return
         seen.add(key)
         pats.append(Pattern(label, kind, strong, re.compile(
-            r"(?<![\w])" + re.escape(literal) + r"(?![\w])", flags)))
+            r"(?<![\w])" + re.escape(literal) + r"(?![\w])", flags), literal, ci))
 
     # Tokens shared by several employers are corporate vocabulary ("Consulting",
     # "Group", "Singapore"); a token unique to one or two names is the name.
@@ -162,8 +177,9 @@ def build_patterns(names: dict[str, set[str]], extra: list[str]) -> list[Pattern
 def scan_text(text: str, pats: list[Pattern]):
     """Yield (lineno, pattern, line) for every hit."""
     for lineno, line in enumerate(text.splitlines(), 1):
+        lowered = line.lower()
         for p in pats:
-            if p.rx.search(line):
+            if p.hit(line, lowered):
                 yield lineno, p, line
 
 
@@ -174,7 +190,7 @@ def tracked_files() -> list[str]:
 def scan_tree(pats: list[Pattern]):
     hits = []
     for rel in tracked_files():
-        path = ROOT / rel
+        path = REPO / rel
         try:
             text = path.read_bytes().decode("utf-8")
         except (UnicodeDecodeError, OSError):
@@ -193,7 +209,7 @@ def scan_history(pats: list[Pattern]):
         if path:
             paths_by_sha[sha].add(path)
     shas = list(paths_by_sha)
-    proc = subprocess.run(["git", "cat-file", "--batch"], cwd=ROOT, check=True,
+    proc = subprocess.run(["git", "cat-file", "--batch"], cwd=REPO, check=True,
                           input="\n".join(shas).encode(), capture_output=True)
     out, i = proc.stdout, 0
     # Keyed by pattern INDEX, not label: a single-word name yields two patterns
@@ -214,8 +230,9 @@ def scan_history(pats: list[Pattern]):
             text = body.decode("utf-8")
         except UnicodeDecodeError:
             continue
+        lowered = text.lower()
         for k, p in enumerate(pats):          # not `i` — that is the byte offset
-            if p.rx.search(text):
+            if p.hit(text, lowered):
                 for path in paths_by_sha[sha]:
                     blob_hits[k][path].add(sha)
     msg_hits: dict[int, set[str]] = defaultdict(set)
@@ -224,8 +241,9 @@ def scan_history(pats: list[Pattern]):
         if "\x1e" not in entry:
             continue
         sha, _, msg = entry.partition("\x1e")
+        lowered = msg.lower()
         for k, p in enumerate(pats):
-            if p.rx.search(msg):
+            if p.hit(msg, lowered):
                 msg_hits[k].add(sha.strip())
     return blob_hits, msg_hits
 
@@ -242,7 +260,13 @@ def main() -> int:
                          "e.g. a Windows username that never reaches the database")
     ap.add_argument("--weak", action="store_true",
                     help="print every weak hit in full instead of a per-name summary")
+    ap.add_argument("--repo", metavar="PATH",
+                    help="scan this checkout instead of the one the script lives in "
+                         "(the database still comes from this checkout's .env)")
     args = ap.parse_args()
+    if args.repo:
+        global REPO
+        REPO = Path(args.repo).resolve()
 
     with db.connect() as conn:
         names = names_from_db(conn)
