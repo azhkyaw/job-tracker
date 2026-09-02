@@ -196,7 +196,11 @@ def scan_history(pats: list[Pattern]):
     proc = subprocess.run(["git", "cat-file", "--batch"], cwd=ROOT, check=True,
                           input="\n".join(shas).encode(), capture_output=True)
     out, i = proc.stdout, 0
-    blob_hits: dict[str, dict[str, set[str]]] = defaultdict(lambda: defaultdict(set))
+    # Keyed by pattern INDEX, not label: a single-word name yields two patterns
+    # with the same label (exact casing = strong, other casings = weak), and
+    # keying by label reported every `chrome.runtime` as a strong hit on an
+    # employer whose name is that same common word.
+    blob_hits: dict[int, dict[str, set[str]]] = defaultdict(lambda: defaultdict(set))
     while i < len(out):
         nl = out.index(b"\n", i)
         header = out[i:nl].decode()
@@ -210,19 +214,19 @@ def scan_history(pats: list[Pattern]):
             text = body.decode("utf-8")
         except UnicodeDecodeError:
             continue
-        for p in pats:
+        for i, p in enumerate(pats):
             if p.rx.search(text):
                 for path in paths_by_sha[sha]:
-                    blob_hits[p.label][path].add(sha)
-    msg_hits: dict[str, set[str]] = defaultdict(set)
+                    blob_hits[i][path].add(sha)
+    msg_hits: dict[int, set[str]] = defaultdict(set)
     log = _git("log", "--all", "--format=%H%x1e%B%x1f")
     for entry in log.split("\x1f"):
         if "\x1e" not in entry:
             continue
         sha, _, msg = entry.partition("\x1e")
-        for p in pats:
+        for i, p in enumerate(pats):
             if p.rx.search(msg):
-                msg_hits[p.label].add(sha.strip())
+                msg_hits[i].add(sha.strip())
     return blob_hits, msg_hits
 
 
@@ -257,18 +261,18 @@ def main() -> int:
         blob_hits, msg_hits = scan_history(pats)
         strong = 0
         print("\n== history: names present in any blob ever committed")
-        for label in sorted(blob_hits, key=lambda l: (-any(p.strong for p in pats if p.label == l), l)):
-            p = next(p for p in pats if p.label == label)
-            n_blobs = sum(len(s) for s in blob_hits[label].values())
+        for i in sorted(blob_hits, key=lambda i: (not pats[i].strong, pats[i].label)):
+            p = pats[i]
+            n_blobs = sum(len(s) for s in blob_hits[i].values())
             strong += p.strong
-            print(f"  [{'strong' if p.strong else 'weak  '}] {label}: {n_blobs} blob(s) in "
-                  + ", ".join(sorted(blob_hits[label])))
+            print(f"  [{'strong' if p.strong else 'weak  '}] {p.label}: {n_blobs} blob(s) in "
+                  + ", ".join(sorted(blob_hits[i])))
         print("\n== history: names present in commit messages")
-        for label in sorted(msg_hits):
-            p = next(p for p in pats if p.label == label)
+        for i in sorted(msg_hits, key=lambda i: (not pats[i].strong, pats[i].label)):
+            p = pats[i]
             strong += p.strong
-            print(f"  [{'strong' if p.strong else 'weak  '}] {label}: "
-                  + ", ".join(s[:10] for s in sorted(msg_hits[label])))
+            print(f"  [{'strong' if p.strong else 'weak  '}] {p.label}: "
+                  + ", ".join(s[:10] for s in sorted(msg_hits[i])))
         if not blob_hits and not msg_hits:
             print("  (none)")
         print(f"\nhistory: {strong} strong name(s) present — "
