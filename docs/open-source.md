@@ -394,11 +394,22 @@ Audit results, run 26 July 2026:
   each chosen to keep whatever structural property its comment relies on.
   CLAUDE.md was scrubbed the same way, so §14 q1 is no longer a privacy
   question about third parties — only about how much of the author's own
-  search narrative to publish. History still holds all of it: `--history`
-  reports 67 distinct names across blobs and 19 in commit messages, so a
-  SECOND rewrite is required before publishing. Its rules can be read off the
-  2 Sep scrub commit's diff, and `--history` is the zero-survivors check
-  afterwards — the verification the July rewrite did by hand.
+  search narrative to publish.
+- **History rewritten a second time, 2 Sep 2026.** Before the scrub,
+  `--history` reported 67 distinct real names across blobs and 19 in commit
+  messages. `git filter-repo` with 83 literal rules — contextual phrases
+  first, then full names, then the fragments a line wrap leaves behind
+  ("Morgan" at one line's end, "McKinley" at the next's start; five such
+  wrappings existed). Verified three ways on a fresh clone before the real
+  run, then again on the real repository: the tip's tree hash must come out
+  UNCHANGED (the tip was already clean, so any change means either a name the
+  tree scrub missed or a rule that is too broad — it caught three misses that
+  way, including an employer's mail domain the database cannot know), a
+  regex sweep over every blob and message, and `scripts/audit_names.py
+  --history` reporting clean. Two blind spots of the July method are now
+  closed by that first check. The pre-rewrite bundle is kept outside the
+  repository and holds every real name: never publish or commit it. The
+  other machine's clone must be re-cloned, not pulled.
 
 Ordered work:
 
@@ -408,9 +419,11 @@ Ordered work:
 3. Split the extension into its own repo (§3.1.2); scrub platform framing from
    the main repo's pitch (§3.1.3–4).
 4. ~~Genericise test fixtures~~ and ~~rewrite history~~ (both done,
-   26 Jul 2026 — and both undone by 2 Sep: the tree is scrubbed again, history
-   is not); decide on CLAUDE.md, then rewrite history a second time and run
-   `scripts/audit_names.py --history` until it reports clean.
+   26 Jul 2026 — both undone by 2 Sep, and ~~both redone the same day~~,
+   CLAUDE.md included). Before any publish, run `scripts/audit_names.py
+   --history` once more: names re-accumulate by habit, and the check is
+   thirty seconds. The remaining CLAUDE.md question (§14 q1) is now only
+   whether to publish the author's own search narrative.
 5. `docker compose up` path + a migration runner. The runner also retires the
    "migration filenames hardcoded in FOUR places" trap, which is a genuine
    contributor hazard.
