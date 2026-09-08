@@ -56,9 +56,21 @@ it: the resume picker is PROMOTED to `applications.resume_file` (migration
   (`test_email_ingest` before `test_phase4`, which must stay last). Run after
   every change; suites stub every LLM/embedding call and fake the IMAP socket
   entirely (zero API cost) and have caught every regression in this project
-  so far.
+  so far. **That "every LLM call" claim was false for `test_phase4` until
+  8 Sep 2026**: its capture carries a `jd_text`, so `extract_jd` called the
+  real API with the dummy key on every run and the 401 was buried as a retried
+  job — invisible until a credential failure became an `Outage` that
+  propagates out of the drain loop. When a suite enqueues a job type, stub
+  that handler's LLM entry point too (top of `test_phase4.py`), and read an
+  `Outage` escaping a test drain as exactly this finding.
 - Serve UI: `python -m pipeline.cli serve` (http://127.0.0.1:8000)
-- Worker: `python -m pipeline.cli work [--once]`
+- Worker: `python -m pipeline.cli work [--once]`. **`--once` exits 1 on an
+  OUTAGE** — a failure that is about the environment, not the job (credit
+  balance, key, network, 5xx; `worker._outage`): it costs the job nothing, and
+  a continuous worker pauses `OUTAGE_PAUSE_SECONDS` instead of retrying the
+  queue into dead letters. `status` prints the same queue health the UI's
+  header band reads (`db.queue_health`): emails waiting, since when, dead
+  jobs, the last failure's sentence.
 - Gmail: `python -m pipeline.cli auth` (IMAP app password, the default —
   prompts for address + hidden password, verifies before storing) or
   `auth --oauth` (legacy single-user desktop OAuth flow), then
@@ -1489,6 +1501,40 @@ axis) + **DM Mono**, from Google Fonts.
   <employer>" checkbox's new label — if it has lost its "to stay up to date"
   tail, `_CONTROL_NORM_RES`'s anchored rule misses it and a dead singleton row
   lands in the bank per employer.
+- **A billing error is not the job's fault, and the queue charged every job
+  for it anyway** (3-7 Sep 2026). The Anthropic account ran out of credit at
+  4 Sep 00:25 SGT, mid-run. Sync kept storing mail; the worker retried every
+  classify/extract job against `400 invalid_request_error: Your credit balance
+  is too low…`, three of them to one attempt short of dead-lettering in the
+  four minutes it ran, and no page said anything — the nav badge counts emails
+  already IN triage, `sync` exits non-zero only on mailbox failures, and
+  nothing read `job_queue` but the cover-letter panel. A rejection sat stored
+  and unread until the user noticed it by absence. Reported as "job update
+  emails not picked up"; the diagnosis was `emails.processed_at IS NULL`, then
+  `job_queue.last_error` — check those two before suspecting the pre-filter or
+  the matcher, since "stored but unprocessed" and "never fetched" are
+  different bugs with the same symptom. Three things came out of it.
+  `worker._outage()` classifies a failure as ENVIRONMENT (network,
+  401/403/429/5xx, and the credit 400 — the one case the SDK's classes cannot
+  express, told apart by its message) or JOB; an outage leaves the job
+  untouched — attempts, state AND `run_after`, because deferring the oldest
+  job would let a newer rejection process before an older confirmation, the
+  Gmail-ordering bug all over again — and `run()` pauses instead.
+  `db.queue_health()` is ONE definition of "stuck", read by the header band
+  on every page (a Jinja global, `queue_alert()`, so the eleven
+  context-building routes need not each remember it), by the Settings
+  Pipeline section (dead jobs with their last line, a requeue button) and by
+  `cli status`; stall = work older than `QUEUE_STALL_SECONDS` on the DATABASE
+  clock (the dev DB is remote — a host-clock comparison would be a function of
+  skew) or anything dead, so ordinary retry backoff never trips it. And the
+  requeue is the general safety net for whatever `_outage` misclassifies: a
+  job that died for a reason that was never its own is one click from running
+  again. **Recovery verified the same night** (8 Sep 2026, ~01:00 SGT): the
+  top-up and one `work --once` drained all 46, the rejection auto-matched
+  at 0.895 and the application reads `rejected`, the band is gone, and the
+  three extract jobs that had been at 4 of 5 attempts finished on their
+  fifth — one more failed run under the old policy would have dead-lettered
+  an interview invite.
 
 ## Environment
 

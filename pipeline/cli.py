@@ -175,6 +175,15 @@ def cmd_status(_args) -> None:
             print(f"\n{label}:")
             for row in conn.execute(sql).fetchall():
                 print(f"  {list(row.values())[0]:<16} {list(row.values())[1]}")
+        # Same definition the web UI's header band reads (db.queue_health) —
+        # every user's rows here, since this is an admin connection.
+        q = db.queue_health(conn)
+        print(f"\nqueue health: {'STALLED' if q['stalled'] else 'ok'}")
+        print(f"  {q['waiting']} emails waiting"
+              + (f" since {q['waiting_since']:%Y-%m-%d %H:%M %Z}" if q["waiting_since"] else "")
+              + f", {q['dead']} dead")
+        if q["reason"]:
+            print(f"  last failure: {q['reason']}")
 
 
 def main() -> None:

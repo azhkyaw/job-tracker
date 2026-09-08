@@ -22,8 +22,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi.testclient import TestClient
 
-from pipeline import auth, covers, db, worker
+from pipeline import auth, covers, db, jd_extraction, worker
+from pipeline.jd_extraction import JdExtraction
 from pipeline.web import app
+
+# The capture below carries a jd_text, which enqueues extract_jd. Unstubbed,
+# that job made a REAL API call with the dummy key on every run and the 401
+# was buried as a retry (attempts=1, deferred) — invisible until the worker
+# learned to raise an Outage on a credential failure (Sep 2026).
+def _fake_jd_extract(client_, jd_text, title):
+    d = {"languages": ["Python"], "technologies": [], "seniority": None,
+         "salary_min": None, "salary_max": None, "currency": None,
+         "work_mode": None, "visa_signal": "unclear", "visa_notes": None}
+    return JdExtraction(**d, raw=d)
+jd_extraction.extract = _fake_jd_extract
+worker.jd_extraction.extract = _fake_jd_extract
 
 
 def check(label, cond, detail=""):
@@ -183,6 +196,27 @@ r = alice.post("/settings/theme", data={"theme": ""})
 check("blank theme clears the pin", r.status_code == 303, r.status_code)
 check("page returns to data-theme=\"auto\"",
       'data-theme="auto"' in alice.get("/").text)
+
+print("tenant isolation — queue health and requeue")
+from psycopg.types.json import Json as _Json
+with db.connect() as admin, admin.transaction():
+    bob_id = admin.execute("SELECT id FROM users WHERE email = 'bob@example.com'").fetchone()["id"]
+    bob_dead = admin.execute(
+        "INSERT INTO job_queue (user_id, type, payload, state, attempts, last_error) "
+        "VALUES (%s, 'extract_jd', %s, 'dead', 5, 'RuntimeError: BOB-DEAD-MARKER') RETURNING id",
+        (bob_id, _Json({}))).fetchone()["id"]
+check("bob's dead job is invisible on alice's settings",
+      "BOB-DEAD-MARKER" not in alice.get("/settings").text)
+check("...and raises no band on alice's pages", 'class="stall"' not in alice.get("/").text)
+check("bob sees his own", "BOB-DEAD-MARKER" in bob.get("/settings").text
+      and 'class="stall"' in bob.get("/").text)
+r = alice.post("/settings/queue/requeue")
+with db.connect() as admin:
+    st = admin.execute("SELECT state FROM job_queue WHERE id = %s", (bob_dead,)).fetchone()["state"]
+check("alice's requeue cannot reach bob's job",
+      r.status_code == 200 and "0 jobs queued" in r.text and st == "dead", (r.status_code, st))
+with db.connect() as admin, admin.transaction():
+    admin.execute("DELETE FROM job_queue WHERE id = %s", (bob_dead,))
 
 print("password change + logout")
 check("wrong current password blocked", alice.post(

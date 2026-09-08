@@ -8,13 +8,21 @@ fine at single-user volume; revisit at multi-user.
 
 Handler failures are isolated in a savepoint so partial writes roll back,
 then the job is retried with exponential backoff up to MAX_ATTEMPTS, after
-which it dead-letters (visible in the dashboard later).
+which it dead-letters (listed on Settings, with a requeue button).
+
+That policy assumes a failure is ABOUT THE JOB. One that is about the
+environment — the account out of credit, a revoked key, the network, the API
+down — is an OUTAGE (`_outage`): the job is released untouched, no attempt is
+charged, and `run()` pauses for OUTAGE_PAUSE_SECONDS instead of retrying the
+whole queue into dead letters. `work --once` exits non-zero on one, the same
+way `sync` does when a mailbox fails, so a cron run cannot fail quietly.
 """
 
 from __future__ import annotations
 
 import functools
 import json
+import sys
 import time
 import traceback
 
@@ -181,10 +189,57 @@ HANDLERS = {
 }
 
 
+# --------------------------------------------------------------------------- outages
+
+class Outage(Exception):
+    """Raised by process_one() AFTER it has released a job whose failure was
+    about the environment rather than the job. str(exc) is the one-line
+    reason, already stored in that job's last_error."""
+
+
+def _api_message(exc: anthropic.APIStatusError) -> str:
+    """The API's own sentence, without the SDK's `Error code: 400 - {...}`
+    wrapper — this is what the Settings page and the header warning print."""
+    body = exc.body if isinstance(exc.body, dict) else {}
+    err = body.get("error") if isinstance(body.get("error"), dict) else {}
+    return err.get("message") or exc.message or str(exc)
+
+
+def _outage(exc: BaseException) -> str | None:
+    """A one-line reason when `exc` is about the ENVIRONMENT, None when it is
+    about the job. The split follows the SDK's own classes: no response at all
+    (network), or a status the API attributes to the account or itself — 401,
+    403 (permission and billing_error both land here), 429, 5xx/529.
+
+    The one case the classes cannot express: an exhausted credit balance is
+    reported as a 400 `invalid_request_error`, identical in status and type to
+    a malformed request, so it is told apart by its message. Measured on the
+    real failure (3-7 Sep 2026, request ids req_011CepNv…): the text was
+    "Your credit balance is too low to access the Anthropic API. Please go to
+    Plans & Billing to upgrade or purchase credits." If Anthropic rewords it,
+    this rule misses, the jobs dead-letter after MAX_ATTEMPTS, and Settings
+    shows them with that new text — visible, and one requeue from recovered,
+    which is the whole point of the dead-letter list."""
+    if isinstance(exc, anthropic.APIConnectionError):
+        return f"cannot reach the Anthropic API ({exc})"
+    if isinstance(exc, anthropic.APIStatusError):
+        status, msg = exc.status_code, _api_message(exc)
+        if status in (401, 403, 429) or status >= 500:
+            return f"Anthropic API {status}: {msg}"
+        if status == 400 and "credit balance" in msg.lower():
+            return f"Anthropic API {status}: {msg}"
+    return None
+
+
 # --------------------------------------------------------------------------- loop
 
 def process_one(conn) -> bool:
-    """Claim and process a single job. Returns False when the queue is idle."""
+    """Claim and process a single job. Returns False when the queue is idle.
+    Raises Outage — after committing — when the job failed for a reason that
+    is not the job's; the job is left exactly as claimed, so the next claim
+    takes it again (oldest first, which keeps ingest order-sensitive work
+    like confirmation-before-rejection intact — never defer it)."""
+    outage = None
     with conn.transaction():
         job = conn.execute(_CLAIM_SQL).fetchone()
         if job is None:
@@ -195,31 +250,57 @@ def process_one(conn) -> bool:
                 raise ValueError(f"no Phase 1 handler for job type '{job['type']}'")
             with conn.transaction():        # savepoint: partial writes roll back
                 handler(conn, job)
-        except Exception:
-            attempts = job["attempts"] + 1
-            state = "dead" if attempts >= config.MAX_ATTEMPTS else "pending"
-            backoff = config.BACKOFF_BASE_SECONDS * (2 ** job["attempts"])
-            conn.execute(
-                """
-                UPDATE job_queue
-                SET state = %s, attempts = %s, last_error = %s,
-                    run_after = now() + make_interval(secs => %s)
-                WHERE id = %s
-                """,
-                (state, attempts, traceback.format_exc(limit=8), backoff, job["id"]),
-            )
+        except Exception as exc:
+            outage = _outage(exc)
+            if outage:
+                # Not charged: attempts, state and run_after stay as they were.
+                # The reason alone is stored — an outage has no stack worth
+                # reading, and the UI prints last_error's final line.
+                conn.execute(
+                    "UPDATE job_queue SET last_error = %s WHERE id = %s",
+                    (outage, job["id"]),
+                )
+            else:
+                attempts = job["attempts"] + 1
+                state = "dead" if attempts >= config.MAX_ATTEMPTS else "pending"
+                backoff = config.BACKOFF_BASE_SECONDS * (2 ** job["attempts"])
+                conn.execute(
+                    """
+                    UPDATE job_queue
+                    SET state = %s, attempts = %s, last_error = %s,
+                        run_after = now() + make_interval(secs => %s)
+                    WHERE id = %s
+                    """,
+                    (state, attempts, traceback.format_exc(limit=8), backoff, job["id"]),
+                )
         else:
             conn.execute(
                 "UPDATE job_queue SET state = 'done', attempts = attempts + 1 WHERE id = %s",
                 (job["id"],),
             )
+    if outage:
+        raise Outage(outage)
     return True
 
 
 def run(poll_seconds: float = 2.0, once: bool = False) -> None:
     with db.connect() as conn:
+        paused: str | None = None
         while True:
-            worked = process_one(conn)
+            try:
+                worked = process_one(conn)
+            except Outage as out:
+                reason = str(out)
+                if reason != paused:            # one line per outage, not per retry
+                    print(f"worker paused — {reason}", file=sys.stderr)
+                    paused = reason
+                if once:
+                    raise SystemExit(1)
+                time.sleep(config.OUTAGE_PAUSE_SECONDS)
+                continue
+            if paused and worked:
+                print("worker resumed", file=sys.stderr)
+                paused = None
             if once and not worked:
                 return
             if not worked:

@@ -89,9 +89,31 @@ def _theme(context):
     return getattr(request.state, "theme", None) or "auto"
 
 
+@pass_context
+def _queue_alert(context):
+    """base.html's "N emails waiting" band — the pipeline's health, or None
+    when there is nothing to say. A Jinja global rather than a context key so
+    it reaches EVERY page without each of the eleven routes that build a
+    context having to remember it (the triage badge is threaded that way, and
+    Settings already forgets it). Computed lazily, once per request, on the
+    viewer's own scoped connection; login/signup never set user_id and get
+    None. This is the fix for a worker that stalled for four days in Sep 2026
+    with nothing on any page saying so."""
+    request = context.get("request")
+    user_id = getattr(request.state, "user_id", None) if request is not None else None
+    if user_id is None:
+        return None
+    if not hasattr(request.state, "queue"):
+        with db.connect_scoped(user_id) as conn:
+            request.state.queue = db.queue_health(conn)
+    q = request.state.queue
+    return q if q["stalled"] else None
+
+
 templates.env.filters["dt"] = _dt
 templates.env.filters["dtt"] = _dtt
 templates.env.globals["theme"] = _theme
+templates.env.globals["queue_alert"] = _queue_alert
 
 
 class AuthRequired(Exception):
@@ -112,6 +134,7 @@ def _login_user(request: Request) -> dict:
         raise AuthRequired()
     request.state.tz = _zoneinfo(user.get("timezone"))
     request.state.theme = user.get("theme") or "auto"
+    request.state.user_id = user["id"]          # for _queue_alert()'s scoped query
     return user
 
 # Display collapses the applied-family; the event log keeps the distinction.
@@ -1956,7 +1979,17 @@ def logout(request: Request):
 
 def _settings_ctx(user: dict, new_token: str | None = None, msg: str | None = None):
     gmail_kind, gmail_address = mailbox.describe_credential(user.get("gmail_credentials"))
+    with db.connect_scoped(user["id"]) as conn:
+        queue = db.queue_health(conn)
+        dead = db.dead_jobs(conn)
+        sync = conn.execute("SELECT last_synced_at FROM gmail_sync_state WHERE user_id = %s",
+                            (user["id"],)).fetchone()
     return {"email": user["email"],
+            # The Pipeline section: the same health the header band reads,
+            # plus the detail it links here for — each dead job with the
+            # sentence it died on, and when mail was last fetched at all.
+            "queue": queue, "dead_jobs": dead, "max_attempts": config.MAX_ATTEMPTS,
+            "last_synced_at": sync["last_synced_at"] if sync else None,
             "resume_profile": user.get("resume_profile") or "",
             "timezone": user.get("timezone") or "",
             # NOT "theme" — that name collides with the Jinja global theme()
@@ -1986,6 +2019,21 @@ def settings_page(request: Request):
     user = _login_user(request)
     return templates.TemplateResponse(request=request, name="settings.html",
                                       context=_settings_ctx(user))
+
+
+@app.post("/settings/queue/requeue")
+def settings_queue_requeue(request: Request):
+    """Dead jobs back to pending. The recovery path for whatever
+    worker._outage() does not recognise: a job that dead-lettered on a
+    failure that was never its own is one click from running again, once the
+    cause is fixed. Scoped connection, so RLS keeps it to the viewer's jobs."""
+    user = _login_user(request)
+    with db.connect_scoped(user["id"]) as conn, conn.transaction():
+        n = db.requeue_dead(conn)
+    return templates.TemplateResponse(
+        request=request, name="settings.html",
+        context=_settings_ctx(user, msg=f"{n} job{'' if n == 1 else 's'} queued to run again "
+                                         "on the next worker pass."))
 
 
 @app.post("/settings/profile")

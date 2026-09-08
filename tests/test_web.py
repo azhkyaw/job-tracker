@@ -1577,4 +1577,65 @@ check("questions asked once show no history toggle for themselves",
 check("answers nav entry is active on its own page",
       '<a href="/answers" class="active"' in r.text, r.text[:200])
 
+# A worker that cannot reach the API stalled for four days in Sep 2026 with
+# nothing on any page saying so. The band under the header is the fix; these
+# pin the three things it must get right: silent when healthy, silent for a
+# job in ordinary backoff, loud for stale work and for anything dead.
+print("pipeline health: header band, settings section, requeue")
+r = client.get("/")
+check("healthy queue shows no stall band", 'class="stall"' not in r.text)
+with db.connect() as conn, conn.transaction():
+    uid = db.single_user_id(conn)
+    stalled_email = conn.execute(
+        "INSERT INTO emails (user_id, gmail_message_id, sender, subject, body_text, received_at) "
+        "VALUES (%s, 'gm-stalled', 'x@example.com', 'stalled probe', 'body', now()) "
+        "RETURNING id", (uid,)).fetchone()["id"]
+    fresh = conn.execute(
+        "INSERT INTO job_queue (user_id, type, payload, state, attempts, last_error, run_after) "
+        "VALUES (%s, 'classify_email', %s, 'pending', 1, %s, now() + interval '30 seconds') "
+        "RETURNING id",
+        (uid, Json({"email_id": str(stalled_email)}),
+         "Traceback (most recent call last):\n  ...\nValueError: transient")).fetchone()["id"]
+r = client.get("/")
+check("a job in fresh backoff is not a stall", 'class="stall"' not in r.text)
+with db.connect() as conn, conn.transaction():
+    conn.execute(
+        "UPDATE job_queue SET created_at = now() - interval '2 hours', last_error = %s "
+        "WHERE id = %s",
+        ("Anthropic API 400: Your credit balance is too low to access the Anthropic API.",
+         fresh))
+r = client.get("/")
+with db.connect() as conn:       # the count is whatever is unprocessed right now —
+    q = db.queue_health(conn)    # earlier sections leave one deliberately unread
+check("stale work raises the band with the count and the reason",
+      'class="stall"' in r.text and q["waiting"] >= 1
+      and f"{q['waiting']} email{'' if q['waiting'] == 1 else 's'} waiting" in r.text
+      and "credit balance is too low" in r.text, (q, r.text[:400]))
+check("band links to the pipeline section", 'href="/settings#pipeline"' in r.text)
+check("band is on every page, not just the list",
+      'class="stall"' in client.get("/answers").text)
+with db.connect() as conn, conn.transaction():
+    dead = conn.execute(
+        "INSERT INTO job_queue (user_id, type, payload, state, attempts, last_error) "
+        "VALUES (%s, 'extract_jd', %s, 'dead', 5, %s) RETURNING id",
+        (uid, Json({}), "Traceback (most recent call last):\n  ...\nRuntimeError: it died")
+    ).fetchone()["id"]
+r = client.get("/settings")
+check("settings lists the dead job by its last line",
+      r.status_code == 200 and "1 job gave up" in r.text and "RuntimeError: it died" in r.text
+      and "Run them again" in r.text, r.status_code)
+check("settings names the newest failure", "credit balance is too low" in r.text)
+r = client.post("/settings/queue/requeue")
+with db.connect() as conn:
+    row = conn.execute(
+        "SELECT state, attempts, run_after <= now() AS runnable FROM job_queue WHERE id = %s",
+        (dead,)).fetchone()
+check("requeue puts the dead job back with a fresh budget",
+      r.status_code == 200 and "1 job queued" in r.text and row["state"] == "pending"
+      and row["attempts"] == 0 and row["runnable"], (r.status_code, row))
+with db.connect() as conn, conn.transaction():      # leave the queue as we found it
+    conn.execute("DELETE FROM job_queue WHERE id IN (%s, %s)", (fresh, dead))
+    conn.execute("DELETE FROM emails WHERE id = %s", (stalled_email,))
+check("band gone once the queue is clean", 'class="stall"' not in client.get("/").text)
+
 print("\nALL WEB PATHS PASS")

@@ -299,4 +299,90 @@ with db.connect() as conn:
           jq["state"] == "pending" and jq["attempts"] == 1 and jq["deferred"], jq)
     check("error recorded", "not found" in (jq["last_error"] or ""), jq["last_error"])
 
+    # The shape of 3-7 Sep 2026: the account ran out of credit and every job
+    # burned attempts against a failure that was nobody's job's fault. An
+    # outage must leave the job exactly as claimed — same attempts, same
+    # run_after, still oldest-first — while a job's OWN failure is charged.
+    print("path 5: an outage releases the job; a job's own failure charges it")
+    import anthropic
+    import httpx2
+    real_classify = email_classifier.classify_email
+    _req = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
+
+    def api_error(cls, status, message, err_type="invalid_request_error"):
+        body = {"type": "error", "error": {"type": err_type, "message": message}}
+        return cls(f"Error code: {status} - {body}",
+                   response=httpx2.Response(status, request=_req), body=body)
+
+    def raising(exc):
+        def stub(*_a, **_k):
+            raise exc
+        return stub
+
+    def job_row():
+        return conn.execute(
+            "SELECT id, state, attempts, run_after <= now() AS runnable, last_error "
+            "FROM job_queue WHERE payload->>'email_id' = %s", (str(e5),)).fetchone()
+
+    FAKE_CLASSIFY["outage-probe"] = Classification(False, None, 0.98, "stub")
+    e5 = seed_email(conn, user_id, "outage-probe")
+    conn.commit()
+    outages = [
+        ("credit exhausted (a 400, told apart by its message)",
+         api_error(anthropic.BadRequestError, 400,
+                   "Your credit balance is too low to access the Anthropic API. "
+                   "Please go to Plans & Billing to upgrade or purchase credits."),
+         "credit balance"),
+        ("rate limited", api_error(anthropic.RateLimitError, 429,
+                                   "This request would exceed your rate limit",
+                                   "rate_limit_error"), "429"),
+        ("network down", anthropic.APIConnectionError(request=_req), "cannot reach"),
+    ]
+    for label, exc, marker in outages:
+        email_classifier.classify_email = raising(exc)
+        try:
+            worker.process_one(conn)
+            raised = False
+        except worker.Outage as out:
+            raised = marker in str(out)
+        j = job_row()
+        check(f"{label}: raises Outage naming the cause", raised)
+        check(f"{label}: job released uncharged and still runnable",
+              j["state"] == "pending" and j["attempts"] == 0 and j["runnable"], j)
+        check(f"{label}: reason recorded for the UI", marker in (j["last_error"] or ""),
+              j["last_error"])
+    # `work --once` must not exit 0 on an outage, or a cron run fails quietly.
+    # run() opens its OWN connection, and the job_row() reads above left this
+    # one inside an implicit transaction holding the row lock from the last
+    # UPDATE — the worker's FOR UPDATE SKIP LOCKED would skip the job, see an
+    # idle queue and exit 0 for the wrong reason. Commit first.
+    conn.commit()
+    email_classifier.classify_email = raising(outages[0][1])
+    try:
+        worker.run(once=True)
+        code = 0
+    except SystemExit as ex:
+        code = ex.code
+    check("work --once exits non-zero on an outage", code == 1, code)
+    check("...and still charged nothing", job_row()["attempts"] == 0, job_row())
+
+    email_classifier.classify_email = raising(api_error(
+        anthropic.BadRequestError, 400,
+        'messages: roles must alternate between "user" and "assistant"'))
+    worker.process_one(conn)
+    j = job_row()
+    check("a malformed request IS the job's fault: charged and deferred",
+          j["state"] == "pending" and j["attempts"] == 1 and not j["runnable"]
+          and "roles must alternate" in j["last_error"], j)
+
+    email_classifier.classify_email = real_classify
+    conn.execute("UPDATE job_queue SET run_after = now() WHERE id = %s", (j["id"],))
+    conn.commit()
+    drain(conn)
+    j = job_row()
+    check("once the API is back the same job completes on its next try",
+          j["state"] == "done" and j["attempts"] == 2, j)
+    check("...and the email is processed",
+          email_state(conn, e5)["triage_state"] == "ignored", email_state(conn, e5))
+
 print("\nALL PATHS PASS")

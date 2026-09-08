@@ -126,6 +126,22 @@ W_TITLE, W_DATE, W_PLATFORM = 0.5, 0.3, 0.2
 # Worker retry policy (§6.4): exponential backoff, then dead-letter.
 MAX_ATTEMPTS = 5
 BACKOFF_BASE_SECONDS = 30
+# An OUTAGE is a failure that is about the environment, not the job — the
+# Anthropic account out of credit, a revoked key, the network, the API down
+# (worker._outage). It costs the job nothing: no attempt is charged, the job
+# is released where it sat, and the worker pauses this long before trying the
+# queue again. That retry IS the probe for "is it back" — a rejected call is
+# not billed — so a short pause costs nothing while a long one delays every
+# email behind it. Found 3 Sep 2026: the account ran dry mid-run and the old
+# policy retried 46 emails against a billing error, three of them to one
+# attempt short of dead-lettering, in the four minutes the worker was running.
+OUTAGE_PAUSE_SECONDS = 300
+# The UI's "N emails waiting" warning (db.queue_health) fires when queue work
+# has sat unprocessed longer than this, or when any job has dead-lettered.
+# Sync is a 15-minute cron entry; a job older than two of those has missed
+# the worker, whatever the reason. Short enough to catch a stall the same
+# session, long enough that a job in ordinary retry backoff never trips it.
+QUEUE_STALL_SECONDS = 1800
 
 BACKFILL_MONTHS_DEFAULT = 12
 

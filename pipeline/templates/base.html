@@ -94,6 +94,19 @@ h2:first-child{margin-top:.4rem}
       border:1px solid color-mix(in srgb,var(--age) 40%,var(--mix));
       border-radius:999px;padding:0 .5em;margin-left:.4em;vertical-align:1px}
 
+/* The pipeline-stall band under the header (queue_alert()). Amber, because
+   this IS the state of a wait — mail that arrived and nobody has read — not a
+   fifth hue; every colour here is a mix of existing tokens, so both palettes
+   get it for free. Absent entirely when the queue is healthy. */
+.stall{background:color-mix(in srgb,var(--age) 10%,var(--card));
+       border-bottom:1px solid color-mix(in srgb,var(--age) 40%,var(--line));
+       color:var(--age);font-size:.85rem}
+.stall .wrap{display:flex;gap:.7rem;align-items:baseline;flex-wrap:wrap;
+             padding-top:.45rem;padding-bottom:.45rem}
+.stall code{font-family:'DM Mono',monospace;font-size:.76rem;color:var(--ink);
+            overflow-wrap:anywhere}
+.stall a{color:var(--age);text-decoration:underline;margin-left:auto}
+
 /* in-page lane/filter tabs — same active treatment as the top nav */
 .tabs{display:flex;gap:1.1rem;align-items:baseline}
 .tabs a{color:var(--muted);font-size:.85rem}
@@ -368,6 +381,14 @@ ul.timeline .when{font-family:'DM Mono',monospace;font-size:.76rem;
     </nav>
   </div>
 </header>
+{% set q = queue_alert() %}
+{% if q %}
+<div class="stall" role="status"><div class="wrap">
+  <strong>{% if q.waiting %}{{ q.waiting }} email{{ '' if q.waiting == 1 else 's' }} waiting{% if q.waiting_since %} since {{ q.waiting_since|dtt }}{% endif %}{% endif %}{% if q.waiting and q.dead %} · {% endif %}{% if q.dead %}{{ q.dead }} job{{ '' if q.dead == 1 else 's' }} gave up{% endif %}</strong>
+  {% if q.reason %}<code>{{ q.reason }}</code>{% endif %}
+  <a href="/settings#pipeline">pipeline</a>
+</div></div>
+{% endif %}
 <main><div class="inner">
 {% block content %}{% endblock %}
 </div></main>
