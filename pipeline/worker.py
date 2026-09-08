@@ -26,10 +26,10 @@ import sys
 import time
 import traceback
 
-import anthropic
 from psycopg.types.json import Json
 
-from . import config, covers, db, dedup, email_classifier, embeddings, jd_extraction, matcher
+from . import (config, covers, db, dedup, email_classifier, embeddings, jd_extraction, llm,
+               matcher)
 
 _CLAIM_SQL = """
 SELECT * FROM job_queue
@@ -41,8 +41,8 @@ FOR UPDATE SKIP LOCKED
 
 
 @functools.cache
-def _client() -> anthropic.Anthropic:
-    return anthropic.Anthropic()
+def _client() -> llm.Client:
+    return llm.Client()
 
 
 def _payload(job: dict) -> dict:
@@ -197,38 +197,11 @@ class Outage(Exception):
     reason, already stored in that job's last_error."""
 
 
-def _api_message(exc: anthropic.APIStatusError) -> str:
-    """The API's own sentence, without the SDK's `Error code: 400 - {...}`
-    wrapper — this is what the Settings page and the header warning print."""
-    body = exc.body if isinstance(exc.body, dict) else {}
-    err = body.get("error") if isinstance(body.get("error"), dict) else {}
-    return err.get("message") or exc.message or str(exc)
-
-
 def _outage(exc: BaseException) -> str | None:
     """A one-line reason when `exc` is about the ENVIRONMENT, None when it is
-    about the job. The split follows the SDK's own classes: no response at all
-    (network), or a status the API attributes to the account or itself — 401,
-    403 (permission and billing_error both land here), 429, 5xx/529.
-
-    The one case the classes cannot express: an exhausted credit balance is
-    reported as a 400 `invalid_request_error`, identical in status and type to
-    a malformed request, so it is told apart by its message. Measured on the
-    real failure (3-7 Sep 2026, request ids req_011CepNv…): the text was
-    "Your credit balance is too low to access the Anthropic API. Please go to
-    Plans & Billing to upgrade or purchase credits." If Anthropic rewords it,
-    this rule misses, the jobs dead-letter after MAX_ATTEMPTS, and Settings
-    shows them with that new text — visible, and one requeue from recovered,
-    which is the whole point of the dead-letter list."""
-    if isinstance(exc, anthropic.APIConnectionError):
-        return f"cannot reach the Anthropic API ({exc})"
-    if isinstance(exc, anthropic.APIStatusError):
-        status, msg = exc.status_code, _api_message(exc)
-        if status in (401, 403, 429) or status >= 500:
-            return f"Anthropic API {status}: {msg}"
-        if status == 400 and "credit balance" in msg.lower():
-            return f"Anthropic API {status}: {msg}"
-    return None
+    about the job. The rule lives with the backends (llm.outage_reason), so
+    this module knows nothing about either vendor's exceptions."""
+    return llm.outage_reason(exc)
 
 
 # --------------------------------------------------------------------------- loop

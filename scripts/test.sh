@@ -44,7 +44,7 @@ export TRACKER_DATABASE_URL="postgresql:///$DB"
 export TRACKER_API_TOKEN=testtok
 export TRACKER_SECRET_KEY=test-secret
 export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-test-dummy-key}"
-for t in test_integration test_web test_captures test_phase3 test_email_ingest test_phase4; do
+for t in test_llm test_integration test_web test_captures test_phase3 test_email_ingest test_phase4; do
   printf "== %-18s " "$t"
   if python3 "tests/$t.py" > "/tmp/$t.log" 2>&1; then
     echo PASS

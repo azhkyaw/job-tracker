@@ -12,7 +12,7 @@ Design-doc invariants implemented here (docs/design.md §9):
     the opening); stage 2 sees more since dates/names sit deeper in the mail.
 
 Usage:
-    client = anthropic.Anthropic()  # ANTHROPIC_API_KEY from env
+    client = llm.Client()   # routes each model to its backend (pipeline/llm.py)
     c = classify_email(client, sender, subject, received_at, body)
     if c.job_related:
         x = extract_email(client, sender, subject, received_at, body, c.type)
@@ -28,7 +28,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
-import anthropic
+from . import config, llm
 
 PROMPT_DIR = Path(__file__).resolve().parent.parent / "prompts"
 CLASSIFY_PROMPT_VERSION = "email_classify_v1"
@@ -63,8 +63,13 @@ EXTRACT_PROMPT_VERSION = "email_extract_v1"
 # for. Both remain env-overridable, and emails.model records the model per row,
 # so old rows stay attributable and a selective re-run stays possible — the
 # same property invariant #5 buys for prompts.
-CLASSIFY_MODEL = os.environ.get("TRACKER_CLASSIFY_MODEL", "claude-sonnet-5")
-EXTRACT_MODEL = os.environ.get("TRACKER_EXTRACT_MODEL", "claude-haiku-4-5-20251001")
+#
+# config.LLM_MODEL (an open-weight model on an OpenAI-compatible server) is the
+# default for both when set; a `claude-*` name here on top of it keeps that one
+# stage on Anthropic — routing is by name, see config.py's LLM backend section.
+CLASSIFY_MODEL = os.environ.get("TRACKER_CLASSIFY_MODEL") or config.LLM_MODEL or "claude-sonnet-5"
+EXTRACT_MODEL = (os.environ.get("TRACKER_EXTRACT_MODEL") or config.LLM_MODEL
+                 or "claude-haiku-4-5-20251001")
 
 STAGE1_BODY_CHARS = 4_000
 STAGE2_BODY_CHARS = 12_000
@@ -131,7 +136,7 @@ def _email_block(sender: str, subject: str, received_at: datetime, body: str,
 
 
 def _call_json(
-    client: anthropic.Anthropic,
+    client: llm.Client,
     *,
     model: str,
     system: str,
@@ -139,14 +144,15 @@ def _call_json(
     validate: Callable[[dict], None],
     max_tokens: int,
 ) -> dict:
-    """One model call with a single repair retry on parse/validation failure."""
+    """One model call with a single repair retry on parse/validation failure.
+    `json=True` asks a backend that can constrain output for a JSON object
+    (the OpenAI-compatible one does; Anthropic's ignores it — see llm.py)."""
     messages: list[dict[str, Any]] = [{"role": "user", "content": user_content}]
     last_err: Exception | None = None
     for attempt in range(2):
-        resp = client.messages.create(
-            model=model, max_tokens=max_tokens, system=system, messages=messages,
+        text = client.complete(
+            model=model, system=system, messages=messages, max_tokens=max_tokens, json=True,
         )
-        text = "".join(b.text for b in resp.content if b.type == "text")
         try:
             data = json.loads(_strip_fences(text))
             if not isinstance(data, dict):
@@ -207,7 +213,7 @@ def _validate_extraction(d: dict) -> None:
 # --------------------------------------------------------------------------- stages
 
 def classify_email(
-    client: anthropic.Anthropic,
+    client: llm.Client,
     sender: str,
     subject: str,
     received_at: datetime,
@@ -245,7 +251,7 @@ def classify_email(
 
 
 def extract_email(
-    client: anthropic.Anthropic,
+    client: llm.Client,
     sender: str,
     subject: str,
     received_at: datetime,

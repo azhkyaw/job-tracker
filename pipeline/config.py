@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -145,11 +146,42 @@ QUEUE_STALL_SECONDS = 1800
 
 BACKFILL_MONTHS_DEFAULT = 12
 
+# --- LLM backend -------------------------------------------------------------
+#
+# Every model call goes through pipeline/llm.py, which routes by MODEL NAME with
+# one rule: a name starting with `claude-` is served by the Anthropic API;
+# anything else by the OpenAI-compatible server below (vLLM, and anything else
+# speaking /v1/chat/completions — llama.cpp, Ollama, LM Studio). No mode
+# switch: leave LLM_BASE_URL unset and everything is Claude, as before; set it
+# and LLM_MODEL and every stage runs there; set a `claude-*` name on one of
+# the per-stage TRACKER_*_MODEL variables on top of that and only that stage
+# stays on Anthropic. A non-Claude name with no server configured is refused as
+# an OUTAGE, not a job failure, so a typo here pauses the worker rather than
+# dead-lettering the queue.
+#
+# LLM_MODEL is the default for every stage because vLLM serves one model per
+# process; the per-stage variables (here and in email_classifier.py) override
+# it, and the model name lands in emails.model / extractions.model /
+# artifacts.model per row exactly as a Claude id does — invariant #5's
+# attribution holds across backends.
+#
+# vLLM's default port is 8000, which this app's own UI uses; start it with
+# --port 8001. LLM_EXTRA_BODY is merged into every request body, for
+# server-specific knobs this code should not have to know about — e.g.
+# {"chat_template_kwargs": {"enable_thinking": false}} to turn a Qwen3's
+# thinking off per request (or do it server-side with
+# --default-chat-template-kwargs, which is simpler).
+LLM_BASE_URL = os.environ.get("TRACKER_LLM_BASE_URL") or None      # e.g. http://127.0.0.1:8001/v1
+LLM_MODEL = os.environ.get("TRACKER_LLM_MODEL") or None            # the served model's name
+LLM_API_KEY = os.environ.get("TRACKER_LLM_API_KEY") or None        # only if served with --api-key
+LLM_TIMEOUT_SECONDS = float(os.environ.get("TRACKER_LLM_TIMEOUT_SECONDS") or "600")
+LLM_EXTRA_BODY = json.loads(os.environ.get("TRACKER_LLM_EXTRA_BODY") or "{}")
+
 # --- Phase 3 -----------------------------------------------------------------
 
 # JD extraction (small-to-mid model) and cover letters (larger; §9).
-JD_MODEL = os.environ.get("TRACKER_JD_MODEL", "claude-haiku-4-5-20251001")
-COVER_MODEL = os.environ.get("TRACKER_COVER_MODEL", "claude-sonnet-5")
+JD_MODEL = os.environ.get("TRACKER_JD_MODEL") or LLM_MODEL or "claude-haiku-4-5-20251001"
+COVER_MODEL = os.environ.get("TRACKER_COVER_MODEL") or LLM_MODEL or "claude-sonnet-5"
 
 # The candidate profile that grounds cover letters (design doc §9) is NOT
 # configured here — it lives per user in `users.resume_profile`, edited on the

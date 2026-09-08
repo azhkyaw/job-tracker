@@ -44,14 +44,32 @@ it: the resume picker is PROMOTED to `applications.resume_file` (migration
 - `pipeline/dedup.py` — the only place two jobs are merged (`merge_jobs`)
 - `pipeline/trace.py` — pure timeline/axis geometry for list + detail pages
 - `pipeline/analytics.py` — funnel, response-rate, weekly, reminders queries
+- `pipeline/llm.py` — the ONE door to every model call (8 Sep 2026). Two
+  backends behind `Client.complete()`: Anthropic (default; the request is
+  byte-identical to what the stages sent before, so every measured
+  max_tokens/thinking note still holds) and OpenAI-compatible
+  (`/v1/chat/completions` over the `httpx` already in requirements — vLLM,
+  llama.cpp, Ollama, LM Studio). **Routing is by MODEL NAME, one rule**: a
+  `claude-*` name is Anthropic's, anything else goes to
+  `config.LLM_BASE_URL`; `config.LLM_MODEL` is the default for every stage
+  (vLLM serves one model per process) and the per-stage `TRACKER_*_MODEL`
+  variables override it, so all-Claude, all-local and mixed are the same
+  config with no mode switch. A non-Claude name with no server configured is
+  an `Unavailable` (an outage — the worker pauses; a typo must not dead-letter
+  the queue). The JSON stages pass `json=True`: the open-weight backend turns
+  that into `response_format: json_object` at temperature 0, Anthropic's
+  ignores it on purpose. `outage_reason()` is the single failure classifier
+  for BOTH backends — the worker imports neither SDK. Tested by
+  `tests/test_llm.py` against an `httpx.MockTransport` fake server, no DB.
+  **Never exercised against a real vLLM** as of 8 Sep 2026.
 - `extension/` — browser capture (LinkedIn/JobStreet/Indeed adapters + shared/)
 - `migrations/` — append-only numbered schema files (invariant #8)
-- `tests/` — six Python suites + `test_extension.js` (Node, no DB), see Commands
+- `tests/` — seven Python suites + `test_extension.js` (Node, no DB), see Commands
 
 ## Commands
 
 - **Run ALL tests: `./scripts/test.sh`** — creates a throwaway `tracker_test`
-  DB, applies all migrations, runs `test_extension.js` then the six Python
+  DB, applies all migrations, runs `test_extension.js` then the seven Python
   suites in the required order
   (`test_email_ingest` before `test_phase4`, which must stay last). Run after
   every change; suites stub every LLM/embedding call and fake the IMAP socket
@@ -1548,7 +1566,11 @@ token, so its blast radius on leak/loss is strictly larger than before) ·
 `postgresql:///tracker`) · `VOYAGE_API_KEY` (optional; absent = dedup simply
 off) · `TRACKER_API_TOKEN` (legacy single-user extension token; dies when a
 second account exists) · `TRACKER_BASE_URL` (needed for Gmail web OAuth) ·
-`TRACKER_INGEST_ALL` (invariant #10; job-only mailboxes).
+`TRACKER_INGEST_ALL` (invariant #10; job-only mailboxes) ·
+`TRACKER_LLM_BASE_URL` / `TRACKER_LLM_MODEL` / `TRACKER_LLM_API_KEY` /
+`TRACKER_LLM_TIMEOUT_SECONDS` / `TRACKER_LLM_EXTRA_BODY` (open-weight models
+on an OpenAI-compatible server — `pipeline/llm.py` under Key files; with every
+stage local, `ANTHROPIC_API_KEY` can stay unset).
 Secrets files are gitignored: `credentials.json`, `credentials-web.json`,
 `.gmail_token.json`, `.env`, `profile.md` (the last is no longer READ by
 anything — see below — but stays in `.gitignore` so a stray copy from before

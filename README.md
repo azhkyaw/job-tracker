@@ -54,6 +54,8 @@ pipeline/web.py                  FastAPI app: applications, detail, manual entry
 pipeline/templates/              base / applications / detail / manual_entry / triage (Jinja)
 extension/                       MV3 extension: manifest, shared capture core,
                                  per-site adapters, background worker, popup/options
+tests/test_llm.py                Model routing + the OpenAI-compatible transport
+                                 against a fake server (no DB, no network)
 tests/test_integration.py        End-to-end with LLM stages stubbed
 tests/test_web.py                UI render + triage resolve actions
 tests/test_captures.py           /captures auth, upsert, enrichment, idempotency
@@ -157,6 +159,51 @@ notifications were off, or the extension missed it)? Open
 `/applications/new` — same dedup-aware write path as `/captures`, so pasting
 a URL for something you've already captured enriches it instead of
 duplicating.
+
+## Open-weight models (vLLM, or any OpenAI-compatible server)
+
+Every model call goes through `pipeline/llm.py`, which routes by model name:
+a `claude-*` name goes to the Anthropic API, anything else to the server named
+by `TRACKER_LLM_BASE_URL`. So
+
+```bash
+vllm serve Qwen/Qwen3-8B --port 8001 \
+     --reasoning-parser qwen3 --default-chat-template-kwargs '{"enable_thinking": false}'
+
+export TRACKER_LLM_BASE_URL=http://127.0.0.1:8001/v1
+export TRACKER_LLM_MODEL=Qwen/Qwen3-8B
+```
+
+runs classification, extraction, JD extraction and cover letters locally, and
+your mail never leaves the machine. Add `TRACKER_COVER_MODEL=claude-sonnet-5`
+on top and only the cover letters go to Anthropic — the per-stage variables
+(`TRACKER_CLASSIFY_MODEL`, `TRACKER_EXTRACT_MODEL`, `TRACKER_JD_MODEL`,
+`TRACKER_COVER_MODEL`) override the shared default, and the served model's
+name lands in `emails.model` / `extractions.model` / `artifacts.model` per row
+exactly as a Claude id does, so a swap stays attributable and selectively
+re-runnable.
+
+What the open-weight path does differently: the three JSON stages ask the
+server for a `json_object` at temperature 0 (vLLM's structured outputs
+guarantee a syntactically valid document; the schema validation and repair
+retry are unchanged, since valid is not yet correct), and a leading
+`<think>…</think>` block is stripped if a reasoning model emits one into the
+answer. Turn thinking off server-side for these short extraction tasks as
+above — `max_tokens` caps reasoning and answer together, and the stages' caps
+were sized for answers. Port 8001 because vLLM's default, 8000, is this app's
+own UI. `TRACKER_LLM_API_KEY` if the server was started with `--api-key`;
+`TRACKER_LLM_TIMEOUT_SECONDS` (default 600) for slow hardware;
+`TRACKER_LLM_EXTRA_BODY` (a JSON object) is merged into every request for
+anything server-specific. Any server speaking `/v1/chat/completions` works —
+llama.cpp, Ollama, LM Studio — vLLM is just the one this was written against.
+A server that is down, refuses the key, or does not serve the named model is
+treated by the worker as an outage (paused, nothing charged, shown in the
+header), not as 46 failed jobs.
+
+Zero-code alternative: vLLM also serves Anthropic's `/v1/messages`, and the
+Anthropic SDK honours `ANTHROPIC_BASE_URL`; you lose JSON mode and have to
+alias the model name with `--served-model-name`, so prefer the route above.
+
 
 ## Test
 

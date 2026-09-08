@@ -3,9 +3,7 @@ in the maintained resume profile — never re-derived, never invented."""
 
 from __future__ import annotations
 
-import anthropic
-
-from . import config
+from . import config, llm
 from .email_classifier import _load_prompt
 
 PROMPT_VERSION = "cover_letter_v1"
@@ -45,7 +43,7 @@ def load_profile(resume_profile: str | None) -> str:
     return profile
 
 
-def generate(client: anthropic.Anthropic, profile_md: str, company: str | None,
+def generate(client: llm.Client, profile_md: str, company: str | None,
              title: str | None, jd_text: str | None) -> str:
     user_content = (
         f"<candidate_profile>\n{profile_md}\n</candidate_profile>\n"
@@ -70,9 +68,8 @@ def generate(client: anthropic.Anthropic, profile_md: str, company: str | None,
     # Raising the ceiling is close to free: output is billed on what is actually
     # generated, so a bigger cap costs nothing unless it is used. Do not "fix"
     # this instead by disabling thinking — see the note in email_classifier.
-    resp = client.messages.create(
+    return client.complete(
         model=config.COVER_MODEL, max_tokens=4000,
         system=_load_prompt(PROMPT_VERSION),
         messages=[{"role": "user", "content": user_content}],
-    )
-    return "".join(b.text for b in resp.content if b.type == "text").strip()
+    ).strip()

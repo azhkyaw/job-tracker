@@ -6,9 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-import anthropic
-
-from . import config
+from . import config, llm
 from .email_classifier import _call_json, _load_prompt
 
 PROMPT_VERSION = "jd_extract_v1"
@@ -50,7 +48,7 @@ def _validate(d: dict) -> None:
         raise ValueError(f"visa_signal must be one of {sorted(VISA_SIGNALS)}")
 
 
-def extract(client: anthropic.Anthropic, jd_text: str, title: str | None) -> JdExtraction:
+def extract(client: llm.Client, jd_text: str, title: str | None) -> JdExtraction:
     user_content = (
         "<job>\n"
         f"<title>{title or '(unknown title)'}</title>\n"

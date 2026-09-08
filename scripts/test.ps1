@@ -72,7 +72,7 @@ if (Get-Command node -ErrorAction SilentlyContinue) {
     Write-Host 'SKIP (node not found - extension/ is untested in this run)'
 }
 
-$suites = 'test_integration', 'test_web', 'test_captures', 'test_phase3', 'test_email_ingest', 'test_phase4'
+$suites = 'test_llm', 'test_integration', 'test_web', 'test_captures', 'test_phase3', 'test_email_ingest', 'test_phase4'
 foreach ($t in $suites) {
     Write-Host ("== {0,-18} " -f $t) -NoNewline
     $log = Join-Path $env:TEMP "$t.log"
