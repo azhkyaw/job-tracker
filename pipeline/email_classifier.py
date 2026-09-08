@@ -218,10 +218,14 @@ def classify_email(
     subject: str,
     received_at: datetime,
     body: str,
+    model: str = CLASSIFY_MODEL,
 ) -> Classification:
+    """`model` is a parameter so a replay (scripts/replay_classify.py) can run
+    the SAME prompt, truncation and validation against a candidate model and
+    diff it with the stored decision — the worker never passes it."""
     data = _call_json(
         client,
-        model=CLASSIFY_MODEL,
+        model=model,
         system=_load_prompt(CLASSIFY_PROMPT_VERSION),
         user_content=_email_block(sender, subject, received_at, body, STAGE1_BODY_CHARS),
         validate=_validate_classification,

@@ -18,6 +18,17 @@ superseded but retained for its Gmail restricted-scope compliance analysis.
 Installing the extension on a second device (an existing account, not a
 fresh signup) — including the single-token-per-account gotcha regenerating
 it silently breaks other devices with: `docs/extension-install.md`.
+Open-weight models on an OpenAI-compatible server (vLLM first) go through
+`pipeline/llm.py` (Key files); the hands-on lab that verifies it against a
+real server on GCP, stage by stage with results recorded, is
+`docs/vllm-lab.md` (started 8 Sep 2026; `scripts/gcp/vllm-vm.sh` is the VM,
+`scripts/replay_classify.py` diffs any model against the ~300 stored
+classifications, read-only). The lab lives in GCP project `vllm-lab-2609`,
+and **the author provisions it by hand to learn** — assist by explaining
+and verifying, never by running `gcloud` create/link/delete for them. As of
+8 Sep it is blocked before its first VM: the billing account refuses a
+fourth linked project and L4 quota is 0 everywhere; both are theirs to
+clear.
 
 A fourth thing the extension captures as of 28 Jul 2026: the **screening
 questions an apply form asks and the answers given** (`application_answers`,
@@ -2084,3 +2095,12 @@ win). No per-shell export needed for local dev.
    of bodies stored, and nothing reads them. One UPDATE clears them —
    deliberately not run, since it is a deletion and the author's call. The
    other half, bodies of job-related mail, is still the open question.
+8. **The vLLM lab** (`docs/vllm-lab.md`, started 8 Sep 2026): five stages on
+   one L4 in GCP — first serve, a replay of the ~300 stored classifications
+   through an open-weight model (`scripts/replay_classify.py`), serving
+   internals, Cloud Run / GKE / tensor parallel, and embeddings served by
+   vLLM to switch dedup on for the first time. Blocked at its §2 until the
+   author clears the billing-account project limit and the L4 quota by hand
+   (their call, deliberately); `pipeline/llm.py` stays unverified against a
+   real server until stage 1 runs. The replay is the measurement that decides
+   whether an 8B model can take classification over — never reason about it.

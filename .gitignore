@@ -15,3 +15,6 @@ profile.md
 # Cygwin/MSYS crash dumps — dropped in the repo root when a bash.exe process
 # faults, which the Git Bash tooling does occasionally on this Windows setup
 *.stackdump
+
+# scripts/replay_classify.py --out: every decision with its real subject line
+replay*.jsonl

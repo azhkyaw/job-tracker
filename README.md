@@ -204,6 +204,11 @@ Zero-code alternative: vLLM also serves Anthropic's `/v1/messages`, and the
 Anthropic SDK honours `ANTHROPIC_BASE_URL`; you lose JSON mode and have to
 alias the model name with `--served-model-name`, so prefer the route above.
 
+No GPU at hand? `docs/vllm-lab.md` is a staged, measured walkthrough of
+running vLLM on a single L4 in Google Cloud — Spot VM, IAP tunnel, nothing
+public — with `scripts/gcp/vllm-vm.sh` / `.ps1` as the reference commands
+and `scripts/replay_classify.py` to diff any model against the
+classifications already on record before trusting it with new mail.
 
 ## Test
 
