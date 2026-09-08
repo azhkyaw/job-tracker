@@ -2,7 +2,7 @@
 /applications/new). Python mirror of the id-derivation logic in
 extension/adapters/{linkedin,jobstreet,indeed}.js — those three files are the
 source of truth for DOM/URL shape (LinkedIn ships 3+ concurrent layouts; see
-CLAUDE.md), keep this in sync with them, not the other way round.
+.claude/rules/extension.md), keep this in sync with them, not the other way round.
 
 Deriving platform_job_id is what lets a manually-entered record converge
 with a later extension re-capture or backfill instead of duplicating —

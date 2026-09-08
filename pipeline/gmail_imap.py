@@ -6,7 +6,7 @@ pipeline/mailbox.py — this module only connects, searches, and returns the
 normalised message dict; never reimplement mailbox.py's logic here.
 
 Two verified stdlib traps this module works around (see docs/email-ingest.md
-§0 and CLAUDE.md's gotchas):
+§0 and .claude/rules/mail-ingest.md):
 
   1. IMAP4._command() does no quoting — every argument is concatenated onto
      the wire verbatim. A mailbox name or an X-GM-RAW query containing
@@ -298,7 +298,7 @@ class ImapProvider:
         # Gmail returns UID SEARCH results ascending. Assert rather than
         # silently sort/reverse — a server that ever violated this would
         # otherwise quietly revive the newest-first ordering bug documented
-        # in CLAUDE.md (gmail_sync._list_message_ids's long comment).
+        # in .claude/rules/mail-ingest.md (gmail_sync._list_message_ids's long comment).
         if uids != sorted(uids):
             raise MailboxError("Gmail IMAP returned UID SEARCH results out of "
                                 "ascending order — ingest order guarantees violated")

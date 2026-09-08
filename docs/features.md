@@ -194,7 +194,7 @@ stranger evaluating the project, this is the make-or-break minute.
 
 Include the search start-date question: defaulting to 12 months when someone
 started two weeks ago burns tokens for nothing (the `-d 14` finding in
-CLAUDE.md). Effort: medium.
+`docs/worklog.md`, task 1). Effort: medium.
 
 ## 4. Correction to an existing feature: cover letters
 

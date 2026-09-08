@@ -1517,7 +1517,7 @@ def refile_email(request: Request, email_id: str, action: str = Form(...),
     this works on an email in ANY triage_state (pending, auto_matched, or
     already resolved), because the case this exists for — an email attached
     to the wrong application due to a real-world naming mismatch the system
-    had no way to detect (see CLAUDE.md gotcha) — is usually only noticed
+    had no way to detect (CLAUDE.md invariant #3; `.claude/rules/matching.md`) — is usually only noticed
     after the fact, on the application detail page, not while it's pending.
 
     Scoped by source_email_id: only the event(s) THIS email caused are

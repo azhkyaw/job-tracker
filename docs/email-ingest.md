@@ -95,7 +95,7 @@ already does.
   stay valid: no re-ingest, no duplicate emails, no damage to the matcher's
   `source_email_id` links.
 - **`UID SEARCH` returns ascending UIDs**, i.e. oldest-first natively. The
-  newest-first ordering bug documented in CLAUDE.md — where a rejection was
+  newest-first ordering bug documented in `.claude/rules/mail-ingest.md` — where a rejection was
   processed before the confirmation that would have created its application —
   is structurally impossible on this path rather than fixed by convention.
 
@@ -242,7 +242,7 @@ realistically requires its own OAuth implementation. Do not promise it.
 3. **Generic IMAP in v1, or Gmail-only first?** Gmail-only, as planned.
    §7.4 stands as the scoped-out next step.
 4. **Does this change the email-retention answer?** Deliberately left open —
-   see CLAUDE.md task #7. The IMAP work made the tradeoff more attractive
+   see `docs/worklog.md` task #7. The IMAP work made the tradeoff more attractive
    (stable `X-GM-MSGID` makes "re-fetch on demand" cheaper) without deciding
    it, exactly as scoped.
 

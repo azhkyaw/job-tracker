@@ -100,7 +100,7 @@ a random `127.0.0.1` port, prints an authorization URL instead of launching a
 browser itself, and waits for Google to redirect back to that port with the
 code. This works fine on native Windows — no WSL localhost quirks — but the
 Cloud Console side isn't self-explanatory the first time through. Also read
-`docs/email-ingest.md` §8 and the 7-day-token-expiry gotcha in `CLAUDE.md`
+`docs/email-ingest.md` §8 and the 7-day-token-expiry gotcha in `.claude/rules/mail-ingest.md`
 before relying on this for anything long-running.
 
 **1. Google Cloud Console — one-time project setup**

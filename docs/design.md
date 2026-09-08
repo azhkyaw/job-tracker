@@ -15,7 +15,7 @@ rules are CLAUDE.md's invariants.
   fallback. Dropped 21 Aug 2026 (migration 015): across every real application
   it came out 175 false, 22 unset, zero true, so it never split.
   `analytics.by_resume` is NOT its successor — it records which standing resume
-  was sent, not whether an application was tailored (CLAUDE.md task 3b).
+  was sent, not whether an application was tailored (`docs/worklog.md` task 3b).
 - §7's DDL is abridged and now trails reality by 4 tables
   (`application_answers`, `sessions`, `gmail_sync_state`) and ~20 columns,
   among them `applications.origin` (invariant #9) and

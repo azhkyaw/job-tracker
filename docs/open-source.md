@@ -471,7 +471,9 @@ history. If the direction ever reverses, that analysis is still valid.
 1. **Does CLAUDE.md ship?** It is arguably the most differentiating artifact in
    the repo — a genuine record of what broke and why — and it also documents
    the author's real job search, including named companies. Publishing it is a
-   privacy call only the author can make.
+   privacy call only the author can make. Since 9 Sep 2026 that record spans
+   CLAUDE.md, `.claude/rules/*.md` and `docs/worklog.md`; the question covers all
+   three.
 2. **One repo or two?** §3.1.2 recommends splitting the extension for blast
    radius. The cost is a worse first-run story, since capture and server are
    documented as one system.

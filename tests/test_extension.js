@@ -5,7 +5,7 @@
  * extension/ has been shipped on `node --check` alone, which catches a typo and
  * nothing else. The identity path in particular has now been misdiagnosed twice
  * on plausible reasoning (an unreachable top frame, twice mitigated the wrong
- * way — see CLAUDE.md), and the fix for it is *still* unverifiable against a
+ * way — see .claude/rules/extension.md), and the fix for it is *still* unverifiable against a
  * real apply without waiting for one to happen and go wrong.
  *
  * The fix is testable, though, because `readJob(doc, loc)` takes the document it

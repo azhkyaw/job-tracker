@@ -249,7 +249,7 @@ existing pipeline is comfortably cheap. Two new cost drivers:
   hosting, per-user LLM spend needs to stay well under ~US$5 across the whole
   90 days. Rate-limit generation per pass; do not offer unlimited.
 - **Backfill** is a burst of classification at signup, bounded by the window.
-  The `-d N` finding (CLAUDE.md, next tasks #1) matters here: defaulting to
+  The `-d N` finding (`docs/worklog.md`, task #1) matters here: defaulting to
   12 months when the user started searching two weeks ago burns tokens for
   nothing. Ask for the start date during onboarding.
 

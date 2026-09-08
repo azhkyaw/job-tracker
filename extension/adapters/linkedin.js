@@ -93,7 +93,7 @@ window.__trackerAdapter = {
   //
   // ROOT CAUSE FOUND (3 Aug 2026), after two wrong guesses (a widened
   // selector requiring no <form>, then several diagnostic-only attempts —
-  // see the CLAUDE.md gotcha for the full trail). Two real misses (Bellows &
+  // see the .claude/rules/extension.md gotcha for the full trail). Two real misses (Bellows &
   // Munson, Relecloud) both traced back to the SAME cause, confirmed live: Easy
   // Apply opened from the standalone `/jobs/view/<id>/` page renders the
   // ENTIRE modal inside an OPEN shadow root (a `<div class="theme--dark">`

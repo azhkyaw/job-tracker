@@ -41,7 +41,7 @@
    * something a trailing .catch() on the returned promise can see. Reloading an
    * unpacked extension does exactly that to every tab already open: content
    * scripts are NOT re-injected, so the old script keeps running against a port
-   * that no longer exists (CLAUDE.md's known-untested note on adapter reloads,
+   * that no longer exists (.claude/rules/extension.md's known-untested note on adapter reloads,
    * seen from the other side).
    *
    * The consequence was silent and total. capture() ends in send(payload)

@@ -14,7 +14,7 @@ A tutorial model answers "does vLLM run"; this workload answers "is it any
 good at my job", and it had four things waiting on 8 Sep 2026:
 
 - **A real drain — already taken.** 46 emails sat stored but unread from
-  3 Sep, when the Anthropic account ran out of credit (CLAUDE.md, the
+  3 Sep, when the Anthropic account ran out of credit (`.claude/rules/llm.md`, the
   billing-error gotcha), until the top-up on 8 Sep drained them on Claude
   before this lab could start. The lab's real workload is therefore the
   replay (§4) plus whatever the next `sync` brings in; stage 1's finish line
