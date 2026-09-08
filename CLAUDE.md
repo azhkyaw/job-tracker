@@ -1084,6 +1084,24 @@ axis) + **DM Mono**, from Google Fonts.
   confirmation swapping out the top card), silently losing data.
 - **Git Bash mangles `/migrations/...`-style paths** in `docker compose exec` commands
   (rewrites the leading `/` to the Git install dir). Prefix with `MSYS_NO_PATHCONV=1`.
+- **A file with MIXED line endings is committed as-is, and then every line of
+  it is a diff** (8 Sep 2026). The repo stores LF and `core.autocrlf=true`
+  hands out CRLF on checkout; git normalises a consistently-CRLF file back to
+  LF on `add`, but a file whose new lines are LF among old CRLF ones (an
+  appended `printf`, a patch written with `\n`) is left alone, so README.md
+  landed as 578 changed lines for a 46-line addition and had to be amended.
+  `git diff --stat` before committing is the check — a count near the file's
+  length is this — and normalising the touched file to LF
+  (`b.replace(b"\r\n", b"\n")`) before `git add` is the fix. The scrub
+  history's tree-hash trick has the same shape: verify the size of a change
+  against what it should be, not just that it applied.
+- **`set -e` does not stop a chain inside Claude Code's Bash tool.** The
+  harness wraps the command in a context where bash ignores `-e` (the same
+  rule that disables it inside `&&`/`||` lists), so a failing `uv run python
+  patcher.py` was followed by every later step and a commit was made from the
+  wrong tree (8 Sep 2026; reset before push). Check `$?` after each step that
+  matters, or chain with `&&` explicitly. `uv run` itself propagates the
+  exit code correctly — verified.
 - **A bare date has no time-of-day — never default it to midnight.** Midnight
   UTC displays as the previous day for non-UTC users, and local midnight sits
   on the date boundary so it shifts if the user later changes timezone. The
