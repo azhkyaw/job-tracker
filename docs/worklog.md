@@ -325,3 +325,24 @@ the key to each real case.
    (their call, deliberately); `pipeline/llm.py` stays unverified against a
    real server until stage 1 runs. The replay is the measurement that decides
    whether an 8B model can take classification over — never reason about it.
+9. **Rejection reasons on every rejected event** (9 Sep 2026). Asked whether a
+   visa non-proceed deserved a different indication than `rejected`. Measured
+   first: 51 rejected events, 40 by email with an empty payload and 11 by hand
+   (6 visa, 3 role_closed, 2 other); 5 of the 6 visa ones were INBOUND leads
+   (a recruiter approached, then dropped the thread when visa came up), and
+   only 1 of the 40 rejection emails mentions a visa at all — the reason
+   arrives out of band, which is why the manual form got the field on 28 Jul.
+   22 postings were extracted `local_only`; the user applied to all of them,
+   6 are rejected, 11 still wait. Decided: keep `rejected` as the status (a
+   `visa_blocked` type was costed and refused — `.claude/rules/web-ui.md`
+   rule 12) and make the REASON first-class instead: `set_rejection_reason`
+   tags any rejected event whatever its source, the list wears the reason in
+   grey and filters on it (`unrecorded` is the tagging queue: 38 applications
+   on the day it shipped), and `/analytics` counts it per reason with an
+   inbound split. Found while verifying on real data: the list's search box
+   had read "None" since the stall band shipped on 8 Sep (`base.html`'s
+   top-level `{% set q %}` shadowing the child context — gotcha in the web-ui
+   rule); fixed and pinned by a test. Still open, and the honest use of the
+   tally: nothing yet draws the line from `extractions.visa_signal =
+   local_only` to the application's outcome — that join is the
+   COMPASS-adjacent panel `docs/features.md` §3.4 wants.

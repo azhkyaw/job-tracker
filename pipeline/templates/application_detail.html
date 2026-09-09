@@ -47,7 +47,7 @@
           {% else %}— applied on-platform (Easy Apply / quick apply)
           {% endif %}
         {% endif %}
-        {%- if e.payload.get('reason') %}
+        {%- if e.payload.get('reason') and e.type != 'rejected' %}
           <span class="mono quiet">· {{ event_reasons.get(e.payload['reason'], e.payload['reason']) }}</span>
         {%- endif %}
         {%- if e.payload.get('channel') %}
@@ -57,7 +57,25 @@
         {% if e.payload.get('status_detail') %}— {{ e.payload['status_detail'] }}{% endif %}
         {% if e.source == 'manual' and e.type in manual_events %}
           <span class="sm quiet">· <a href="/applications/{{ a.id }}/events/{{ e.id }}/edit">edit</a></span>
-        {% endif %}</span></li>
+        {% endif %}</span>
+        {#- Why, on every rejection whatever its source — the one field of an
+            emailed event the user may write, since it is their annotation and
+            not the email's claim (web.py:set_rejection_reason). A select
+            showing the current value, the same shape as the visa select on
+            the extraction card below; the blank option clears. It IS the
+            reason's display on a rejected line, so the static span above
+            skips rejected events rather than saying it twice. #}
+        {%- if e.type == 'rejected' %}
+        <form method="post" action="/applications/{{ a.id }}/events/{{ e.id }}/reason" class="why">
+          <select name="reason" aria-label="Why they rejected you">
+            <option value="">{% if e.payload.get('reason') %}— clear the reason —{% else %}why? — not recorded{% endif %}</option>
+            {% for value, label in event_reasons.items() %}
+            <option value="{{ value }}" {% if e.payload.get('reason') == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+          <button>Save</button>
+        </form>
+        {%- endif %}</li>
     {% endfor %}
   </ul>
 </div>

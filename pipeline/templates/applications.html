@@ -2,20 +2,24 @@
 {% block title %}applications — tracker{% endblock %}
 {% block nav_apps %}active{% endblock %}
 {% block content %}
-{# Every link on this page that changes one filter needs to carry the OTHER
-   three (origin/q/sort/status) or picking a status would silently drop your
-   search, and vice versa — the exact bug the tabs already had for `q` before
-   this macro (fixed as a side effect of giving the funnel one place to build
-   a URL from). `sort` is omitted when it's the default so a plain filter
-   click doesn't clutter every href with the default's own name — compared
-   against the DEFAULT_SORT global, never a literal, so moving the default in
-   web.py can't leave this silently resetting the user's chosen sort. #}
-{% macro list_url(status='', origin=None, q='', sort='') -%}
+{# Every link on this page that changes one filter needs to carry the OTHERS
+   (origin/q/sort/status, and reason on a rejected view) or picking a status
+   would silently drop your search, and vice versa — the exact bug the tabs
+   already had for `q` before this macro (fixed as a side effect of giving the
+   funnel one place to build a URL from). `sort` is omitted when it's the
+   default so a plain filter click doesn't clutter every href with the
+   default's own name — compared against the DEFAULT_SORT global, never a
+   literal, so moving the default in web.py can't leave this silently
+   resetting the user's chosen sort. `reason` is the one filter NOT every link
+   carries: it belongs to `rejected`, so the funnel and legend links (which
+   change status) drop it on purpose, and the tabs, search and sort keep it. #}
+{% macro list_url(status='', origin=None, q='', sort='', reason='') -%}
 {%- set parts = [] -%}
 {%- if origin %}{% set _ = parts.append('origin=' + origin) %}{% endif -%}
 {%- if q %}{% set _ = parts.append('q=' + (q | urlencode)) %}{% endif -%}
 {%- if sort and sort != DEFAULT_SORT %}{% set _ = parts.append('sort=' + sort) %}{% endif -%}
 {%- if status %}{% set _ = parts.append('status=' + status) %}{% endif -%}
+{%- if reason %}{% set _ = parts.append('reason=' + reason) %}{% endif -%}
 /{{ '?' + (parts | join('&')) if parts else '' }}
 {%- endmacro %}
 
@@ -57,11 +61,30 @@
   <a class="sm" href="{{ list_url(origin=origin, q=q, sort=sort) }}">show all statuses</a>
   {% endif %}
 </div>
+{# The rejected segment, once selected, unfolds into WHY — the same chip-row
+   idea one level down (UI rule 11): each chip is `?status=rejected&reason=`,
+   active reads through weight not hue, and the unrecorded bucket sits last
+   because it is the to-do, not an answer. Counted by
+   analytics.rejection_reasons over the same tab (origin) the funnel counts,
+   and off the same event the row's badge wears, so a chip's number is the
+   number of rows it shows. #}
+{% if status == 'rejected' and reasons %}
+<div class="legend" style="margin-top:-1.1rem">
+  <span class="quiet">why it closed ·</span>
+  {% for x in reasons %}
+  {% set is_active = x.key == reason %}
+  <a class="{% if is_active %}active{% endif %}"
+     href="{{ list_url(status='rejected', reason=('' if is_active else x.key), origin=origin, q=q, sort=sort) }}"
+     title="{{ x.n }} rejected — {{ x.label }}{% if is_active %} — click to clear{% endif %}">{{ x.n }} {{ x.label }}</a>
+  {% endfor %}
+</div>
+{% endif %}
 {% endif %}
 
 <form class="bar" method="get" action="/">
   {% if origin %}<input type="hidden" name="origin" value="{{ origin }}">{% endif %}
   {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
+  {% if reason %}<input type="hidden" name="reason" value="{{ reason }}">{% endif %}
   <span class="grow"><input type="search" name="q" value="{{ q }}"
         placeholder="Search company or role" aria-label="Search company or role"
         style="width:100%"></span>
@@ -72,15 +95,15 @@
     <option value="company" {% if sort == 'company' %}selected{% endif %}>company A–Z</option>
   </select>
   <button>Apply</button>
-  {% if q %}<a class="sm" href="{{ list_url(status=status, origin=origin, sort=sort) }}">Clear</a>{% endif %}
+  {% if q %}<a class="sm" href="{{ list_url(status=status, origin=origin, sort=sort, reason=reason) }}">Clear</a>{% endif %}
 </form>
 
 <div class="bar" style="justify-content:space-between">
   <span class="tabs">
-    <a href="{{ list_url(status=status, q=q, sort=sort) }}" class="{{ 'active' if not origin }}">all</a>
-    <a href="{{ list_url(status=status, origin='applied', q=q, sort=sort) }}" class="{{ 'active' if origin == 'applied' }}">applied</a>
-    <a href="{{ list_url(status=status, origin='inbound', q=q, sort=sort) }}" class="{{ 'active' if origin == 'inbound' }}">inbound</a>
-    <a href="{{ list_url(status=status, origin='saved', q=q, sort=sort) }}" class="{{ 'active' if origin == 'saved' }}">saved</a>
+    <a href="{{ list_url(status=status, q=q, sort=sort, reason=reason) }}" class="{{ 'active' if not origin }}">all</a>
+    <a href="{{ list_url(status=status, origin='applied', q=q, sort=sort, reason=reason) }}" class="{{ 'active' if origin == 'applied' }}">applied</a>
+    <a href="{{ list_url(status=status, origin='inbound', q=q, sort=sort, reason=reason) }}" class="{{ 'active' if origin == 'inbound' }}">inbound</a>
+    <a href="{{ list_url(status=status, origin='saved', q=q, sort=sort, reason=reason) }}" class="{{ 'active' if origin == 'saved' }}">saved</a>
   </span>
   <span class="sm">
     {# The queue moved to its own page (21 Aug 2026); this is the nudge that
@@ -147,6 +170,15 @@
         <span class="num">{{ r.silent_days }}d</span>
       {% endif %}
       <span class="badge" style="--c:var(--{{ 'interview_invite' if r.status == 'interviewing' else r.status }})">{{ r.status }}</span>
+      {#- Why, in grey: a property of the close, not of the wait (UI rule 1),
+          the same call as the on-platform badge. The KEY, not the label, so it
+          stays a word on a row; the title carries the full wording. Nothing
+          here is a link — the row is one already, and the filter lives in the
+          why-chips under the legend. #}
+      {%- if r.status == 'rejected' and r.reject_reason %}
+      <span class="badge" style="--c:var(--interested)"
+            title="rejected — {{ event_reasons.get(r.reject_reason, r.reject_reason) }}">{{ r.reject_reason | replace('_', ' ') }}</span>
+      {%- endif %}
     </span>
   </a>
   {% endfor %}

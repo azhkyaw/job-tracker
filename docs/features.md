@@ -284,6 +284,11 @@ that was never filled:
   `reason` and `channel` there (`web.py:_EVENT_REASONS` / `_EVENT_CHANNELS`),
   prompted by a visa rejection delivered over WhatsApp — news with no ingest
   path, which the event log previously had no truthful way to record.
+  **Filled further 9 Sep 2026:** `reason` can be set on any `rejected` event
+  whatever its source (`web.py:set_rejection_reason`), the list wears and
+  filters on it, and `/analytics` counts it per reason — the question the
+  vocabulary was written to answer. Visa stays a reason on `rejected`, not a
+  status: colour is the state of the wait, and closed is closed.
 - `postings.reposted` and `posted_label` (migration 004) are captured but read
   by nothing — both are ghost-job signals (§3.3).
 - `events.type` includes `follow_up_sent` and `interested`, both barely used.

@@ -185,6 +185,53 @@ def weekly(conn, user_id, weeks: int = 14):
     return out
 
 
+def rejection_reasons(conn, user_id, origin: str | None = None):
+    """Why applications closed, counted per APPLICATION from the rejected
+    event's `payload.reason` — the closed vocabulary web.py's timeline form
+    writes (`_EVENT_REASONS`). Rows: `reason` (a vocabulary key, or NULL when
+    nobody has recorded one), `n` applications, `inbound` of which were leads
+    the user never applied to.
+
+    The NULL row is the point, not noise. On the author's data 40 of 51
+    rejections arrived by email, which until 9 Sep 2026 could not carry a
+    reason at all, so "not recorded" is the backlog and the page shows it as
+    its own row rather than folding it into `unstated` — the employer gave no
+    reason and someone wrote that down, a real answer, distinct from an
+    unrecorded one.
+
+    One rejected event per application: the newest one that HAS a reason,
+    else the newest at all. An application is rejected once in the world; a
+    second rejected event is a recording artefact (the email and a hand-filed
+    copy, or a re-sent letter), and a reason on either is the application's
+    reason. The list's `reason` filter reads the same event (web.py, the `rr`
+    LATERAL), so a chip's count is the number of rows clicking it shows —
+    change one and change the other.
+
+    `inbound` is split out because it is a different fact about the market:
+    5 of the author's 6 visa rejections were recruiters who approached first
+    and then dropped the thread, not applications the user sent.
+
+    `origin` scopes it the way `web._funnel` is scoped, so the chips under a
+    filtered list count the tab they sit on."""
+    return conn.execute("""
+        WITH closed AS (
+            SELECT DISTINCT ON (e.application_id)
+                   e.application_id, e.payload->>'reason' AS reason
+            FROM events e
+            JOIN applications a ON a.id = e.application_id
+            WHERE a.user_id = %(user_id)s AND e.type = 'rejected'
+              AND (%(origin)s::text IS NULL OR a.origin = %(origin)s)
+            ORDER BY e.application_id, (e.payload->>'reason') IS NOT NULL DESC,
+                     e.occurred_at DESC, e.created_at DESC
+        )
+        SELECT c.reason, count(*) AS n,
+               count(*) FILTER (WHERE a.origin = 'inbound') AS inbound
+        FROM closed c JOIN applications a ON a.id = c.application_id
+        GROUP BY c.reason
+        ORDER BY n DESC, c.reason
+    """, {"user_id": user_id, "origin": origin}).fetchall()
+
+
 # "Applied > REMINDER_DAYS ago, no response, no follow-up, not withdrawn" —
 # written ONCE because two callers need it: the /follow-ups page wants the rows
 # and every other page wants only the count for its nav badge. Two hand-written

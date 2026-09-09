@@ -8,7 +8,9 @@ manual event logging, triage listing, and all resolve actions (link appends
 an event with provenance; create builds a full record; ignore; lead files a
 recruiter_outreach email as an inbound application with origin='inbound' and
 no fabricated applied event), plus the triage actionable/inbound lane split
-and the applications-list origin filter.
+and the applications-list origin filter, and (9 Sep 2026) the rejection
+reason on any rejected event whatever its source — the route, the row badge,
+the why-chips + `reason` filter, and the analytics table.
 """
 
 import os
@@ -593,7 +595,8 @@ for _key in web._SORTS:
     # Same query, same ORDER BY, with each of the other filters layered on: the
     # ORDER BY is interpolated into one f-string shared by all of them, so a key
     # that only works unfiltered is a key that breaks on the next click.
-    for _extra in ("origin=applied", "status=applied", "q=sort"):
+    for _extra in ("origin=applied", "status=applied", "q=sort",
+                   "reason=visa", "status=rejected&reason=unrecorded"):
         _r = client.get(f"/?sort={_key}&{_extra}")
         check(f"sort={_key} + {_extra} renders", _r.status_code == 200, _r.status_code)
 check("the default is reachable by name and identical to the bare URL",
@@ -1509,8 +1512,8 @@ check("the row leaves the follow-up queue, because it is genuinely answered now"
       "sponsorless" not in r.text)
 
 r = client.get(f"/applications/{wa_app}")
-check("the timeline names the reason and the channel it came through",
-      "visa / sponsorship" in r.text and "WhatsApp" in r.text, r.status_code)
+check("the timeline shows the reason as the selected why, and the channel it came through",
+      "selected>visa / sponsorship" in r.text and "WhatsApp" in r.text, r.status_code)
 
 # A reason is only meaningful on a rejection; there's no JS to hide the select.
 r = client.post(f"/applications/{wa_app}/events",
@@ -1552,6 +1555,133 @@ check("an event type the ingest paths own is still refused", r.status_code == 40
 r = client.post(f"/applications/{wa_app}/events", data={"type": "recruiter_outreach"})
 check("so is recruiter_outreach — invariant #9 reserves it for triage",
       r.status_code == 400, r.status_code)
+
+print("rejection reasons: any rejected event, whatever its source")
+# Northwind's rejection came by email (test_integration seeded it through the
+# matcher), so the edit route refuses it on principle — and until 9 Sep 2026
+# that left no way to say WHY it closed. The reason is the user's annotation,
+# not the email's claim, so it has its own narrow door. A third rejected
+# application with no reason at all keeps the `unrecorded` assertions honest
+# whatever else the seed holds.
+with db.connect() as conn, conn.transaction():
+    nw_rej = conn.execute(
+        "SELECT id, type, source, occurred_at, payload FROM events "
+        "WHERE application_id = %s AND type = 'rejected'", (northwind_app,)).fetchone()
+    nw_applied = conn.execute(
+        "SELECT id FROM events WHERE application_id = %s AND type = 'applied' LIMIT 1",
+        (northwind_app,)).fetchone()["id"]
+    ut_job = conn.execute(
+        "INSERT INTO jobs (user_id, company_norm, title_canonical) "
+        "VALUES (%s, 'untagged co', 'Data Engineer') RETURNING id", (user_id,)).fetchone()["id"]
+    ut_app = conn.execute(
+        "INSERT INTO applications (user_id, job_id) VALUES (%s, %s) RETURNING id",
+        (user_id, ut_job)).fetchone()["id"]
+    conn.execute(
+        "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+        "VALUES (%s, %s, 'applied', 'manual', now() - interval '30 days', '{}'), "
+        "       (%s, %s, 'rejected', 'email', now() - interval '10 days', '{}')",
+        (user_id, ut_app, user_id, ut_app))
+check("precondition: an email-sourced rejection with no reason",
+      nw_rej["source"] == "email" and "reason" not in nw_rej["payload"], nw_rej)
+r = client.get(f"/applications/{northwind_app}/events/{nw_rej['id']}/edit")
+check("the edit route still refuses an emailed event", r.status_code == 404, r.status_code)
+r = client.get(f"/applications/{northwind_app}")
+check("the timeline offers the why-select on it, reading not recorded",
+      f"/events/{nw_rej['id']}/reason" in r.text and "why? — not recorded" in r.text,
+      r.status_code)
+
+r = client.get("/?status=rejected&reason=unrecorded")
+check("before: the untagged rejections are in the unrecorded queue",
+      r.status_code == 200 and f'href="/applications/{northwind_app}"' in r.text
+      and "untagged co" in r.text, r.status_code)
+check("and the tagged one is not — its reason sits on one of two rejected events, "
+      "which is enough: an application wears the newest reason it has",
+      "sponsorless" not in r.text)
+
+r = client.post(f"/applications/{northwind_app}/events/{nw_rej['id']}/reason",
+                data={"reason": "visa"})
+check("tagging an emailed rejection redirects to the thread", r.status_code == 303, r.status_code)
+with db.connect() as conn:
+    after = conn.execute(
+        "SELECT type, source, occurred_at, payload FROM events WHERE id = %s",
+        (nw_rej["id"],)).fetchone()
+check("only the reason changed — type, source and date are still the email's",
+      after["payload"] == {**nw_rej["payload"], "reason": "visa"}
+      and after["type"] == "rejected" and after["source"] == "email"
+      and after["occurred_at"] == nw_rej["occurred_at"], after)
+r = client.get(f"/applications/{northwind_app}")
+check("the timeline shows it as the selected reason",
+      "selected>visa / sponsorship" in r.text, r.status_code)
+
+r = client.get("/")
+nw_row = r.text.split(f'href="/applications/{northwind_app}"')[1].split("</a>")[0]
+check("the list row wears the reason in grey next to the status",
+      ">rejected</span>" in nw_row and ">visa</span>" in nw_row, nw_row[-400:])
+ut_row = r.text.split(f'href="/applications/{ut_app}"')[1].split("</a>")[0]
+check("an untagged rejection wears nothing extra",
+      ">rejected</span>" in ut_row and ">visa</span>" not in ut_row
+      and "not recorded" not in ut_row, ut_row[-400:])
+
+r = client.get("/?reason=visa")
+check("a reason filter is a rejected filter: tagged rows only, funnel marked filtered",
+      r.status_code == 200 and 'class="funnel filtered"' in r.text
+      and f'href="/applications/{northwind_app}"' in r.text and "sponsorless" in r.text
+      and "untagged co" not in r.text, r.status_code)
+chips = r.text.split("why it closed")[1].split("</div>")[0]
+check("the why-chips unfold under the legend with this reason active",
+      'class="active"' in chips and "visa / sponsorship</a>" in chips, chips)
+check("the unrecorded bucket is a chip too, last, linking to its queue",
+      "reason=unrecorded" in chips and chips.rstrip().endswith("not recorded</a>")
+      and chips.index("visa / sponsorship") < chips.index("not recorded"), chips)
+funnel = r.text.split('class="funnel')[1].split("</div>")[0]
+check("the funnel's own links drop the reason — it belongs to rejected",
+      "reason=" not in funnel, funnel[:300])
+r = client.get("/?reason=visa&origin=applied")
+tabs = r.text.split('class="tabs"')[1].split("</span>")[0]
+check("the origin tabs carry it, like every other filter",
+      tabs.count("reason=visa") == 4, tabs)
+check("and the search form re-submits it",
+      '<input type="hidden" name="reason" value="visa">' in r.text)
+
+r = client.get("/?status=rejected&reason=unrecorded")
+check("after tagging, the queue no longer lists the tagged one",
+      f'href="/applications/{northwind_app}"' not in r.text and "untagged co" in r.text,
+      r.status_code)
+r = client.get("/?reason=carrier-pigeon")
+check("an unknown reason is ignored, not an error — the unfiltered list",
+      r.status_code == 200 and "untagged co" in r.text
+      and 'class="funnel filtered"' not in r.text, r.status_code)
+
+r = client.get("/analytics")
+tbl = r.text.split("Why it closed")[1].split("</table>")[0]
+check("analytics counts the reasons, each linking to the list filtered by it",
+      r.status_code == 200
+      and 'href="/?status=rejected&amp;reason=visa">visa / sponsorship</a>' in tbl
+      and 'href="/?status=rejected&amp;reason=unrecorded">not recorded</a>' in tbl, tbl)
+check("the unrecorded row is last however large it is",
+      tbl.index("not recorded") > tbl.rindex("visa / sponsorship"), tbl)
+
+r = client.post(f"/applications/{northwind_app}/events/{nw_rej['id']}/reason",
+                data={"reason": "telepathy"})
+check("an unknown reason is refused", r.status_code == 400, r.status_code)
+r = client.post(f"/applications/{northwind_app}/events/{nw_applied}/reason",
+                data={"reason": "visa"})
+check("a reason on anything but a rejection is 404, like an ineligible edit",
+      r.status_code == 404, r.status_code)
+r = client.post(f"/applications/{wa_app}/events/{nw_rej['id']}/reason",
+                data={"reason": "visa"})
+check("and so is another application's event", r.status_code == 404, r.status_code)
+r = client.post(f"/applications/{northwind_app}/events/{nw_rej['id']}/reason",
+                data={"reason": ""})
+with db.connect() as conn:
+    p = conn.execute("SELECT payload FROM events WHERE id = %s",
+                     (nw_rej["id"],)).fetchone()["payload"]
+check("a blank clears it — the key goes, nothing else in the payload moves",
+      r.status_code == 303 and p == nw_rej["payload"], p)
+check("the select then reads not recorded again",
+      "why? — not recorded" in client.get(f"/applications/{northwind_app}").text)
+client.post(f"/applications/{northwind_app}/events/{nw_rej['id']}/reason",
+            data={"reason": "visa"})
 
 print("form answers: detail page + answer bank")
 with db.connect() as conn, conn.transaction():

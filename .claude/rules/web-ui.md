@@ -170,8 +170,50 @@ axis) + **DM Mono**, from Google Fonts.
     the same collapse `_display()` already applies to the funnel's own
     counts, so a filter and the count that names it can't disagree about
     what one status label covers.
+12. **Why it closed is a qualifier on `rejected`, never a status of its own**
+    (9 Sep 2026). A visa rejection is still a closed thread, so it keeps rust
+    (rule 1); the reason rides beside it as a grey badge on the list row — the
+    same call as rule 9b's on-platform badge, a property of the close, not of
+    the wait — and as the selected option of a small why-select on every
+    rejected timeline line, whatever the event's source. A `visa_blocked` type
+    was costed and refused: a CHECK entry, a precedence slot, a trace role,
+    BOTH response-type lists, a funnel segment and a palette token, and it
+    forks the vocabulary ("rejected for salary" would then want its own type).
+    The event log was already right about the state; what was wrong was that
+    40 of 51 real rejections came by email and could not carry a reason at
+    all, since the edit route refuses email-sourced events on principle.
+    `set_rejection_reason` is the narrow door: it writes ONLY `payload.reason`,
+    so the email's own facts (type, date) stay read-only and the user's
+    annotation does not.
+    The funnel unfolds one level: with `rejected` selected, the legend grows a
+    why-chip row (`?status=rejected&reason=<key>`, active through weight —
+    rule 11's treatment), counted by `analytics.rejection_reasons` over the
+    same origin tab the funnel counts and off the SAME event the row badge
+    wears (the newest rejected event carrying a reason, else the newest), so a
+    chip's number is the number of rows it shows — two definitions of "which
+    rejected event" would let the count and the rows disagree. `unrecorded` is
+    a filter value and NOT a payload value: an event carries a vocabulary key
+    or carries none, and `unstated` (the employer gave no reason, and that was
+    written down) is a real answer. A reason filter IS a rejected filter, so
+    the route folds `?reason=` into `status=rejected`; the funnel and legend
+    links drop `reason` on purpose, the tabs, search and sort carry it. The
+    analytics table splits out `inbound` because on real data 5 of the 6 visa
+    rejections were recruiters who approached first and then dropped the
+    thread — a different fact about the market than "my applications get
+    rejected for visa". Counts only: nothing here is a rate.
 
 ## Gotchas learned the hard way
+
+- **A top-level `{% set %}` in the PARENT template shadows the child's render
+  context in every block.** `base.html` set `q = queue_alert()` for the stall
+  band (8 Sep 2026), and from that moment the list's search box rendered
+  `value="None"`, its "Nothing matches" state never rendered, and its Clear
+  link never showed — with a stalled queue it would have been worse, since
+  `q` was then the health DICT and `list_url()` would have urlencoded it into
+  every href on the page. No test asserted on the box's value, so it went
+  unseen for a day and was found by eye. Now `stall`; keep base.html's
+  variables distinct from every context key any page passes, the same rule
+  the globals already follow (see the `theme` collision below).
 
 - **An output-column alias works in `ORDER BY` only as a BARE NAME.** Wrap it in
   anything — `lower(company_display)`, `COALESCE(applied_at, x)` — and Postgres

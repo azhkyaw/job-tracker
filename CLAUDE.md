@@ -54,7 +54,8 @@ it: the resume picker is PROMOTED to `applications.resume_file` (migration
 - `pipeline/mailbox.py` — mail-ingest orchestrator shared by IMAP + Gmail API
 - `pipeline/dedup.py` — the only place two jobs are merged (`merge_jobs`)
 - `pipeline/trace.py` — pure timeline/axis geometry for list + detail pages
-- `pipeline/analytics.py` — funnel, response-rate, weekly, reminders queries
+- `pipeline/analytics.py` — funnel, response-rate, weekly, reminders and
+  rejection-reason queries
 - `pipeline/llm.py` — the ONE door to every model call (8 Sep 2026). Two
   backends behind `Client.complete()`: Anthropic (default; the request is
   byte-identical to what the stages sent before, so every measured
@@ -258,7 +259,16 @@ work" below stays a list of what is open, not a history of what was done.
    (`ingest.local_date_to_utc`, local noon) and `payload.reason` /
    `payload.channel` recording why it ended and where it came from
    (`_EVENT_REASONS` / `_EVENT_CHANNELS`; JSONB, no columns — the home
-   `docs/features.md` §7 always intended). `_MANUAL_EVENTS` is a superset of
+   `docs/features.md` §7 always intended). **A `reason` goes on ANY
+   `rejected` event, whatever its source** (9 Sep 2026,
+   `web.py:set_rejection_reason`): an emailed rejection's type and date are
+   the email's facts and stay read-only, the reason is the user's annotation
+   of it — 40 of 51 real rejections came by email and none could carry one.
+   The list wears it in grey and filters on it (`?reason=`, with
+   `unrecorded` as the tagging queue) and `/analytics` counts it. A visa
+   non-proceed is a REASON on `rejected`, not a status of its own, by
+   design — `.claude/rules/web-ui.md` rule 12 has the costing.
+   `_MANUAL_EVENTS` is a superset of
    `_OUTCOME_TYPES` by assertion, so the timeline form and `/applications/new`
    can't offer different outcomes. **`engaged`** (added 31 Jul 2026) is the
    status-driving type for an employer/recruiter reaching out directly (call,
@@ -409,6 +419,15 @@ rest of this file went" above.
 
 - psycopg server-side binding cannot type a bare `%s IS NULL` — cast it
   (`%s::text IS NULL`). This bit us once in the matcher.
+- **Same class, different operator: `Json(...)` binds as `json`, and Postgres
+  has no `jsonb || json` operator** (9 Sep 2026). Every INSERT in this repo
+  passes `Json(...)` into a `jsonb` column and gets away with it, because an
+  assignment cast applies; CONCATENATION does not, so the first
+  `SET payload = payload || %s` written here failed with `operator does not
+  exist` and a "you might need explicit type casts" hint. Cast the parameter
+  (`payload || %s::jsonb`). The general shape is the bullet above: psycopg
+  types a parameter from the VALUE, not from where it lands, so any position
+  that isn't a plain assignment or comparison needs the cast spelled out.
 - **A registry of interchangeable things needs a test that LOOPS the registry.**
   `_SORTS` had four keys; the suite named three of them by hand and the fourth
   was broken for weeks. `tests/test_web.py` now iterates `web._SORTS` (crossed
@@ -424,6 +443,16 @@ rest of this file went" above.
   anything containing backslashes. (Line endings are PER MACHINE under
   `core.autocrlf=true` — `git ls-files --eol CLAUDE.md` says what this working
   copy has; match it when constructing an Edit `old_string`.)
+  **A second, unrelated reason to stop heredoc'ing a patcher: a LARGE inline
+  heredoc is truncated mid-body** (9 Sep 2026). Two died the same session at
+  roughly 7.5 KB of command text, both reporting bash's
+  `unexpected EOF while looking for matching ''` — which points at quoting and
+  is a lie: the same bytes, written to a file and run as `bash file.sh`, ran
+  fine at 20 KB, and the `'''` blocks the message blames are innocent. So the
+  failure scales with the COMMAND, not its content, and a patcher that worked
+  at 5 KB will start failing as its docstrings grow. Write the script with the
+  Write tool and run it by path — that also gets `python -c "import ast"` as a
+  syntax check on the patcher itself before it touches the tree.
 - **A file with MIXED line endings is committed as-is, and then every line of
   it is a diff** (8 Sep 2026). The repo stores LF and `core.autocrlf=true`
   hands out CRLF on checkout; git normalises a consistently-CRLF file back to
@@ -586,3 +615,6 @@ The dated register behind each item, tasks 1-8 with their measurements, is
 - **Dedup and extraction verification have never run on real data** (0
   embeddings, 0 of 192 rows verified); exercise once or label experimental
   before release. (task 6)
+- **Visa signal vs outcome is still two unjoined facts** (task 9): 22
+  postings extracted `local_only`, all applied to, 6 rejected, 11 waiting —
+  and 38 rejections wait to be tagged at `/?reason=unrecorded`.

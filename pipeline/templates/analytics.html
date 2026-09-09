@@ -94,4 +94,28 @@
 {% if by_resume | length > 1 %}
 {{ dim_table("By resume sent", by_resume) }}
 {% endif %}
+
+{# Why it closed. Not a dim_table: there is no rate to withhold, only counts,
+   and the row that matters most is the one with no answer yet — "not
+   recorded" is the backlog, and it links straight to the rows to tag. Each
+   reason links to the list filtered the same way the why-chips do. `inbound`
+   is its own column because on the author's data 5 of 6 visa rejections were
+   recruiters who approached first and then dropped the thread — a different
+   fact about the market than "my applications get rejected for visa". #}
+{% if by_reason %}
+<h2>Why it closed</h2>
+<div class="card"><table>
+  <thead><tr><th></th><th>rejected</th><th>of which inbound</th></tr></thead>
+  <tbody>{% for r in by_reason %}
+  <tr><td><a href="/?status=rejected&amp;reason={{ r.key }}">{{ r.label }}</a></td>
+      <td class="mono num">{{ r.n }}</td>
+      <td class="mono num">{{ r.inbound or "—" }}</td></tr>
+  {% endfor %}</tbody>
+</table></div>
+<p class="sm quiet" style="margin:.45rem 0 0">
+  Counted per application, from the reason on its rejected event. "No reason
+  given" is an answer someone wrote down; "not recorded" is the backlog — click
+  it to tag them.
+</p>
+{% endif %}
 {% endblock %}

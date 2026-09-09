@@ -265,7 +265,8 @@ templates.env.globals["DEFAULT_SORT"] = _DEFAULT_SORT
 
 @app.get("/")
 def applications(request: Request, deleted: str | None = None, origin: str | None = None,
-                 q: str = "", sort: str = _DEFAULT_SORT, status: str = ""):
+                 q: str = "", sort: str = _DEFAULT_SORT, status: str = "",
+                 reason: str = ""):
     """The record. The WORK that used to sit on top of it — the needs-follow-up
     queue — moved to /follow-ups on 21 Aug 2026, leaving a counted link in the
     nav. It had been a `<details>` here, collapsed by default with an `fu=1`
@@ -279,12 +280,21 @@ def applications(request: Request, deleted: str | None = None, origin: str | Non
     the funnel already renders, so a segment's own href is `?status=<its key>`
     with nothing new to keep in sync. The funnel itself stays computed from
     `origin` alone (not `status`), so all the OTHER segments stay visible
-    (and clickable) while one is selected — a filter chip, not a redraw."""
+    (and clickable) while one is selected — a filter chip, not a redraw.
+
+    `reason` (9 Sep 2026) is the same idea one level down: with `rejected`
+    selected, the legend unfolds into WHY, each chip `?reason=<key>` from
+    `_REASON_FILTERS`. A reason only exists on a rejection, so a reason filter
+    IS a rejected filter — folded into `status` here rather than left to every
+    link to remember, which is also why the funnel's own hrefs never carry it."""
     user = _login_user(request)
     origin = origin if origin in ("applied", "inbound", "saved") else None
     sort = sort if sort in _SORTS else _DEFAULT_SORT
     q = q.strip()
     status = status if status in FUNNEL_ORDER else ""
+    reason = reason if reason in _REASON_FILTERS else ""
+    if reason:
+        status = "rejected"
     with db.connect_scoped(user["id"]) as conn:
         user_id = user["id"]
         rows = conn.execute(
@@ -297,6 +307,9 @@ def applications(request: Request, deleted: str | None = None, origin: str | Non
                    -- company_display does not exist", which is what ?sort=company
                    -- did from the day it was written until 20 Aug 2026.
                    COALESCE(pc.company_raw, j.company_norm) AS company_display,
+                   -- Why it closed, off the rejected event's own payload — the
+                   -- key the timeline writes, read here so the row can wear it.
+                   rr.reason AS reject_reason,
                    (SELECT min(occurred_at) FROM events e
                      WHERE e.application_id = a.id AND e.type = 'applied') AS applied_at,
                    -- The date the thread started, from whichever side started
@@ -334,6 +347,20 @@ def applications(request: Request, deleted: str | None = None, origin: str | Non
                WHERE p.job_id = a.job_id AND p.company_raw IS NOT NULL
                ORDER BY p.captured_at DESC LIMIT 1
             ) pc ON true
+            -- The rejected event whose reason this application wears: the
+            -- newest one carrying a reason, else the newest at all (a second
+            -- rejected event is a recording artefact — analytics.rejection_reasons
+            -- reads the same event, so a chip's count matches its rows). A
+            -- LATERAL rather than a scalar subquery because the `unrecorded`
+            -- filter has to tell "rejected, no reason yet" (a row with a NULL
+            -- reason) from "never rejected" (no row).
+            LEFT JOIN LATERAL (
+              SELECT e.id, e.payload->>'reason' AS reason FROM events e
+               WHERE e.application_id = a.id AND e.type = 'rejected'
+               ORDER BY (e.payload->>'reason') IS NOT NULL DESC,
+                        e.occurred_at DESC, e.created_at DESC
+               LIMIT 1
+            ) rr ON true
             WHERE a.user_id = %(user_id)s
               AND (%(origin)s::text IS NULL OR a.origin = %(origin)s)
               AND (%(q)s::text = '' OR j.title_canonical ILIKE %(like)s
@@ -342,8 +369,12 @@ def applications(request: Request, deleted: str | None = None, origin: str | Non
                                 AND p.company_raw ILIKE %(like)s))
               AND (%(status)s::text = '' OR s.status = %(status)s
                    OR (%(status)s = 'applied' AND s.status = 'confirmation'))
+              AND (%(reason)s::text = '' OR rr.reason = %(reason)s)
+              AND (NOT %(unrecorded)s::bool OR (rr.id IS NOT NULL AND rr.reason IS NULL))
             ORDER BY {_SORTS[sort]}
             """, {"user_id": user_id, "origin": origin, "status": status,
+                  "reason": reason if reason in _EVENT_REASONS else "",
+                  "unrecorded": reason == _REASON_UNRECORDED,
                   "q": q, "like": f"%{q}%"}).fetchall()
         for r in rows:
             # Flagged before _display() rewrites the status into a human label:
@@ -382,6 +413,12 @@ def applications(request: Request, deleted: str | None = None, origin: str | Non
             "q": q,
             "sort": sort,
             "status": status,
+            "reason": reason,
+            # The why-chips, only when rejected is the selected segment: the
+            # funnel unfolds one level, it doesn't grow a permanent second row.
+            "reasons": (_reason_rows(analytics.rejection_reasons(conn, user_id, origin))
+                        if status == "rejected" else []),
+            "event_reasons": _EVENT_REASONS,
         })
 
 
@@ -447,9 +484,12 @@ _MANUAL_EVENTS = {
 assert _OUTCOME_TYPES <= set(_MANUAL_EVENTS)
 
 # Why the employer stopped, when they said. Closed vocabulary so that "why do I
-# actually get rejected" becomes countable later instead of living in free text;
-# `unstated` is a real answer, distinct from an unrecorded one — most rejections
-# give no reason at all, and that fact is worth being able to measure.
+# actually get rejected" is countable — the "Why it closed" table on /analytics
+# and the list's `reason` filter, both off analytics.rejection_reasons — instead
+# of living in free text; `unstated` is a real answer, distinct from an
+# unrecorded one — most rejections give no reason at all, and that fact is
+# worth being able to measure. Written by the timeline form, the edit form and
+# set_rejection_reason — one key (`payload.reason`), one vocabulary.
 _EVENT_REASONS = {
     "visa":        "visa / sponsorship",
     "seniority":   "seniority mismatch",
@@ -460,6 +500,30 @@ _EVENT_REASONS = {
     "other":       "other — see detail",
     "unstated":    "no reason given",
 }
+
+# The list's `reason` filter takes the vocabulary above plus one value that is
+# NOT a reason: `unrecorded`, a rejection nobody has tagged yet. It is the
+# working queue for tagging the backlog (40 of the author's 51 rejections came
+# by email, and until 9 Sep 2026 an email-sourced event could not take a reason
+# at all), and it is deliberately not a payload value — an event either carries
+# a key from _EVENT_REASONS or carries none.
+_REASON_UNRECORDED = "unrecorded"
+_REASON_FILTERS = {**_EVENT_REASONS, _REASON_UNRECORDED: "not recorded"}
+
+
+def _reason_rows(rows) -> list[dict]:
+    """analytics.rejection_reasons() rows labelled from the vocabulary and
+    ordered for reading: recorded reasons by count, the unrecorded bucket last
+    whatever its size — it is the to-do, not the biggest answer. A key the
+    vocabulary no longer knows (an old row after a rename) shows as itself
+    rather than crashing the page."""
+    out = []
+    for r in rows:
+        key = r["reason"] or _REASON_UNRECORDED
+        out.append({"key": key, "label": _REASON_FILTERS.get(key, key),
+                    "n": r["n"], "inbound": r["inbound"]})
+    out.sort(key=lambda x: (x["key"] == _REASON_UNRECORDED, -x["n"], x["label"]))
+    return out
 
 # How the news arrived, for the events the tracker cannot see for itself.
 _EVENT_CHANNELS = {
@@ -1179,6 +1243,53 @@ def delete_event(request: Request, app_id: str, event_id: str):
     return RedirectResponse(f"/applications/{app_id}", status_code=303)
 
 
+@app.post("/applications/{app_id}/events/{event_id}/reason")
+def set_rejection_reason(request: Request, app_id: str, event_id: str,
+                         reason: str = Form("")):
+    """Tag WHY a rejection closed the thread — on any rejected event, whatever
+    its source.
+
+    The edit route above refuses email-sourced events on principle: the type
+    and the date are the email's own facts, and the matcher parsed them. The
+    reason is not the email's fact but the user's annotation of it — most
+    rejections arrive as a form letter and the reason comes later, by phone or
+    WhatsApp — so it gets its own door, one that writes ONLY `payload.reason`
+    and leaves the rest of the row alone. Before this (9 Sep 2026) the only
+    way to tag an emailed rejection was to file a duplicate manual one; 40 of
+    the author's 51 rejections were emailed and none could carry a reason.
+
+    Same vocabulary and same key as the timeline form and the edit form
+    (`_manual_event_payload`), so the list's filter and the analytics table
+    read one thing. An empty reason clears it: an event either carries a key
+    from _EVENT_REASONS or carries none — `unstated` is a recorded answer,
+    cleared is the absence of one. Not `rejected`? 404, the same answer
+    `_get_manual_event` gives an ineligible event."""
+    if reason and reason not in _EVENT_REASONS:
+        raise HTTPException(400, "unknown reason")
+    from psycopg.types.json import Json
+    user = _login_user(request)
+    with db.connect_scoped(user["id"]) as conn, conn.transaction():
+        a = _get_application(conn, app_id)
+        try:
+            row = conn.execute(
+                "SELECT id, type FROM events WHERE id = %s::uuid AND application_id = %s",
+                (event_id, a["id"])).fetchone()
+        except psycopg.errors.InvalidTextRepresentation:
+            row = None
+        if row is None or row["type"] != "rejected":
+            raise HTTPException(404, "rejected event not found")
+        if reason:
+            # ::jsonb — psycopg's Json adapter binds as `json`, and Postgres has
+            # no `jsonb || json` operator (the INSERTs elsewhere get away with
+            # it because assignment casts; concatenation does not).
+            conn.execute("UPDATE events SET payload = payload || %s::jsonb WHERE id = %s",
+                         (Json({"reason": reason}), row["id"]))
+        else:
+            conn.execute("UPDATE events SET payload = payload - 'reason' WHERE id = %s",
+                         (row["id"],))
+    return RedirectResponse(f"/applications/{app_id}", status_code=303)
+
+
 # --------------------------------------------------------------------------- contacts
 #
 # Contacts (recruiters/interviewers) belong to the JOB (invariant #3 —
@@ -1840,6 +1951,7 @@ def analytics_page(request: Request):
             "by_platform": analytics.by_platform(conn, user_id),
             "by_resume": analytics.by_resume(conn, user_id),
             "by_technology": analytics.by_technology(conn, user_id),
+            "by_reason": _reason_rows(analytics.rejection_reasons(conn, user_id)),
             "pending": _pending_count(conn),
         })
 
