@@ -608,6 +608,21 @@ r = client.get("/?origin=applied")
 check("the default sort is omitted from hrefs rather than spelled out",
       "sort=applied" not in r.text, r.status_code)
 
+# The search box must echo what was searched. It read "None" from 8 Sep 2026,
+# when base.html grew `{% set q = queue_alert() %}` for the stall band: a
+# parent template's top-level set is visible in every child block and SHADOWS
+# the render context, so `{{ q }}` on the list — and the `{% elif q %}` guarding
+# the "nothing matches" state, and the Clear link — all read the band's value
+# (None with a healthy queue, the health DICT when stalled, which list_url
+# would then have urlencoded into every href on the page). Nothing asserted on
+# the box's value until now, which is how it stayed unseen for a day.
+r = client.get("/?q=zzqx-no-such-company")
+check("the search box echoes the search",
+      'name="q" value="zzqx-no-such-company"' in r.text, r.status_code)
+check("a miss says so, and offers to clear",
+      "Nothing matches" in r.text and "zzqx-no-such-company" in r.text
+      and ">Clear</a>" in r.text, r.status_code)
+
 print("manual entry: form + route-ordering guard")
 r = client.get("/applications/new")
 # If /applications/new were ever declared after /applications/{app_id}, this

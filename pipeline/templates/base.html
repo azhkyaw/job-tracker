@@ -381,11 +381,16 @@ ul.timeline .when{font-family:'DM Mono',monospace;font-size:.76rem;
     </nav>
   </div>
 </header>
-{% set q = queue_alert() %}
-{% if q %}
+{# `stall`, not `q`: a top-level set in the PARENT template is visible in every
+   child block and shadows the render context, so this was the list's search
+   box reading "None" (and its "nothing matches" state never rendering) from
+   the day the band shipped, 8 Sep 2026, until 9 Sep. Keep this name distinct
+   from every context key any page passes. #}
+{% set stall = queue_alert() %}
+{% if stall %}
 <div class="stall" role="status"><div class="wrap">
-  <strong>{% if q.waiting %}{{ q.waiting }} email{{ '' if q.waiting == 1 else 's' }} waiting{% if q.waiting_since %} since {{ q.waiting_since|dtt }}{% endif %}{% endif %}{% if q.waiting and q.dead %} · {% endif %}{% if q.dead %}{{ q.dead }} job{{ '' if q.dead == 1 else 's' }} gave up{% endif %}</strong>
-  {% if q.reason %}<code>{{ q.reason }}</code>{% endif %}
+  <strong>{% if stall.waiting %}{{ stall.waiting }} email{{ '' if stall.waiting == 1 else 's' }} waiting{% if stall.waiting_since %} since {{ stall.waiting_since|dtt }}{% endif %}{% endif %}{% if stall.waiting and stall.dead %} · {% endif %}{% if stall.dead %}{{ stall.dead }} job{{ '' if stall.dead == 1 else 's' }} gave up{% endif %}</strong>
+  {% if stall.reason %}<code>{{ stall.reason }}</code>{% endif %}
   <a href="/settings#pipeline">pipeline</a>
 </div></div>
 {% endif %}
