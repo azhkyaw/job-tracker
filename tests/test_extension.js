@@ -230,6 +230,71 @@ console.log("getJob(): which document the job is read from");
   check("a jd-only read is 'usable'", s.usableJob({ jd_text: "x" }), true);
 }
 
+console.log("\ngetJob(): a stale detail pane on the split search layout");
+{
+  // The bug: on /jobs/search the pane rendered a DIFFERENT job than the URL's
+  // currentJobId — Contoso Markets's promoted card, stuck at the top of the results —
+  // so the id was right (the job applied to) and the content was Contoso Markets's.
+  // Three real applications filed this way on 8 Sep 2026. The fix cross-checks
+  // the pane against the results card whose data-*-job-id equals currentJobId,
+  // and re-sources title/company from the card while dropping the wrong JD.
+  //
+  // Validate against the OLD code: delete the stale-pane block in linkedin.js
+  // and this goes red with title "Full Stack Engineer, AI systems" / company
+  // "Contoso Markets" — the exact signature of the three real records.
+  const REAL_ID = "4426471965";
+  const SEARCH = `https://www.linkedin.com/jobs/search/?currentJobId=${REAL_ID}&keywords=AI%20Engineer`;
+  // A results card carries the job's OWN title (doubled: visible span + a
+  // visually-hidden a11y copy, identical halves) and company.
+  const cardStub = (titleText, companyText) => {
+    const sel = {
+      "a.job-card-container__link": el(titleText),
+      ".artdeco-entity-lockup__subtitle": el(companyText),
+    };
+    return {
+      tagName: "DIV",
+      querySelector: (s) => s.split(",").map((x) => sel[x.trim()]).find(Boolean) || null,
+    };
+  };
+  const stalePaneDoc = (cardTitle, cardCompany) =>
+    makeDoc({
+      title: "AI Engineer Jobs | LinkedIn", // search page's own title, no job in it
+      sel: {
+        // the PANE — showing Contoso Markets, the wrong job
+        ".job-details-jobs-unified-top-card__job-title": "Full Stack Engineer, AI systems",
+        ".job-details-jobs-unified-top-card__company-name a": "Contoso Markets",
+        "#job-details": "About the job\nAbout Contoso Markets\nThere are over 5 billion users...",
+        // the results LIST card for currentJobId — the real job
+        [`[data-occludable-job-id="${REAL_ID}"]`]: cardStub(cardTitle, cardCompany),
+      },
+    });
+
+  const s = loadAdapter({
+    ownDoc: stalePaneDoc("AI Agent EngineerAI Agent Engineer", "Northwind Labs"),
+    ownLoc: makeLoc(SEARCH),
+  });
+  const j = s.window.__trackerAdapter.getJob();
+  check("stale pane: title re-sourced from the currentJobId card", j.title, "AI Agent Engineer");
+  check("stale pane: company re-sourced from the card", j.company, "Northwind Labs");
+  check("stale pane: id is currentJobId, the job applied to", j.platform_job_id, REAL_ID);
+  check("stale pane: the wrong job's JD is dropped", j.jd_text, null);
+  check("stale pane: title_source records the card", j._prov.title_source, "card");
+  check("stale pane: breadcrumb names what the pane showed",
+        j._prov.stale_pane, { url: REAL_ID, shown: "Full Stack Engineer, AI systems", card: "AI Agent Engineer" });
+
+  // Control: when the pane and the card AGREE, nothing is touched — the guard
+  // must not fire on a healthy split-layout read (verified live 9 Sep 2026).
+  const healthy = loadAdapter({
+    ownDoc: stalePaneDoc("Full Stack Engineer, AI systemsFull Stack Engineer, AI systems", "Contoso Markets"),
+    ownLoc: makeLoc(SEARCH),
+  });
+  const h = healthy.window.__trackerAdapter.getJob();
+  check("agreeing pane: title stays the pane's", h.title, "Full Stack Engineer, AI systems");
+  check("agreeing pane: JD is kept", h.jd_text, "About the job\nAbout Contoso Markets\nThere are over 5 billion users...");
+  check("agreeing pane: no stale_pane breadcrumb", h._prov.stale_pane, undefined);
+  check("agreeing pane: title_source is the class selector, not the card", h._prov.title_source, "class");
+}
+
 console.log("\njobFromUrl(): last-resort identity off the tab URL");
 {
   const s = loadAdapter({ ownDoc: shellPage(), ownLoc: makeLoc(COLLECTIONS) });

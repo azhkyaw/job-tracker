@@ -95,6 +95,37 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   returns the first card's value — reading `$7,000–$10,000 / Paya Lebar` for a
   Central Region job paying `$10,000–$11,000`. Plausible, silent, wrong. Only
   ever use the `job-detail-*` names; never the unprefixed ones.
+- **LinkedIn has the same split-view disease, and it corrupts the whole
+  identity, not just a field** (9 Sep 2026). On `/jobs/search` and
+  `/jobs/collections` the job card, the JD and the top card live in a detail
+  PANE while the job id comes from the URL's `currentJobId` — two sources that
+  desync. The pane keeps rendering a previously-viewed job (a promoted listing
+  that loaded into it first is the usual culprit) while `currentJobId` has
+  already advanced to the job being applied to, so `readJob` returns the right
+  id and a DIFFERENT job's company/title/JD. Three real applications filed this
+  way on 8 Sep 2026 — Northwind Labs, Fabrikam and Tailspin — every one stamped
+  with `Contoso Markets · Full Stack Engineer, AI systems` and the byte-identical Contoso Markets
+  JD, Contoso Markets being the promoted card at the top of an "AI Engineer" search.
+  Repaired by hand via `/edit` (all three kept their screening answers; the
+  applied instants were restored to the microsecond since the form is HH:MM).
+  Signature in the provenance buffer: several reads with the SAME
+  `page:{company,title}` across DIFFERENT `id`s on `layout:"search"`, and the
+  same id re-read on `layout:"view"` giving different, correct content.
+  **The pane carries no job id of its own** (measured live 9 Sep) — the only
+  readable ids are on the results LIST cards (`data-occludable-job-id` /
+  `data-job-id`, stable non-hashed attributes). So `readJob` now cross-checks:
+  find the card whose id equals `currentJobId`, read its own title
+  (`a.job-card-container__link`, doubled visible+visually-hidden text, take the
+  first half) and company (`.artdeco-entity-lockup__subtitle`); if that
+  disagrees with what the pane rendered, the pane is stale — re-source
+  title/company from the card and DROP the JD (the card has none, and the
+  pane's JD is the wrong job's). `currentJobId`, the fact, is kept, and
+  `_prov.stale_pane = {url, shown, card}` records the catch. The guard is the
+  card's EXISTENCE, not the pathname, so `/jobs/view/` (no results card) is a
+  no-op and a future split layout is covered. `tests/test_extension.js` has the
+  stale case and a healthy-pane control; the stale one goes red against the old
+  code with the exact Contoso Markets signature, the control stays green either way.
+  Extension **0.10.0**. **Unverified on a real apply** — see Known-untested.
 - **Never name a DOM-extracted variable `location`.** It shadows
   `window.location`, so any `location.pathname` read ABOVE it in the same scope
   hits the temporal dead zone and throws — killing the whole adapter. `node
@@ -488,6 +519,21 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   page via `computer` first, and it overwrites the user's clipboard (say so).
   Verify the transfer with a checksum computed on BOTH sides; PowerShell adds
   CRLF, so normalise before comparing.
+  **Correction (9 Sep 2026): the clipboard route is unreliable in a claude-in-chrome
+  tab, and `get_page_text` is the one that works.** A claude-in-chrome tab is
+  hidden/frozen (`document.visibilityState` stays `hidden` even with the window
+  foregrounded), and there `navigator.clipboard.writeText()` never settles — the
+  promise sat `pending` across polls, `document.execCommand("copy")` returned
+  `false`, and `Get-Clipboard` came back empty, six attempts wasted transferring
+  three JDs. The `get_page_text` tool returns the WHOLE page untruncated (it beat
+  the ~1,000-char JS-return cap that defeats a plain `return jd`), so it is the
+  transfer path: read the JD from it directly, and when the page's own structure
+  hides the text from its article heuristic (LinkedIn's collapsed description did
+  this on one of the three), overwrite `document.querySelector("main").innerHTML`
+  with the text in a `<pre>` and call `get_page_text` again — it reports
+  `Source element: <article>` and returns it verbatim. `localStorage` persists
+  across same-origin navigations, so stash each page's extract there and pull
+  them at the end. Still verify with a checksum on both sides.
 - **Testing a LinkedIn adapter fix without risking a real apply:** open Easy
   Apply on any live posting via claude-in-chrome, inspect the DOM directly
   with `javascript_tool` (`document.querySelector`, `el.shadowRoot`, etc.),
@@ -708,6 +754,21 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   APAC — name, headline and profile URL each in their own field). **One card is
   the entire evidence base**; a second card-bearing job would say whether that
   two-span shape is stable or just this layout.
+- **The split-layout stale-pane guard (`readJob`, extension 0.10.0) is
+  UNVERIFIED on a real apply.** It is reasoned from three real records and
+  proven in `tests/test_extension.js`, but has not run during a live capture.
+  What to read on the next Easy Apply made FROM a search or collections results
+  page (not the standalone `/jobs/view/` page): the provenance line. A healthy
+  capture says nothing new. If the pane was stale and the guard fired,
+  `_prov.stale_pane` names `{url, shown, card}` — `shown` is the wrong job the
+  pane rendered, `card` is the corrected title — and `title_source`/
+  `company_source` read `"card"`. The failure mode to watch for is the guard
+  NOT firing when it should: a capture whose company/title match a neighbouring
+  promoted card rather than the applied job, with no `stale_pane` recorded —
+  that means the results card for `currentJobId` was not in the rendered list
+  (scrolled off, or a different page), which the cross-check cannot reach.
+  Verify 0.10.0 is live (`chrome://extensions`) and the tab was opened after the
+  reload before trusting any result.
 - **`ats` is never detected on a LinkedIn EXTERNAL apply whose control is a
   `<button>`** (verified: `.jobs-apply-button` is a BUTTON with no href on that
   layout, so `resolveExternalUrl()` returns null). The destination isn't in the

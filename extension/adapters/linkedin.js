@@ -315,8 +315,62 @@ window.__trackerAdapter = {
       docTitleTracksSelectedJob && titleParts.length === 3 && titleParts[2] === "LinkedIn"
         ? titleParts[1].trim() : null;
 
-    const title = classTitle || structTitle || titleFromDocTitle;
-    const company = classCompany || structCompany || companyFromDocTitle;
+    let title = classTitle || structTitle || titleFromDocTitle;
+    let company = classCompany || structCompany || companyFromDocTitle;
+    let jd_text = jdEl ? jdEl.innerText.trim() : null;
+    let title_source = classTitle ? "class" : structTitle ? "struct"
+                     : titleFromDocTitle ? "doctitle" : null;
+    let company_source = classCompany ? "class" : structCompany ? "struct"
+                       : companyFromDocTitle ? "doctitle" : null;
+
+    // SPLIT-LAYOUT STALE PANE (9 Sep 2026). On /jobs/search and
+    // /jobs/collections the job card, the JD and the top card all live in a
+    // detail PANE, while the id comes from the URL's currentJobId — two sources
+    // that can desync. The pane keeps rendering a previously-viewed job (a
+    // promoted listing that loaded into it first is the usual culprit) while
+    // currentJobId has already advanced to the job being applied to, so
+    // identity is right and the CONTENT is a different job's. Three real
+    // applications filed this way on 8 Sep 2026 — Northwind Labs, Fabrikam and
+    // Tailspin, every one stamped with Contoso Markets's company, title and JD, Contoso Markets
+    // being the promoted card sitting at the top of an "AI Engineer" search.
+    // The pane carries no job id of its own (measured live), but the results
+    // LIST does: the card whose data-*-job-id equals currentJobId holds that
+    // job's own title and company. When the card disagrees with what the pane
+    // rendered, the pane is stale — re-source title/company from the card and
+    // DROP the JD (the card has none, and the pane's JD belongs to the wrong
+    // job). currentJobId, the fact, is kept. On /jobs/view/ there is no results
+    // card, so `card` is null and this is a no-op — the guard is the card's
+    // existence, not the pathname, so a future split layout is covered too.
+    let stale_pane = null;
+    if (idFromUrl && /^\d+$/.test(idFromUrl) && title) {
+      const norm = (s) => s.toLowerCase().replace(/\s+/g, " ").trim();
+      // Card title/company text is doubled (visible span + a visually-hidden
+      // copy carrying the accessible name — the same a11y pattern answers.js
+      // strips); the two halves are identical, so take the first.
+      const undouble = (s) => {
+        const c = (s || "").replace(/\s+/g, " ").trim();
+        const h = c.length / 2;
+        return c.length % 2 === 0 && h > 0 && c.slice(0, h) === c.slice(h)
+          ? c.slice(0, h) : c;
+      };
+      const card =
+        doc.querySelector(`[data-occludable-job-id="${idFromUrl}"]`) ||
+        doc.querySelector(`[data-job-id="${idFromUrl}"]`);
+      const link = card && card.querySelector(
+        "a.job-card-container__link, a.job-card-list__title--link");
+      const cardTitle = link ? undouble(link.textContent) : null;
+      if (cardTitle && norm(cardTitle) !== norm(title)) {
+        const sub = card.querySelector(".artdeco-entity-lockup__subtitle");
+        stale_pane = { url: idFromUrl, shown: title, card: cardTitle };
+        title = cardTitle;
+        company = sub ? undouble(sub.textContent) : null;
+        title_source = company_source = "card";
+        jd_text = null;
+        location = null;
+        posted_label = null;
+        reposted = null;
+      }
+    }
     // A job id read out of the URL is a FACT, and discarding it because the DOM
     // has gone missing is how a capture ends up unidentifiable. LinkedIn swaps
     // the top card for an "application sent" confirmation moments after an Easy
@@ -347,13 +401,15 @@ window.__trackerAdapter = {
       // from a rescued one, and the field to read first when the next blind
       // record turns up.
       doc_source: "top",
-      title_source: classTitle ? "class" : structTitle ? "struct"
-                  : titleFromDocTitle ? "doctitle" : null,
-      company_source: classCompany ? "class" : structCompany ? "struct"
-                    : companyFromDocTitle ? "doctitle" : null,
+      title_source,
+      company_source,
       layout: loc.pathname.startsWith("/jobs/collections/") ? "collections"
             : loc.pathname.startsWith("/jobs/view/") ? "view"
             : loc.pathname.startsWith("/jobs/search") ? "search" : "other",
+      // Present only when the split-layout guard above caught a stale detail
+      // pane and re-sourced identity from the results card — the field to read
+      // first if a capture's company/title ever looks like a neighbour's again.
+      ...(stale_pane && { stale_pane }),
     };
 
     return {
@@ -361,7 +417,7 @@ window.__trackerAdapter = {
       url: idFromUrl ? `https://www.linkedin.com/jobs/view/${idFromUrl}/` : loc.href,
       company,
       title,
-      jd_text: jdEl ? jdEl.innerText.trim() : null,
+      jd_text,
       location,
       posted_label,
       reposted,
