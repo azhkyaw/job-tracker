@@ -373,3 +373,22 @@ the key to each real case.
    now the new extractor's output, so a replay compares a candidate model on
    the corrected text against labels made from the old text — a better
    corpus, not an apples-to-apples one, for the 68 stub rows.
+11. **The exact-title rescue needs a shared company word** (23 Sep 2026).
+   Asked why an employer's interview thread had filed onto an agency's
+   application. Replayed the matcher's candidate queries for the email: the
+   employer's mail name missed the trigram gate against the board's longer
+   employer name (0.417), rule 2 admitted the real record, rule 1 admitted
+   the agency because its posting title matched the mail's wording byte for
+   byte, and the title term outscored the real record 0.875 to 0.662 — a
+   silent wrong auto-match on a live thread, the failure invariant #3 ranks
+   worst. Every real rule-1 rescue on record shared a company word with the
+   mail; the stranger shared none, so that is now the condition
+   (`config.RESCUE_SHARED_WORD_MIN`). Three variants replayed over all 427
+   stored emails before choosing (`.claude/rules/matching.md`): the chosen
+   one changes 11 decisions — 7 silent wrong matches become triage items, 2
+   hand-resolved emails become correct auto-matches, 2 correct auto-matches
+   become triage items. Data: the four emails re-filed through `refile_email`
+   (snapshot first), the stray contact removed; the employer's application
+   now reads `interview_invite`, the agency's `viewed`. Path 3d's fixture,
+   which had modelled a company sharing nothing, was reshaped to the real
+   pattern and path 3f added for the stranger.

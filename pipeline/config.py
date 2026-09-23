@@ -94,6 +94,14 @@ INGEST_ALL = os.environ.get("TRACKER_INGEST_ALL", "").lower() in ("1", "true", "
 # Matching thresholds (design doc §8). Tune against the first backfill run.
 COMPANY_TRGM_MIN = 0.6
 AUTO_MATCH_SCORE = 0.75
+# The exact-title rescue (matcher._CANDIDATES_RESCUE_SQL rule 1) also needs
+# the two company names to share one word at least this long. norm_company
+# leaves connective and corporate tokens behind — "x", "&", "pte", "ltd",
+# "the", "and", "ai", "it", "sg", "co" — and every one of them is under four
+# letters, while every real rescue this rule was written for shared a real
+# name ("contoso", "fabrikam", "litware"). Measured 23 Sep 2026 over all 427
+# stored, extracted emails (.claude/rules/matching.md).
+RESCUE_SHARED_WORD_MIN = 4
 
 # How alike two titles must be before a live capture is allowed to attach
 # itself to an email_only stub for the same company instead of creating its

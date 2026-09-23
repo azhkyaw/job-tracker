@@ -108,17 +108,55 @@ _CANDIDATES_SQL = _CANDIDATES_BASE + """(j.company_norm = %(company)s
 # same preference invariant #3 states for merges (a wrong split is recoverable,
 # a wrong merge is not). Nothing here can create a match the scorer wouldn't
 # have made on its own.
-_CANDIDATES_RESCUE_SQL = _CANDIDATES_BASE + """(
-          -- rule 1: the same title, exactly, whatever the company is called
+#
+# Measured a second time, 23 Sep 2026, after rule 1 DID make the silent wrong
+# match the paragraph above only feared. A recruiter's mail from "Woodgrove"
+# (company_sim 0.417 against the extension's "Woodgrove Southeast Asia",
+# under the gate) carried the title "Full Stack AI Engineer" — the exact title
+# of an unrelated agency's application (company_sim 0.077). Rule 2 admitted
+# the real Woodgrove record, rule 1 admitted the agency, and because company
+# similarity is only a gate the TITLE decided it: 1.0 against 0.575 (the real
+# posting reads "Full Stack Engineer – Generative AI & Agentic AI"), 0.875
+# against 0.662, a 0.213 margin over the 0.15 bar. Four emails of a live
+# interview thread landed on the agency, which then read `interview_invite`
+# for an interview it never gave while the real application read
+# `confirmation`. The margin is no defence when the true record's title is
+# worded differently from the mail's.
+#
+# What every REAL rule-1 rescue had in common, and the stranger did not: the
+# two company names shared a word — contoso/"Contoso Markets",
+# fabrikam/"Fabrikam", litware/"Litware International". So rule 1 now also
+# requires one shared word of config.RESCUE_SHARED_WORD_MIN letters (the
+# tokens norm_company leaves behind — "x", "&", "pte", "the", "ai", "it" —
+# are all shorter). Replayed over all 427 stored, extracted emails against
+# that day's DB, comparing decisions with the rule as it stood: 11 change.
+# 7 silent wrong auto-matches become triage items (the four Woodgrove mails,
+# and three older mails a human had already filed by hand that the old rule
+# would today send to an agency holding the same title); 2 hand-resolved
+# emails become correct auto-matches (their same-titled strangers — 15 and
+# 16 of them — no longer break the margin); and 2 correct auto-matches become
+# triage items (a subsidiary's coding-test mails, whose parent-company sender
+# shares no word with the subsidiary's name). "Drop the rule-1 candidates
+# whenever rule 2 admits anyone" was measured alongside and is strictly
+# weaker: same gains, but it leaves the fourth Woodgrove mail — whose
+# extraction read "Woodgrove Singapore", neither a subset nor a superset of
+# "woodgrove southeast asia" — on the agency.
+_CANDIDATES_RESCUE_SQL = (_CANDIDATES_BASE + """(
+          -- rule 1: the same title, exactly, AND one company word in common
+          -- (a stranger with no company resemblance cannot be rescued by its
+          -- title alone — see "measured a second time" above)
           (%(title)s::text IS NOT NULL
            AND lower(btrim(coalesce(j.title_canonical, '')))
-             = lower(btrim(%(title)s)))
+             = lower(btrim(%(title)s))
+           AND EXISTS (SELECT 1 FROM unnest(string_to_array(j.company_norm, ' ')) AS w(word)
+                       WHERE length(w.word) >= __WMIN__
+                         AND w.word = ANY(string_to_array(%(company)s, ' '))))
           -- rule 2: one company name's words contain the other's, either way
           -- round (the email may carry the longer or the shorter form)
        OR string_to_array(j.company_norm, ' ') @> string_to_array(%(company)s, ' ')
        OR string_to_array(j.company_norm, ' ') <@ string_to_array(%(company)s, ' ')
       )
-"""
+""").replace("__WMIN__", str(int(config.RESCUE_SHARED_WORD_MIN)))
 
 
 @dataclass

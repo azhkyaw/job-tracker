@@ -39,6 +39,7 @@ FAKE_CLASSIFY = {
     "recruiter-unknown": Classification(True, "recruiter_outreach", 0.85, "stub"),
     "rebrand-confirmation": Classification(True, "confirmation", 0.93, "stub"),
     "tagline-confirmation": Classification(True, "confirmation", 0.93, "stub"),
+    "stranger-invite": Classification(True, "interview_invite", 0.93, "stub"),
 }
 def _fake_extraction(**kw):
     """Mirror the real extract_email(): raw always carries the full payload."""
@@ -69,14 +70,27 @@ FAKE_EXTRACT = {
     "recruiter-unknown": _fake_extraction(company="Totally New Agency",
                                           role_title="Backend Engineer"),
     # The seeded Northwind application again, but the sender brands itself with
-    # a name that shares nothing with 'northwind labs' — the shape of three real
-    # duplicates on 4 Aug 2026, where an employer's ATS (or LinkedIn's own mail)
-    # named the company differently enough to fall under COMPANY_TRGM_MIN. The
-    # title is identical, which is what the fallback keys on; the case differs
-    # from the stored title_canonical on purpose.
-    "rebrand-confirmation": _fake_extraction(company="Vestbridge Holdings Pte Ltd",
+    # a longer name that falls under COMPANY_TRGM_MIN against 'northwind labs'
+    # — the shape of three real duplicates on 4 Aug 2026 (contoso/"Contoso
+    # Markets", fabrikam/"Fabrikam", litware/"Litware International"), where
+    # an employer's ATS (or LinkedIn's own mail) named the company differently
+    # enough to miss the gate while still SHARING A WORD with it. The title is
+    # identical, which is what the fallback keys on; the case differs from the
+    # stored title_canonical on purpose. Until 23 Sep 2026 this fixture read
+    # "Vestbridge Holdings" — a name sharing nothing — which modelled a rule
+    # broader than any real case and is exactly the shape that mis-filed a
+    # live interview thread onto a same-titled agency (path 3f).
+    "rebrand-confirmation": _fake_extraction(company="Northwind International Pte Ltd",
                                              role_title="Senior AI Engineer",
                                              platform="linkedin"),
+    # 23 Sep 2026: a recruiter at "Woodgrove" writes the role as "Senior AI
+    # Engineer" — the seeded Northwind title, byte for byte — while the real
+    # Woodgrove application (seeded in path 3f under LinkedIn's longer employer
+    # name, with a differently worded title) misses the gate. Rule 1 must not
+    # hand this to Northwind: the two company names share no word.
+    "stranger-invite": _fake_extraction(company="Woodgrove",
+                                        role_title="Senior AI Engineer",
+                                        platform="direct"),
     # The shape of the Wingtip Talent Group duplicate (4 Aug 2026), which walked
     # past BOTH the company gate and the exact-title fallback: the mail carries
     # the bare employer name while the job board carried the same name plus a
@@ -244,7 +258,7 @@ with db.connect() as conn:
     check("scored on title/date/platform, above the bar",
           s7["match_score"] and s7["match_score"] >= 0.75, s7)
     dupe = conn.execute(
-        "SELECT 1 FROM jobs WHERE user_id = %s AND company_norm = 'vestbridge holdings'",
+        "SELECT 1 FROM jobs WHERE user_id = %s AND company_norm = 'northwind international'",
         (user_id,)).fetchone()
     check("no duplicate job created for the rebranded name", dupe is None)
     ev7 = conn.execute(
@@ -286,6 +300,47 @@ with db.connect() as conn:
         "SELECT 1 FROM jobs WHERE user_id = %s AND company_norm = 'harbourline consulting group'",
         (user_id,)).fetchone()
     check("no duplicate job created for the bare company name", dupe8 is None)
+
+    print("path 3f: an exact title at a company sharing no word is a stranger, not a rescue")
+    # The 23 Sep 2026 mis-file: the real application is under the board's
+    # longer employer name with a differently worded title (rule 2 reaches it,
+    # rule 1 does not), and an unrelated application elsewhere carries the
+    # mail's title byte for byte. Before the shared-word condition, rule 1
+    # admitted the stranger, the title term outscored the true record 1.0 to
+    # ~0.5, and four emails of a live interview thread filed onto it.
+    wg_job = conn.execute(
+        "INSERT INTO jobs (user_id, company_norm, title_canonical) "
+        "VALUES (%s, 'woodgrove southeast asia', 'Full Stack Engineer – Generative AI') "
+        "RETURNING id", (user_id,)).fetchone()
+    conn.execute(
+        "INSERT INTO postings (user_id, job_id, platform, platform_job_id, captured_via) "
+        "VALUES (%s, %s, 'linkedin', 'LI-woodgrove-1', 'extension')", (user_id, wg_job["id"]))
+    wg_app = conn.execute(
+        "INSERT INTO applications (user_id, job_id) VALUES (%s, %s) RETURNING id",
+        (user_id, wg_job["id"])).fetchone()
+    conn.execute(
+        "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+        "VALUES (%s, %s, 'applied', 'extension', %s, %s)",
+        (user_id, wg_app["id"], NOW, Json({})))
+    conn.commit()
+    northwind_events_before = conn.execute(
+        "SELECT count(*) AS n FROM events WHERE application_id = %s", (app["id"],)).fetchone()["n"]
+    e9 = seed_email(conn, user_id, "stranger-invite", sender="recruiter@woodgrove.example")
+    conn.commit()
+    drain(conn)
+    s9 = email_state(conn, e9)
+    check("the same-titled stranger did NOT auto-match",
+          str(s9["matched_application_id"]) != str(app["id"]), s9)
+    check("it lands in triage (the true record scores under the bar on its worded-differently title)",
+          s9["triage_state"] == "pending" and s9["matched_application_id"] is None, s9)
+    check("a score was recorded — the true record WAS seen as a candidate (rule 2), "
+          "not a NULL 'nobody found'",
+          s9["match_score"] is not None, s9)
+    northwind_events_after = conn.execute(
+        "SELECT count(*) AS n FROM events WHERE application_id = %s", (app["id"],)).fetchone()["n"]
+    check("Northwind's timeline untouched by the stranger's interview invite",
+          northwind_events_after == northwind_events_before,
+          (northwind_events_before, northwind_events_after))
 
     print("path 4: failure backoff")
     db.enqueue(conn, user_id, "classify_email",

@@ -92,6 +92,50 @@ invariants that govern this code (#3, #4, #9) are still in CLAUDE.md.
   either way. So it stands as-is. The number to watch is the suppression count:
   **1 of 296 today**. Re-measure before touching it — the fix only becomes worth
   its cost if that grows.
+- **Rule 1 made the silent wrong match the paragraph above only feared, and
+  now requires a shared company word** (23 Sep 2026). A recruiter's mail
+  from "Woodgrove" (company_sim 0.417 against the extension's "Woodgrove
+  Southeast Asia", under the gate) carried the title "Full Stack AI Engineer"
+  — byte for byte the title of an unrelated agency's application
+  (company_sim 0.077). Rule 2 admitted the real record, rule 1 admitted the
+  agency, and since company similarity is only a gate the title decided it:
+  1.0 against 0.575 (the real posting reads "Full Stack Engineer – Generative
+  AI & Agentic AI"), 0.875 against 0.662, margin 0.213 over the 0.15 bar. Four
+  emails of a LIVE interview thread filed onto the agency, which then read
+  `interview_invite` for an interview it never gave while the real
+  application read `confirmation` — the tracker asserting the wrong state on
+  two real applications at once. The margin is no defence when the true
+  record's title is worded differently from the mail's. Found by the user
+  ("why were the Woodgrove emails mixed there"), diagnosed by replaying
+  `find_match`'s two candidate queries for one of the emails read-only.
+  **What every real rule-1 rescue had in common, and the stranger did not:
+  the two company names shared a word** (contoso/"Contoso Markets",
+  fabrikam/"Fabrikam", litware/"Litware International"). Rule 1 now also
+  requires one shared word of `config.RESCUE_SHARED_WORD_MIN` (4) letters —
+  the tokens `norm_company` leaves behind ("x", "&", "pte", "ltd", "the",
+  "and", "ai", "it", "sg", "co") are all shorter, so no stop-list. Measured
+  before it was written, three variants replayed over all 427 stored,
+  extracted emails against that day's DB (198 distinct `company_norm`
+  values, 6 word-containment pairs, all genuine): **(A)** drop rule-1
+  candidates whenever rule 2 admits anyone — 7 decisions change, and it
+  leaves the fourth Woodgrove mail (extraction "Woodgrove Singapore", neither
+  subset nor superset of "woodgrove southeast asia") on the agency; **(W)**
+  the shared-word condition — 11 change: 7 silent wrong auto-matches become
+  triage items (all four Woodgrove mails, plus three older mails a human had
+  filed by hand that the old rule would TODAY send to an agency holding the
+  same title), 2 hand-resolved emails become correct auto-matches (their 15
+  and 16 same-titled strangers no longer break the margin), and 2 correct
+  auto-matches become triage items (a subsidiary's coding-test mails, sent
+  by the parent company whose name shares no word with the subsidiary's);
+  **(A+W)** identical to W. W was implemented; the two visible costs are the
+  trade invariant #3 already states. The four mails were re-filed the same
+  day through `refile_email` (rows snapshotted first), and the recruiter
+  contact the mis-match had copied onto the agency's job was deleted.
+  `tests/test_integration.py` path 3f pins the stranger case, and path 3d's
+  fixture — which until then modelled rule 1 with a company sharing NOTHING,
+  a rule broader than any real case — now shares a word, as every real case
+  did. The exact-title rescue stays load-bearing: it is still the only rule
+  that reaches the Litware shape (neither name a subset of the other).
 - `emails.match_score` stores the best candidate score even for `pending`
   rows — that's the tuning dataset. **`NULL` means something different and
   more specific: ZERO candidates were found, not a low-confidence miss.** That
