@@ -596,7 +596,8 @@ for _key in web._SORTS:
     # ORDER BY is interpolated into one f-string shared by all of them, so a key
     # that only works unfiltered is a key that breaks on the next click.
     for _extra in ("origin=applied", "status=applied", "q=sort",
-                   "reason=visa", "status=rejected&reason=unrecorded"):
+                   "reason=visa", "status=rejected&reason=unrecorded",
+                   "how=after_round", "status=rejected&how=no_round&reason=unrecorded"):
         _r = client.get(f"/?sort={_key}&{_extra}")
         check(f"sort={_key} + {_extra} renders", _r.status_code == 200, _r.status_code)
 check("the default is reachable by name and identical to the bare URL",
@@ -1682,6 +1683,81 @@ check("the select then reads not recorded again",
       "why? — not recorded" in client.get(f"/applications/{northwind_app}").text)
 client.post(f"/applications/{northwind_app}/events/{nw_rej['id']}/reason",
             data={"reason": "visa"})
+
+print("how it ended: a derived partition beside why it closed")
+# The stage is on the timeline already, so this breakdown is complete without
+# tagging anything: one bucket per rejected application — visa first (the
+# reason wins over the stage), then whether a human round ever happened. A
+# fourth rejected application, closed by hand after an interview, gives the
+# after-a-round bucket a row; untagged co (applied, then a form letter) is the
+# without-a-round one; Northwind, tagged visa above, is the visa one.
+with db.connect() as conn, conn.transaction():
+    rt_job = conn.execute(
+        "INSERT INTO jobs (user_id, company_norm, title_canonical) "
+        "VALUES (%s, 'roundtrip co', 'Platform Engineer') RETURNING id",
+        (user_id,)).fetchone()["id"]
+    rt_app = conn.execute(
+        "INSERT INTO applications (user_id, job_id) VALUES (%s, %s) RETURNING id",
+        (user_id, rt_job)).fetchone()["id"]
+    conn.execute(
+        "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+        "VALUES (%s, %s, 'applied', 'manual', now() - interval '40 days', '{}'), "
+        "       (%s, %s, 'interview_invite', 'manual', now() - interval '20 days', '{}'), "
+        "       (%s, %s, 'rejected', 'manual', now() - interval '5 days', "
+        "        '{\"reason\": \"role_closed\"}')",
+        (user_id, rt_app, user_id, rt_app, user_id, rt_app))
+r = client.get("/")
+legend = r.text.split('class="legend"')[1].split("</span>")[0]
+check("the legend's rejected entry carries the three buckets at rest, each a filter",
+      all(f"how={k}" in legend for k in web._HOW_FILTERS)
+      and "after a round" in legend and "without a round" in legend, legend)
+check("a chip says what closed them — the hand-filed one here",
+      "filed by hand" in legend, legend)
+import re as _re_how
+for _k in web._HOW_FILTERS:
+    _m = _re_how.search(rf'how={_k}"[^>]*>(\d+) ', legend)
+    _n = int(_m.group(1))
+    _rows = client.get(f"/?how={_k}").text.count('<a class="tl" href="/applications/')
+    check(f"the {_k} chip's number is the number of rows it shows ({_n})",
+          _n == _rows and _n >= 1, (_n, _rows))
+r = client.get("/?how=after_round")
+check("after a round: the interviewed one — not the form letter, not the visa one",
+      'class="funnel filtered"' in r.text and "roundtrip co" in r.text
+      and "untagged co" not in r.text
+      and f'href="/applications/{northwind_app}"' not in r.text, r.status_code)
+r = client.get("/?how=visa")
+check("visa: the tagged one, whatever its stage — the reason wins over the round",
+      f'href="/applications/{northwind_app}"' in r.text and "roundtrip co" not in r.text,
+      r.status_code)
+r = client.get("/?how=no_round")
+check("without a round: the form letter only",
+      "untagged co" in r.text and "roundtrip co" not in r.text
+      and f'href="/applications/{northwind_app}"' not in r.text, r.status_code)
+r = client.get("/?how=no_round&reason=unrecorded")
+check("how and why combine — the untagged form letters are the tagging queue's bulk",
+      r.status_code == 200 and "untagged co" in r.text and "roundtrip co" not in r.text,
+      r.status_code)
+why = r.text.split("why it closed")[1].split("</div>")[0]
+check("the why-chips carry the how filter", "how=no_round" in why, why[:400])
+sub = r.text.split('class="sub"')[1].split("</span>")[0]
+check("and the how chips carry the reason, with this one active",
+      "reason=unrecorded" in sub and 'class="active"' in sub, sub)
+funnel = r.text.split('class="funnel')[1].split("</div>")[0]
+check("the funnel's own links drop it — it belongs to rejected", "how=" not in funnel, funnel[:300])
+r = client.get("/?how=visa&origin=applied")
+tabs = r.text.split('class="tabs"')[1].split("</span>")[0]
+check("the origin tabs carry it, like every other filter", tabs.count("how=visa") == 4, tabs)
+check("and the search form re-submits it", '<input type="hidden" name="how" value="visa">' in r.text)
+r = client.get("/?how=teleport")
+check("an unknown how is ignored, not an error — the unfiltered list",
+      r.status_code == 200 and "roundtrip co" in r.text
+      and 'class="funnel filtered"' not in r.text, r.status_code)
+r = client.get("/analytics")
+tbl = r.text.split("How it ended")[1].split("</table>")[0]
+check("analytics counts the buckets in the same fixed order, each linking to its rows",
+      'href="/?status=rejected&amp;how=after_round">after a round</a>' in tbl
+      and 'href="/?status=rejected&amp;how=no_round">without a round</a>' in tbl
+      and tbl.index("after a round") < tbl.index("visa") < tbl.index("without a round"), tbl)
 
 print("form answers: detail page + answer bank")
 with db.connect() as conn, conn.transaction():

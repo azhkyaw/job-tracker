@@ -10,16 +10,18 @@
    default so a plain filter click doesn't clutter every href with the
    default's own name — compared against the DEFAULT_SORT global, never a
    literal, so moving the default in web.py can't leave this silently
-   resetting the user's chosen sort. `reason` is the one filter NOT every link
-   carries: it belongs to `rejected`, so the funnel and legend links (which
-   change status) drop it on purpose, and the tabs, search and sort keep it. #}
-{% macro list_url(status='', origin=None, q='', sort='', reason='') -%}
+   resetting the user's chosen sort. `reason` and `how` are the two filters
+   NOT every link carries: they belong to `rejected`, so the funnel and legend
+   links (which change status) drop them on purpose, and the tabs, search and
+   sort keep them. #}
+{% macro list_url(status='', origin=None, q='', sort='', reason='', how='') -%}
 {%- set parts = [] -%}
 {%- if origin %}{% set _ = parts.append('origin=' + origin) %}{% endif -%}
 {%- if q %}{% set _ = parts.append('q=' + (q | urlencode)) %}{% endif -%}
 {%- if sort and sort != DEFAULT_SORT %}{% set _ = parts.append('sort=' + sort) %}{% endif -%}
 {%- if status %}{% set _ = parts.append('status=' + status) %}{% endif -%}
 {%- if reason %}{% set _ = parts.append('reason=' + reason) %}{% endif -%}
+{%- if how %}{% set _ = parts.append('how=' + how) %}{% endif -%}
 /{{ '?' + (parts | join('&')) if parts else '' }}
 {%- endmacro %}
 
@@ -56,6 +58,22 @@
   <a class="{% if is_active %}active{% endif %}"
      href="{{ list_url(status=('' if is_active else s.key), origin=origin, q=q, sort=sort) }}">
     <i style="--c:var(--{{ s.key }})"></i>{{ s.n }} {{ s.label }}</a>
+  {#- How the rejections ended, attached to the rejected entry AT REST (UI rule
+      13): one bucket per application, derived from the timeline, so the three
+      numbers sum to the entry's count with nothing tagged. Each is a filter —
+      `?status=rejected&how=` — active through weight like every legend link,
+      and it carries `reason` so the two rejected filters combine. #}
+  {%- if s.key == 'rejected' and ends %}
+  <span class="sub">
+    {%- for x in ends %}
+    {%- set how_active = x.key == how %}
+    {%- if not loop.first %} · {% endif %}
+    <a class="{% if how_active %}active{% endif %}"
+       href="{{ list_url(status='rejected', how=('' if how_active else x.key), reason=reason, origin=origin, q=q, sort=sort) }}"
+       title="{{ x.n }} rejected {{ x.label }} — {{ x.detail }}{% if how_active %} — click to clear{% endif %}">{{ x.n }} {{ x.label }}</a>
+    {%- endfor %}
+  </span>
+  {%- endif %}
   {% endfor %}
   {% if status %}
   <a class="sm" href="{{ list_url(origin=origin, q=q, sort=sort) }}">show all statuses</a>
@@ -74,7 +92,7 @@
   {% for x in reasons %}
   {% set is_active = x.key == reason %}
   <a class="{% if is_active %}active{% endif %}"
-     href="{{ list_url(status='rejected', reason=('' if is_active else x.key), origin=origin, q=q, sort=sort) }}"
+     href="{{ list_url(status='rejected', reason=('' if is_active else x.key), how=how, origin=origin, q=q, sort=sort) }}"
      title="{{ x.n }} rejected — {{ x.label }}{% if is_active %} — click to clear{% endif %}">{{ x.n }} {{ x.label }}</a>
   {% endfor %}
 </div>
@@ -85,6 +103,7 @@
   {% if origin %}<input type="hidden" name="origin" value="{{ origin }}">{% endif %}
   {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
   {% if reason %}<input type="hidden" name="reason" value="{{ reason }}">{% endif %}
+  {% if how %}<input type="hidden" name="how" value="{{ how }}">{% endif %}
   <span class="grow"><input type="search" name="q" value="{{ q }}"
         placeholder="Search company or role" aria-label="Search company or role"
         style="width:100%"></span>
@@ -95,15 +114,15 @@
     <option value="company" {% if sort == 'company' %}selected{% endif %}>company A–Z</option>
   </select>
   <button>Apply</button>
-  {% if q %}<a class="sm" href="{{ list_url(status=status, origin=origin, sort=sort, reason=reason) }}">Clear</a>{% endif %}
+  {% if q %}<a class="sm" href="{{ list_url(status=status, origin=origin, sort=sort, reason=reason, how=how) }}">Clear</a>{% endif %}
 </form>
 
 <div class="bar" style="justify-content:space-between">
   <span class="tabs">
-    <a href="{{ list_url(status=status, q=q, sort=sort, reason=reason) }}" class="{{ 'active' if not origin }}">all</a>
-    <a href="{{ list_url(status=status, origin='applied', q=q, sort=sort, reason=reason) }}" class="{{ 'active' if origin == 'applied' }}">applied</a>
-    <a href="{{ list_url(status=status, origin='inbound', q=q, sort=sort, reason=reason) }}" class="{{ 'active' if origin == 'inbound' }}">inbound</a>
-    <a href="{{ list_url(status=status, origin='saved', q=q, sort=sort, reason=reason) }}" class="{{ 'active' if origin == 'saved' }}">saved</a>
+    <a href="{{ list_url(status=status, q=q, sort=sort, reason=reason, how=how) }}" class="{{ 'active' if not origin }}">all</a>
+    <a href="{{ list_url(status=status, origin='applied', q=q, sort=sort, reason=reason, how=how) }}" class="{{ 'active' if origin == 'applied' }}">applied</a>
+    <a href="{{ list_url(status=status, origin='inbound', q=q, sort=sort, reason=reason, how=how) }}" class="{{ 'active' if origin == 'inbound' }}">inbound</a>
+    <a href="{{ list_url(status=status, origin='saved', q=q, sort=sort, reason=reason, how=how) }}" class="{{ 'active' if origin == 'saved' }}">saved</a>
   </span>
   <span class="sm">
     {# The queue moved to its own page (21 Aug 2026); this is the nudge that

@@ -118,4 +118,29 @@
   it to tag them.
 </p>
 {% endif %}
+
+{# How it ended. The sibling of the table above, and unlike it complete without
+   tagging: the stage is on the timeline. One bucket per application — visa
+   first, then whether a human round ever happened — so the rows sum to the
+   rejected count. The three channel columns answer the question this was
+   built for: how many of the closes were a platform's form letter. #}
+{% if by_end %}
+<h2>How it ended</h2>
+<div class="card"><table>
+  <thead><tr><th></th><th>rejected</th><th>of which inbound</th>
+    <th>LinkedIn letter</th><th>other email</th><th>by hand</th></tr></thead>
+  <tbody>{% for r in by_end %}
+  <tr><td><a href="/?status=rejected&amp;how={{ r.key }}">{{ r.label }}</a></td>
+      <td class="mono num">{{ r.n }}</td>
+      <td class="mono num">{{ r.inbound or "—" }}</td>
+      <td class="mono num">{{ r.linkedin or "—" }}</td>
+      <td class="mono num">{{ r.other_email or "—" }}</td>
+      <td class="mono num">{{ r.by_hand or "—" }}</td></tr>
+  {% endfor %}</tbody>
+</table></div>
+<p class="sm quiet" style="margin:.45rem 0 0">
+  A round is an interview invite, a call or message, or an offer. A visa close
+  counts as visa whatever its stage.
+</p>
+{% endif %}
 {% endblock %}

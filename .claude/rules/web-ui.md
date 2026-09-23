@@ -201,6 +201,31 @@ axis) + **DM Mono**, from Google Fonts.
     rejections were recruiters who approached first and then dropped the
     thread — a different fact about the market than "my applications get
     rejected for visa". Counts only: nothing here is a rate.
+13. **How it ended is a derived partition, shown at rest; why it closed is a
+    recorded one, shown on demand** (23 Sep 2026). Asked for a glance at the
+    55 rejections as three kinds — after at least one round, on visa, or by a
+    platform's form letter. The reason chips of rule 12 could not give it,
+    because 42 of the 55 were untagged; but the STAGE is on every timeline
+    already, so `analytics.rejection_ends` buckets each rejected application
+    once — `visa` (the reason wins whatever the stage), else `after_round` (an
+    interview invite, `engaged`, or an offer exists), else `no_round` — and
+    the three sum to the funnel's count with nothing tagged. Measured on the
+    day: 7 visa, 5 after a round, 43 without (29 of those LinkedIn's letter,
+    11 an ATS's, 3 filed by hand). Because it is complete, it earns the
+    at-rest placement rule 12 refused the why-chips: the three ride on the
+    legend's `rejected` entry as `.legend .sub` (an em-dash and three chips,
+    attached rather than spaced like a sibling status), each a
+    `?status=rejected&how=` filter, active through weight. Fixed order — a
+    round, a visa stop, nothing — not by count, so the numbers compare
+    between visits. `how` folds into `status` exactly as `reason` does, and
+    the two combine (`how=no_round&reason=unrecorded` is the tagging queue's
+    bulk); the why-chips carry `how`, the how-chips carry `reason`, the
+    funnel and legend links drop both. ONE bucket expression
+    (`analytics.rejected_how_sql`) is formatted into both the list's WHERE
+    and the count, off the same closing event `rr` the row badge reads —
+    rule 12's "two definitions" trap again. `/analytics` gets the sibling
+    table, with the channel columns that answer the question as asked. Not a
+    row badge: the trace already draws the rounds.
 
 ## Gotchas learned the hard way
 

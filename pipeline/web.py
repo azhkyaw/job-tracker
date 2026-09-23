@@ -266,7 +266,7 @@ templates.env.globals["DEFAULT_SORT"] = _DEFAULT_SORT
 @app.get("/")
 def applications(request: Request, deleted: str | None = None, origin: str | None = None,
                  q: str = "", sort: str = _DEFAULT_SORT, status: str = "",
-                 reason: str = ""):
+                 reason: str = "", how: str = ""):
     """The record. The WORK that used to sit on top of it — the needs-follow-up
     queue — moved to /follow-ups on 21 Aug 2026, leaving a counted link in the
     nav. It had been a `<details>` here, collapsed by default with an `fu=1`
@@ -286,14 +286,24 @@ def applications(request: Request, deleted: str | None = None, origin: str | Non
     selected, the legend unfolds into WHY, each chip `?reason=<key>` from
     `_REASON_FILTERS`. A reason only exists on a rejection, so a reason filter
     IS a rejected filter — folded into `status` here rather than left to every
-    link to remember, which is also why the funnel's own hrefs never carry it."""
+    link to remember, which is also why the funnel's own hrefs never carry it.
+
+    `how` (23 Sep 2026) is the derived sibling of `reason`: how the rejection
+    ENDED — after a human round, on a visa stop, or without any round at all —
+    one bucket per rejected application, computed from the timeline so it is
+    complete without tagging. Its chips sit beside the funnel's rejected
+    entry at rest (the breakdown is the glance the reason chips cannot give
+    while most rejections are untagged) and are filters like every other
+    legend entry. It folds into `status` the same way `reason` does, and the
+    two combine: `how=no_round&reason=unrecorded` is the tagging queue's bulk."""
     user = _login_user(request)
     origin = origin if origin in ("applied", "inbound", "saved") else None
     sort = sort if sort in _SORTS else _DEFAULT_SORT
     q = q.strip()
     status = status if status in FUNNEL_ORDER else ""
     reason = reason if reason in _REASON_FILTERS else ""
-    if reason:
+    how = how if how in _HOW_FILTERS else ""
+    if reason or how:
         status = "rejected"
     with db.connect_scoped(user["id"]) as conn:
         user_id = user["id"]
@@ -371,10 +381,14 @@ def applications(request: Request, deleted: str | None = None, origin: str | Non
                    OR (%(status)s = 'applied' AND s.status = 'confirmation'))
               AND (%(reason)s::text = '' OR rr.reason = %(reason)s)
               AND (NOT %(unrecorded)s::bool OR (rr.id IS NOT NULL AND rr.reason IS NULL))
+              -- rr.id guards the CASE: with no rejected event rr.reason is NULL
+              -- and the expression would read 'no_round' for a live thread.
+              AND (%(how)s::text = '' OR (rr.id IS NOT NULL AND {_HOW_CASE} = %(how)s))
             ORDER BY {_SORTS[sort]}
             """, {"user_id": user_id, "origin": origin, "status": status,
                   "reason": reason if reason in _EVENT_REASONS else "",
                   "unrecorded": reason == _REASON_UNRECORDED,
+                  "how": how,
                   "q": q, "like": f"%{q}%"}).fetchall()
         for r in rows:
             # Flagged before _display() rewrites the status into a human label:
@@ -419,6 +433,11 @@ def applications(request: Request, deleted: str | None = None, origin: str | Non
             "reasons": (_reason_rows(analytics.rejection_reasons(conn, user_id, origin))
                         if status == "rejected" else []),
             "event_reasons": _EVENT_REASONS,
+            "how": how,
+            # Always, not only with rejected selected: these ride on the
+            # legend's rejected entry as the at-rest glance, over the same tab
+            # (origin) the funnel counts.
+            "ends": _end_rows(analytics.rejection_ends(conn, user_id, origin)),
         })
 
 
@@ -524,6 +543,50 @@ def _reason_rows(rows) -> list[dict]:
                     "n": r["n"], "inbound": r["inbound"]})
     out.sort(key=lambda x: (x["key"] == _REASON_UNRECORDED, -x["n"], x["label"]))
     return out
+
+
+# How it ENDED: the list's `how` filter and the chips beside the funnel's
+# rejected entry, one bucket per rejected application (analytics.rejection_ends
+# has the precedence and the reasoning). Fixed order, not by count: it reads as
+# a scale — a human round, a visa stop, or nothing at all — and a fixed order is
+# what makes the three numbers comparable between visits.
+_HOW_FILTERS = {
+    "after_round": "after a round",
+    "visa":        "visa",
+    "no_round":    "without a round",
+}
+
+
+def _end_rows(rows) -> list[dict]:
+    """analytics.rejection_ends() rows in _HOW_FILTERS order, labelled, with a
+    `detail` sentence for the chip's hover text saying what closed them —
+    the author's question was how many were LinkedIn's form letter."""
+    by = {r["how"]: r for r in rows}
+    out = []
+    for key, label in _HOW_FILTERS.items():
+        r = by.get(key)
+        if not r:
+            continue
+        parts = []
+        if r["linkedin"]:
+            parts.append(f"{r['linkedin']} by LinkedIn's form letter")
+        if r["other_email"]:
+            parts.append(f"{r['other_email']} by other email")
+        if r["by_hand"]:
+            parts.append(f"{r['by_hand']} filed by hand")
+        out.append({"key": key, "label": label, "n": r["n"], "inbound": r["inbound"],
+                    "linkedin": r["linkedin"], "other_email": r["other_email"],
+                    "by_hand": r["by_hand"], "detail": " · ".join(parts)})
+    return out
+
+
+# The list's `how` WHERE, off the same closing event (`rr`) the row badge and
+# the reason filter read, and the same bucket expression the chips are counted
+# by — formatted from one function so the two cannot drift.
+_HOW_CASE = analytics.rejected_how_sql(
+    "rr.reason",
+    f"EXISTS (SELECT 1 FROM events x WHERE x.application_id = a.id "
+    f"AND x.type IN {analytics.ROUND_TYPES})")
 
 # How the news arrived, for the events the tracker cannot see for itself.
 _EVENT_CHANNELS = {
@@ -1952,6 +2015,7 @@ def analytics_page(request: Request):
             "by_resume": analytics.by_resume(conn, user_id),
             "by_technology": analytics.by_technology(conn, user_id),
             "by_reason": _reason_rows(analytics.rejection_reasons(conn, user_id)),
+            "by_end": _end_rows(analytics.rejection_ends(conn, user_id)),
             "pending": _pending_count(conn),
         })
 

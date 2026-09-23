@@ -256,6 +256,10 @@ a.tl:hover{background:color-mix(in srgb,var(--accent) 5%,var(--mix));text-decora
 .legend a{color:inherit}
 .legend a:hover{color:var(--ink)}
 .legend a.active{color:var(--ink);font-weight:600}
+/* The rejected entry's own breakdown, attached to it rather than spaced like
+   a sibling status: how each rejection ended, three chips that are filters. */
+.legend .sub{display:inline-flex;flex-wrap:wrap;gap:.15rem .6rem;margin-left:-.5rem}
+.legend .sub::before{content:'—'}
 .legend i{display:inline-block;width:.45rem;height:.45rem;border-radius:50%;
           background:var(--c);margin-right:.4rem;vertical-align:.05rem}
 .stats{display:flex;flex-wrap:wrap;gap:.2rem 1.8rem;margin:.2rem 0 1.1rem;

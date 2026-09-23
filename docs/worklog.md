@@ -392,3 +392,20 @@ the key to each real case.
    now reads `interview_invite`, the agency's `viewed`. Path 3d's fixture,
    which had modelled a company sharing nothing, was reshaped to the real
    pattern and path 3f added for the stranger.
+12. **How the rejections ended, at a glance** (23 Sep 2026). Asked to see
+   the 55 rejections on the list page as three kinds: after at least one
+   round (a screening call or a coding test), on visa, or just a platform's
+   auto-reply. Measured first: 7 visa (6 with no round), 5 after a round
+   (2 role filled, 1 other, 2 untagged), 43 without a round — 29 LinkedIn
+   form letters, 11 ATS form letters, 3 filed by hand; the closing email's
+   extracted `platform` agrees with its sender on all 40. The stage is
+   derivable from the timeline, so unlike the reason chips (42 of 55
+   untagged) the split is complete on day one, which is what justifies
+   showing it at rest beside the funnel's rejected entry rather than only
+   on click (`.claude/rules/web-ui.md` rule 13). One bucket expression
+   (`analytics.rejected_how_sql`) feeds the list's `how` filter, the chips
+   and a sibling "How it ended" table on /analytics with the channel
+   columns. Not done, deliberately: a per-row badge (the trace draws the
+   rounds already) and a LinkedIn-specific bucket (the channel lives in the
+   chip's hover text and the analytics table; a fourth chip is one line if
+   wanted).

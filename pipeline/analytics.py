@@ -232,6 +232,75 @@ def rejection_reasons(conn, user_id, origin: str | None = None):
     """, {"user_id": user_id, "origin": origin}).fetchall()
 
 
+# How a rejection ENDED, as one partition of every rejected application (23 Sep
+# 2026). The stage an application reached is already on its timeline, so
+# unlike the reason chips this breakdown is complete on day one, with nothing
+# to tag. Three buckets, in precedence order:
+#
+#   visa         the closing event carries the visa reason — a market fact
+#                worth its own slice whatever the stage (5 of the author's
+#                first 6 were recruiters who approached and then dropped the
+#                thread; no round was ever involved)
+#   after_round  a human round happened: an interview invite, a call or a
+#                message (`engaged`), or an offer
+#   no_round     the rest — a form letter, or a hand-filed close with no round
+#                (43 of the author's 55 on the day this shipped, 29 of them
+#                LinkedIn's letter and 11 an ATS's)
+#
+# Precedence matters because the facts overlap (a visa close can follow a
+# round); one bucket per application is what lets the chips sum to the funnel's
+# rejected count. ONE definition, formatted into both the list's WHERE (web.py)
+# and the count below — two copies would let a chip promise a different number
+# of rows than it shows, the same trap rejection_reasons documents.
+ROUND_TYPES = "('interview_invite','engaged','offer')"
+
+
+def rejected_how_sql(reason: str, had_round: str) -> str:
+    """The bucket, as a SQL expression over a reason column and a boolean
+    had-a-round expression — the caller supplies both so the list query and
+    the count query can each name their own sources."""
+    return (f"CASE WHEN {reason} = 'visa' THEN 'visa' "
+            f"WHEN {had_round} THEN 'after_round' ELSE 'no_round' END")
+
+
+def rejection_ends(conn, user_id, origin: str | None = None):
+    """Rejected applications per bucket (`how`), over the same closing event
+    rejection_reasons picks (newest with a reason, else newest) and scoped by
+    `origin` the way the funnel is. `inbound` splits out leads as the reason
+    table does; `linkedin`, `other_email` and `by_hand` split a bucket by what
+    closed it — the closing email's own extracted platform, or no email at all
+    — for the chip's hover text."""
+    had_round = (f"EXISTS (SELECT 1 FROM events x WHERE x.application_id = c.application_id "
+                 f"AND x.type IN {ROUND_TYPES})")
+    return conn.execute(f"""
+        WITH closed AS (
+            SELECT DISTINCT ON (e.application_id)
+                   e.application_id, e.payload->>'reason' AS reason,
+                   e.source, e.source_email_id
+            FROM events e
+            JOIN applications a ON a.id = e.application_id
+            WHERE a.user_id = %(user_id)s AND e.type = 'rejected'
+              AND (%(origin)s::text IS NULL OR a.origin = %(origin)s)
+            ORDER BY e.application_id, (e.payload->>'reason') IS NOT NULL DESC,
+                     e.occurred_at DESC, e.created_at DESC
+        ), ended AS (
+            SELECT {rejected_how_sql('c.reason', had_round)} AS how,
+                   a.origin, c.source, em.extraction->>'platform' AS platform
+            FROM closed c
+            JOIN applications a ON a.id = c.application_id
+            LEFT JOIN emails em ON em.id = c.source_email_id
+        )
+        SELECT how, count(*) AS n,
+               count(*) FILTER (WHERE origin = 'inbound')                         AS inbound,
+               count(*) FILTER (WHERE source = 'email' AND platform = 'linkedin') AS linkedin,
+               count(*) FILTER (WHERE source = 'email'
+                                  AND platform IS DISTINCT FROM 'linkedin')       AS other_email,
+               count(*) FILTER (WHERE source <> 'email')                          AS by_hand
+        FROM ended
+        GROUP BY how
+    """, {"user_id": user_id, "origin": origin}).fetchall()
+
+
 # "Applied > REMINDER_DAYS ago, no response, no follow-up, not withdrawn" —
 # written ONCE because two callers need it: the /follow-ups page wants the rows
 # and every other page wants only the count for its nav badge. Two hand-written
