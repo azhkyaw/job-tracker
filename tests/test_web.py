@@ -1632,9 +1632,17 @@ check("the message renders as a banner on the way back",
 
 r = client.post(f"/applications/{wa_app}/events", data={"type": "confirmation"})
 check("an event type the ingest paths own is still refused", r.status_code == 400, r.status_code)
+# Refused outright until 24 Sep 2026 ("invariant #9 reserves it for triage").
+# A human may file it now, but only as the START of the thread: this record was
+# applied 20 days ago and a blank date means today, so it is refused, with a
+# banner rather than a 400, and the record does not move.
 r = client.post(f"/applications/{wa_app}/events", data={"type": "recruiter_outreach"})
-check("so is recruiter_outreach — invariant #9 reserves it for triage",
-      r.status_code == 400, r.status_code)
+with db.connect() as conn:
+    _o = conn.execute("SELECT origin FROM applications WHERE id = %s", (wa_app,)).fetchone()
+check("recruiter_outreach is accepted only as the thread's start — dated after the "
+      "application, it is refused and the record stays put",
+      r.status_code == 303 and "event_error" in r.headers["location"]
+      and _o["origin"] == "applied", (r.status_code, r.headers.get("location"), _o))
 
 print("rejection reasons: any rejected event, whatever its source")
 # Northwind's rejection came by email (test_integration seeded it through the
@@ -1939,5 +1947,176 @@ with db.connect() as conn, conn.transaction():      # leave the queue as we foun
     conn.execute("DELETE FROM job_queue WHERE id IN (%s, %s)", (fresh, dead))
     conn.execute("DELETE FROM emails WHERE id = %s", (stalled_email,))
 check("band gone once the queue is clean", 'class="stall"' not in client.get("/").text)
+
+print("inbound: a recruiter's approach filed by hand moves the record (24 Sep 2026)")
+# The shape of the real case: the tracker heard of the thread only when the user
+# emailed a resume, so it filed the record as theirs. The recruiter's WhatsApp
+# message is then stated by hand. Dates are fixed at 12:00 UTC so their local
+# date is the same in any timezone the test user might carry.
+with db.connect() as conn, conn.transaction():
+    _jid = conn.execute(
+        "INSERT INTO jobs (user_id, company_norm, title_canonical) "
+        "VALUES (%s, 'approachco', 'AI Engineer') RETURNING id", (user_id,)).fetchone()["id"]
+    appr_app = conn.execute(
+        "INSERT INTO applications (user_id, job_id) VALUES (%s, %s) RETURNING id",
+        (user_id, _jid)).fetchone()["id"]
+    conn.execute(
+        "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+        "VALUES (%s, %s, 'applied', 'email', '2026-08-10 12:00+00', '{}')", (user_id, appr_app))
+
+
+def _appr_state():
+    with db.connect() as conn:
+        origin = conn.execute("SELECT origin FROM applications WHERE id = %s",
+                              (appr_app,)).fetchone()["origin"]
+        evs = conn.execute(
+            "SELECT id, occurred_at, payload FROM events WHERE application_id = %s "
+            "AND type = 'recruiter_outreach' ORDER BY occurred_at", (appr_app,)).fetchall()
+        applied = conn.execute(
+            "SELECT occurred_at FROM events WHERE application_id = %s AND type = 'applied'",
+            (appr_app,)).fetchone()["occurred_at"]
+    return origin, evs, applied
+
+
+r = client.post(f"/applications/{appr_app}/events", data={
+    "type": "recruiter_outreach", "occurred_on": "2026-08-12", "channel": "whatsapp"})
+origin, evs, _ = _appr_state()
+check("an approach dated after the application is refused, with the reason",
+      r.status_code == 303 and "event_error=" in r.headers["location"]
+      and origin == "applied" and not evs, (r.headers.get("location"), origin, evs))
+check("...and the refusal names the event for a later message",
+      "reached out" in client.get(r.headers["location"]).text)
+r = client.post(f"/applications/{appr_app}/events", data={
+    "type": "recruiter_outreach", "occurred_on": ""})
+origin, evs, _ = _appr_state()
+check("a blank date means today, which is after the application, so it is refused too",
+      "event_error=" in r.headers["location"] and origin == "applied" and not evs,
+      r.headers.get("location"))
+
+r = client.post(f"/applications/{appr_app}/events", data={
+    "type": "recruiter_outreach", "occurred_on": "2026-08-10", "channel": "whatsapp",
+    "note": "messaged about the role"})
+origin, evs, applied_at = _appr_state()
+check("filed for the day of the application, it lands", r.status_code == 303
+      and r.headers["location"] == f"/applications/{appr_app}", r.headers.get("location"))
+check("the record is now inbound", origin == "inbound", origin)
+check("the approach carries its channel and what it moved the record from",
+      len(evs) == 1 and evs[0]["payload"].get("channel") == "whatsapp"
+      and evs[0]["payload"].get("origin_was") == "applied", evs)
+check("and on the same day it sits strictly BEFORE the application on the timeline",
+      evs[0]["occurred_at"] < applied_at, (evs[0]["occurred_at"], applied_at))
+check("it left the record page for /inbound",
+      ">approachco<" not in client.get("/").text and ">approachco<" in client.get("/inbound").text)
+r = client.get(f"/applications/{appr_app}")
+check("its page shows the approach, by hand, on WhatsApp, and lights Inbound",
+      "Recruiter reached out" in r.text and "WhatsApp" in r.text
+      and 'href="/inbound" class="active"' in r.text, r.status_code)
+approach_id = evs[0]["id"]
+
+r = client.post(f"/applications/{appr_app}/events", data={
+    "type": "recruiter_outreach", "occurred_on": "2026-08-01"})
+_, evs, _ = _appr_state()
+check("a second hand-filed approach is refused: a thread has one start",
+      "event_error=" in r.headers["location"] and len(evs) == 1, r.headers.get("location"))
+
+r = client.post(f"/applications/{appr_app}/events/{approach_id}/edit", data={
+    "type": "recruiter_outreach", "occurred_on": "2026-08-05", "channel": "whatsapp"})
+origin, evs, _ = _appr_state()
+check("editing its date keeps it an approach and keeps what it moved the record from",
+      r.status_code == 303 and origin == "inbound"
+      and evs[0]["payload"].get("origin_was") == "applied"
+      and evs[0]["occurred_at"].date().isoformat() in ("2026-08-04", "2026-08-05"), evs)
+r = client.post(f"/applications/{appr_app}/events/{approach_id}/edit", data={
+    "type": "recruiter_outreach", "occurred_on": "2026-08-12"})
+check("editing it to a date after the application is refused", r.status_code == 400
+      and "comes before the application" in r.text, r.status_code)
+
+r = client.post(f"/applications/{appr_app}/edit", data={
+    "company": "approachco", "title": "AI Engineer", "platform": "other",
+    "applied_date": "2026-08-01"})
+check("the application can't be moved to before the approach either",
+      r.status_code == 400 and "approached you first" in r.text, r.status_code)
+
+r = client.post(f"/applications/{appr_app}/events/{approach_id}/edit", data={
+    "type": "note", "occurred_on": "2026-08-05", "note": "not an approach after all"})
+origin, evs, _ = _appr_state()
+check("re-typing the approach as something else puts the record back",
+      r.status_code == 303 and origin == "applied" and not evs, (origin, evs))
+r = client.post(f"/applications/{appr_app}/events/{approach_id}/edit", data={
+    "type": "recruiter_outreach", "occurred_on": "2026-08-05"})
+origin, evs, _ = _appr_state()
+check("and re-typing it back moves it again, remembering where it came from",
+      origin == "inbound" and evs[0]["payload"].get("origin_was") == "applied", (origin, evs))
+
+r = client.post(f"/applications/{appr_app}/events/{approach_id}/delete")
+origin, evs, _ = _appr_state()
+check("deleting the approach puts the record back where it was",
+      r.status_code == 303 and origin == "applied" and not evs, (origin, evs))
+check("...on the record page again", ">approachco<" in client.get("/").text)
+
+print("inbound: manual entry, who started it")
+r = client.post("/applications/new", data={
+    "company": "Approach Manual Co", "title": "Data Engineer", "platform": "other",
+    "started_by": "recruiter", "approach_date": "2026-08-03", "approach_channel": "phone",
+    "applied_date": "2026-08-04", "after": "view"})
+check("recruiter-started with an application redirects to the record", r.status_code == 303,
+      r.text[:300])
+_man = r.headers["location"].rsplit("/", 1)[1]
+with db.connect() as conn:
+    _row = conn.execute("SELECT origin FROM applications WHERE id = %s::uuid", (_man,)).fetchone()
+    _evs = conn.execute(
+        "SELECT type, source, occurred_at, payload FROM events WHERE application_id = %s::uuid "
+        "ORDER BY occurred_at", (_man,)).fetchall()
+check("it is inbound, and its thread starts with the approach, then the application",
+      _row["origin"] == "inbound" and [e["type"] for e in _evs] == ["recruiter_outreach", "applied"]
+      and _evs[0]["source"] == "manual" and _evs[0]["payload"].get("channel") == "phone"
+      and _evs[0]["payload"].get("origin_was") == "applied", (_row, _evs))
+
+r = client.post("/applications/new", data={
+    "company": "Approach Lead Co", "title": "ML Engineer", "platform": "other",
+    "started_by": "recruiter", "approach_date": "2026-08-06", "approach_channel": "whatsapp",
+    "applied_date": "", "after": "view"})
+check("recruiter-started with NO application is accepted: a lead", r.status_code == 303,
+      r.text[:300])
+_lead = r.headers["location"].rsplit("/", 1)[1]
+with db.connect() as conn:
+    _row = conn.execute(
+        "SELECT a.origin, s.status FROM applications a JOIN application_status s "
+        "ON s.application_id = a.id WHERE a.id = %s::uuid", (_lead,)).fetchone()
+    _n = conn.execute("SELECT count(*) AS n FROM events WHERE application_id = %s::uuid "
+                      "AND type = 'applied'", (_lead,)).fetchone()["n"]
+check("it is an inbound lead awaiting a decision, with no applied event invented",
+      _row["origin"] == "inbound" and _row["status"] == "interested" and _n == 0, (_row, _n))
+r = client.get("/inbound")
+check("and /inbound pins it with the other leads",
+      r.text.index('<div class="tl-sep">Awaiting your call</div>') < r.text.index("Approach Lead Co")
+      < r.text.index('<div class="tl-sep">Underway or closed</div>'))
+
+r = client.post("/applications/new", data={
+    "company": "Approach Late Co", "title": "Engineer", "platform": "other",
+    "started_by": "recruiter", "approach_date": "2026-08-09", "applied_date": "2026-08-04"})
+check("an approach after the application is refused on this form too",
+      r.status_code == 400 and "dated after your application" in r.text, r.status_code)
+r = client.post("/applications/new", data={
+    "company": "Approach Undated Co", "title": "Engineer", "platform": "other",
+    "started_by": "recruiter", "applied_date": "2026-08-04"})
+check("recruiter-started needs the approach's date",
+      r.status_code == 400 and "date the recruiter approached you" in r.text, r.status_code)
+r = client.post("/applications/new", data={
+    "company": "Approach Ignored Co", "title": "Engineer", "platform": "other",
+    "started_by": "me", "approach_date": "2026-08-01", "approach_channel": "whatsapp",
+    "applied_date": "2026-08-04", "after": "view"})
+_ign = r.headers["location"].rsplit("/", 1)[1]
+with db.connect() as conn:
+    _row = conn.execute("SELECT origin FROM applications WHERE id = %s::uuid", (_ign,)).fetchone()
+    _n = conn.execute("SELECT count(*) AS n FROM events WHERE application_id = %s::uuid "
+                      "AND type = 'recruiter_outreach'", (_ign,)).fetchone()["n"]
+check("under “I applied” stray approach fields are ignored, not filed",
+      _row["origin"] == "applied" and _n == 0, (_row, _n))
+r = client.post("/applications/new", data={
+    "company": "Approach Blank Co", "title": "Engineer", "platform": "other",
+    "started_by": "me", "applied_date": ""})
+check("under “I applied” the applied date is still required",
+      r.status_code == 400 and "valid applied date" in r.text, r.status_code)
 
 print("\nALL WEB PATHS PASS")

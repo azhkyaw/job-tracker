@@ -637,9 +637,13 @@ _OUTCOME_TYPES = {"viewed", "engaged", "interview_invite", "offer", "rejected", 
 # "I withdrew" (right status, false fact).
 #
 # Deliberately NOT here: `applied` and `confirmation`, owned by
-# ingest.upsert_record and the mail path; and `recruiter_outreach`, which
-# invariant #9 reserves for triage's inbound lane — a human resolving a lead is
-# the only thing allowed to create one.
+# ingest.upsert_record and the mail path. `recruiter_outreach` was excluded
+# too until 24 Sep 2026, on invariant #9's rule that only a human creates a
+# lead, never the matcher. It is here now under that same rule: filing it IS a
+# human stating who started the thread. What the exclusion also prevented,
+# an approach sitting on a record still filed as the user's own application,
+# can no longer happen, because filing one moves the record (`_take_origin`)
+# and one dated after the application is refused.
 _MANUAL_EVENTS = {
     "follow_up_sent":   "I followed up",
     "note":             "Note to self",
@@ -648,9 +652,20 @@ _MANUAL_EVENTS = {
     "offer":            "They made an offer",
     "viewed":           "They viewed my application",
     "engaged":          "They reached out (call, message, follow-up questions)",
+    # Who STARTED the thread, which is a different fact from anything above
+    # (24 Sep 2026). A recruiter who messages on WhatsApp or rings never
+    # reaches an ingest path, so the tracker first hears of the thread when
+    # you act on it — a resume emailed to them, a manual entry — and files it
+    # as your own application. This is the door that says otherwise: the same
+    # event type every email-borne inbound starts with, and filing it moves the
+    # record to /inbound (`_take_origin`). Placed beside `engaged` because the
+    # two are the pair people confuse: one is them answering you, this is them
+    # going first — `_approach_error` refuses one dated after your application.
+    "recruiter_outreach": "A recruiter approached me first",
     "withdrawn":        "I withdrew",
 }
 assert _OUTCOME_TYPES <= set(_MANUAL_EVENTS)
+_APPROACH = "recruiter_outreach"
 
 # Why the employer stopped, when they said. Closed vocabulary so that "why do I
 # actually get rejected" is countable — the "Why it closed" table on /analytics
@@ -752,6 +767,7 @@ _EVENT_CHANNELS = {
 def _manual_ctx(conn, user, tz, *, form, error=None, added=None, merged=False):
     return {
         "form": form, "error": error, "added": added, "merged": merged,
+        "event_channels": _EVENT_CHANNELS,
         "tz_label": user.get("timezone") or "UTC",
         "today": datetime.now(tz).strftime("%Y-%m-%d"),
         "pending": _pending_count(conn),
@@ -788,7 +804,8 @@ def manual_entry_form(request: Request, company: str = "", title: str = "",
                 "applied_date": date or datetime.now(tz).strftime("%Y-%m-%d"),
                 "applied_time": "", "outcome": "", "outcome_date": "",
                 "outcome_time": "", "jd_text": "", "note": "",
-                "external": "", "confirm": ""}
+                "external": "", "confirm": "",
+                "started_by": "me", "approach_date": "", "approach_channel": ""}
         return templates.TemplateResponse(
             request=request, name="manual_entry.html",
             context=_manual_ctx(conn, user, tz, form=form,
@@ -807,8 +824,19 @@ def manual_entry_create(
     location: str = Form(""), outcome: str = Form(""), outcome_date: str = Form(""),
     outcome_time: str = Form(""), jd_text: str = Form(""), note: str = Form(""),
     external: str = Form(""), confirm: str = Form(""),
+    started_by: str = Form("me"), approach_date: str = Form(""),
+    approach_channel: str = Form(""),
     after: str = Form("view"),
 ):
+    """`started_by` (24 Sep 2026) is the other door a recruiter's approach
+    comes through, beside the timeline's "A recruiter approached me first":
+    a thread that began on WhatsApp or a call reaches this form, not an ingest
+    path. With `recruiter`, the approach is filed through the same helpers as
+    the timeline's (`_take_origin`, so the record lands on /inbound and the
+    same undo applies), and the applied date may be BLANK — a lead you haven't
+    acted on yet, which then derives `interested` and is pinned on /inbound
+    like any lead from triage. The approach fields are ignored under `me`:
+    there is no JS to hide them, so the server keeps a stray value out."""
     user = _login_user(request)
     tz = request.state.tz
     from psycopg.types.json import Json
@@ -818,7 +846,10 @@ def manual_entry_create(
             "applied_time": applied_time, "outcome": outcome,
             "outcome_date": outcome_date, "outcome_time": outcome_time,
             "jd_text": jd_text, "note": note,
-            "external": external, "confirm": confirm}
+            "external": external, "confirm": confirm,
+            "started_by": started_by, "approach_date": approach_date,
+            "approach_channel": approach_channel}
+    recruiter_first = started_by == "recruiter"
 
     company_s, title_s, location_s = company.strip(), title.strip(), location.strip()
     company_norm = norm_company(company_s) or None
@@ -830,7 +861,7 @@ def manual_entry_create(
     external_val = {"yes": True, "no": False}.get(external.strip().lower())
 
     error = None
-    applied_d = outcome_d = None
+    applied_d = outcome_d = approach_d = None
     applied_t = outcome_t = None            # None = borrow the submission time-of-day
     platform_job_id = canonical_url = None
 
@@ -842,18 +873,42 @@ def manual_entry_create(
         error = "Enter the job title."
     elif platform not in ("linkedin", "jobstreet", "indeed", "other"):
         error = "Unknown platform."
+    elif started_by not in ("me", "recruiter"):
+        error = "Unknown answer to “who started it”."
+    elif recruiter_first and approach_channel and approach_channel not in _EVENT_CHANNELS:
+        error = "Unknown channel for the approach."
     else:
-        try:
-            applied_d = datetime.strptime(applied_date, "%Y-%m-%d").date()
-        except ValueError:
-            error = "Enter a valid applied date."
-        if error is None and applied_time.strip():
+        if recruiter_first:
+            if not approach_date.strip():
+                error = "Pick the date the recruiter approached you."
+            else:
+                try:
+                    approach_d = datetime.strptime(approach_date.strip(), "%Y-%m-%d").date()
+                except ValueError:
+                    error = "Enter a valid date for the approach."
+                if error is None and approach_d > datetime.now(tz).date():
+                    error = "The approach date can't be in the future."
+        # Blank is allowed only for a lead: a recruiter approached you and you
+        # haven't applied. Under `me` it is still required, as it always was.
+        if error is None and (applied_date.strip() or not recruiter_first):
+            try:
+                applied_d = datetime.strptime(applied_date, "%Y-%m-%d").date()
+            except ValueError:
+                error = "Enter a valid applied date."
+        if error is None and applied_d and applied_time.strip():
             try:
                 applied_t = datetime.strptime(applied_time.strip(), "%H:%M").time()
             except ValueError:
                 error = "Enter a valid applied time (HH:MM), or leave it blank."
-        if error is None and applied_d > datetime.now(tz).date():
+        if error is None and applied_d and applied_d > datetime.now(tz).date():
             error = "The applied date can't be in the future."
+        if error is None and applied_d and approach_d and approach_d > applied_d:
+            error = ("The recruiter's approach can't be dated after your application. "
+                     "If they got in touch after you applied, choose “I applied” here and "
+                     "record “They reached out” on the application's page.")
+        # What an outcome is measured from: the application, or for a lead
+        # the approach — the thread's own first event either way.
+        base_d = applied_d or approach_d
         if error is None and outcome_s:
             if outcome_s not in _OUTCOME_TYPES:
                 error = "Unknown outcome."
@@ -869,8 +924,10 @@ def manual_entry_create(
                         outcome_t = datetime.strptime(outcome_time.strip(), "%H:%M").time()
                     except ValueError:
                         error = "Enter a valid outcome time (HH:MM), or leave it blank."
-                if error is None and outcome_d < applied_d:
-                    error = "The outcome can't be dated before the application."
+                if error is None and outcome_d < base_d:
+                    error = ("The outcome can't be dated before the application."
+                             if applied_d else
+                             "The outcome can't be dated before the approach.")
         if error is None:
             parsed_platform, platform_job_id, canonical_url = joburl.parse(url or None)
             if parsed_platform and parsed_platform != platform:
@@ -914,30 +971,52 @@ def manual_entry_create(
                     status_code=400)
 
         with conn.transaction():
-            applied_at = ingest.local_date_to_utc(applied_d, tz, t=applied_t)
+            applied_at = (ingest.local_date_to_utc(applied_d, tz, t=applied_t)
+                          if applied_d else None)
+            approach_at = ingest.local_date_to_utc(approach_d, tz) if approach_d else None
+            if approach_at and applied_at and approach_at >= applied_at:
+                # Same day: the recruiter still went first on the timeline
+                # (`_place_approach`'s rule, applied before the row exists).
+                approach_at = applied_at - timedelta(seconds=1)
+            base_at = applied_at or approach_at
             outcome_at = None
             if outcome_d:
                 outcome_at = ingest.local_date_to_utc(outcome_d, tz, t=outcome_t)
-                if outcome_at <= applied_at:      # same-day: keep it strictly later
-                    outcome_at = applied_at + timedelta(seconds=1)
+                if outcome_at <= base_at:         # same-day: keep it strictly later
+                    outcome_at = base_at + timedelta(seconds=1)
 
             r = ingest.upsert_record(
                 conn, user["id"], platform=platform, platform_job_id=platform_job_id,
                 url=canonical_url, company=company_s, title=title_s,
                 jd_text=jd_s or None, location=location_s or None,
-                captured_via="manual", captured_at=applied_at)
+                captured_via="manual", captured_at=base_at)
             app_id = r["application_id"]
 
             has_applied = conn.execute(
                 "SELECT 1 FROM events WHERE application_id = %s AND type = 'applied'",
                 (app_id,)).fetchone()
-            if has_applied is None:            # double-click / re-merge safe
+            if applied_at and has_applied is None:   # double-click / re-merge safe
                 applied_payload = ({"external": external_val} if external_val is not None
                                    else {})
                 conn.execute(
                     "INSERT INTO events (user_id, application_id, type, source, "
                     "occurred_at, payload) VALUES (%s, %s, 'applied', 'manual', %s, %s)",
                     (user["id"], app_id, applied_at, Json(applied_payload)))
+
+            if approach_at:
+                a_row = conn.execute(
+                    "SELECT id, origin FROM applications WHERE id = %s", (app_id,)).fetchone()
+                has_approach = conn.execute(
+                    "SELECT 1 FROM events WHERE application_id = %s AND type = %s "
+                    "AND source = 'manual'", (app_id, _APPROACH)).fetchone()
+                if has_approach is None:          # same guard, same reason
+                    approach_payload = ({"channel": approach_channel}
+                                        if approach_channel in _EVENT_CHANNELS else {})
+                    _take_origin(conn, a_row, approach_payload)
+                    conn.execute(
+                        "INSERT INTO events (user_id, application_id, type, source, "
+                        "occurred_at, payload) VALUES (%s, %s, %s, 'manual', %s, %s)",
+                        (user["id"], app_id, _APPROACH, approach_at, Json(approach_payload)))
 
             if outcome_at is not None:
                 conn.execute(
@@ -949,7 +1028,7 @@ def manual_entry_create(
                 conn.execute(
                     "INSERT INTO events (user_id, application_id, type, source, "
                     "occurred_at, payload) VALUES (%s, %s, 'note', 'manual', %s, %s)",
-                    (user["id"], app_id, applied_at, Json({"note": note_s})))
+                    (user["id"], app_id, base_at, Json({"note": note_s})))
 
             merged = r["application_existed"]
 
@@ -1211,6 +1290,20 @@ def edit_application(
             error = (f"The timeline already has a {clash_ev['type']} on "
                      f"{clash_ev['occurred_at'].astimezone(tz).strftime('%d %b %Y')} — "
                      "the applied date can't be after it.")
+        # The mirror image: a hand-filed approach says the recruiter went FIRST
+        # (`_approach_error` refuses one dated after the application), so the
+        # application can't be moved to a day before it either. Local dates,
+        # same comparison as the approach's own check. Hand-filed only — an
+        # email-borne approach is the email's fact, not a claim about order.
+        if error is None:
+            approach = conn.execute(
+                "SELECT occurred_at FROM events WHERE application_id = %s AND type = %s "
+                "AND source = 'manual' LIMIT 1", (a["id"], _APPROACH)).fetchone()
+            if approach and applied_d < approach["occurred_at"].astimezone(tz).date():
+                error = ("You recorded that a recruiter approached you first, on "
+                         f"{approach['occurred_at'].astimezone(tz).strftime('%d %b %Y')}. "
+                         "The applied date can't be before that; edit the approach "
+                         "on the timeline if its date is wrong.")
 
         # postings_platform_job_uidx is (user_id, platform, platform_job_id):
         # pre-check so a collision is a friendly message naming the other
@@ -1346,6 +1439,78 @@ def _get_manual_event(conn, a, event_id: str) -> dict:
     return row
 
 
+# --- A hand-filed approach: the one event that moves a record between pages.
+#
+# `origin` is provenance and the system never derives it (invariant #9): no
+# status, no arriving email, no other event changes it. The exception is a
+# person stating who started the thread, and this is the only code that acts
+# on that statement. One action carries both facts — the approach on the
+# timeline (so the trace starts where the thread did) and `origin = 'inbound'`
+# (so the record lives on /inbound) — because two separate controls could
+# disagree: an inbound record with no approach on its trace, or an approach
+# on a record still filed as your application.
+#
+# Reversible exactly: the approach that flips a record stores what it flipped
+# FROM in its own payload (`origin_was`), and removing it, or re-typing it as
+# something else, puts that back. One hand-filed approach per record makes the
+# undo exact — a thread has one start, and a second would leave two events
+# arguing over which one's `origin_was` wins. An email-borne approach (a lead
+# from triage) is not hand-filed and never carries `origin_was`: that record
+# was inbound from birth, so there is nothing to restore.
+
+
+def _approach_error(conn, a, when, tz, *, exclude_event=None) -> str | None:
+    """Why a hand-filed approach at `when` can't stand, or None.
+
+    Compared as LOCAL DATES, the way the user entered it: an approach filed for
+    the day you applied is fine, whatever the two times of day were (a form
+    date has none — it anchors at local noon) — `_place_approach` then orders
+    them. A later date is refused: a recruiter writing after you applied is a
+    response, and "They reached out" is the event for that."""
+    other = conn.execute(
+        "SELECT occurred_at FROM events WHERE application_id = %s AND type = %s "
+        "AND source = 'manual' AND id IS DISTINCT FROM %s LIMIT 1",
+        (a["id"], _APPROACH, exclude_event)).fetchone()
+    if other:
+        return ("This record already has the approach you filed, on "
+                f"{other['occurred_at'].astimezone(tz).strftime('%d %b %Y')}. "
+                "Edit that one instead.")
+    applied = _applied_event(conn, a["id"])
+    if applied and when.astimezone(tz).date() > applied["occurred_at"].astimezone(tz).date():
+        return ("A recruiter's approach comes before the application, and you applied on "
+                f"{applied['occurred_at'].astimezone(tz).strftime('%d %b %Y')}. "
+                "Pick that date or an earlier one. If they got in touch after you "
+                "applied, record “They reached out” instead.")
+    return None
+
+
+def _place_approach(conn, a, when):
+    """Where the approach sits in time: its own date, but strictly before the
+    application when both fall on one day. The timeline is ordered by
+    occurred_at, and "Recruiter reached out" listed under "You applied" would
+    say the opposite of what was filed. Same move as manual entry's same-day
+    outcome, which is nudged a second the other way."""
+    applied = _applied_event(conn, a["id"])
+    if applied and when >= applied["occurred_at"]:
+        return applied["occurred_at"] - timedelta(seconds=1)
+    return when
+
+
+def _take_origin(conn, a, payload: dict) -> None:
+    """Move the record to /inbound, remembering what it was in the approach's
+    own payload so removing the approach can put it back."""
+    if a["origin"] != "inbound":
+        payload["origin_was"] = a["origin"]
+        conn.execute("UPDATE applications SET origin = 'inbound' WHERE id = %s", (a["id"],))
+
+
+def _give_back_origin(conn, a, payload: dict) -> None:
+    """Undo `_take_origin` for an approach that is being deleted or re-typed."""
+    if payload.get("origin_was") in ("applied", "saved"):
+        conn.execute("UPDATE applications SET origin = %s WHERE id = %s",
+                     (payload["origin_was"], a["id"]))
+
+
 def _event_ctx(conn, a, event, tz, *, form, error=None):
     return {"a": a, "event": event, "form": form, "error": error,
             "manual_events": _MANUAL_EVENTS, "event_reasons": _EVENT_REASONS,
@@ -1374,7 +1539,11 @@ def add_event(request: Request, app_id: str, type: str = Form(...), note: str = 
 
     `reason` and `channel` go in the payload rather than in new columns —
     events.payload has been the intended home for this kind of metadata since
-    the original design (docs/features.md §7)."""
+    the original design (docs/features.md §7).
+
+    A recruiter's approach (`_APPROACH`) is the one type that does more than
+    append: it is checked against the application's date and moves the record
+    to /inbound in the same transaction (see `_take_origin`)."""
     if type not in _MANUAL_EVENTS:
         raise HTTPException(400, "unsupported manual event type")
     from psycopg.types.json import Json
@@ -1388,6 +1557,13 @@ def add_event(request: Request, app_id: str, type: str = Form(...), note: str = 
 
     with db.connect_scoped(user["id"]) as conn, conn.transaction():
         a = _get_application(conn, app_id)
+        if type == _APPROACH:
+            when = occurred_at or datetime.now(timezone.utc)
+            err = _approach_error(conn, a, when, tz)
+            if err:
+                return _event_error(app_id, err)
+            occurred_at = _place_approach(conn, a, when)
+            _take_origin(conn, a, payload)
         conn.execute(
             "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
             "VALUES (%s, %s, %s, 'manual', COALESCE(%s, now()), %s)",
@@ -1439,7 +1615,24 @@ def edit_event(
                 context=_event_ctx(conn, a, e, tz, form=form,
                                     error="Enter the date this happened."), status_code=400)
         payload = _manual_event_payload(type, note, reason, channel)
+        was_approach, is_approach = e["type"] == _APPROACH, type == _APPROACH
+        if is_approach:
+            err = _approach_error(conn, a, occurred_at, tz, exclude_event=e["id"])
+            if err:
+                return templates.TemplateResponse(
+                    request=request, name="event_edit.html",
+                    context=_event_ctx(conn, a, e, tz, form=form, error=err), status_code=400)
+            occurred_at = _place_approach(conn, a, occurred_at)
         with conn.transaction():
+            # The payload is rebuilt from the form, so an approach that stays an
+            # approach carries its `origin_was` across by hand — dropping it
+            # would make the record's move to /inbound permanent.
+            if was_approach and is_approach and "origin_was" in e["payload"]:
+                payload["origin_was"] = e["payload"]["origin_was"]
+            elif was_approach and not is_approach:
+                _give_back_origin(conn, a, e["payload"])
+            elif is_approach and not was_approach:
+                _take_origin(conn, a, payload)
             conn.execute(
                 "UPDATE events SET type = %s, occurred_at = %s, payload = %s WHERE id = %s",
                 (type, occurred_at, Json(payload), e["id"]))
@@ -1452,6 +1645,10 @@ def delete_event(request: Request, app_id: str, event_id: str):
     with db.connect_scoped(user["id"]) as conn, conn.transaction():
         a = _get_application(conn, app_id)
         e = _get_manual_event(conn, a, event_id)
+        if e["type"] == _APPROACH:
+            # A wrong click on "A recruiter approached me first" costs nothing:
+            # the record goes back to the page it was on.
+            _give_back_origin(conn, a, e["payload"])
         conn.execute("DELETE FROM events WHERE id = %s", (e["id"],))
     return RedirectResponse(f"/applications/{app_id}", status_code=303)
 

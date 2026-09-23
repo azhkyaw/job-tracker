@@ -362,10 +362,23 @@ work" below stays a list of what is open, not a history of what was done.
    leaves the job `pending`; no cleanup logic exists or is needed. Worker and
    Gmail sync are trusted admin batch jobs (no RLS) — keep them that way.
 8. **Migrations are append-only numbered files**; never edit an applied one.
-9. **`applications.origin`** (`applied` | `inbound` | `saved`) is immutable
-   provenance, separate from derived status (invariant #2). `inbound` = a
-   recruiter/employer approached the user about a role they did NOT apply
-   to — `matcher.dispatch` NEVER auto-matches or auto-creates for
+9. **`applications.origin`** (`applied` | `inbound` | `saved`) is
+   provenance, separate from derived status (invariant #2), and since
+   24 Sep 2026 it decides which list page a record lives on (`/` or
+   `/inbound`). `inbound` = a recruiter/employer STARTED the thread, whether
+   or not the user applied afterwards. **The system never derives or changes
+   it** — no status, event or arriving email moves it, so a record never
+   changes page as its thread progresses. **The one door is a human stating
+   who started the thread**: "A recruiter approached me first", on the
+   timeline form or on manual entry (`web._take_origin`), which files the
+   approach AND flips origin in one action, refuses a date after the
+   application, and is undone exactly by deleting it (`payload.origin_was`).
+   That door exists because a recruiter's WhatsApp message or call never
+   reaches an ingest path: the tracker first hears of the thread when the
+   user acts on it, and filed it as their own application (two real cases,
+   the 27 Aug and 3 Sep 2026 threads). `dedup.merge_jobs` does not reconcile
+   origin, and never has — the winner keeps its own.
+   `matcher.dispatch` NEVER auto-matches or auto-creates for
    classification `recruiter_outreach`; it always routes to triage's inbound
    lane, and only a human resolving it there (`action=lead`) creates the
    record. `_create_application`'s applied-event fabrication is gated on

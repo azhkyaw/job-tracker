@@ -308,6 +308,31 @@ is a private artifact, linked from the memory file
     found on the first real render: search-wide it said 258 applications
     beside a count label of 256, the 2 being promoted leads that live on
     `/inbound` — two numbers on one page must agree (rule 11's principle).
+    **How a record gets onto `/inbound` when no email said so** (the same
+    day): "A recruiter approached me first" on the timeline form and on
+    manual entry. A WhatsApp message or a call never reaches an ingest path,
+    so the tracker first hears of such a thread when the user acts on it,
+    and filed it as theirs. The two real cases on the day: a 3 Sep thread
+    that began on WhatsApp and reached the tracker as the user's resume
+    email, and a 27 Aug agency thread that began with a call ("Great
+    speaking with you") whose follow-up email the classifier read as a status
+    update. The option files the SAME `recruiter_outreach` event every
+    email-borne lead starts with, so the trace and `started_at` need nothing
+    new, and flips origin in the same transaction — one action for both
+    facts, because a separate origin control could leave an inbound record
+    with no approach on its trace, or an approach on a record still filed as
+    the user's. Rules, all in `web.py` beside `_take_origin`: dated on or
+    before the application by local date (a later one is "They reached out",
+    `engaged`), placed a second before it when both fall on one day, one
+    hand-filed approach per record, and exact undo — the approach stores the
+    origin it replaced as `payload.origin_was`, and deleting or re-typing it
+    restores that. The edit-application form refuses moving the applied date
+    before a hand-filed approach, the mirror of its existing check. Manual
+    entry's applied date may be blank under "A recruiter approached me
+    first", which files a lead (`interested`, pinned) with no applied event.
+    `recruiter_outreach` had been kept OUT of `_MANUAL_EVENTS` since the
+    lead lane shipped, on "only a human creates a lead"; filing it is a
+    human's statement, so the principle is kept and the exclusion is not.
 
 ## Gotchas learned the hard way
 

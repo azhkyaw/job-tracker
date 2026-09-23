@@ -461,3 +461,21 @@ the key to each real case.
    the ordering block moved to `/inbound`, the `_SORTS` loop crosses both
    pages, and the pill, the detail-page highlight and the delete redirect
    are asserted.
+15. **A recruiter's approach, filed by hand** (24 Sep 2026). Asked whether a
+   record that began with a recruiter's WhatsApp message, followed by the
+   user emailing a resume, counts as inbound. It does: origin is who started
+   the thread, and the resume is the lead being taken up, the shape of the 2
+   promoted leads already on `/inbound`. Left alone it was 1 of the 5
+   interviewing records on the record page. The data held no trace of the
+   approach; the record began at the resume email, created by triage's
+   "Create application", the actionable lane's only button. A search for
+   records whose apply was an email the user SENT found one more of the
+   same shape, a 27 Aug agency thread whose first email opens "Great
+   speaking with you" and was classified a status update. Nothing in the app
+   could fix either: no form edits origin, and `recruiter_outreach` was
+   excluded from the timeline form. Built "A recruiter approached me first"
+   on the timeline and on manual entry (rule 17 of the web-ui rules has the
+   rules), invariant #9 reworded around it. Not applied to the two real
+   records: the WhatsApp date is not in the data (the resume email says only
+   "As discussed"), and the agency thread's direction needs the user's word.
+   Known gap, unchanged: `merge_jobs` never reconciles origin.

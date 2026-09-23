@@ -83,7 +83,10 @@
    for the system to parse. The date defaults to blank (meaning now, the common
    case) and exists for the other one: news you're logging days after it
    happened. The reason select only means anything on a rejection; the route
-   drops it otherwise, since there's no JS here to hide it. #}
+   drops it otherwise, since there's no JS here to hide it. "A recruiter
+   approached me first" is the one option that moves the record, to Inbound;
+   it needs the approach's date on or before the application's, and deleting
+   it moves the record back (web.py, `_take_origin`). #}
 {% if event_error %}
 <div class="note" style="--c:var(--rejected);margin-top:.8rem"><strong>Not recorded.</strong> {{ event_error }}</div>
 {% endif %}

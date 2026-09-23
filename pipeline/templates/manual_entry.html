@@ -35,8 +35,33 @@
   <label>Location, optional <input type="text" name="location" value="{{ form.location }}"
     placeholder="Singapore, Remote"></label>
 
+  {# Who started the thread (24 Sep 2026). A recruiter's message on WhatsApp
+     or a call never reaches an ingest path, so this form is one of the two
+     doors it comes through (the timeline's "A recruiter approached me first"
+     is the other, and both use the same helpers in web.py). No JS, so the
+     approach fields are always visible; the route ignores them under
+     "I applied". #}
+  <label for="started_by">Who started it</label>
+  <select name="started_by" id="started_by" aria-label="Who started it">
+    <option value="me" {% if form.started_by != 'recruiter' %}selected{% endif %}>I applied</option>
+    <option value="recruiter" {% if form.started_by == 'recruiter' %}selected{% endif %}>A recruiter approached me first</option>
+  </select>
   <div class="pair">
-    <label>Applied on <input type="date" name="applied_date" value="{{ form.applied_date }}" max="{{ today }}" required></label>
+    <label>If a recruiter, when <input type="date" name="approach_date" value="{{ form.approach_date }}" max="{{ today }}"></label>
+    <label>and how
+      <select name="approach_channel" aria-label="How the recruiter approached you">
+        <option value="">Not recorded</option>
+        {% for value, label in event_channels.items() %}
+        <option value="{{ value }}" {% if form.approach_channel == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+  <p class="hint" style="margin:0">A recruiter's approach files the record on the
+    <a href="/inbound">Inbound</a> page. If you haven't applied yet, leave the applied date blank.</p>
+
+  <div class="pair">
+    <label>Applied on <input type="date" name="applied_date" value="{{ form.applied_date }}" max="{{ today }}"></label>
     <label>Time, optional <input type="time" name="applied_time" value="{{ form.applied_time }}"></label>
   </div>
 
