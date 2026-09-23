@@ -80,6 +80,54 @@ orchestrator invariant (#10) is still in CLAUDE.md.
   matches nothing, so incremental sync would stall silently while backfill kept
   working — the same invisible-failure shape the flag exists to fix. Pinned by
   a test. Any future caller of `filter_query()` inherits this.
+- **The `text/plain` alternative is not the mail, and preferring it stored 67
+  LinkedIn emails as their footer** (23 Sep 2026). Both extractors took the
+  first `text/plain` part whenever one existed and fell back to HTML only
+  without one. RFC 2046 §5.1.4 orders `multipart/alternative` from plainest
+  to richest and tells a reader to show the LAST part it can — which every
+  mail client does, so senders let the plain part rot and nobody notices.
+  Found through the triage preview of a "Your application was viewed by X"
+  email that showed only "This email was intended for…": the raw message
+  (fetched read-only, `BODY.PEEK[]`) has a 2 KB plain part that IS the
+  footer, and the role title, "Applied on <date>" and the poster's name live
+  only in the 106 KB HTML part. Measured by re-fetching all 477 job-related
+  rows: 436 carry both parts, 41 HTML only, 0 plain only; 68 stored bodies
+  were stubs — LinkedIn's "viewed" template (40 of 40) and its "Your
+  application to <role> at <employer>" REJECTION template (27 of 27, whose
+  rejection sentence itself is HTML-only), plus one agency mail stored as the
+  EMPTY string because its plain part was whitespace and an empty part still
+  won. Two more senders ship a plain part that is raw HTML — an employer's
+  SuccessFactors referral mail with its template variables unfilled
+  (`[[JOB_REQ_TITLE]]`, which is why 15 inbound rows sat in triage reading
+  "role?") and a recruitment agency's portal with its whole stylesheet — and
+  Workable's starts at its own divider. No sampled sender had the reverse
+  problem, and the HTML text is SHORTER for the classifier every time (the
+  plain part carries each link target as a bare URL; HTML keeps the link
+  text). Downstream, no title means the scorer gives every same-company
+  candidate the neutral 0.5, so all 67 scored 0.75 on company alone: those
+  at single-application companies auto-matched because a lone candidate
+  waives the margin, the rest went to triage, and the three pending on the
+  day (two at one agency holding three applications) could not be resolved
+  by the machine at all. Fixed by `mailbox.body_from_parts()` — the ONE
+  choice both providers call, the walk being the only provider-specific
+  part — preferring the HTML alternative and falling back to plain only when
+  the HTML renders to nothing; and by a parser-based `html_to_text`, since
+  the old tag-strip leaked `<title>` text as a first line, Outlook's
+  `<!--[if mso]>` block as a bare `96` (its `<o:PixelsPerInch>`), hundreds
+  of U+034F preheader padding, and nested tables as twenty blank lines.
+  Replayed 30 real emails through classify + extract on the new bodies:
+  classification agreed on 29 (the one change is a LinkedIn connection
+  notice moving from `recruiter_outreach` to `not_job_related`, the better
+  reading), and every role_title difference was a stub gaining its title.
+  Backfilled the same day: all 477 job-related bodies rewritten from the raw
+  messages (the old text is in a snapshot, and the UPDATE was guarded on
+  it), the 18 pending rows re-extracted and re-dispatched, and every one of
+  the 67 already-filed stub emails checked against the application it landed
+  on — 65 name the same role, and the other 2 are one employer's "viewed"
+  mails carrying a title the employer renamed the posting to after the apply
+  (same "Applied on" day, one application, one confirmation), so nothing was
+  mis-filed. Pinned in `tests/test_email_ingest.py` for both providers,
+  byte-identical, and on the FakeIMAP backfill path.
 - **`imaplib.IMAP4._command()` does zero quoting.** Every argument is
   concatenated onto the wire verbatim — `select("[Gmail]/All Mail")` sends
   two unquoted atoms and gets `BAD`, and an `X-GM-RAW` query containing

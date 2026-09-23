@@ -137,6 +137,9 @@ def _decode_header_value(raw: str | None) -> str:
 
 
 def _extract_body(msg: "email.message.Message") -> str:
+    """Walk the parts; the choice between them is mailbox.body_from_parts,
+    shared with the API path (the HTML alternative wins — see its docstring
+    for the three real senders whose text/plain part is not the mail)."""
     plain, html = None, None
     for part in msg.walk():
         if part.is_multipart():
@@ -147,16 +150,15 @@ def _extract_body(msg: "email.message.Message") -> str:
         payload = part.get_payload(decode=True)
         if payload is None:
             continue
-        text = payload.decode(charset, errors="replace")
+        try:
+            text = payload.decode(charset, errors="replace")
+        except LookupError:  # a charset Python has no codec for
+            text = payload.decode("utf-8", errors="replace")
         if part.get_content_type() == "text/plain" and plain is None:
             plain = text
         elif part.get_content_type() == "text/html" and html is None:
             html = text
-    if plain is not None:
-        return plain.strip()
-    if html is not None:
-        return mailbox.html_to_text(html)
-    return ""
+    return mailbox.body_from_parts(plain, html)
 
 
 def _normalise(metadata: bytes, raw: bytes) -> dict:

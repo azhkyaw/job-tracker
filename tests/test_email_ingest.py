@@ -185,6 +185,17 @@ def _mk_msg(sender: str, subject: str, body: str) -> bytes:
     return m.as_bytes()
 
 
+def _mk_msg_alt(sender: str, subject: str, plain: str, html: str) -> bytes:
+    """multipart/alternative, text/plain first and text/html last — the
+    order RFC 2046 §5.1.4 prescribes and every sender in the real DB uses."""
+    m = EmailMessage()
+    m["From"] = sender
+    m["Subject"] = subject
+    m.set_content(plain)
+    m.add_alternative(html, subtype="html")
+    return m.as_bytes()
+
+
 def _mk_msg_rfc2047(sender: str, subject: str, body: str) -> bytes:
     """Like _mk_msg, but forces the ENTIRE subject into one RFC 2047
     encoded-word (Header(...).encode(), not EmailMessage's own per-word
@@ -287,6 +298,83 @@ via_api = gmail_sync.extract_body(api_payload)
 check("mailbox.html_to_text() == gmail_sync.extract_body() on the same HTML",
       direct == via_api and direct == "Hello & welcome", (direct, via_api))
 
+print("pure functions: html_to_text keeps what a mail client shows and drops what it hides")
+# Every trap here was seen in a real stored body before 23 Sep 2026: the
+# <title> of a template rendered as its first line, Outlook's conditional
+# comment leaked "96" (its <o:PixelsPerInch>), a preheader padded with
+# hundreds of U+034F, and nested tables opened as twenty blank lines.
+_html_doc = (
+    "<html><head><title>Test Invite Email</title><style>td{color:red}</style>"
+    "<!--[if mso]><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96"
+    "</o:PixelsPerInch></o:OfficeDocumentSettings></xml><![endif]--></head>"
+    "<body><div>Your application was viewed͏ ͏ ͏ ͏</div>\n\n\n\n\n"
+    "<table><tr><td>Applied on</td><td>Sep 16</td></tr>"
+    "<tr><td>Job posted by<br/>Jane Recruiter</td></tr></table>\n\n\n\n"
+    "<p>Great job getting noticed by the hiring team at Northwind&nbsp;Labs</p>"
+    "<p>Agentic&#160;AI Engineer</p></body></html>")
+_t = mailbox.html_to_text(_html_doc)
+check("html_to_text: <title> text is not body text", "Test Invite Email" not in _t, repr(_t))
+check("html_to_text: an Outlook conditional comment's 96 does not leak", "96" not in _t, repr(_t))
+check("html_to_text: invisible preheader padding (U+034F) is gone",
+      "͏" not in _t and _t.startswith("Your application was viewed\n"), repr(_t))
+import re as _re
+check("html_to_text: a row's cells share one line, a row break is a line break, "
+      "and a void <br/> breaks once (no blank line) like <br> does",
+      _re.search(r"Applied on Sep 16\n+Job posted by\nJane Recruiter\n", _t) is not None, repr(_t))
+check("html_to_text: &nbsp; and &#160; are ordinary spaces",
+      "Northwind Labs" in _t and "Agentic AI Engineer" in _t, repr(_t))
+check("html_to_text: runs of blank lines collapse to one", "\n\n\n" not in _t, repr(_t))
+check("html_to_text: an unclosed <head> does not swallow the body",
+      mailbox.html_to_text("<html><head><title>t</title><body><p>kept</p>") == "kept",
+      repr(mailbox.html_to_text("<html><head><title>t</title><body><p>kept</p>")))
+
+print("pure functions: a stub text/plain part loses to the text/html alternative")
+# The shape LinkedIn's "Your application was viewed by X" ships (40 of 40
+# stored on 23 Sep 2026): a text/plain part that is the footer alone, and
+# the role title, the applied date and the poster only in the HTML. RFC 2046
+# §5.1.4 says show the last alternative you can; a mail client does, and so
+# must the stored body — the extractor cannot name a role it never saw.
+_STUB_PLAIN = ("----------------------------------------\r\n\r\n"
+               "This email was intended for Jane Applicant.\r\n"
+               "Unsubscribe: https://example.invalid/u\r\n")
+_RICH_HTML = ("<html><body><p>Your application was viewed</p>"
+              "<p>Great job getting noticed by the hiring team at Northwind Labs</p>"
+              "<p>Agentic AI Engineer</p><p>Applied on Sep 16</p>"
+              "<p>This email was intended for Jane Applicant.</p></body></html>")
+_alt = EmailMessage()
+_alt["From"] = "LinkedIn <jobs-noreply@linkedin.com>"
+_alt["Subject"] = "Your application was viewed by Northwind Labs"
+_alt.set_content(_STUB_PLAIN)
+_alt.add_alternative(_RICH_HTML, subtype="html")
+_via_imap = gmail_imap._extract_body(_alt)
+check("IMAP: the HTML alternative's text is the body, and it carries the role and date",
+      _via_imap.startswith("Your application was viewed\n")
+      and _re.search(r"Agentic AI Engineer\n+Applied on Sep 16", _via_imap) is not None,
+      repr(_via_imap))
+check("IMAP: the footer-only plain part is NOT the body",
+      not _via_imap.startswith("-----"), repr(_via_imap))
+
+
+def _b64(s: str) -> str:
+    return base64.urlsafe_b64encode(s.encode()).decode()
+
+
+_alt_api = {"mimeType": "multipart/alternative", "parts": [
+    {"mimeType": "text/plain", "body": {"data": _b64(_STUB_PLAIN)}},
+    {"mimeType": "text/html", "body": {"data": _b64(_RICH_HTML)}}]}
+check("API: byte-identical to the IMAP path's body for the same two parts",
+      gmail_sync.extract_body(_alt_api) == _via_imap,
+      (gmail_sync.extract_body(_alt_api), _via_imap))
+_plain_only = EmailMessage()
+_plain_only.set_content("We received your application.\n")
+check("IMAP: a plain-only message still stores its plain text",
+      gmail_imap._extract_body(_plain_only) == "We received your application.",
+      repr(gmail_imap._extract_body(_plain_only)))
+check("an HTML part that renders to nothing falls back to the plain part",
+      mailbox.body_from_parts("hello", "<html><body><img src='x.png'></body></html>") == "hello",
+      repr(mailbox.body_from_parts("hello", "<html><body><img src='x.png'></body></html>")))
+check("no parts at all is the empty string", mailbox.body_from_parts(None, None) == "")
+
 print("pure functions: X-GM-MSGID hex identity")
 for dec in (1000000000001101, 1837402910584999, 1, 18446744073709551615):
     hexid = format(dec, "x")
@@ -310,9 +398,15 @@ server.add(310, MSGID_3, "18-Jul-2026 11:00:00 +0000",
           _mk_msg("person@nowhere.example", "Weekly newsletter roundup",
                   "Nothing to do with a job search."),
           matches=True)  # server-side hit; must still fail the LOCAL candidate filter
+# The last fixture is a real multipart/alternative whose plain part is a
+# footer stub, so the backfill path itself (not only _extract_body) is seen
+# to store the HTML alternative's text.
+MSGID_MAX_BODY = "Let's schedule your interview.\n\nInterview on Jul 24 with Jane Recruiter"
 server.add(999, MSGID_MAX, "20-Jul-2026 12:00:00 +0000",
-          _mk_msg("careers@lever.co", "Interview scheduled",
-                  "Let's schedule your interview."))
+          _mk_msg_alt("careers@lever.co", "Interview scheduled",
+                      "----\nThis email was intended for Jane Applicant.\n",
+                      "<html><body><p>Let's schedule your interview.</p>"
+                      "<p>Interview on Jul 24 with Jane Recruiter</p></body></html>"))
 
 MY_HEX_IDS = [format(d, "x") for d in (MSGID_1, MSGID_2, MSGID_MAX)]  # MSGID_3 never stored
 
@@ -374,6 +468,13 @@ with db.connect() as conn:
           "matching the SUBJECT_KEYWORDS 'application update' — which the raw undecoded "
           "wire form (Q-encoding replaces spaces with '_') cannot contain as a substring)",
           u2_row["subject"] == "Application Update café", u2_row["subject"])
+
+    body_row = conn.execute(
+        "SELECT body_text FROM emails WHERE user_id = %s AND gmail_message_id = %s",
+        (user_id, format(MSGID_MAX, "x"))).fetchone()
+    check("a multipart/alternative message is stored as its HTML alternative's text, "
+          "not its footer-only plain part",
+          body_row["body_text"] == MSGID_MAX_BODY, repr(body_row["body_text"]))
 
     job_rows = conn.execute(
         """SELECT e.gmail_message_id FROM job_queue q

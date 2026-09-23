@@ -37,6 +37,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from email.utils import parseaddr
 from html import unescape
+from html.parser import HTMLParser
 
 from . import config, db
 
@@ -132,15 +133,122 @@ def is_candidate(from_header: str, subject: str) -> bool:
 
 
 # --------------------------------------------------------------------------- body extraction
+#
+# Which MIME part IS the body is decided here, once, for both providers. The
+# part WALK is provider-specific by nature (an API payload dict against
+# email.message.Message.walk()), but the CHOICE between what the walk found
+# must not be — two copies of that rule is exactly the divergence invariant
+# #10 exists to prevent.
 
+def body_from_parts(plain: str | None, html: str | None) -> str:
+    """The text to store as emails.body_text, given a message's first
+    text/plain and first text/html parts (either may be absent).
+
+    The HTML alternative wins whenever it renders to anything. RFC 2046
+    §5.1.4 orders multipart/alternative parts from plainest to richest and
+    tells a reader to show the LAST one it can — which is why every mail
+    client renders the HTML, and why senders let the text/plain part rot
+    unnoticed. Measured on the author's real mail, 23 Sep 2026: three
+    senders ship a plain part that is not what a human sees. LinkedIn's
+    "Your application was viewed by X" is footer-only (40 of 40 stored; the
+    role title, "Applied on <date>" and the poster's name exist ONLY in the
+    HTML, so the extractor never saw a title and the matcher had company
+    alone to go on). Workable's plain part starts at its own divider. An
+    employer's referral mail ships its plain part as raw HTML with the
+    template variables unfilled ("[[JOB_REQ_TITLE]]") while the HTML part
+    is rendered. In the same 40-message sample no sender had the reverse
+    problem, and the HTML text was shorter for the classifier every time
+    (link targets stay in the plain part as bare URLs; HTML keeps only the
+    link text). Preferring text/plain was a convenience that assumed the two
+    alternatives carry the same content. They don't.
+    """
+    if html:
+        text = html_to_text(html)
+        if text:
+            return text
+    return (plain or "").strip()
+
+
+# Rendered to nothing: a mail client shows none of these.
+_SKIP_TAGS = frozenset({"script", "style", "head", "title", "template"})
+# Rendered as a line break, so their text never runs into a neighbour's.
+_BLOCK_TAGS = frozenset({
+    "p", "div", "br", "hr", "tr", "li", "h1", "h2", "h3", "h4", "h5", "h6",
+    "table", "ul", "ol", "blockquote", "pre", "section", "article", "header",
+    "footer", "address", "dl", "dt", "dd", "form", "fieldset", "center", "body",
+})
+# Occupies no space on screen but survives tag stripping: the combining
+# grapheme joiner LinkedIn pads its preheader with (U+034F, hundreds per
+# mail), zero-width spaces/joiners and marks, the word joiner and the
+# invisible operators, the BOM some templates repeat as filler, and the soft
+# hyphen. Each one was seen in a real message's rendered text.
+_INVISIBLE_RE = re.compile(
+    "[͏​‌‍‎‏⁠⁡⁢⁣⁤﻿­]")
+_INLINE_WS_RE = re.compile(r"[ \t\r\f\v ]+")
+_BLANK_RUN_RE = re.compile(r"\n{3,}")
+
+# Fallback only: the pre-23-Sep-2026 tag-strip, kept for a document the
+# parser cannot get through (see html_to_text). It leaks <title> text,
+# comment bodies and Outlook's conditional-comment residue.
 _TAG_RE = re.compile(r"<(?:script|style)[^>]*>.*?</(?:script|style)>", re.S | re.I)
 _HTML_RE = re.compile(r"<[^>]+>")
 
 
+class _TextExtractor(HTMLParser):
+    """Collects what a mail client would put on screen, with the document's
+    block structure kept as line breaks. Comments (including Outlook's
+    `<!--[if mso]> ... <![endif]-->` blocks, whose `<o:PixelsPerInch>96`
+    leaked into stored bodies as a bare "96") and declarations are dropped by
+    HTMLParser's own defaults; entities arrive already decoded."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.out: list[str] = []
+        self._skipping: list[str] = []
+
+    def handle_starttag(self, tag, attrs) -> None:
+        if tag == "body":
+            # A <head> that is never closed would otherwise swallow the mail.
+            self._skipping.clear()
+        if tag in _SKIP_TAGS:
+            self._skipping.append(tag)
+            return
+        self.out.append("\n" if tag in _BLOCK_TAGS else " ")
+
+    def handle_endtag(self, tag) -> None:
+        if tag in _SKIP_TAGS:
+            while self._skipping:
+                if self._skipping.pop() == tag:
+                    break
+            return
+        self.out.append("\n" if tag in _BLOCK_TAGS else " ")
+
+    def handle_startendtag(self, tag, attrs) -> None:
+        # A void element (<br/>, <hr/>, <img/>) breaks once, not twice — the
+        # default would run both handlers and give <br/> a blank line that
+        # <br> does not get.
+        self.handle_starttag(tag, attrs)
+
+    def handle_data(self, data) -> None:
+        if not self._skipping:
+            self.out.append(data)
+
+
 def html_to_text(html: str) -> str:
-    text = _TAG_RE.sub(" ", html)
-    text = _HTML_RE.sub(" ", text)
-    return re.sub(r"[ \t]+", " ", unescape(text)).strip()
+    """What a mail client shows, as text: one line per block, cells of a
+    row on one line, no hidden chrome. Whitespace is normalised per line and
+    runs of blank lines collapse to one, so a nested-table newsletter reads
+    as paragraphs rather than as twenty empty lines between them."""
+    parser = _TextExtractor()
+    try:
+        parser.feed(html)
+        parser.close()
+        text = "".join(parser.out)
+    except Exception:  # a document the parser cannot get through — rare, never seen
+        text = unescape(_HTML_RE.sub(" ", _TAG_RE.sub(" ", html)))
+    text = _INVISIBLE_RE.sub("", text)
+    lines = (_INLINE_WS_RE.sub(" ", line).strip() for line in text.split("\n"))
+    return _BLANK_RUN_RE.sub("\n\n", "\n".join(lines)).strip()
 
 
 # --------------------------------------------------------------------------- query builders

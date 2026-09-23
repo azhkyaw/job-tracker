@@ -51,7 +51,10 @@ it: the resume picker is PROMOTED to `applications.resume_file` (migration
 - `pipeline/web.py` — all routes (FastAPI + Jinja, no JS)
 - `pipeline/ingest.py` — the only place job/posting/application rows are created
 - `pipeline/matcher.py` — matches inbound email to an application, fabricates events
-- `pipeline/mailbox.py` — mail-ingest orchestrator shared by IMAP + Gmail API
+- `pipeline/mailbox.py` — mail-ingest orchestrator shared by IMAP + Gmail API;
+  `body_from_parts()` is the ONE decision of which MIME part is the body
+  (the HTML alternative, since 23 Sep 2026 — `.claude/rules/mail-ingest.md`
+  has the four senders whose `text/plain` part is not the mail)
 - `pipeline/dedup.py` — the only place two jobs are merged (`merge_jobs`)
 - `pipeline/trace.py` — pure timeline/axis geometry for list + detail pages
 - `pipeline/analytics.py` — funnel, response-rate, weekly, reminders and

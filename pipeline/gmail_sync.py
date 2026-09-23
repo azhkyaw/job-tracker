@@ -79,16 +79,14 @@ def _walk_parts(payload: dict, out: dict) -> None:
 
 
 def extract_body(payload: dict) -> str:
-    """Prefer text/plain; fall back to tag-stripped text/html."""
-    from .mailbox import html_to_text
+    """Walk the parts; the choice between them is mailbox.body_from_parts,
+    shared with the IMAP path (the HTML alternative wins — see its docstring
+    for the three real senders whose text/plain part is not the mail)."""
+    from .mailbox import body_from_parts
 
     found: dict = {}
     _walk_parts(payload or {}, found)
-    if "plain" in found:
-        return found["plain"].strip()
-    if "html" in found:
-        return html_to_text(found["html"])
-    return ""
+    return body_from_parts(found.get("plain"), found.get("html"))
 
 
 def _headers(msg: dict) -> dict:

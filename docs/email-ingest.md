@@ -139,7 +139,7 @@ everything downstream of that is untouched.
 | `_fetch_and_store()` | `UID FETCH (BODY.PEEK[] INTERNALDATE X-GM-MSGID)` |
 | `store_message()` | unchanged, once it takes the normalised dict |
 | `is_candidate()` | unchanged |
-| `extract_body()` | split: the HTML-strip core is shared; the part-walking differs (API payload dicts vs `email.message.Message.walk()`) |
+| `extract_body()` | split: the part-walking differs (API payload dicts vs `email.message.Message.walk()`); the CHOICE between the parts found (`mailbox.body_from_parts`, HTML first — see `.claude/rules/mail-ingest.md`, 23 Sep 2026) and the HTML-to-text core are shared |
 | `incremental()` via History API | `UIDVALIDITY:last_uid` cursor, `UID SEARCH UID <n>:*` |
 | `_save_cursor()` | same table; `gmail_sync_state.history_id` is `text` and holds the composite cursor with **no migration** |
 

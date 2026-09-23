@@ -346,3 +346,30 @@ the key to each real case.
    tally: nothing yet draws the line from `extractions.visa_signal =
    local_only` to the application's outcome — that join is the
    COMPASS-adjacent panel `docs/features.md` §3.4 wants.
+10. **The stored email body is the HTML alternative, not the `text/plain`
+   part** (23 Sep 2026). Reported as two triage previews of a LinkedIn
+   "Your application was viewed by <agency>" email showing only the footer.
+   The raw message's plain part IS the footer; everything (role, "Applied
+   on", the poster) is HTML-only, and both extractors preferred plain. Sized
+   by re-fetching all 477 job-related rows read-only: 436 have both parts,
+   41 HTML only, 68 stored bodies were stubs (LinkedIn's "viewed" template
+   40/40 and its rejection template 27/27, one agency mail stored empty), and
+   four senders in total ship a plain part that is not the mail (`.claude/
+   rules/mail-ingest.md` has each). Every stub scored 0.75 — company only,
+   title neutral — so the two at an agency with three applications could
+   not be resolved by the machine. Fixed by one shared choice
+   (`mailbox.body_from_parts`, HTML first per RFC 2046 §5.1.4) and a
+   parser-based `html_to_text`; replayed 30 real emails through classify +
+   extract on the new bodies (29/30 agree, every role_title change a stub
+   gaining its title) before touching data. Backfill: 477 bodies rewritten
+   from the raw messages with the old text as the UPDATE guard and in a
+   snapshot; 18 pending rows re-extracted and re-dispatched — the three
+   "viewed" ones auto-matched at 1.0 to three different applications, the
+   15 referral rows (inbound, by invariant #9 never auto-matched) now name
+   their roles; triage 27 → 24. Cohort check of the 67 already-filed stubs:
+   65 name the role they were filed on, 2 are one employer's "viewed" mails
+   carrying a renamed posting title (same applied day, one application), so
+   no refile. Note for `scripts/replay_classify.py`: the stored bodies are
+   now the new extractor's output, so a replay compares a candidate model on
+   the corrected text against labels made from the old text — a better
+   corpus, not an apples-to-apples one, for the 68 stub rows.
