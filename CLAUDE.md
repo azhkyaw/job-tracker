@@ -22,8 +22,8 @@ Open-weight models on an OpenAI-compatible server (vLLM first) go through
 `pipeline/llm.py` (Key files); the hands-on lab that verifies it against a
 real server on GCP, stage by stage with results recorded, is
 `docs/vllm-lab.md` (started 8 Sep 2026; `scripts/gcp/vllm-vm.sh` is the VM,
-`scripts/replay_classify.py` diffs any model against the ~300 stored
-classifications, read-only). The lab lives in GCP project `vllm-lab-2609`,
+`scripts/replay_classify.py` diffs any model against the ~700 classified
+emails that keep a body, read-only). The lab lives in GCP project `vllm-lab-2609`,
 and **the author provisions it by hand to learn** — assist by explaining
 and verifying, never by running `gcloud` create/link/delete for them. As of
 8 Sep it is blocked before its first VM: the billing account refuses a
@@ -113,7 +113,7 @@ that can be Read directly at any time:
   `prompts/**`: thinking/effort measurements, model versioning, the outage story
 - `.claude/rules/database.md` — `migrations/**`, `db.py`, scripts: the
   four-places rule, CHECK names, gapped precedence, Neon pooler, view ordering
-- `docs/worklog.md` — the dated task register (tasks 1-8 with their
+- `docs/worklog.md` — the dated task register (tasks 1-15 with their
   measurements); what is still open is summarised under "Open work" below
 
 A rule file is tracked text, so the real-names rule (Commands) applies to it,
@@ -603,11 +603,12 @@ Detail lives with each family's rule file; this is the index.
 - **LLM** (`.claude/rules/llm.md`): `pipeline/llm.py`'s OpenAI-compatible
   backend has never met a real vLLM; the Voyage embeddings call has never run.
 - **UI** (`.claude/rules/web-ui.md`): the palette has never been seen on a real
-  screen without Dark Reader in the way.
+  screen without Dark Reader in the way — neither the 28 Jul one nor the
+  23 Sep redraw's, whose light theme is verified numerically only. (task 13)
 
-## Open work (as of 9 Sep 2026)
+## Open work (as of 24 Sep 2026)
 
-The dated register behind each item, tasks 1-8 with their measurements, is
+The dated register behind each item, tasks 1-15 with their measurements, is
 `docs/worklog.md`; read the matching entry before acting on one.
 
 - **Bug, unfixed (2 Sep 2026):** `matcher._event_time` applies a stated
@@ -617,8 +618,9 @@ The dated register behind each item, tasks 1-8 with their measurements, is
   date moves confirmations and rejections only; keep an interview date in the
   payload. Detail: `.claude/rules/matching.md`.
 - **Follow-up drafting** on an age-capped queue: cap `/follow-ups` near 21
-  days (133 qualify today, ~40 after the cap, and zero `follow_up_sent` has
-  ever been filed), then build the draft next to the button. (worklog task 4)
+  days (149 qualify on 24 Sep, 17 of them inside the cap; ONE
+  `follow_up_sent` has ever been filed, on 3 Sep), then build the draft next
+  to the button. (worklog task 4)
 - **Extension, next real Easy Apply:** verify 0.9.0 is live and the tab was
   opened after the reload; read `doc_source` and the sweep line. JobStreet still
   owes one clean submit with the race fix and salary capture together. (task 5)
@@ -626,15 +628,22 @@ The dated register behind each item, tasks 1-8 with their measurements, is
   into its own repo, decide whether CLAUDE.md ships; `audit_names.py --history`
   is the pre-publish check. (task 3)
 - **vLLM lab** (`docs/vllm-lab.md`): blocked at its §2 on the billing-account
-  project limit and the L4 quota, both the author's to clear by hand. (task 8)
+  project limit and the L4 quota, both the author's to clear by hand; no
+  activity since 9 Sep. Its replay corpus changed under it on 23 Sep: 68
+  stub bodies were rewritten after they were classified, so a candidate that
+  disagrees on one may be right (`.claude/rules/llm.md`). (tasks 8, 10)
 - **Email body retention** for job-related mail is undecided; 225
   `not_job_related` bodies (2.5 MB) could be cleared by one UPDATE, the author's
   call. (task 7)
 - **Catch-up sweep** `backfill -d 21` under `INGEST_ALL`, deferred 7 Aug 2026
   (~200-400 classify calls, ~$2-3). (task 1)
 - **Dedup and extraction verification have never run on real data** (0
-  embeddings, 0 of 192 rows verified); exercise once or label experimental
-  before release. (task 6)
+  embeddings, 0 of 247 extractions verified on 24 Sep); exercise once or
+  label experimental before release. (task 6)
 - **Visa signal vs outcome is still two unjoined facts** (task 9): 22
-  postings extracted `local_only`, all applied to, 6 rejected, 11 waiting —
-  and 38 rejections wait to be tagged at `/?reason=unrecorded`.
+  postings extracted `local_only`, all applied to, 6 rejected, 16 waiting —
+  and 40 of 55 rejections wait to be tagged at `/?reason=unrecorded` (24 Sep;
+  task 12's `how=no_round&reason=unrecorded` is the bulk of that queue).
+- **Heat ceiling** (task 13): `trace.FULL_HEAT_DAYS` = 56 is a judgement,
+  not a measurement; replay it over the waiting rows before tuning it, the
+  way every other threshold here was settled.

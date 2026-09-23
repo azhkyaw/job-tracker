@@ -21,7 +21,8 @@ good at my job", and it had four things waiting on 8 Sep 2026:
   is a genuine email classified by vLLM, not a backlog.
 - **A labelled set.** Every classified email carries the decision, the
   confidence and the model that made it (`emails.model`, invariant #5) —
-  about 300 rows, the same data `scripts/replay_thresholds.py` uses for the
+  about 300 rows on 8 Sep, ~700 with a body by 24 Sep, the same data
+  `scripts/replay_thresholds.py` uses for the
   matcher. Replaying them through an open-weight model gives an agreement
   rate on *your* mail, which is the only number a model swap here needs.
 - **An unverified backend.** `pipeline/llm.py`'s OpenAI-compatible path is
@@ -193,6 +194,12 @@ a missed rejection is worse than a false alarm, so `rejection -> other` and
 status_update` is noise the matcher mostly absorbs. Compare against the case
 CLAUDE.md records for Haiku (an ATS account-activation mail called a
 `confirmation`, 3 of 3 runs): does the 8B make the same mistake?
+
+Since 23 Sep 2026, 68 of the rows carry a body rewritten AFTER they were
+classified (LinkedIn's "viewed" and rejection templates, whose
+`text/plain` part was only the footer — worklog task 10). A disagreement
+on one of those may be the candidate being right; `.claude/rules/llm.md`
+has how to read them.
 
 Two runs are worth the extra minutes: `--workers 1` (the worker's serial
 shape) and `--workers 8`, the same rows batched by the server. The emails/s

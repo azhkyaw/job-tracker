@@ -479,3 +479,10 @@ the key to each real case.
    records: the WhatsApp date is not in the data (the resume email says only
    "As discussed"), and the agency thread's direction needs the user's word.
    Known gap, unchanged: `merge_jobs` never reconciles origin.
+   **Then applied by the user, the same night** (found 24 Sep 2026 while
+   syncing context): both records carry a hand-filed `recruiter_outreach`
+   event, channel WhatsApp, `origin_was: applied`, created at 01:31 and
+   01:32 SGT, five minutes before this entry was committed, so its "Not
+   applied" was out of date on arrival. The 3 Sep thread still reads
+   interviewing, the 27 Aug agency thread `applied`. Counts after: 24 on
+   `/inbound`, 253 on `/`, 1 saved (task 14's day was 22 and 255).

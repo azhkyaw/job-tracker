@@ -82,6 +82,19 @@ prompt/model versioning invariant (#5) and the worker invariant (#7) are still i
   three extract jobs that had been at 4 of 5 attempts finished on their
   fifth — one more failed run under the old policy would have dead-lettered
   an interview invite.
+- **The replay's text is not the text 68 of its labels were made from**
+  (23 Sep 2026, worklog task 10). `scripts/replay_classify.py` reads
+  `emails.body_text` as stored NOW, and on 23 Sep every job-related body
+  was rewritten from the raw message by `mailbox.body_from_parts` (the HTML
+  alternative, not `text/plain`). Most rows barely moved; 68 went from a
+  footer stub to the whole mail — LinkedIn's "viewed" template 40/40, its
+  rejection template 27/27, one agency mail stored empty — while their
+  `classification` is still the one decided on the stub. So when a
+  candidate disagrees on one of those rows, read the body before scoring it
+  a miss: the candidate may be the one that is right. For calibration, the
+  production model replayed on 30 of the new bodies agreed with the record
+  29/30, so a high disagreement rate is about the candidate, not the
+  rewrite. A better corpus, not an apples-to-apples one.
 
 
 ## Known-untested surfaces (verify on first real contact)
