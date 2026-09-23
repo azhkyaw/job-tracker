@@ -28,6 +28,7 @@ _APPS_CTE = f"""
 WITH apps AS (
     SELECT a.id,
            a.job_id,
+           a.origin,
            COALESCE(p.platform, 'unknown') AS platform,
            a.resume_file,
            (SELECT min(occurred_at) FROM events e
@@ -74,7 +75,13 @@ def _rate(rows, min_n: int = MIN_RATE_N):
     return rows
 
 
-def summary(conn, user_id) -> dict:
+def summary(conn, user_id, inbound: bool | None = None) -> dict:
+    """The search in numbers. `inbound` scopes it to one list page the way
+    `web._funnel` is scoped (None = the whole search, for `/analytics`): the
+    record's lede must agree with the count beside it, and search-wide it did
+    not — 2 real inbound leads the user later applied to carry an `applied`
+    event, so they counted as applications on a page they are not on (258
+    against 256 rows, 24 Sep 2026)."""
     row = conn.execute(_APPS_CTE + """
         SELECT count(*) FILTER (WHERE applied_at IS NOT NULL) AS applied,
                count(*) FILTER (WHERE applied_at IS NULL)     AS interested,
@@ -84,7 +91,8 @@ def summary(conn, user_id) -> dict:
                round(avg(EXTRACT(epoch FROM first_resp - applied_at) / 86400.0)::numeric, 1)
                                                               AS avg_days_to_resp
         FROM apps
-    """, {"user_id": user_id}).fetchone()
+        WHERE %(inbound)s::bool IS NULL OR (origin = 'inbound') = %(inbound)s
+    """, {"user_id": user_id, "inbound": inbound}).fetchone()
     row["response_rate"] = (round(100.0 * row["responded"] / row["applied"])
                             if row["applied"] else None)
     return row
@@ -185,7 +193,7 @@ def weekly(conn, user_id, weeks: int = 14):
     return out
 
 
-def rejection_reasons(conn, user_id, origin: str | None = None):
+def rejection_reasons(conn, user_id, inbound: bool | None = None):
     """Why applications closed, counted per APPLICATION from the rejected
     event's `payload.reason` — the closed vocabulary web.py's timeline form
     writes (`_EVENT_REASONS`). Rows: `reason` (a vocabulary key, or NULL when
@@ -211,8 +219,10 @@ def rejection_reasons(conn, user_id, origin: str | None = None):
     5 of the author's 6 visa rejections were recruiters who approached first
     and then dropped the thread, not applications the user sent.
 
-    `origin` scopes it the way `web._funnel` is scoped, so the chips under a
-    filtered list count the tab they sit on."""
+    `inbound` (the argument) scopes it the way `web._funnel` is scoped — to
+    one of the two list pages, `/` (everything the user started) or `/inbound`
+    (everything a recruiter started) — so the chips count the page they sit
+    on. None is both, which is what `/analytics` wants."""
     return conn.execute("""
         WITH closed AS (
             SELECT DISTINCT ON (e.application_id)
@@ -220,7 +230,7 @@ def rejection_reasons(conn, user_id, origin: str | None = None):
             FROM events e
             JOIN applications a ON a.id = e.application_id
             WHERE a.user_id = %(user_id)s AND e.type = 'rejected'
-              AND (%(origin)s::text IS NULL OR a.origin = %(origin)s)
+              AND (%(inbound)s::bool IS NULL OR (a.origin = 'inbound') = %(inbound)s)
             ORDER BY e.application_id, (e.payload->>'reason') IS NOT NULL DESC,
                      e.occurred_at DESC, e.created_at DESC
         )
@@ -229,7 +239,7 @@ def rejection_reasons(conn, user_id, origin: str | None = None):
         FROM closed c JOIN applications a ON a.id = c.application_id
         GROUP BY c.reason
         ORDER BY n DESC, c.reason
-    """, {"user_id": user_id, "origin": origin}).fetchall()
+    """, {"user_id": user_id, "inbound": inbound}).fetchall()
 
 
 # How a rejection ENDED, as one partition of every rejected application (23 Sep
@@ -263,13 +273,14 @@ def rejected_how_sql(reason: str, had_round: str) -> str:
             f"WHEN {had_round} THEN 'after_round' ELSE 'no_round' END")
 
 
-def rejection_ends(conn, user_id, origin: str | None = None):
+def rejection_ends(conn, user_id, inbound: bool | None = None):
     """Rejected applications per bucket (`how`), over the same closing event
-    rejection_reasons picks (newest with a reason, else newest) and scoped by
-    `origin` the way the funnel is. `inbound` splits out leads as the reason
-    table does; `linkedin`, `other_email` and `by_hand` split a bucket by what
-    closed it — the closing email's own extracted platform, or no email at all
-    — for the chip's hover text."""
+    rejection_reasons picks (newest with a reason, else newest) and scoped to
+    one list page by `inbound` the way the funnel is (None = both). The
+    `inbound` COLUMN splits out leads as the reason table does; `linkedin`,
+    `other_email` and `by_hand` split a bucket by what closed it — the closing
+    email's own extracted platform, or no email at all — for the chip's hover
+    text."""
     had_round = (f"EXISTS (SELECT 1 FROM events x WHERE x.application_id = c.application_id "
                  f"AND x.type IN {ROUND_TYPES})")
     return conn.execute(f"""
@@ -280,7 +291,7 @@ def rejection_ends(conn, user_id, origin: str | None = None):
             FROM events e
             JOIN applications a ON a.id = e.application_id
             WHERE a.user_id = %(user_id)s AND e.type = 'rejected'
-              AND (%(origin)s::text IS NULL OR a.origin = %(origin)s)
+              AND (%(inbound)s::bool IS NULL OR (a.origin = 'inbound') = %(inbound)s)
             ORDER BY e.application_id, (e.payload->>'reason') IS NOT NULL DESC,
                      e.occurred_at DESC, e.created_at DESC
         ), ended AS (
@@ -298,7 +309,7 @@ def rejection_ends(conn, user_id, origin: str | None = None):
                count(*) FILTER (WHERE source <> 'email')                          AS by_hand
         FROM ended
         GROUP BY how
-    """, {"user_id": user_id, "origin": origin}).fetchall()
+    """, {"user_id": user_id, "inbound": inbound}).fetchall()
 
 
 # "Applied > REMINDER_DAYS ago, no response, no follow-up, not withdrawn" —
@@ -349,3 +360,19 @@ def reminder_count(conn, user_id) -> int:
         JOIN jobs j ON j.id = a.job_id
         {_REMINDER_WHERE}
     """, {"user_id": user_id, "days": config.REMINDER_DAYS}).fetchone()["n"]
+
+
+def lead_count(conn, user_id) -> int:
+    """Inbound approaches the user has not acted on yet, for the nav badge on
+    `/inbound` — the same predicate as `web._LEADS_FIRST` pins by (24 Sep
+    2026). Gated on status, not origin alone, for the same reason the pin is:
+    origin is immutable, so a lead the user pursued would otherwise count as
+    "awaiting your call" forever. A plain pill, not an amber one: the wait
+    here is on the user, and amber is reserved for time passing unanswered
+    on the other side (UI rule 1)."""
+    return conn.execute("""
+        SELECT count(*) AS n
+        FROM applications a
+        JOIN application_status s ON s.application_id = a.id
+        WHERE a.user_id = %s AND a.origin = 'inbound' AND s.status = 'interested'
+    """, (user_id,)).fetchone()["n"]

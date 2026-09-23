@@ -14,6 +14,7 @@ the why-chips + `reason` filter, and the analytics table.
 """
 
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -450,12 +451,38 @@ check("lead does not change response rate",
       summary_after["response_rate"] == summary_before["response_rate"],
       (summary_before, summary_after))
 
-print("applications: origin filter")
+print("inbound: its own page, split from the record by origin (24 Sep 2026)")
+# Membership is by origin, never status: / shows what the user started,
+# /inbound what a recruiter did, and the two partition the table. `?origin=`
+# went with the tabs — it is ignored, not honoured, so an old bookmark can't
+# quietly show a different population than the page it lands on.
+r = client.get("/inbound")
+check("/inbound lists the lead", "Beacon Search" in r.text, r.status_code)
+check("the nav marks Inbound active, not Applications",
+      'href="/inbound" class="active"' in r.text and 'href="/" class="active"' not in r.text)
+check("its lede counts approaches awaiting the user, not applications and replies",
+      "awaiting your call" in r.text and " application" not in r.text.split("<main>")[1].split('class="funnel')[0])
+# Singular here: at this point the only inbound row is the lead just filed.
+check("and it states its own count in the noun the page is about",
+      re.search(r'class="quiet">\d+ approach(es)?</span>', r.text) is not None)
+r = client.get("/")
+check("the record excludes the lead", "Beacon Search" not in r.text)
+check("and never wears an inbound tag — nothing on it can be one", ">inbound</span>" not in r.text)
+check("its funnel has no interested segment — empty segments are dropped, not zeroed",
+      "--interested" not in r.text.split('class="funnel')[1].split("</div>")[0])
+check("it states its count too",
+      re.search(r'class="quiet">\d+ applications?</span>', r.text) is not None)
 r = client.get("/?origin=inbound")
-check("inbound filter lists the lead", "Beacon Search" in r.text, r.status_code)
-check("inbound badge shown", ">inbound</span>" in r.text)
-r = client.get("/?origin=applied")
-check("applied filter excludes the lead", "Beacon Search" not in r.text)
+check("?origin= on the record is ignored, not honoured", "Beacon Search" not in r.text)
+with db.connect() as conn:
+    expected_leads = analytics.lead_count(conn, user_id)
+nav_link = r.text.split('href="/inbound"')[1].split("</a>")[0]
+check(f"the nav pill counts the leads awaiting a decision ({expected_leads}), on every list page",
+      expected_leads >= 1 and f'class="pill">{expected_leads}<' in nav_link
+      and f'class="pill">{expected_leads}<' in client.get("/inbound").text, nav_link)
+r = client.get(f"/applications/{lead_app_id}")
+check("an inbound's detail page lights Inbound in the nav",
+      'href="/inbound" class="active"' in r.text and 'href="/" class="active"' not in r.text)
 
 print("applications: default ordering")
 # Built as a burst on one day, the way a real backfill arrives: local-noon
@@ -504,9 +531,10 @@ with db.connect() as conn, conn.transaction():
 # approached. `sortecho` is a second pinned lead, approached long before Beacon
 # Search (whose outreach event is now()) — the two of them are what proves the
 # pinned block is ordered rather than left on insertion order. `sortfoxtrot` was
-# approached 5 days ago and already rejected, so it is inbound but NOT pinned,
-# and has to take its place among the applications by that same approach date
-# instead of falling into the NULLS-LAST bucket at the bottom of the page.
+# approached 5 days ago and already rejected, so it is inbound but NOT pinned:
+# it sits under the second divider on /inbound, placed by that same approach
+# date. (Until 24 Sep 2026 all three lived on / among the applications; the
+# split is by origin, so none of them is on the record now.)
 with db.connect() as conn, conn.transaction():
     for name, evs in (("sortecho", (("recruiter_outreach", "12 days"),)),
                       ("sortfoxtrot", (("recruiter_outreach", "5 days"),
@@ -539,23 +567,35 @@ check("default is newest-applied-first: the later submission leads the burst",
 check("the default does NOT reorder on activity — a reply no longer promotes a "
       "row past an application submitted after it",
       order.index("sortdelta") < order.index("sortcharlie"), order[:8])
-check("the inbound lead is pinned above every application, whatever its date",
-      order.index("Beacon Search") < order.index("sortdelta"), order[:8])
+check("no inbound row is on the record at all — the split is by origin, not a pin",
+      not {"Beacon Search", "sortecho", "sortfoxtrot"} & set(order), order[:10])
+inbound_order = _order("/inbound")
+check("on /inbound the undecided lead is pinned above the one the user pursued, "
+      "whatever its date",
+      inbound_order.index("Beacon Search") < inbound_order.index("sortfoxtrot"),
+      inbound_order[:8])
 check("the pinned block is itself ordered newest-approach-first — the lead "
       "approached today leads the one approached 12 days ago",
-      order.index("Beacon Search") < order.index("sortecho"), order[:8])
-check("...and both stay above every application",
-      order.index("sortecho") < order.index("sortdelta"), order[:8])
-check("an inbound the user pursued isn't pinned, but is placed by the date of "
-      "the approach rather than stranded below every application",
-      order.index("sortdelta") < order.index("sortfoxtrot") < order.index("sortalpha"),
-      order[:10])
+      inbound_order.index("Beacon Search") < inbound_order.index("sortecho"),
+      inbound_order[:8])
+check("...and both stay above the pursued one",
+      inbound_order.index("sortecho") < inbound_order.index("sortfoxtrot"),
+      inbound_order[:8])
 # The pin matters MORE under this default than the last one: a lead has no
 # `applied` event, so applied_at is NULL and NULLS LAST would otherwise drop it
 # to the very bottom of the page rather than merely interleave it.
-r = client.get("/")
-check("and the group is labelled, so the pin isn't mysterious",
-      "Inbound, awaiting your call" in r.text)
+_sep = '<div class="tl-sep">Awaiting your call</div>'
+_sep2 = '<div class="tl-sep">Underway or closed</div>'
+r = client.get("/inbound")
+check("and both groups are labelled, so the pin isn't mysterious",
+      _sep in r.text and _sep2 in r.text)
+check("the pursued one sits under the second divider, the leads under the first",
+      r.text.index(_sep) < r.text.index("Beacon Search") < r.text.index(_sep2)
+      < r.text.index("sortfoxtrot"))
+# The ELEMENT, not the class name: base.html's stylesheet defines `.tl-sep`
+# on every page, so the bare string is always present.
+check("the record renders no divider — nothing on it can be pinned",
+      '<div class="tl-sep">' not in client.get("/").text)
 
 # Identical timestamps, no tiebreaker = an order the planner picks. Asserting
 # stability is the point; which of the two comes first is not.
@@ -570,19 +610,19 @@ check("sort=activity still surfaces the engaged thread — the old default is "
 # Position can't test this one: the lead's own outreach event may legitimately
 # be the most recent activity on the page, so it can top this sort honestly.
 # The divider is the observable — it renders only when leads_pinned is set.
-_sep = "awaiting your call"
 check("and as an explicit sort it is taken literally — no lead pinning",
-      _sep not in client.get("/?sort=activity").text)
+      _sep not in client.get("/inbound?sort=activity").text)
 check("...while the default does render the divider",
-      _sep in client.get("/").text)
+      _sep in client.get("/inbound").text)
 
-silence = _order("/?sort=silence")
+silence = _order("/inbound?sort=silence")
 check("an explicit sort is taken literally — no lead pinning",
       silence.index("Beacon Search") > 0, silence[:6])
+silence = _order("/?sort=silence")
 check("and it still means what it says: longest quiet first",
       silence.index("sortalpha") < silence.index("sortcharlie"), silence[:8])
 check("an unknown sort falls back to the default, not an error",
-      _order("/?sort=nonsense") == order)
+      _order("/?sort=nonsense") == order and _order("/inbound?sort=nonsense") == inbound_order)
 
 # Every key in _SORTS, not the three that happened to have assertions. `company`
 # 500ed from the day it was written — `lower(company_display)` wraps an OUTPUT
@@ -590,27 +630,55 @@ check("an unknown sort falls back to the default, not an error",
 # noticed for weeks because the tests named their sorts one at a time. Looping
 # the dict is what makes a new sort key testable by existing.
 for _key in web._SORTS:
-    _r = client.get(f"/?sort={_key}")
-    check(f"sort={_key} renders", _r.status_code == 200, _r.status_code)
-    # Same query, same ORDER BY, with each of the other filters layered on: the
-    # ORDER BY is interpolated into one f-string shared by all of them, so a key
-    # that only works unfiltered is a key that breaks on the next click.
-    for _extra in ("origin=applied", "status=applied", "q=sort",
-                   "reason=visa", "status=rejected&reason=unrecorded",
-                   "how=after_round", "status=rejected&how=no_round&reason=unrecorded"):
-        _r = client.get(f"/?sort={_key}&{_extra}")
-        check(f"sort={_key} + {_extra} renders", _r.status_code == 200, _r.status_code)
+    # Both pages: they share one builder, so a key that renders on one renders
+    # on the other — which is exactly what this loop is here to keep true.
+    for _base in ("/", "/inbound"):
+        _r = client.get(f"{_base}?sort={_key}")
+        check(f"{_base} sort={_key} renders", _r.status_code == 200, _r.status_code)
+        # Same query, same ORDER BY, with each of the other filters layered on:
+        # the ORDER BY is interpolated into one f-string shared by all of them,
+        # so a key that only works unfiltered is a key that breaks on the next
+        # click.
+        for _extra in ("status=applied", "q=sort",
+                       "reason=visa", "status=rejected&reason=unrecorded",
+                       "how=after_round", "status=rejected&how=no_round&reason=unrecorded"):
+            _r = client.get(f"{_base}?sort={_key}&{_extra}")
+            check(f"{_base} sort={_key} + {_extra} renders", _r.status_code == 200, _r.status_code)
 check("the default is reachable by name and identical to the bare URL",
       _order("/?sort=applied") == order)
 
 # The macro omits `sort` only when it equals DEFAULT_SORT. Hardcoding the old
 # literal there would have made every filter click silently reset a chosen sort.
-r = client.get("/?sort=activity&origin=applied")
+r = client.get("/?sort=activity&status=applied")
 check("a non-default sort survives a filter link (sort= carried in hrefs)",
       "sort=activity" in r.text, r.status_code)
-r = client.get("/?origin=applied")
+r = client.get("/?status=applied")
 check("the default sort is omitted from hrefs rather than spelled out",
       "sort=applied" not in r.text, r.status_code)
+r = client.get("/inbound?sort=activity&status=rejected")
+check("and on /inbound every href the macro builds stays on /inbound",
+      "sort=activity" in r.text and 'href="/?' not in r.text, r.status_code)
+
+print("inbound: deleting one lands back on /inbound")
+# The banner-redirect follows the record's own page (web._list_path), off the
+# immutable origin — a throwaway lead, so the ordering fixtures above survive.
+with db.connect() as conn, conn.transaction():
+    _jid = conn.execute(
+        "INSERT INTO jobs (user_id, company_norm, title_canonical) "
+        "VALUES (%s, 'delgolf', 'Engineer') RETURNING id", (user_id,)).fetchone()["id"]
+    _del_lead = conn.execute(
+        "INSERT INTO applications (user_id, job_id, origin) "
+        "VALUES (%s, %s, 'inbound') RETURNING id", (user_id, _jid)).fetchone()["id"]
+    conn.execute(
+        "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+        "VALUES (%s, %s, 'recruiter_outreach', 'email', now(), '{}')", (user_id, _del_lead))
+r = client.post(f"/applications/{_del_lead}/delete")
+check("the redirect goes to /inbound, not the record",
+      r.status_code == 303 and r.headers["location"].startswith("/inbound?deleted="),
+      r.headers.get("location"))
+r = client.get(r.headers["location"])
+check("and the banner renders there", r.status_code == 200 and "Deleted <strong>delgolf" in r.text,
+      r.status_code)
 
 # The search box must echo what was searched. It read "None" from 8 Sep 2026,
 # when base.html grew `{% set q = queue_alert() %}` for the stall band: a
@@ -1648,10 +1716,11 @@ check("the unrecorded bucket is a chip too, last, linking to its queue",
 funnel = r.text.split('class="funnel')[1].split("</div>")[0]
 check("the funnel's own links drop the reason — it belongs to rejected",
       "reason=" not in funnel, funnel[:300])
-r = client.get("/?reason=visa&origin=applied")
-tabs = r.text.split('class="tabs"')[1].split("</span>")[0]
-check("the origin tabs carry it, like every other filter",
-      tabs.count("reason=visa") == 4, tabs)
+r = client.get("/?reason=visa&q=zz")
+# `&amp;` — the macro's output is autoescaped like any other expression.
+check("the search's Clear link carries it, like every other filter",
+      re.search(r'href="/\?status=rejected&(amp;)?reason=visa"', r.text) is not None,
+      r.status_code)
 check("and the search form re-submits it",
       '<input type="hidden" name="reason" value="visa">' in r.text)
 
@@ -1755,9 +1824,10 @@ check("and the how chips carry the reason, with this one active",
       "reason=unrecorded" in sub and 'class="active"' in sub, sub)
 funnel = r.text.split('class="funnel')[1].split("</div>")[0]
 check("the funnel's own links drop it — it belongs to rejected", "how=" not in funnel, funnel[:300])
-r = client.get("/?how=visa&origin=applied")
-tabs = r.text.split('class="tabs"')[1].split("</span>")[0]
-check("the origin tabs carry it, like every other filter", tabs.count("how=visa") == 4, tabs)
+r = client.get("/?how=visa&q=zz")
+check("the search's Clear link carries it, like every other filter",
+      re.search(r'href="/\?status=rejected&(amp;)?how=visa"', r.text) is not None,
+      r.status_code)
 check("and the search form re-submits it", '<input type="hidden" name="how" value="visa">' in r.text)
 r = client.get("/?how=teleport")
 check("an unknown how is ignored, not an error — the unfiltered list",

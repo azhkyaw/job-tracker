@@ -434,6 +434,12 @@ pre.text{white-space:pre-wrap;font:inherit;margin:.5rem 0 0;max-width:70ch}
     <a class="brand" href="/">tracker</a>
     <nav>
       <a href="/" class="{% block nav_apps %}{% endblock %}">Applications</a>
+      {# What recruiters started, off the record since 24 Sep 2026. Counted
+         like triage — the approaches still awaiting the user's decision
+         (`analytics.lead_count`, the rows /inbound pins) — and optional like
+         follow-ups: only the pages that compute `leads` show a number. Not
+         amber: the wait is on the user, not on anyone else. #}
+      <a href="/inbound" class="{% block nav_inbound %}{% endblock %}">Inbound{% if leads %}<span class="pill">{{ leads }}</span>{% endif %}</a>
       <a href="/triage" class="{% block nav_triage %}{% endblock %}">Triage{% if pending %}<span class="pill">{{ pending }}</span>{% endif %}</a>
       {# Counted like triage, but the count is OPTIONAL here: only the pages
          that already compute it pass `follow_ups`, and everywhere else the

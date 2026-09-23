@@ -437,3 +437,27 @@ the key to each real case.
    in the memory directory. Still owed: eyes on the app itself without Dark
    Reader, and the heat curve's 56-day ceiling is a judgement that a replay
    over the 150 waiting rows could settle.
+14. **Inbound moved to its own page** (24 Sep 2026). Asked whether inbounds
+   should leave the Applications list; the answer was in the list's own
+   code. Its default-sort comment says the page should read as "what you
+   sent, most recent first", and the leads-first pin, the `.tl-sep`
+   dividers, the `lead` flag, the `started_at` sort and trace.py's blue
+   start all existed to make a population that is not that fit a page built
+   for the other one. Real data on the day: 255 applied, 22 inbound (11
+   awaiting a decision, 1 interviewing, 10 rejected), 1 saved; the pin was
+   designed for 4 leads and 11 now sat above the first application — the
+   follow-ups move (task 9's rule) at nearly three times the size. Built
+   `/inbound` as a sibling of `/` off one `_list()` builder, one template,
+   one `_SORTS`; membership by origin strictly (2 of the 22 have a later
+   `applied` event and stay put), `?origin=` and the All/Applied/Inbound/
+   Saved tabs gone, a grey `saved` tag in their place, a page count where
+   the tabs stood, an inbound lede (approaches / awaiting / reached an
+   interview), a triage-lane nudge instead of the follow-up one, a nav pill
+   for the leads awaiting a decision, delete redirects and detail-page nav
+   following `_list_path()`. `.claude/rules/web-ui.md` rule 17 has the
+   design. One inherited claim fell on the way: the rules file said a Jinja
+   macro cannot see the render context; it can (same-template macros, the
+   shape `list_url()` has), and the macro now reads `page` from it. Tests:
+   the ordering block moved to `/inbound`, the `_SORTS` loop crosses both
+   pages, and the pill, the detail-page highlight and the delete redirect
+   are asserted.

@@ -1,28 +1,33 @@
 {% extends "base.html" %}
-{% block title %}applications — tracker{% endblock %}
-{% block nav_apps %}active{% endblock %}
+{% block title %}{{ 'inbound' if page == 'inbound' else 'applications' }} — tracker{% endblock %}
+{% block nav_apps %}{{ 'active' if page != 'inbound' }}{% endblock %}
+{% block nav_inbound %}{{ 'active' if page == 'inbound' }}{% endblock %}
 {% block content %}
-{# Every link on this page that changes one filter needs to carry the OTHERS
-   (origin/q/sort/status, and reason on a rejected view) or picking a status
-   would silently drop your search, and vice versa — the exact bug the tabs
-   already had for `q` before this macro (fixed as a side effect of giving the
-   funnel one place to build a URL from). `sort` is omitted when it's the
+{# One template, two pages (24 Sep 2026): `page` is 'applications' (/) or
+   'inbound' (/inbound), and every word that differs between them is a branch
+   on it here — the route, query, funnel and filters are shared.
+   Every link on this page that changes one filter needs to carry the OTHERS
+   (q/sort/status, and reason on a rejected view) or picking a status
+   would silently drop your search, and vice versa — the exact bug the old
+   origin tabs had for `q` before this macro (fixed as a side effect of giving
+   the funnel one place to build a URL from). `sort` is omitted when it's the
    default so a plain filter click doesn't clutter every href with the
    default's own name — compared against the DEFAULT_SORT global, never a
    literal, so moving the default in web.py can't leave this silently
    resetting the user's chosen sort. `reason` and `how` are the two filters
    NOT every link carries: they belong to `rejected`, so the funnel and legend
-   links (which change status) drop them on purpose, and the tabs, search and
-   sort keep them. #}
-{% macro list_url(status='', origin=None, q='', sort='', reason='', how='') -%}
+   links (which change status) drop them on purpose, and the search and sort
+   keep them. The macro reads `page` straight from the render context — a
+   macro defined in the template that calls it can (verified 24 Sep 2026;
+   only an imported one can't), so the path it builds is the page it is on. #}
+{% macro list_url(status='', q='', sort='', reason='', how='') -%}
 {%- set parts = [] -%}
-{%- if origin %}{% set _ = parts.append('origin=' + origin) %}{% endif -%}
 {%- if q %}{% set _ = parts.append('q=' + (q | urlencode)) %}{% endif -%}
 {%- if sort and sort != DEFAULT_SORT %}{% set _ = parts.append('sort=' + sort) %}{% endif -%}
 {%- if status %}{% set _ = parts.append('status=' + status) %}{% endif -%}
 {%- if reason %}{% set _ = parts.append('reason=' + reason) %}{% endif -%}
 {%- if how %}{% set _ = parts.append('how=' + how) %}{% endif -%}
-/{{ '?' + (parts | join('&')) if parts else '' }}
+{{ '/inbound' if page == 'inbound' else '/' }}{{ '?' + (parts | join('&')) if parts else '' }}
 {%- endmacro %}
 
 {% if deleted %}
@@ -30,8 +35,19 @@
 {% endif %}
 
 {# The search in one sentence rather than four tiles: it is a reading of the
-   derived figures, and the funnel beneath already carries every count. #}
-{% if summary.applied %}
+   derived figures, and the funnel beneath already carries every count. The
+   inbound page's sentence is a different reading — approaches, how many
+   still wait on the user, how many reached an interview (any invite on the
+   timeline, not the current status: a thread that interviewed and then
+   closed still interviewed). #}
+{% if page == 'inbound' %}
+{% if inbound_summary.approaches %}
+<p class="lede">Since {{ axis.t0 | day }}:
+  <b>{{ inbound_summary.approaches }}</b> approach{{ '' if inbound_summary.approaches == 1 else 'es' }},
+  <b>{{ inbound_summary.awaiting }}</b> awaiting your call{% if inbound_summary.interviewed %},
+  <b>{{ inbound_summary.interviewed }}</b> reached an interview{% endif %}.</p>
+{% endif %}
+{% elif summary.applied %}
 <p class="lede">Since {{ axis.t0 | day }}:
   <b>{{ summary.applied }}</b> application{{ '' if summary.applied == 1 else 's' }},
   <b>{{ summary.responded }}</b> repl{{ 'y' if summary.responded == 1 else 'ies' }}{% if summary.response_rate is not none %}
@@ -48,7 +64,7 @@
   {% for s in funnel %}
   {% set is_active = s.key == status %}
   <a class="seg{% if is_active %} active{% endif %}"
-     href="{{ list_url(status=('' if is_active else s.key), origin=origin, q=q, sort=sort) }}"
+     href="{{ list_url(status=('' if is_active else s.key), q=q, sort=sort) }}"
      style="--n:{{ s.n }};--c:var(--{{ s.key }})"
      title="{{ s.n }} {{ s.label }}{% if is_active %}. Click to clear{% endif %}">
     <span class="n">{{ s.n }}</span><span class="l">{{ s.label }}</span>
@@ -59,7 +75,7 @@
   {% for s in funnel %}
   {% set is_active = s.key == status %}
   <a class="{% if is_active %}active{% endif %}"
-     href="{{ list_url(status=('' if is_active else s.key), origin=origin, q=q, sort=sort) }}">
+     href="{{ list_url(status=('' if is_active else s.key), q=q, sort=sort) }}">
     <i style="--c:var(--{{ s.key }})"></i>{{ s.n }} {{ s.label }}</a>
   {#- How the rejections ended, attached to the rejected entry AT REST (UI rule
       13): one bucket per application, derived from the timeline, so the three
@@ -71,14 +87,14 @@
     {%- for x in ends %}
     {%- set how_active = x.key == how %}
     <a class="{% if how_active %}active{% endif %}"
-       href="{{ list_url(status='rejected', how=('' if how_active else x.key), reason=reason, origin=origin, q=q, sort=sort) }}"
+       href="{{ list_url(status='rejected', how=('' if how_active else x.key), reason=reason, q=q, sort=sort) }}"
        title="{{ x.n }} rejected {{ x.label }}: {{ x.detail }}{% if how_active %}. Click to clear{% endif %}">{{ x.n }} {{ x.label }}</a>
     {%- endfor %}
   </span>
   {%- endif %}
   {% endfor %}
   {% if status %}
-  <a href="{{ list_url(origin=origin, q=q, sort=sort) }}">show all statuses</a>
+  <a href="{{ list_url(q=q, sort=sort) }}">show all statuses</a>
   {% endif %}
 </div>
 {# The rejected segment, once selected, unfolds into WHY — the same chip-row
@@ -94,15 +110,14 @@
   {% for x in reasons %}
   {% set is_active = x.key == reason %}
   <a class="{% if is_active %}active{% endif %}"
-     href="{{ list_url(status='rejected', reason=('' if is_active else x.key), how=how, origin=origin, q=q, sort=sort) }}"
+     href="{{ list_url(status='rejected', reason=('' if is_active else x.key), how=how, q=q, sort=sort) }}"
      title="{{ x.n }} rejected, {{ x.label }}{% if is_active %}. Click to clear{% endif %}">{{ x.n }} {{ x.label }}</a>
   {% endfor %}
 </div>
 {% endif %}
 {% endif %}
 
-<form class="bar" method="get" action="/">
-  {% if origin %}<input type="hidden" name="origin" value="{{ origin }}">{% endif %}
+<form class="bar" method="get" action="{{ '/inbound' if page == 'inbound' else '/' }}">
   {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
   {% if reason %}<input type="hidden" name="reason" value="{{ reason }}">{% endif %}
   {% if how %}<input type="hidden" name="how" value="{{ how }}">{% endif %}
@@ -110,29 +125,43 @@
         placeholder="Search company or role" aria-label="Search company or role"
         style="width:100%"></span>
   <select name="sort" aria-label="Sort by">
-    <option value="applied" {% if sort == 'applied' %}selected{% endif %}>Newest applied first</option>
+    {#- Same key, same ORDER BY (started_at): on the record that is the
+        submission date, on the inbound page the date they approached. #}
+    <option value="applied" {% if sort == 'applied' %}selected{% endif %}>{{ 'Newest approach first' if page == 'inbound' else 'Newest applied first' }}</option>
     <option value="activity" {% if sort == 'activity' %}selected{% endif %}>Most recent activity</option>
     <option value="silence" {% if sort == 'silence' %}selected{% endif %}>Quiet longest first</option>
     <option value="company" {% if sort == 'company' %}selected{% endif %}>Company A to Z</option>
   </select>
   <button>Apply</button>
-  {% if q %}<a href="{{ list_url(status=status, origin=origin, sort=sort, reason=reason, how=how) }}">Clear</a>{% endif %}
+  {% if q %}<a href="{{ list_url(status=status, sort=sort, reason=reason, how=how) }}">Clear</a>{% endif %}
 </form>
 
+{# Where the origin tabs stood until 24 Sep 2026: the page's own count, which
+   the funnel never states (it sums to it), and "of" the whole when a filter
+   or search has narrowed it. The tabs went with the split — inbound is a
+   page now, and All/Applied/Saved over one saved row was a control for
+   nothing; a saved row wears a grey tag instead (below). #}
+{% set total = funnel | sum(attribute='n') %}
+{% set noun = 'approach' if page == 'inbound' else 'application' %}
 <div class="rowline">
-  <span class="tabs">
-    <a href="{{ list_url(status=status, q=q, sort=sort, reason=reason, how=how) }}" class="{{ 'active' if not origin }}">All</a>
-    <a href="{{ list_url(status=status, origin='applied', q=q, sort=sort, reason=reason, how=how) }}" class="{{ 'active' if origin == 'applied' }}">Applied</a>
-    <a href="{{ list_url(status=status, origin='inbound', q=q, sort=sort, reason=reason, how=how) }}" class="{{ 'active' if origin == 'inbound' }}">Inbound</a>
-    <a href="{{ list_url(status=status, origin='saved', q=q, sort=sort, reason=reason, how=how) }}" class="{{ 'active' if origin == 'saved' }}">Saved</a>
-  </span>
+  <span class="quiet">
+    {%- if rows | length != total %}{{ rows | length }} of {% endif -%}
+    {{ total }} {{ noun }}{{ '' if total == 1 else ('es' if page == 'inbound' else 's') }}</span>
   <span class="aside">
+    {% if page == 'inbound' %}
+    {# The inbound page's nudge: approaches still sitting in triage's inbound
+       lane, the only door a row on this page comes through. Not amber — the
+       wait there is on the user, and --age means unanswered by someone else
+       (UI rule 1). #}
+    {% if triage_inbound %}<a href="/triage?lane=inbound">{{ triage_inbound }} to sort in triage</a>{% endif %}
+    {% else %}
     {# The queue moved to its own page (21 Aug 2026); this is the nudge that
        replaces 15 rows of it sitting above the first trace. Amber only when
        there IS work, because --age is the "time passing, unanswered" token
        (UI rule 1) and that is exactly what these rows are. #}
     {% if follow_ups %}<a class="warm" href="/follow-ups">{{ follow_ups }} need follow-up</a>{% endif %}
     <a href="/applications/new">Add one by hand</a>
+    {% endif %}
   </span>
 </div>
 
@@ -146,17 +175,19 @@
     </span>
     <span class="lab right">Days quiet</span>
   </div>
-  {# Two groups, one list. Leads carry no applied date, but they do carry the
-     outreach email itself as an event — trace.py colours that "viewed" (blue,
-     someone-else-engaged) rather than the default "applied" grey, so a lead's
-     dot doesn't read as if the user had applied; the divider below is what
-     says why they're grouped above everything else. Rendered only when the
+  {# Two groups, one list — on the inbound page only, since 24 Sep 2026 (no
+     row on / can be a lead, so nothing renders there). Leads carry no applied
+     date, but they do carry the outreach email itself as an event — trace.py
+     colours that "viewed" (blue, someone-else-engaged) rather than the
+     default "applied" grey, so a lead's dot doesn't read as if the user had
+     applied; the divider below is what says why they're grouped above the
+     approaches that moved on, in either direction. Rendered only when the
      default sort put them there; any other sort is taken literally. #}
   {% for r in rows %}
   {%- if leads_pinned and r.lead and loop.first %}
-  <div class="tl-sep">Inbound, awaiting your call</div>
+  <div class="tl-sep">Awaiting your call</div>
   {%- elif leads_pinned and not r.lead and not loop.first and rows[loop.index0 - 1].lead %}
-  <div class="tl-sep">Applications</div>
+  <div class="tl-sep">Underway or closed</div>
   {%- endif %}
   {#- A tail is "live" (blue) only while it is fresh AND someone else moved
       last; once it crosses the follow-up threshold it is a wait like any
@@ -167,7 +198,11 @@
     <span class="name">
       <span class="co">{{ r.company_display }}</span>
       <span class="ro"><span class="ro-t">{{ r.title_canonical }}</span>
-        {%- if r.origin == 'inbound' %}<span class="tag">inbound</span>{% endif %}
+        {#- Captured but never applied to. Grey like the tags below: a fact
+            about the submission (there wasn't one), not about any wait. The
+            `inbound` tag that stood here left with the page split — every
+            row on /inbound is one, and no row on / can be. #}
+        {%- if r.origin == 'saved' %}<span class="tag">saved</span>{% endif %}
         {# How you applied, from the applied event's payload. Three states and
            they stay three: `is sameas true/false`, never truthiness, because
            NULL means "never recorded" and rendering that as "on-platform"
@@ -205,7 +240,10 @@
 </div>
 {% elif q %}
 <p class="empty">Nothing matches “{{ q }}”.
-  <a href="/{% if origin %}?origin={{ origin }}{% endif %}">Clear the search</a> to see every application.</p>
+  <a href="{{ list_url() }}">Clear the search</a> to see every {{ noun }}.</p>
+{% elif page == 'inbound' %}
+<p class="empty">No approaches yet. A recruiter's email lands in
+<a href="/triage?lane=inbound">triage's inbound lane</a> first; “Track as lead” files it here.</p>
 {% else %}
 <p class="empty">No applications yet. Run the backfill, then process the queue:<br>
 <code>python -m pipeline.cli backfill &amp;&amp; python -m pipeline.cli work --once</code><br>

@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}delete application — tracker{% endblock %}
-{% block nav_apps %}active{% endblock %}
+{% block nav_apps %}{{ 'active' if a.origin != 'inbound' }}{% endblock %}
+{% block nav_inbound %}{{ 'active' if a.origin == 'inbound' }}{% endblock %}
 {% block content %}
 <h1>Delete this application?</h1>
 

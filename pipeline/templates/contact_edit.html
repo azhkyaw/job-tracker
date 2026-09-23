@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}edit contact — tracker{% endblock %}
-{% block nav_apps %}active{% endblock %}
+{% block nav_apps %}{{ 'active' if a.origin != 'inbound' }}{% endblock %}
+{% block nav_inbound %}{{ 'active' if a.origin == 'inbound' }}{% endblock %}
 {% block content %}
 <h1>Edit contact</h1>
 <p class="lede" style="margin-top:-.4rem">For {{ a.company_display }}, {{ a.title_canonical }}.</p>

@@ -90,7 +90,9 @@ is a private artifact, linked from the memory file
    status='interested'`, gated on status because origin is immutable, so a lead
    you pursued must not stay pinned forever) lead the list under a `.tl-sep`
    label, since they have no applied event and every time-based sort was
-   ranking them by a number that measures nothing; and a **tiebreaker**
+   ranking them by a number that measures nothing — **on `/inbound` only,
+   since 24 Sep 2026 (rule 17)**: no row on `/` can be one, so the term is a
+   constant there and the ORDER BY reads as plain newest-first; and a **tiebreaker**
    (`_TIEBREAK`), because a form date anchors at local noon so a day's backfill
    shares one instant to the second — 15 of those 52 rows sat in 3 tie groups
    with no defined order at all. **`_LEADS_FIRST` moves when the default
@@ -173,7 +175,8 @@ is a private artifact, linked from the memory file
     since it's text, not a color block. A `:has()` rule previews the same
     dimming on hover before a click commits to it — no JS, this app has none,
     ever. `list_url()` (a template macro, not a Python helper) builds every
-    link on the page from `origin`/`q`/`sort`/`status` together — a genuine
+    link on the page from `q`/`sort`/`status` together (and `origin`, until
+    the tabs went with rule 17) — a genuine
     fix alongside the new feature, not just a refactor: the origin tabs and
     the search-clear link each had their own hand-built href before this,
     and both silently dropped `q` on click. On the query side, `status`
@@ -273,6 +276,38 @@ is a private artifact, linked from the memory file
     shows the start date, then "Aug", "Sep"; under that it keeps its weeks.
     The list and the detail page share the function, so a long thread on the
     (full-width) detail page also gets months — sparse, and fine.
+17. **What recruiters started is its own page** (24 Sep 2026): `/inbound`
+    holds every `origin = 'inbound'` record in every status, `/` everything
+    the user started (`applied`, and the odd `saved` capture, which now wears
+    a grey tag where the origin tabs used to separate it). The two partition
+    the table by ONE predicate in `web._list`, and `_list_path()` is the same
+    rule read backwards for the delete redirects. **Membership is by origin,
+    never status**: origin is immutable (invariant #9), so a row never
+    changes page as events arrive — 2 of 22 real inbounds carry a later
+    `applied` event and stay on `/inbound` with the apply drawn on the trace.
+    A status-based boundary would have rows migrating overnight, the "row's
+    position answers no single question" failure of rule 8 at the page level.
+    Why: rule 9's argument, again. The pin (rule 8) was designed for 4 leads;
+    by the day they moved, 11 rows sat above the first application on a page
+    whose default sort exists so it reads as "what you sent, newest first" —
+    and every number on the site already treated them as a different
+    population (response rate over `applied_at`, `summary.interested`, the
+    `inbound` column of both rejection tables). One template, one builder
+    (`_list`), one `_SORTS`; `page` in the context switches the words (the
+    lede, the divider labels "Awaiting your call" / "Underway or closed", the
+    aside — follow-ups on the record, triage's inbound lane on `/inbound` —
+    the empty state, the count label that stands where the tabs were, and the
+    sort option's name: same key, same `started_at`, "newest applied" on one
+    page and "newest approach" on the other). The nav pill counts the leads
+    awaiting a decision (`analytics.lead_count`, the rows the pin pins) —
+    plain, not amber, because the wait is on the user. `?origin=` is ignored,
+    not honoured. The `interested` funnel segment simply never appears on `/`
+    because `_funnel` drops empty segments. Detail-family pages light the
+    nav entry of the record's own page off `a.origin`. The lede's
+    `analytics.summary` is scoped to the page too (`inbound=False` on `/`),
+    found on the first real render: search-wide it said 258 applications
+    beside a count label of 256, the 2 being promoted leads that live on
+    `/inbound` — two numbers on one page must agree (rule 11's principle).
 
 ## Gotchas learned the hard way
 
@@ -332,9 +367,14 @@ is a private artifact, linked from the memory file
   global), Jinja resolves the local context first, and `{{ theme() }}`
   raises `TypeError: 'str' object is not callable`. Keep new
   global/filter names distinct from every context dict key.
-  **A Jinja MACRO cannot see the render context at all**, which is why
-  `DEFAULT_SORT` (used by `applications.html`'s `list_url()` to decide whether
-  to omit `sort=` from an href) is a global and not a context key. Register a
+  **A Jinja macro defined in the template that calls it DOES see the render
+  context** — this file said the opposite until 24 Sep 2026, and the claim
+  was inherited, never tested. Verified with the exact extends/block/macro
+  shape `applications.html` uses: `{{ page }}` inside `list_url()` resolves.
+  Only an `{% import %}`ed macro is cut off, unless imported `with context`.
+  `DEFAULT_SORT` (used by `list_url()` to decide whether to omit `sort=` from
+  an href) is still a global, but because it is a module constant, the same
+  on every request — not because the macro could not read it. Register a
   global that derives from a module constant **next to that constant**, not up
   with the others: `templates.env.globals[...]` at the top of `web.py` runs at
   import, before `_DEFAULT_SORT` exists, and raises `NameError` at module load.

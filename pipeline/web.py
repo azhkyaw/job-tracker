@@ -217,16 +217,20 @@ def _pending_count(conn) -> int:
     ).fetchone()["n"]
 
 
-def _funnel(conn, user_id, origin: str | None = None) -> list[dict]:
+def _funnel(conn, user_id, inbound: bool | None = None) -> list[dict]:
+    """Status counts for one list page: `inbound` True is `/inbound`, False is
+    `/` (everything the user started — `applied` and `saved` alike), None is
+    both. Empty segments are dropped, which is why `/` shows no `interested`
+    segment at all rather than a zero: nothing on that page can be one."""
     rows = conn.execute(
         """
         SELECT s.status, count(*) AS n
         FROM application_status s
         JOIN applications a ON a.id = s.application_id
         WHERE s.user_id = %(user_id)s
-          AND (%(origin)s::text IS NULL OR a.origin = %(origin)s)
+          AND (%(inbound)s::bool IS NULL OR (a.origin = 'inbound') = %(inbound)s)
         GROUP BY s.status
-        """, {"user_id": user_id, "origin": origin}).fetchall()
+        """, {"user_id": user_id, "inbound": inbound}).fetchall()
     counts: dict[str, int] = {}
     for r in rows:
         key = DISPLAY_STATUS.get(r["status"], r["status"])
@@ -247,6 +251,11 @@ def _funnel(conn, user_id, origin: str | None = None) -> list[dict]:
 # Gated on status, not origin alone: `origin` is immutable provenance (invariant
 # #9), so a lead the user pursued keeps it forever — pinning on origin would
 # strand a long-finished application at the top of the page.
+#
+# Since 24 Sep 2026 the only page with anything to pin is `/inbound`: every
+# inbound record lives there and none on `/`, so on `/` this term is a constant
+# and the ORDER BY reads as plain "newest first". Kept in the one shared ORDER BY
+# rather than forked per page — two ORDER BYs is how the two pages would drift.
 _LEADS_FIRST = "(a.origin = 'inbound' AND s.status = 'interested') DESC"
 
 # Every time-based sort needs the same two tiebreakers. A date typed into a form
@@ -310,32 +319,85 @@ _DEFAULT_SORT = "applied"
 
 # The list template omits `sort` from every href when it equals the default, so
 # it needs to know what the default IS. A Jinja GLOBAL rather than a context
-# key: macros don't see the render context, and list_url() is a macro. The name
-# is deliberately distinct from every context key — a collision would shadow the
-# global and break at render time, the way a "theme" key once did. Registered
-# here, immediately after the constant, not up with the other globals: those run
-# at import before this line exists (NameError at module load, caught by
-# test_web on the first run of this change).
+# key because it is a module constant, the same on every request — NOT because
+# a macro can't read the context: a macro defined in the template that calls
+# it sees the render context fine (verified 24 Sep 2026 with the exact
+# extends/block/macro shape; only an `{% import %}`ed macro is cut off without
+# `with context`), and `list_url()` reads `page` from the context to pick the
+# path it builds. The name is deliberately distinct from every context key — a
+# collision would shadow the global and break at render time, the way a "theme"
+# key once did. Registered here, immediately after the constant, not up with
+# the other globals: those run at import before this line exists (NameError at
+# module load, caught by test_web on the first run of this change).
 templates.env.globals["DEFAULT_SORT"] = _DEFAULT_SORT
 
 
+def _list_path(a: dict) -> str:
+    """The list page an application belongs to: `/inbound` for one a recruiter
+    started, `/` for everything the user did (24 Sep 2026). Decided by
+    `origin`, which is immutable (invariant #9), so a record never changes
+    page as events arrive — a lead the user pursued stays on /inbound with
+    the apply drawn on its trace."""
+    return "/inbound" if a["origin"] == "inbound" else "/"
+
+
 @app.get("/")
-def applications(request: Request, deleted: str | None = None, origin: str | None = None,
+def applications(request: Request, deleted: str | None = None,
                  q: str = "", sort: str = _DEFAULT_SORT, status: str = "",
                  reason: str = "", how: str = ""):
-    """The record. The WORK that used to sit on top of it — the needs-follow-up
+    """The record: what the user sent, newest submission first — every
+    `applied` record and the odd `saved` capture, which is theirs too.
+
+    Inbound approaches left this page for `/inbound` on 24 Sep 2026. They had
+    sat here behind an origin tab, the undecided ones pinned above the first
+    application under a divider (`_LEADS_FIRST`) — 4 rows when the pin was
+    designed, 11 by the day they moved — on a page whose default sort exists
+    so it reads as "what you sent, most recent first", which an approach is
+    not by definition. The same move as the follow-ups queue below: work
+    sitting on top of the record.
+
+    The WORK that used to sit on top of it — the needs-follow-up
     queue — moved to /follow-ups on 21 Aug 2026, leaving a counted link in the
     nav. It had been a `<details>` here, collapsed by default with an `fu=1`
     param to keep it open across the reload that shortened it; a page of its
     own needs neither, and the list stops opening with someone else's to-do
     list above the first trace. UI rule 9 still holds — the queue is work and
-    still gets real rows and a one-click action, just not on this page.
+    still gets real rows and a one-click action, just not on this page."""
+    return _list(request, "applications", deleted, q, sort, status, reason, how)
+
+
+@app.get("/inbound")
+def inbound(request: Request, deleted: str | None = None,
+            q: str = "", sort: str = _DEFAULT_SORT, status: str = "",
+            reason: str = "", how: str = ""):
+    """What recruiters started: every `origin = 'inbound'` record in every
+    status, newest approach first (24 Sep 2026). Same query, template, funnel
+    and filters as `/`; only the membership differs, and it is decided by
+    origin alone, never status — origin is immutable (invariant #9), so a row
+    must not change page as events arrive. 2 of the 22 real inbounds carry a
+    later `applied` event; they belong here, with the apply on the trace.
+
+    `_LEADS_FIRST` still pins the undecided ones above the rest under the
+    default sort, and this is now the only page where it has anything to pin.
+    The nav pill counts exactly those (`analytics.lead_count`), the way the
+    triage pill counts what is waiting to be filed: things awaiting the user,
+    not a wait on anyone else, so it is not amber."""
+    return _list(request, "inbound", deleted, q, sort, status, reason, how)
+
+
+def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
+          status: str, reason: str, how: str):
+    """The one list builder behind `/` and `/inbound`. `page` decides which
+    half of `applications` the query sees (by origin — `_list_path` is the
+    same rule read the other way, for redirects) and which words the
+    template uses; everything below it is shared, so a filter that works on
+    one page works on the other by construction.
 
     `status` makes the funnel strip/legend clickable filters (29 Aug 2026) — the
     keys are exactly `FUNNEL_ORDER`'s display-collapsed values, the same ones
     the funnel already renders, so a segment's own href is `?status=<its key>`
     with nothing new to keep in sync. The funnel itself stays computed from
-    `origin` alone (not `status`), so all the OTHER segments stay visible
+    the page alone (not `status`), so all the OTHER segments stay visible
     (and clickable) while one is selected — a filter chip, not a redraw.
 
     `reason` (9 Sep 2026) is the same idea one level down: with `rejected`
@@ -353,7 +415,7 @@ def applications(request: Request, deleted: str | None = None, origin: str | Non
     legend entry. It folds into `status` the same way `reason` does, and the
     two combine: `how=no_round&reason=unrecorded` is the tagging queue's bulk."""
     user = _login_user(request)
-    origin = origin if origin in ("applied", "inbound", "saved") else None
+    is_inbound = page == "inbound"
     sort = sort if sort in _SORTS else _DEFAULT_SORT
     q = q.strip()
     status = status if status in FUNNEL_ORDER else ""
@@ -428,7 +490,10 @@ def applications(request: Request, deleted: str | None = None, origin: str | Non
                LIMIT 1
             ) rr ON true
             WHERE a.user_id = %(user_id)s
-              AND (%(origin)s::text IS NULL OR a.origin = %(origin)s)
+              -- The page boundary: /inbound is what recruiters started, /
+              -- is everything else. One predicate, so the two pages partition
+              -- the table with nothing falling between them.
+              AND (a.origin = 'inbound') = %(inbound)s::bool
               AND (%(q)s::text = '' OR j.title_canonical ILIKE %(like)s
                    OR j.company_norm ILIKE %(like)s
                    OR EXISTS (SELECT 1 FROM postings p WHERE p.job_id = a.job_id
@@ -441,7 +506,7 @@ def applications(request: Request, deleted: str | None = None, origin: str | Non
               -- and the expression would read 'no_round' for a live thread.
               AND (%(how)s::text = '' OR (rr.id IS NOT NULL AND {_HOW_CASE} = %(how)s))
             ORDER BY {_SORTS[sort]}
-            """, {"user_id": user_id, "origin": origin, "status": status,
+            """, {"user_id": user_id, "inbound": is_inbound, "status": status,
                   "reason": reason if reason in _EVENT_REASONS else "",
                   "unrecorded": reason == _REASON_UNRECORDED,
                   "how": how,
@@ -467,33 +532,62 @@ def applications(request: Request, deleted: str | None = None, origin: str | Non
         axis = trace.build(rows, events_by_app, datetime.now(timezone.utc),
                            config.REMINDER_DAYS)
 
+        # The inbound page's lede is a different sentence from the record's:
+        # not applications and replies, but approaches, how many still wait on
+        # the user, and how many turned into an interview — counted over any
+        # invite on the timeline, not the current status, since a thread that
+        # went to interview and then closed still went to interview.
+        inbound_summary = conn.execute(
+            """
+            SELECT count(*) AS approaches,
+                   count(*) FILTER (WHERE s.status = 'interested') AS awaiting,
+                   count(*) FILTER (WHERE EXISTS (
+                       SELECT 1 FROM events e
+                        WHERE e.application_id = a.id
+                          AND e.type = 'interview_invite')) AS interviewed
+            FROM applications a
+            JOIN application_status s ON s.application_id = a.id
+            WHERE a.user_id = %s AND a.origin = 'inbound'
+            """, (user_id,)).fetchone() if is_inbound else None
+        # The inbound page's nudge, where the record's is the follow-up
+        # count: approaches still sitting in triage's inbound lane, which is
+        # the only door a record on this page comes through ("Track as lead").
+        # RLS-scoped like _pending_count, which deliberately leaves these out.
+        triage_inbound = conn.execute(
+            "SELECT count(*) AS n FROM emails WHERE triage_state = 'pending' "
+            "  AND classification = 'recruiter_outreach'").fetchone()["n"] if is_inbound else 0
+
         return templates.TemplateResponse(request=request, name="applications.html", context={
+            "page": page,
             "rows": rows,
             "axis": axis,
-            "funnel": _funnel(conn, user_id, origin),
+            "funnel": _funnel(conn, user_id, is_inbound),
             "pending": _pending_count(conn),
             "follow_ups": analytics.reminder_count(conn, user_id),
+            "leads": analytics.lead_count(conn, user_id),
             "reminder_days": config.REMINDER_DAYS,
             # Only the default sort pins leads, so only it gets the divider —
             # an explicitly chosen sort should be exactly what it says.
             "leads_pinned": sort == _DEFAULT_SORT,
-            "summary": analytics.summary(conn, user_id),
+            # Scoped to the page, so the lede's count is the count label's.
+            "summary": analytics.summary(conn, user_id, is_inbound),
+            "inbound_summary": inbound_summary,
+            "triage_inbound": triage_inbound,
             "deleted": deleted,
-            "origin": origin,
             "q": q,
             "sort": sort,
             "status": status,
             "reason": reason,
             # The why-chips, only when rejected is the selected segment: the
             # funnel unfolds one level, it doesn't grow a permanent second row.
-            "reasons": (_reason_rows(analytics.rejection_reasons(conn, user_id, origin))
+            "reasons": (_reason_rows(analytics.rejection_reasons(conn, user_id, is_inbound))
                         if status == "rejected" else []),
             "event_reasons": _EVENT_REASONS,
             "how": how,
             # Always, not only with rejected selected: these ride on the
-            # legend's rejected entry as the at-rest glance, over the same tab
-            # (origin) the funnel counts.
-            "ends": _end_rows(analytics.rejection_ends(conn, user_id, origin)),
+            # legend's rejected entry as the at-rest glance, over the same
+            # page the funnel counts.
+            "ends": _end_rows(analytics.rejection_ends(conn, user_id, is_inbound)),
         })
 
 
@@ -501,7 +595,7 @@ def _get_application(conn, app_id: str) -> dict:
     try:
         row = conn.execute(
             """
-            SELECT a.id, a.user_id, a.job_id, a.applied_via_posting_id,
+            SELECT a.id, a.user_id, a.job_id, a.applied_via_posting_id, a.origin,
                    j.company_norm, j.title_canonical, s.status,
                    COALESCE(
                      (SELECT p.company_raw FROM postings p
@@ -1585,7 +1679,8 @@ def delete_application(request: Request, app_id: str):
         label = f"{a['company_display']} · {a['title_canonical']}"
         _delete_application(conn, a)
     from urllib.parse import quote
-    return RedirectResponse(f"/?deleted={quote(label)}", status_code=303)
+    # Back to the list it was on, so the banner lands where the row was.
+    return RedirectResponse(f"{_list_path(a)}?deleted={quote(label)}", status_code=303)
 
 
 # --------------------------------------------------------------------------- triage
@@ -1802,7 +1897,7 @@ def refile_email(request: Request, email_id: str, action: str = Form(...),
             _delete_application(conn, old_a)
             if redirect_to == f"/applications/{old_a['id']}":
                 from urllib.parse import quote
-                redirect_to = f"/?deleted={quote(label)}"
+                redirect_to = f"{_list_path(old_a)}?deleted={quote(label)}"
 
     return RedirectResponse(redirect_to, status_code=303)
 

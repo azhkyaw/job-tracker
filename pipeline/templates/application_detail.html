@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% block title %}{{ a.company_display }} — tracker{% endblock %}
-{% block nav_apps %}active{% endblock %}
+{# The nav follows the record's own page: an inbound's detail lights Inbound. #}
+{% block nav_apps %}{{ 'active' if a.origin != 'inbound' }}{% endblock %}
+{% block nav_inbound %}{{ 'active' if a.origin == 'inbound' }}{% endblock %}
 {% block content %}
 {% set tok = 'interview_invite' if status == 'interviewing' else status %}
 
