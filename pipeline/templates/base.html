@@ -6,38 +6,48 @@
 <title>{% block title %}tracker{% endblock %}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400..700;1,6..72,400..700&family=IBM+Plex+Sans+Condensed:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 /* ---------------------------------------------------------------- tokens
    Colour means exactly one thing here: the state of the wait. The page is
    achromatic at rest — chroma is reserved for blue (someone engaged), amber
    (time passing, unanswered), rust (closed), green (offer). Every other
    status is grey on purpose, so a glance down a list finds the live threads
-   and nothing else competes for it. */
+   and nothing else competes for it.
+
+   Redrawn 23 Sep 2026. Amber now has a TEMPERATURE: `--heat` is set per row
+   by trace.heat() (0% at the follow-up threshold, 100% at eight weeks) and
+   every amber on the row — the numeral, the tail — is ONE color-mix of it,
+   so the figure and the line cannot disagree. Type is Newsreader for the
+   record (names, roles, what happened) and IBM Plex Sans Condensed for every
+   number, date, label and control; no monospace outside real code, no
+   uppercase labels, no event-type names on a page. */
 :root{
   color-scheme:light;
-  /* the ground is DARKER than the panels — paper laid on a desk mat */
-  --bg:#E4E8EB; --card:#F7F9FA; --ink:#141C24; --muted:#5A6873;
-  --line:#CCD5DB; --mix:#F7F9FA;
-  --accent:#1F53BE; --accent-ink:#FFFFFF;
-  --age:#A8620A;
+  /* the ground is DARKER than the paper laid on it — a desk mat */
+  --bg:#E4E2DE; --card:#F6F5F2; --ink:#1B1A17; --muted:#6A665E;
+  --line:#D3CFC8; --mix:#F6F5F2;
+  --accent:#2352B5; --accent-ink:#FFFFFF;
+  --age:#9A5705;       /* 5.2:1 on paper — holds at small sizes */
   /* status tokens keep their names (templates index them by status string),
      but map onto the four semantic roles above */
-  --interested:#5A6873; --applied:#141C24; --viewed:#1F53BE; --engaged:#1F53BE;
-  --interview_invite:#1F53BE; --offer:#26694A; --rejected:#9A4231;
-  --withdrawn:#626C76; --pending:#A8620A;
+  --interested:#6A665E; --applied:#1B1A17; --viewed:#2352B5; --engaged:#2352B5;
+  --interview_invite:#2352B5; --offer:#2A6A48; --rejected:#9E3F2C;
+  --withdrawn:#6A665E; --pending:#9A5705;
+  --serif:Newsreader,"Iowan Old Style",Georgia,"Times New Roman",serif;
+  --sans:"IBM Plex Sans Condensed","Arial Narrow","Roboto Condensed",system-ui,sans-serif;
 }
 /* "auto" (no saved pin): follow the OS. */
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
     color-scheme:dark;
-    --bg:#101419; --card:#181E25; --ink:#DBE3EA; --muted:#8695A2;
-    --line:#262F39; --mix:#181E25;
-    --accent:#7FB0FF; --accent-ink:#0A1017;
-    --age:#E3A445;
-    --interested:#8695A2; --applied:#DBE3EA; --viewed:#7FB0FF; --engaged:#7FB0FF;
-    --interview_invite:#7FB0FF; --offer:#6FC793; --rejected:#E28D79;
-    --withdrawn:#82909C; --pending:#E3A445;
+    --bg:#161512; --card:#1F1E1A; --ink:#E9E5DC; --muted:#9B968B;
+    --line:#35332D; --mix:#1F1E1A;
+    --accent:#8AB4FF; --accent-ink:#0A1017;
+    --age:#E5A64A;
+    --interested:#9B968B; --applied:#E9E5DC; --viewed:#8AB4FF; --engaged:#8AB4FF;
+    --interview_invite:#8AB4FF; --offer:#72C896; --rejected:#E4907A;
+    --withdrawn:#9B968B; --pending:#E5A64A;
   }
 }
 /* An explicit pin beats the OS in both directions. Must come AFTER the media
@@ -46,53 +56,69 @@
    sync with the one above; CSS has no way to share it between the two. */
 :root[data-theme="dark"]{
   color-scheme:dark;
-  --bg:#101419; --card:#181E25; --ink:#DBE3EA; --muted:#8695A2;
-  --line:#262F39; --mix:#181E25;
-  --accent:#7FB0FF; --accent-ink:#0A1017;
-  --age:#E3A445;
-  --interested:#8695A2; --applied:#DBE3EA; --viewed:#7FB0FF; --engaged:#7FB0FF;
-  --interview_invite:#7FB0FF; --offer:#6FC793; --rejected:#E28D79;
-  --withdrawn:#82909C; --pending:#E3A445;
+  --bg:#161512; --card:#1F1E1A; --ink:#E9E5DC; --muted:#9B968B;
+  --line:#35332D; --mix:#1F1E1A;
+  --accent:#8AB4FF; --accent-ink:#0A1017;
+  --age:#E5A64A;
+  --interested:#9B968B; --applied:#E9E5DC; --viewed:#8AB4FF; --engaged:#8AB4FF;
+  --interview_invite:#8AB4FF; --offer:#72C896; --rejected:#E4907A;
+  --withdrawn:#9B968B; --pending:#E5A64A;
 }
 
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);
-     font:15px/1.55 Archivo,system-ui,sans-serif;font-stretch:100%}
-.mono{font-family:'DM Mono',ui-monospace,monospace}
-/* Archivo's width axis carries hierarchy — nameplates and figures run wide,
-   prose runs normal. Size and weight stay comparatively quiet. */
-.wide{font-stretch:118%}
-a{color:var(--accent);text-decoration:none}
-a:hover{text-decoration:underline}
+     font:15px/1.5 var(--serif);font-optical-sizing:auto;
+     -webkit-font-smoothing:antialiased}
+/* Links are ink, not blue: blue means someone engaged (rule 1), and a link
+   is not a state. The underline is what says "link". */
+a{color:inherit;text-decoration:underline;
+  text-decoration-color:color-mix(in srgb,var(--ink) 35%,transparent);
+  text-underline-offset:.14em}
+a:hover{text-decoration-color:currentColor}
 a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible,
-summary:focus-visible,.row:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+summary:focus-visible,.tl:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.sans{font-family:var(--sans)}
+.num{font-family:var(--sans);font-variant-numeric:tabular-nums lining-nums}
+/* Real code only — a CLI command, a token, a traceback line. */
+.mono,code{font-family:ui-monospace,"Cascadia Mono",Consolas,Menlo,monospace;font-size:.86em}
+.quiet{color:var(--muted)}
+.sm{font-size:.9rem}
+.hint{font-size:.9rem;color:var(--muted);max-width:60ch;margin:.45rem 0 0}
+.lede{margin:0 0 1.2rem;font-size:1.05rem;max-width:64ch}
+.lede b,.hint b{font-family:var(--sans);font-weight:500;font-size:.94em;
+                font-variant-numeric:tabular-nums}
 
 /* -------------------------------------------------------------- structure
    header and main share one grid — the brand sits on the same left edge as
    the content, not floating out in the margin. */
 .wrap{max-width:1140px;margin:0 auto;padding:0 1.6rem}
 header{background:var(--card);border-bottom:1px solid var(--line)}
-header .wrap{display:flex;align-items:center;gap:1.6rem;flex-wrap:wrap;
-             min-height:3.1rem;padding-top:.5rem;padding-bottom:.5rem}
-header .brand{font-family:'DM Mono',monospace;font-weight:500;font-size:.74rem;
-              text-transform:uppercase;letter-spacing:.22em;color:var(--ink)}
-header nav{display:flex;gap:1.15rem;font-size:.88rem}
-header nav a{color:var(--muted)}
+header .wrap{display:flex;align-items:baseline;gap:1.5rem;flex-wrap:wrap;
+             padding-top:.55rem;padding-bottom:.55rem}
+/* The app's name, set as a nameplate. */
+header .brand{font-style:italic;font-size:1.25rem;font-weight:500;letter-spacing:-.01em;
+              color:var(--ink);text-decoration:none}
+header nav{display:flex;gap:1.15rem;font-family:var(--sans);font-size:.92rem;align-items:baseline}
+header nav a{color:var(--muted);text-decoration:none}
 header nav a.active{color:var(--ink);font-weight:600}
+/* The date every trace is measured against, named once. */
+header .asof{margin-left:auto;font-family:var(--sans);font-size:.82rem;color:var(--muted);
+             display:flex;gap:1.1rem;align-items:baseline}
+header .asof a,header .asof button{color:var(--ink)}
 main{display:block}
-main .inner{max-width:1140px;margin:0 auto;padding:1.5rem 1.6rem 4rem}
+main .inner{max-width:1140px;margin:0 auto;padding:1.4rem 1.6rem 4rem}
 
-h1{font-size:1.4rem;font-stretch:115%;font-weight:600;letter-spacing:-.01em;
-   margin:.1rem 0 1.1rem}
-h2{font-size:.7rem;margin:2rem 0 .6rem;color:var(--muted);
-   font-family:'DM Mono',monospace;font-weight:500;
-   text-transform:uppercase;letter-spacing:.14em}
-h2:first-child{margin-top:.4rem}
+h1{font-size:1.75rem;font-weight:500;letter-spacing:-.012em;line-height:1.15;
+   margin:.2rem 0 .9rem;font-variation-settings:"opsz" 36;text-wrap:balance}
+h1 .role{font-weight:400;color:var(--muted)}
+h2{font-family:var(--sans);font-size:.86rem;font-weight:600;margin:2.2rem 0 .6rem;color:var(--ink)}
+h2:first-child{margin-top:.2rem}
 
-.pill{font-family:'DM Mono',monospace;font-size:.7rem;
-      background:color-mix(in srgb,var(--age) 15%,var(--mix));color:var(--age);
-      border:1px solid color-mix(in srgb,var(--age) 40%,var(--mix));
-      border-radius:999px;padding:0 .5em;margin-left:.4em;vertical-align:1px}
+/* A count on a nav entry. Amber only when the count IS a wait (follow-ups). */
+.pill{display:inline-block;margin-left:.3em;padding:0 .4em;border-radius:999px;
+      font-family:var(--sans);font-size:.74rem;font-weight:500;line-height:1.5;
+      background:color-mix(in srgb,var(--ink) 9%,transparent);color:var(--ink)}
+.pill.warm{background:color-mix(in srgb,var(--age) 16%,transparent);color:var(--age)}
 
 /* The pipeline-stall band under the header (queue_alert()). Amber, because
    this IS the state of a wait — mail that arrived and nobody has read — not a
@@ -100,69 +126,72 @@ h2:first-child{margin-top:.4rem}
    get it for free. Absent entirely when the queue is healthy. */
 .stall{background:color-mix(in srgb,var(--age) 10%,var(--card));
        border-bottom:1px solid color-mix(in srgb,var(--age) 40%,var(--line));
-       color:var(--age);font-size:.85rem}
+       color:var(--age);font-size:.9rem}
 .stall .wrap{display:flex;gap:.7rem;align-items:baseline;flex-wrap:wrap;
              padding-top:.45rem;padding-bottom:.45rem}
-.stall code{font-family:'DM Mono',monospace;font-size:.76rem;color:var(--ink);
-            overflow-wrap:anywhere}
-.stall a{color:var(--age);text-decoration:underline;margin-left:auto}
+.stall code{color:var(--ink);overflow-wrap:anywhere}
+.stall a{color:var(--age);margin-left:auto}
 
 /* in-page lane/filter tabs — same active treatment as the top nav */
-.tabs{display:flex;gap:1.1rem;align-items:baseline}
-.tabs a{color:var(--muted);font-size:.85rem}
+.tabs{display:flex;gap:1.1rem;align-items:baseline;font-family:var(--sans);font-size:.9rem}
+.tabs a{color:var(--muted);text-decoration:none}
 .tabs a.active{color:var(--ink);font-weight:600}
+.aside{font-family:var(--sans);font-size:.86rem;color:var(--muted);display:flex;gap:1rem;flex-wrap:wrap}
+.aside a{text-decoration:none;color:var(--ink)}
+.aside a.warm{color:var(--age)}
+.rowline{display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;align-items:baseline;margin:0 0 .7rem}
 
-/* ------------------------------------------------------------------ cards */
-.card{background:var(--card);border:1px solid var(--line);border-radius:10px;
-      padding:0;overflow:hidden}
-.pad{padding:.85rem 1rem}
-.note{background:var(--card);border:1px solid var(--line);border-radius:10px;
-      border-left:3px solid var(--c,var(--accent));padding:.7rem 1rem;margin-bottom:1rem}
+/* ------------------------------------------------------------------ cards
+   Not everything is a card. A panel holds a record (the register, a thread,
+   a table); prose, facts and forms sit on the paper directly. */
+.card{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:0;overflow:hidden}
+.pad{padding:.9rem 1.1rem}
+.note{background:var(--card);border:1px solid var(--line);border-radius:6px;
+      border-left:3px solid var(--c,var(--ink));padding:.7rem 1rem;margin-bottom:1rem}
 .empty{color:var(--muted);padding:2rem 1rem;text-align:center;
-       border:1px dashed var(--line);border-radius:10px}
-.quiet{color:var(--muted)}
-.sm{font-size:.85rem}
+       border:1px dashed var(--line);border-radius:6px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:1.2rem 2rem}
+
+/* chips and words that carry a state */
+.badge{font-family:var(--sans);font-size:.78rem;font-weight:500;white-space:nowrap;
+       color:var(--c,var(--muted))}
+.tag{font-family:var(--sans);font-size:.72rem;font-weight:500;color:var(--muted);white-space:nowrap;
+     border:1px solid var(--line);border-radius:3px;padding:0 .4em;line-height:1.5}
 
 /* ----------------------------------------------------------------- tables */
 table{width:100%;border-collapse:collapse}
-th{font-family:'DM Mono',monospace;font-weight:500;font-size:.66rem;
-   text-transform:uppercase;letter-spacing:.12em;color:var(--muted);
-   text-align:left;padding:.55rem .9rem;border-bottom:1px solid var(--line)}
+th{font-family:var(--sans);font-size:.78rem;font-weight:500;color:var(--muted);
+   text-align:left;padding:.5rem .9rem;border-bottom:1px solid var(--line)}
 td{padding:.5rem .9rem;border-bottom:1px solid var(--line);vertical-align:top}
 tr:last-child td{border-bottom:0}
-tbody tr:hover td{background:color-mix(in srgb,var(--accent) 5%,var(--mix))}
-td.mono,th.mono{font-family:'DM Mono',monospace;font-size:.8rem;color:var(--muted)}
-.num{font-variant-numeric:tabular-nums}
-
-.badge{font-family:'DM Mono',monospace;font-size:.72rem;white-space:nowrap;
-       color:var(--c);border:1px solid color-mix(in srgb,var(--c) 40%,var(--mix));
-       background:color-mix(in srgb,var(--c) 10%,var(--mix));
-       border-radius:4px;padding:.05em .45em}
+tbody tr:hover td{background:color-mix(in srgb,var(--ink) 3.5%,var(--mix))}
+td.num,th.num{text-align:right}
+td.num{font-size:.95rem}
 
 /* ------------------------------------------------------- signature: traces
    One application, one trace, on a date axis shared by the whole list. The
    tail runs from the last event to today — the thing that grows while you
-   wait, and turns amber once it crosses the follow-up threshold. */
-.axis{position:relative;height:1.15rem;font-family:'DM Mono',monospace;
-      font-size:.64rem;color:var(--muted);letter-spacing:.04em}
+   wait, and warms with --heat once it crosses the follow-up threshold. */
+.axis{position:relative;height:1rem;font-family:var(--sans);font-size:.72rem;
+      color:var(--muted);font-variant-numeric:tabular-nums}
 .axis .t{position:absolute;left:var(--x);transform:translateX(-50%);white-space:nowrap}
 .axis .t.first{transform:none;left:0}
-.axis .t.last{transform:none;right:0;left:auto;color:var(--ink)}
+.axis .t.last{transform:none;right:0;left:auto;color:var(--ink);font-weight:500}
 
 /* Week gridlines only — deliberately NO baseline rule per row. The single
    horizontal mark on a line is then always data (the tail you're waiting on),
    never chrome, which is what lets the amber read at a glance. */
 .trace{position:relative;height:1.5rem;
        background:repeating-linear-gradient(to right,
-         color-mix(in srgb,var(--line) 60%,var(--mix)) 0 1px,
+         color-mix(in srgb,var(--line) 70%,transparent) 0 1px,
          transparent 1px var(--week,7.7%))}
 /* today — the hard right edge everything is measured against */
-.trace::after{content:"";position:absolute;right:0;top:.1rem;bottom:.1rem;width:1px;
-              background:color-mix(in srgb,var(--ink) 55%,var(--mix))}
-.trace .seg{position:absolute;top:50%;left:var(--a);width:calc(var(--b) - var(--a));
-            height:3px;margin-top:-1.5px;border-radius:2px;
-            background:color-mix(in srgb,var(--c) 55%,var(--mix))}
-.trace .seg.aging{background:color-mix(in srgb,var(--age) 70%,var(--mix))}
+.trace::after{content:"";position:absolute;right:0;top:.12rem;bottom:.12rem;width:1px;
+              background:color-mix(in srgb,var(--ink) 55%,transparent)}
+.trace .tail{position:absolute;top:50%;left:var(--a);width:calc(var(--b) - var(--a));
+             height:3px;margin-top:-1.5px;border-radius:2px;opacity:.6;
+             background:color-mix(in oklab,var(--age) var(--heat,0%),var(--muted))}
+.trace .tail.live{background:var(--accent);opacity:.55}
 .trace .pt{position:absolute;top:50%;left:var(--x);width:7px;height:7px;
            margin:-3.5px 0 0 -3.5px;border-radius:50%;background:var(--c);
            border:1px solid var(--mix)}
@@ -171,224 +200,257 @@ td.mono,th.mono{font-family:'DM Mono',monospace;font-size:.8rem;color:var(--mute
 .trace .cap{position:absolute;top:50%;left:var(--x);width:2px;height:11px;
             margin:-5.5px 0 0 -1px;background:var(--c)}
 
-/* the timeline list: name gutter | trace | outcome
+/* the register: name | trace | wait
    The name column takes the free space and the trace is CAPPED, not the other
-   way round. With a real backlog most rows are one applied event and an amber
-   tail — 47 identical lines — while the company/role they belong to was being
-   ellipsed at 20rem ("Wingtip Talent Group | Specialist Techn…"). Agency
-   postings have long names; the trace repeating "still nothing" in 600px does
-   not need them. It still shares one axis, so rows stay comparable. */
-.tl{display:grid;grid-template-columns:minmax(11rem,1fr) minmax(7rem,20rem) 11.5rem;
-    align-items:center;gap:0 1.1rem;padding:.3rem .9rem;
-    border-bottom:1px solid var(--line);color:inherit}
+   way round (UI rule 10). The right rail carries the wait as a numeral,
+   graded by --heat, over the status word. */
+.tl{display:grid;grid-template-columns:minmax(12rem,1fr) minmax(8rem,19rem) 7rem;
+    align-items:center;gap:0 1.2rem;padding:.42rem 1rem;
+    border-bottom:1px solid var(--line);color:inherit;--heat:0%}
 .tl:last-child{border-bottom:0}
-a.tl:hover{background:color-mix(in srgb,var(--accent) 5%,var(--mix));text-decoration:none}
+a.tl{text-decoration:none}
+a.tl:hover{background:color-mix(in srgb,var(--ink) 3.5%,var(--mix))}
 .tl .name{min-width:0}
-.tl .co{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-        font-weight:600}
-/* The role line carries the how-you-applied flag, so it is a flex row rather
-   than one ellipsing block: the TITLE truncates and the badge never does.
-   Appending the badge to an ellipsing block would have clipped it away
-   entirely on exactly the longest titles — silently, and only for the rows
-   where the name column is tightest. */
-.tl .ro{display:flex;align-items:baseline;gap:.4rem;min-width:0;
-        color:var(--muted);font-size:.82rem}
+.tl .co{display:block;font-weight:600;font-size:1.02rem;line-height:1.3;
+        white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* The role line carries the grey property tags (inbound, how you applied),
+   so it is a flex row rather than one ellipsing block: the TITLE truncates
+   and a tag never does. */
+.tl .ro{display:flex;gap:.45rem;align-items:baseline;min-width:0;
+        color:var(--muted);font-size:.9rem;line-height:1.3}
 .tl .ro .ro-t{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tl .ro .badge{flex:none}
-.tl .out{display:flex;align-items:center;gap:.4rem;justify-content:flex-end;
-         font-family:'DM Mono',monospace;font-size:.72rem;color:var(--muted)}
-.tl-head{padding:.5rem .9rem .35rem}
-.tl-head .lab{font-family:'DM Mono',monospace;font-size:.66rem;
-              text-transform:uppercase;letter-spacing:.12em;color:var(--muted)}
-/* Group label inside the list. Same mono marker as .tl-head's column labels,
-   because it does the same job — it names what the rows beneath it are. Grey,
-   not coloured: rule 1 reserves chroma for the state of a wait, and a heading
-   is not a wait. */
-.tl-sep{font-family:'DM Mono',monospace;font-size:.66rem;text-transform:uppercase;
-        letter-spacing:.12em;color:var(--muted);padding:.75rem .9rem .3rem;
-        border-bottom:1px solid var(--line)}
-.tl-sep:first-child{padding-top:.35rem}
+.tl .ro .tag{flex:none}
+.tl .rail{display:grid;justify-items:end;line-height:1.05}
+.tl .rail .d{font-family:var(--sans);font-size:1.3rem;font-weight:500;font-variant-numeric:tabular-nums;
+             color:color-mix(in oklab,var(--age) var(--heat),var(--muted))}
+.tl .rail .d.live{color:var(--accent)}
+.tl .rail .d.dash{color:var(--line)}
+.tl .rail .s{display:flex;gap:.35rem;align-items:baseline;margin-top:.12rem}
+.tl-head{padding-top:.55rem;padding-bottom:.35rem;
+         font-family:var(--sans);font-size:.76rem;font-weight:500;color:var(--muted)}
+.tl-head .lab.right{text-align:right}
+/* Group label inside the list: names what the rows beneath it are. Grey, not
+   coloured — rule 1 reserves chroma for the state of a wait. */
+.tl-sep{font-family:var(--sans);font-size:.76rem;font-weight:500;color:var(--muted);
+        padding:.6rem 1rem .3rem;border-bottom:1px solid var(--line)}
 
-/* needs-follow-up block. Amber only on the wait length — the number IS the
-   reason the row is here, and rule 1 says the colour marks time passing
-   unanswered. The rest stays achromatic; a block of amber rows would just be
-   a highlighted list. */
-/* The follow-up queue. It was a collapsed <details> at the top of the
-   applications list until 21 Aug 2026 and is its own page now, so the
-   disclosure chrome that went with it (.fu-h, .fu-block and the summary
-   triangle) is gone — the rows themselves are unchanged and still shared. */
-.fu-row{display:grid;grid-template-columns:minmax(0,1fr) 3.2rem max-content;
-        align-items:center;gap:0 1rem;padding:.4rem .9rem;
-        border-bottom:1px solid var(--line)}
+/* The follow-up queue (its own page since 21 Aug 2026). The wait is the
+   reason a row is here, so it wears the same graded amber as the register. */
+.fu-row{display:grid;grid-template-columns:minmax(0,1fr) 3.6rem max-content;
+        align-items:center;gap:0 1rem;padding:.5rem 1rem;
+        border-bottom:1px solid var(--line);--heat:0%}
 .fu-row:last-child{border-bottom:0}
-.fu-name{min-width:0;color:inherit}
-.fu-name:hover{text-decoration:none}
-.fu-name:hover .co{color:var(--accent)}
-.fu-name .co,.fu-name .ro{display:block;white-space:nowrap;
-                          overflow:hidden;text-overflow:ellipsis}
-.fu-name .co{font-weight:600}
-.fu-name .ro{color:var(--muted);font-size:.82rem}
-.fu-d{color:var(--age);text-align:right;font-size:.78rem}
+.fu-name{min-width:0;color:inherit;text-decoration:none}
+.fu-name:hover .co{text-decoration:underline}
+.fu-name .co,.fu-name .ro{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fu-name .co{font-weight:600;font-size:1.02rem;line-height:1.3}
+.fu-name .ro{color:var(--muted);font-size:.9rem;line-height:1.3}
+.fu-d{font-family:var(--sans);font-size:1.15rem;font-weight:500;text-align:right;
+      font-variant-numeric:tabular-nums;
+      color:color-mix(in oklab,var(--age) var(--heat),var(--muted))}
 .fu form{margin:0}
 
 /* --------------------------------------------------------------- the strip
-   Counts as one restrained line, not five equal boxes pretending to be a
-   funnel. Segment width IS the count; derived figures live in .stats. */
-/* Segment width IS the count. No numerals inside the bar — they'd have to
-   wrap on a thin segment, which is the bug the old strip had; the legend
-   underneath carries them at a size that always fits. */
-.funnel{display:flex;gap:2px;height:.45rem;margin:0 0 .5rem;
-        border-radius:3px;overflow:hidden}
+   Segment width IS the count. No numerals inside the bar — they'd have to
+   wrap on a thin segment; the legend underneath carries them at a size that
+   always fits, and the legend is the status filter (UI rule 11). */
+.funnel{display:flex;gap:2px;height:.5rem;margin:0 0 .5rem;border-radius:2px;overflow:hidden}
 .funnel .seg{flex-grow:var(--n);flex-basis:0;min-width:3px;background:var(--c);
         display:block;cursor:pointer;transition:opacity .12s}
 .funnel .seg .n,.funnel .seg .l{position:absolute;width:1px;height:1px;
         overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 /* A segment is a filter chip, not a redraw: selecting one dims its siblings
-   rather than narrowing the bar, since rule 1 reserves chroma for the state
-   of a wait — "selected" has to read through opacity, not a new hue.
-   :has() (no JS in this app, ever) previews the same dimming on hover,
-   before a click commits to it. */
+   rather than narrowing the bar — "selected" reads through opacity, not a
+   new hue. :has() (no JS in this app, ever) previews the same dimming on
+   hover, before a click commits to it. */
 .funnel.filtered .seg{opacity:.3}
 .funnel.filtered .seg.active{opacity:1}
 .funnel:has(.seg:hover) .seg:not(:hover){opacity:.55}
-.legend{display:flex;flex-wrap:wrap;gap:.15rem 1rem;margin:0 0 1.5rem;
-        font-family:'DM Mono',monospace;font-size:.72rem;color:var(--muted)}
-.legend a{color:inherit}
+.legend{display:flex;flex-wrap:wrap;gap:.2rem 1.15rem;margin:0 0 1.4rem;align-items:baseline;
+        font-family:var(--sans);font-size:.84rem;color:var(--muted)}
+.legend a{color:inherit;text-decoration:none}
 .legend a:hover{color:var(--ink)}
 .legend a.active{color:var(--ink);font-weight:600}
 /* The rejected entry's own breakdown, attached to it rather than spaced like
    a sibling status: how each rejection ended, three chips that are filters. */
-.legend .sub{display:inline-flex;flex-wrap:wrap;gap:.15rem .6rem;margin-left:-.5rem}
-.legend .sub::before{content:'—'}
-.legend i{display:inline-block;width:.45rem;height:.45rem;border-radius:50%;
-          background:var(--c);margin-right:.4rem;vertical-align:.05rem}
-.stats{display:flex;flex-wrap:wrap;gap:.2rem 1.8rem;margin:.2rem 0 1.1rem;
-       align-items:baseline;
-       font-family:'DM Mono',monospace;font-size:.74rem;color:var(--muted)}
-.stats b{font-family:Archivo,sans-serif;font-stretch:118%;font-weight:600;
-         font-size:1.35rem;color:var(--ink);font-variant-numeric:tabular-nums;
-         margin-right:.35rem}
+.legend .sub{display:inline-flex;flex-wrap:wrap;gap:.2rem .7rem;font-size:.78rem;margin-left:-.5rem}
+.legend .sub::before{content:"";display:inline-block;width:1px;height:.9em;background:var(--line);
+                     vertical-align:-.1em;margin-right:.1rem}
+.legend i{display:inline-block;width:.5rem;height:.5rem;border-radius:1px;
+          background:var(--c);margin-right:.38rem;vertical-align:-.02em}
+.legend.why{margin-top:-1.1rem}
 
 /* ------------------------------------------------------------------ charts
    Every chart on the analytics page is single-series, so there is no
    categorical palette and no legend: magnitude gets one hue, the panel title
-   names the measure. Marks are thin, rounded at the data end only, and
-   anchored to a baseline that is the only rule drawn. */
-.fbars{display:grid;gap:.45rem}
-.fb{display:grid;grid-template-columns:6.5rem minmax(0,1fr) 3rem;
-    align-items:center;gap:.75rem}
-.fb .lab{font-family:'DM Mono',monospace;font-size:.7rem;color:var(--muted);
-         text-transform:uppercase;letter-spacing:.1em}
-.fb .track{height:.8rem;border-radius:4px;overflow:hidden;
-           background:color-mix(in srgb,var(--line) 45%,var(--mix))}
-.fb .fill{display:block;width:var(--w);height:100%;background:var(--accent);
-          border-radius:0 4px 4px 0}
-.fb .val{font-family:'DM Mono',monospace;font-size:.8rem;text-align:right;
-         font-variant-numeric:tabular-nums}
+   names the measure. Marks are thin, anchored to a baseline that is the only
+   rule drawn. */
+.fbars{display:grid;gap:.5rem}
+.fb{display:grid;grid-template-columns:6.5rem minmax(0,1fr) 3rem;align-items:center;gap:.8rem}
+.fb .lab{font-family:var(--sans);font-size:.82rem;color:var(--muted)}
+.fb .track{height:.8rem;border-radius:2px;overflow:hidden;
+           background:color-mix(in srgb,var(--line) 55%,transparent)}
+.fb .fill{display:block;width:var(--w);height:100%;background:var(--ink)}
+.fb .val{font-family:var(--sans);font-size:.9rem;text-align:right;font-variant-numeric:tabular-nums}
 
 .panel{margin-bottom:1rem}
-.ptitle{font-family:'DM Mono',monospace;font-size:.72rem;margin-bottom:.4rem}
-.spark{display:flex;align-items:flex-end;gap:2px;height:3.4rem;
-       border-bottom:1px solid var(--line)}
+.ptitle{font-family:var(--sans);font-size:.84rem;margin:0 0 .35rem}
+.spark{display:flex;align-items:flex-end;gap:3px;height:3.6rem;border-bottom:1px solid var(--line)}
 .spark .col{flex:1;display:flex;align-items:flex-end;height:100%;min-width:0}
-/* NOT .bar — that name belongs to the toolbar/button-row utility below, whose
-   margin-bottom:.9rem was silently lifting every chart bar 14px off the axis
-   and pushing the tallest one up over its own panel title. A scoped selector
-   does NOT protect you from a less-specific rule setting a property the
-   scoped one never mentions. Keep chart class names out of the utility
-   namespace entirely. */
-.spark .wk{width:100%;height:var(--h);min-height:2px;background:var(--c);
-           border-radius:3px 3px 0 0}
-.xaxis{display:flex;justify-content:space-between;margin-top:.3rem;
-       font-family:'DM Mono',monospace;font-size:.68rem;color:var(--muted)}
+/* NOT .bar — that name belongs to the toolbar/button-row utility below. A
+   scoped selector does NOT protect you from a less-specific rule setting a
+   property the scoped one never mentions. */
+.spark .wk{width:100%;height:var(--h);min-height:2px;background:var(--c);border-radius:2px 2px 0 0}
+.xaxis{display:flex;justify-content:space-between;margin:.3rem 0 0;
+       font-family:var(--sans);font-size:.76rem;color:var(--muted)}
 
-/* ------------------------------------------------------------------ forms */
+/* ------------------------------------------------------------------ forms
+   Controls are achromatic. A primary action is ink on paper, not blue —
+   blue already means "someone engaged", and a button is not a state. */
 button,select,input,textarea{font:inherit}
-button{font-family:'DM Mono',monospace;font-size:.78rem;cursor:pointer;
-       border:1px solid var(--line);background:var(--card);color:var(--ink);
-       border-radius:6px;padding:.34rem .7rem}
-button:hover{border-color:var(--accent);color:var(--accent)}
-button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
-button.primary:hover{color:var(--accent-ink);filter:brightness(1.08)}
-button.link{border:0;background:none;color:var(--accent);padding:0}
-button.link:hover{text-decoration:underline}
+button{font-family:var(--sans);font-size:.86rem;font-weight:500;cursor:pointer;line-height:1.45;
+       border:1px solid color-mix(in srgb,var(--ink) 35%,var(--line));
+       background:var(--card);color:var(--ink);border-radius:4px;padding:.3rem .7rem}
+button:hover{border-color:var(--ink)}
+button.primary{background:var(--ink);border-color:var(--ink);color:var(--card)}
+button.primary:hover{background:color-mix(in srgb,var(--ink) 86%,var(--card))}
+button.link{border:0;background:none;color:inherit;padding:0;font-family:inherit;font-weight:inherit;
+            text-decoration:underline;text-decoration-color:color-mix(in srgb,var(--ink) 35%,transparent)}
+button.link:hover{text-decoration-color:currentColor}
 button.danger:hover{border-color:var(--rejected);color:var(--rejected)}
+button.small{font-size:.78rem;padding:.14rem .5rem}
 select,input[type=text],input[type=date],input[type=time],input[type=password],
-input[type=email],input[type=search]{
-       border:1px solid var(--line);border-radius:6px;padding:.32rem .55rem;
-       background:var(--card);color:var(--ink);max-width:20rem}
+input[type=email],input[type=search],input:not([type]){
+       font-family:var(--sans);font-size:.9rem;border:1px solid var(--line);border-radius:4px;
+       padding:.32rem .55rem;background:var(--card);color:var(--ink);max-width:20rem;min-width:0}
 input[type=search]{max-width:100%}
-textarea{border:1px solid var(--line);border-radius:6px;padding:.5rem;
-       background:var(--card);color:var(--ink)}
+input::placeholder{color:var(--muted)}
+input[type=date],input[type=time]{font-variant-numeric:tabular-nums}
+textarea{border:1px solid var(--line);border-radius:4px;padding:.5rem;
+         background:var(--card);color:var(--ink);width:100%;display:block}
 .bar{display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;margin-bottom:.9rem}
 .grow{flex:1 1 12rem;min-width:0}
+/* A stacked form: each label is a line with its control beneath. */
+form.stack{display:grid;gap:.75rem;max-width:34rem}
+form.stack label{display:grid;gap:.25rem;font-family:var(--sans);font-size:.84rem;color:var(--muted)}
+form.stack label.row{grid-auto-flow:column;justify-content:start;align-items:center;gap:.4rem}
+form.stack .pair{display:flex;gap:.6rem;flex-wrap:wrap;align-items:end}
+form.stack input,form.stack select{max-width:100%}
+form.stack .actions{display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;margin-top:.3rem}
 
-dl.kv{display:grid;grid-template-columns:max-content 1fr;gap:.3rem 1.2rem;margin:0}
-dl.kv dt{color:var(--muted);font-family:'DM Mono',monospace;font-size:.75rem}
-dl.kv dd{margin:0}
-/* Form Q&A. Stacked, not two columns like dl.kv: a screening question is a
-   sentence, and the answer beside it is the thing being read — the question
-   recedes (muted, smaller) and the answer sits at body weight below it. */
+/* facts as label/value pairs, not a table of dashes */
+dl.facts{display:grid;grid-template-columns:max-content 1fr;gap:.32rem 1.4rem;margin:0;max-width:70ch}
+dl.facts dt{font-family:var(--sans);font-size:.8rem;color:var(--muted);padding-top:.15rem}
+dl.facts dd{margin:0;min-width:0}
+dl.facts dd input{width:100%;max-width:34rem}
+/* Form Q&A. Stacked: a screening question is a sentence, and the answer
+   beneath it is the thing being read — the question recedes. */
 dl.qa{margin:0;display:grid;gap:.75rem}
-dl.qa dt{color:var(--muted);font-size:.82rem;max-width:70ch}
-dl.qa dd{margin:.12rem 0 0;font-stretch:105%;white-space:pre-wrap;max-width:70ch}
-dl.qa dd .quiet{font-size:.72rem}
-ul.timeline{list-style:none;margin:0;padding:0}
-ul.timeline li{display:flex;gap:.9rem;padding:.4rem 0;border-bottom:1px solid var(--line)}
-ul.timeline li:last-child{border-bottom:0}
-/* The why-select on a rejected line: pushed to the row's right edge so the
-   fact reads first and the control sits where the eye lands last. Sized down
-   to the timeline's own type, not the page's form controls. */
-ul.timeline form.why{display:inline-flex;gap:.35rem;align-items:center;margin-left:auto;flex:none}
-ul.timeline form.why select{font-size:.76rem;padding:.12rem .4rem}
-ul.timeline form.why button{font-size:.76rem;padding:.12rem .55rem}
-ul.timeline .when{font-family:'DM Mono',monospace;font-size:.76rem;
-                  color:var(--muted);white-space:nowrap;min-width:9.5rem}
+dl.qa dt{color:var(--muted);font-size:.9rem;max-width:70ch}
+dl.qa dd{margin:.12rem 0 0;white-space:pre-wrap;max-width:70ch}
+dl.qa dd .quiet{font-family:var(--sans);font-size:.78rem}
 
-.tri{background:var(--card);border:1px solid var(--line);border-radius:10px;
-     padding:.9rem 1rem;margin-bottom:.9rem;display:grid;gap:.7rem}
-.tri .meta{display:flex;gap:.8rem;flex-wrap:wrap;align-items:baseline}
+/* ----------------------------------------------------------- the thread
+   Each entry is a dated sentence: when | what happened, said plainly, with
+   how we know in small type. The date column is the sans, tabular. */
+.thread-card .head{padding:.9rem 1.1rem .4rem}
+.thread-card .trace{height:2.1rem}
+.thread-card .trace .pt{width:8px;height:8px;margin:-4px 0 0 -4px}
+.thread{list-style:none;margin:0;padding:.2rem 1.1rem .5rem}
+.thread li{display:grid;grid-template-columns:9.5rem 1fr;gap:0 1rem;padding:.55rem 0;
+           border-bottom:1px solid var(--line);align-items:baseline}
+.thread li:last-child{border-bottom:0}
+.thread .when{font-family:var(--sans);font-size:.82rem;color:var(--muted);
+              font-variant-numeric:tabular-nums;white-space:nowrap}
+.thread .what{display:flex;flex-wrap:wrap;gap:.2rem .6rem;align-items:baseline;min-width:0}
+.thread .what b{font-weight:600;color:var(--c,var(--ink))}
+.thread .what q{font-style:italic;quotes:"“" "”"}
+.thread .what small{font-family:var(--sans);font-size:.78rem;color:var(--muted)}
+.thread .what small a{color:var(--ink)}
+/* The why-select on a rejected line: pushed to the row's right edge so the
+   fact reads first and the control sits where the eye lands last. */
+.thread form.why{margin-left:auto;display:inline-flex;gap:.35rem;align-items:center;flex:none}
+.thread form.why select{font-size:.78rem;padding:.1rem .4rem}
+.thread form.why button{font-size:.78rem;padding:.1rem .5rem}
+.record{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin:.8rem 0 0}
+.record .lab{font-size:.92rem;color:var(--muted);margin-right:.2rem}
+
+/* a list of things with a name and a body: contacts, emails, artifacts */
+.list{list-style:none;margin:0;padding:0}
+.list li{display:grid;grid-template-columns:minmax(8rem,14rem) 1fr;gap:0 1.2rem;padding:.5rem 0;
+         border-bottom:1px solid var(--line);align-items:baseline}
+.list li:last-child{border-bottom:0}
+.list .k{font-weight:600;min-width:0;overflow-wrap:anywhere}
+.list .k small{display:block;font-weight:400;color:var(--muted);font-size:.88rem;font-family:var(--sans)}
+.list .k.when{font-family:var(--sans);font-weight:500;font-size:.88rem;color:var(--muted);
+              font-variant-numeric:tabular-nums}
+.list .v{min-width:0}
+.list .v .acts{font-family:var(--sans);font-size:.82rem;color:var(--muted);display:flex;gap:.9rem;
+               margin-top:.2rem;align-items:center}
+.list .v .acts a{text-decoration:none;color:var(--ink)}
+.list .v .acts form{margin:0;display:inline}
+.mail-sub{display:block}
+.mail-from{font-family:var(--sans);font-size:.82rem;color:var(--muted);overflow-wrap:anywhere}
+details.refile summary{cursor:pointer;font-family:var(--sans);font-size:.82rem;color:var(--muted)}
+details.refile form{display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.4rem;align-items:center}
+details.plain summary{cursor:pointer;font-family:var(--sans);font-size:.86rem;color:var(--muted)}
+pre.text{white-space:pre-wrap;font:inherit;margin:.5rem 0 0;max-width:70ch}
+.footnote{margin:2.4rem 0 0;text-align:right;font-family:var(--sans);font-size:.82rem}
+.footnote a{color:var(--muted);text-decoration:none}
+.meta{font-family:var(--sans);font-size:.8rem;color:var(--muted);margin:0 0 .7rem}
+.meta b{color:var(--offer);font-weight:500}
+
+/* ------------------------------------------------------------------ triage */
+.tri{background:var(--card);border:1px solid var(--line);border-radius:6px;
+     padding:.9rem 1.1rem;margin-bottom:.9rem;display:grid;gap:.7rem}
+.tri .top{display:flex;gap:.8rem;flex-wrap:wrap;align-items:baseline}
 .tri .subject{font-weight:600}
-.tri .from{color:var(--muted);font-size:.85rem}
-.tri .facts{font-family:'DM Mono',monospace;font-size:.78rem;color:var(--muted)}
+.tri .line{font-family:var(--sans);font-size:.82rem;color:var(--muted);overflow-wrap:anywhere}
 .tri form{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center}
 
 @media (prefers-reduced-motion: no-preference){
   .tri,tr,a.tl{transition:background .12s ease}
 }
 @media (max-width:820px){
-  .tl{grid-template-columns:minmax(9rem,1fr) 9rem;gap:0 .7rem}
+  .tl{grid-template-columns:minmax(0,1fr) 6.5rem;gap:0 .8rem}
   .tl .trace,.tl-head .axis{display:none}
+  .two{grid-template-columns:1fr}
+  .thread li{grid-template-columns:1fr}
+  .thread form.why{margin-left:0}
+  .list li{grid-template-columns:1fr}
 }
 @media (max-width:720px){
   main .inner{padding:1rem}
   .wrap{padding:0 1rem}
   .card{overflow-x:auto}
   .funnel .seg{min-width:4.6rem}
+  header .asof{margin-left:0}
 }
 </style>
 </head>
 <body>
 <header>
   <div class="wrap">
-    <span class="brand">tracker</span>
+    <a class="brand" href="/">tracker</a>
     <nav>
-      <a href="/" class="{% block nav_apps %}{% endblock %}">applications</a>
-      <a href="/triage" class="{% block nav_triage %}{% endblock %}">triage{% if pending %}<span class="pill">{{ pending }}</span>{% endif %}</a>
+      <a href="/" class="{% block nav_apps %}{% endblock %}">Applications</a>
+      <a href="/triage" class="{% block nav_triage %}{% endblock %}">Triage{% if pending %}<span class="pill">{{ pending }}</span>{% endif %}</a>
       {# Counted like triage, but the count is OPTIONAL here: only the pages
          that already compute it pass `follow_ups`, and everywhere else the
          link still works and simply carries no number. A pill that silently
-         reads zero would be a lie; an absent one is just quiet. #}
-      <a href="/follow-ups" class="{% block nav_follow_ups %}{% endblock %}">follow-ups{% if follow_ups %}<span class="pill">{{ follow_ups }}</span>{% endif %}</a>
-      <a href="/analytics" class="{% block nav_analytics %}{% endblock %}">analytics</a>
-      <a href="/answers" class="{% block nav_answers %}{% endblock %}">answers</a>
-      <a href="/settings" class="{% block nav_settings %}{% endblock %}">settings</a>
+         reads zero would be a lie; an absent one is just quiet. Amber, since
+         this count IS a wait. #}
+      <a href="/follow-ups" class="{% block nav_follow_ups %}{% endblock %}">Follow-ups{% if follow_ups %}<span class="pill warm">{{ follow_ups }}</span>{% endif %}</a>
+      <a href="/analytics" class="{% block nav_analytics %}{% endblock %}">Analytics</a>
+      <a href="/answers" class="{% block nav_answers %}{% endblock %}">Answers</a>
+      <a href="/settings" class="{% block nav_settings %}{% endblock %}">Settings</a>
     </nav>
-    <nav style="margin-left:auto">
+    <span class="asof">
+      <span>as of {{ asof() }}</span>
       <form method="post" action="/logout" style="display:inline">
-        <button class="link" style="font-family:Archivo,sans-serif;font-size:.88rem">Sign out</button>
+        <button class="link" type="submit">Sign out</button>
       </form>
-    </nav>
+    </span>
   </div>
 </header>
 {# `stall`, not `q`: a top-level set in the PARENT template is visible in every
@@ -399,9 +461,9 @@ ul.timeline .when{font-family:'DM Mono',monospace;font-size:.76rem;
 {% set stall = queue_alert() %}
 {% if stall %}
 <div class="stall" role="status"><div class="wrap">
-  <strong>{% if stall.waiting %}{{ stall.waiting }} email{{ '' if stall.waiting == 1 else 's' }} waiting{% if stall.waiting_since %} since {{ stall.waiting_since|dtt }}{% endif %}{% endif %}{% if stall.waiting and stall.dead %} · {% endif %}{% if stall.dead %}{{ stall.dead }} job{{ '' if stall.dead == 1 else 's' }} gave up{% endif %}</strong>
+  <strong>{% if stall.waiting %}{{ stall.waiting }} email{{ '' if stall.waiting == 1 else 's' }} waiting{% if stall.waiting_since %} since {{ stall.waiting_since|dtt }}{% endif %}{% endif %}{% if stall.waiting and stall.dead %}, {% endif %}{% if stall.dead %}{{ stall.dead }} job{{ '' if stall.dead == 1 else 's' }} gave up{% endif %}</strong>
   {% if stall.reason %}<code>{{ stall.reason }}</code>{% endif %}
-  <a href="/settings#pipeline">pipeline</a>
+  <a href="/settings#pipeline">Pipeline</a>
 </div></div>
 {% endif %}
 <main><div class="inner">

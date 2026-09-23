@@ -110,10 +110,66 @@ def _queue_alert(context):
     return q if q["stalled"] else None
 
 
+@pass_context
+def _day(context, v):
+    """`dt` without the leading zero — for prose ("Since 2 Jul 2026"), where
+    "02 Jul" reads as a form field. %-d is glibc-only, hence the lstrip."""
+    if not v:
+        return "—"
+    tz = getattr(context["request"].state, "tz", None) or ZoneInfo("UTC")
+    return v.astimezone(tz).strftime("%d %b %Y").lstrip("0")
+
+
+@pass_context
+def _asof(context):
+    """The header's date. Every trace on every page is measured against
+    "today", and the register is a record AS OF a day — so the day is named
+    once, in the header, in the viewer's own zone. login/signup have no
+    session and therefore no tz; they fall back to UTC like the filters do."""
+    request = context.get("request")
+    tz = getattr(request.state, "tz", None) if request is not None else None
+    now = datetime.now(tz or ZoneInfo("UTC"))
+    return f"{now:%a} {now.day} {now:%b %Y}"
+
+
+# What each event type is called on a page (23 Sep 2026). The type names are
+# the log's vocabulary (`interview_invite`, `recruiter_outreach`) and were
+# shown verbatim on the timeline until the redesign; a reader gets a sentence
+# instead. Second person throughout — the page is the user's own record read
+# back to them — while _MANUAL_EVENTS below stays first person, because that
+# is the user speaking into a form. A type missing here renders as itself, so
+# a new event type is readable before it is named.
+EVENT_LABELS = {
+    "applied":            "You applied",
+    "confirmation":       "Application confirmed",
+    "viewed":             "They viewed your application",
+    "engaged":            "They reached out",
+    "interview_invite":   "Interview invitation",
+    "offer":              "Offer",
+    "rejected":           "Rejected",
+    "withdrawn":          "You withdrew",
+    "follow_up_sent":     "You followed up",
+    "note":               "Note",
+    "recruiter_outreach": "Recruiter reached out",
+    "interested":         "Saved",
+}
+
+# How an event or a posting got here, as a phrase that completes a sentence.
+SOURCE_LABELS = {
+    "email":      "by email",
+    "extension":  "captured by the extension",
+    "manual":     "filed by hand",
+    "email_only": "from an email, no posting captured",
+}
+
 templates.env.filters["dt"] = _dt
 templates.env.filters["dtt"] = _dtt
+templates.env.filters["day"] = _day
 templates.env.globals["theme"] = _theme
+templates.env.globals["asof"] = _asof
 templates.env.globals["queue_alert"] = _queue_alert
+templates.env.globals["EVENT_LABELS"] = EVENT_LABELS
+templates.env.globals["SOURCE_LABELS"] = SOURCE_LABELS
 
 
 class AuthRequired(Exception):
@@ -2039,9 +2095,14 @@ def follow_ups_page(request: Request):
     reload that shortened it; a page of its own is open by definition."""
     user = _login_user(request)
     with db.connect_scoped(user["id"]) as conn:
+        reminders = analytics.reminders(conn, user["id"])
+        # The same amber as the list's rail, off the same function, so a row
+        # that reads 41 days here is the same colour it is on the register.
+        for r in reminders:
+            r["heat"] = trace.heat(r["days_waiting"], config.REMINDER_DAYS)
         return templates.TemplateResponse(
             request=request, name="follow_ups.html",
-            context={"reminders": analytics.reminders(conn, user["id"]),
+            context={"reminders": reminders,
                      "reminder_days": config.REMINDER_DAYS,
                      "pending": _pending_count(conn),
                      "follow_ups": analytics.reminder_count(conn, user["id"])})

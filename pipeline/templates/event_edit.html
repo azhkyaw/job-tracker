@@ -1,52 +1,50 @@
 {% extends "base.html" %}
-{% block title %}edit timeline entry — tracker{% endblock %}
+{% block title %}edit thread entry — tracker{% endblock %}
 {% block nav_apps %}active{% endblock %}
 {% block content %}
-<h1>Edit timeline entry</h1>
-<p style="color:var(--muted)">For {{ a.company_display }} · {{ a.title_canonical }}.</p>
+<h1>Edit thread entry</h1>
+<p class="lede" style="margin-top:-.4rem">For {{ a.company_display }}, {{ a.title_canonical }}.</p>
 
-{% if error %}<p class="empty" style="text-align:left">{{ error }}</p>{% endif %}
+{% if error %}<div class="note" style="--c:var(--rejected)">{{ error }}</div>{% endif %}
 
-<form method="post" action="/applications/{{ a.id }}/events/{{ event.id }}/edit"
-      style="display:grid;gap:.5rem;max-width:28rem">
-  <label>what happened
+<form method="post" action="/applications/{{ a.id }}/events/{{ event.id }}/edit" class="stack" style="max-width:28rem">
+  <label>What happened
     <select name="type">
       {% for value, label in manual_events.items() %}
       <option value="{{ value }}" {% if form.type == value %}selected{% endif %}>{{ label }}</option>
       {% endfor %}
     </select>
   </label>
-  <label>reason (if rejected)
+  <label>Reason, if rejected
     <select name="reason">
-      <option value="">—</option>
+      <option value="">Not recorded</option>
       {% for value, label in event_reasons.items() %}
       <option value="{{ value }}" {% if form.reason == value %}selected{% endif %}>{{ label }}</option>
       {% endfor %}
     </select>
   </label>
-  <label>how you heard
+  <label>How you heard
     <select name="channel">
-      <option value="">—</option>
+      <option value="">Not recorded</option>
       {% for value, label in event_channels.items() %}
       <option value="{{ value }}" {% if form.channel == value %}selected{% endif %}>{{ label }}</option>
       {% endfor %}
     </select>
   </label>
-  <label>when it happened
+  <label>When it happened
     <input type="date" name="occurred_on" value="{{ form.occurred_on }}" max="{{ today }}">
   </label>
-  <label>detail
+  <label>Detail
     <input type="text" name="note" value="{{ form.note }}">
   </label>
-
-  <div>
+  <div class="actions">
     <button class="primary">Save changes</button>
-    <a href="/applications/{{ a.id }}"><button type="button">Cancel</button></a>
+    <a href="/applications/{{ a.id }}">Cancel</a>
   </div>
 </form>
 
-<h2 style="color:var(--rejected);margin-top:1.5rem">Danger zone</h2>
+<h2>Remove</h2>
 <form method="post" action="/applications/{{ a.id }}/events/{{ event.id }}/delete">
-  <button style="border-color:var(--rejected);color:var(--rejected)">Delete this entry</button>
+  <button class="danger">Delete this entry</button>
 </form>
 {% endblock %}

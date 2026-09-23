@@ -189,7 +189,7 @@ with db.connect() as conn:
         "SELECT count(DISTINCT job_id) AS n FROM postings "
         "WHERE platform_job_id IN ('P3-A','P3-C')").fetchone()["n"] == 2)
 r = client.get("/triage")
-check("duplicate shown in triage", "Same job — merge" in r.text)
+check("duplicate shown in triage", "Same job, merge them" in r.text)
 
 print("dedup: human confirm merges")
 r = client.post(f"/duplicates/{pend[0]['id']}", data={"action": "confirm"})

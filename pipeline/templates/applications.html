@@ -29,12 +29,15 @@
 <div class="note" style="--c:var(--rejected)">Deleted <strong>{{ deleted }}</strong>.</div>
 {% endif %}
 
-<div class="stats">
-  <span><b>{{ summary.applied }}</b> applied</span>
-  <span><b>{{ summary.responded }}</b> replied</span>
-  <span><b>{{ summary.response_rate if summary.response_rate is not none else "—" }}{% if summary.response_rate is not none %}%{% endif %}</b> response rate</span>
-  {% if summary.avg_days_to_resp %}<span><b>{{ summary.avg_days_to_resp }}</b> days to a first reply</span>{% endif %}
-</div>
+{# The search in one sentence rather than four tiles: it is a reading of the
+   derived figures, and the funnel beneath already carries every count. #}
+{% if summary.applied %}
+<p class="lede">Since {{ axis.t0 | day }}:
+  <b>{{ summary.applied }}</b> application{{ '' if summary.applied == 1 else 's' }},
+  <b>{{ summary.responded }}</b> repl{{ 'y' if summary.responded == 1 else 'ies' }}{% if summary.response_rate is not none %}
+  (<b>{{ summary.response_rate }}%</b>){% endif %}{% if summary.avg_days_to_resp %},
+  the first arriving after <b>{{ summary.avg_days_to_resp }}</b> days on average{% endif %}.</p>
+{% endif %}
 
 {% if funnel %}
 {# The funnel is counted from `origin` alone, never `status` — so every
@@ -47,7 +50,7 @@
   <a class="seg{% if is_active %} active{% endif %}"
      href="{{ list_url(status=('' if is_active else s.key), origin=origin, q=q, sort=sort) }}"
      style="--n:{{ s.n }};--c:var(--{{ s.key }})"
-     title="{{ s.n }} {{ s.label }}{% if is_active %} — click to clear{% endif %}">
+     title="{{ s.n }} {{ s.label }}{% if is_active %}. Click to clear{% endif %}">
     <span class="n">{{ s.n }}</span><span class="l">{{ s.label }}</span>
   </a>
   {% endfor %}
@@ -67,16 +70,15 @@
   <span class="sub">
     {%- for x in ends %}
     {%- set how_active = x.key == how %}
-    {%- if not loop.first %} · {% endif %}
     <a class="{% if how_active %}active{% endif %}"
        href="{{ list_url(status='rejected', how=('' if how_active else x.key), reason=reason, origin=origin, q=q, sort=sort) }}"
-       title="{{ x.n }} rejected {{ x.label }} — {{ x.detail }}{% if how_active %} — click to clear{% endif %}">{{ x.n }} {{ x.label }}</a>
+       title="{{ x.n }} rejected {{ x.label }}: {{ x.detail }}{% if how_active %}. Click to clear{% endif %}">{{ x.n }} {{ x.label }}</a>
     {%- endfor %}
   </span>
   {%- endif %}
   {% endfor %}
   {% if status %}
-  <a class="sm" href="{{ list_url(origin=origin, q=q, sort=sort) }}">show all statuses</a>
+  <a href="{{ list_url(origin=origin, q=q, sort=sort) }}">show all statuses</a>
   {% endif %}
 </div>
 {# The rejected segment, once selected, unfolds into WHY — the same chip-row
@@ -87,13 +89,13 @@
    and off the same event the row's badge wears, so a chip's number is the
    number of rows it shows. #}
 {% if status == 'rejected' and reasons %}
-<div class="legend" style="margin-top:-1.1rem">
-  <span class="quiet">why it closed ·</span>
+<div class="legend why">
+  <span class="quiet">why it closed</span>
   {% for x in reasons %}
   {% set is_active = x.key == reason %}
   <a class="{% if is_active %}active{% endif %}"
      href="{{ list_url(status='rejected', reason=('' if is_active else x.key), how=how, origin=origin, q=q, sort=sort) }}"
-     title="{{ x.n }} rejected — {{ x.label }}{% if is_active %} — click to clear{% endif %}">{{ x.n }} {{ x.label }}</a>
+     title="{{ x.n }} rejected, {{ x.label }}{% if is_active %}. Click to clear{% endif %}">{{ x.n }} {{ x.label }}</a>
   {% endfor %}
 </div>
 {% endif %}
@@ -108,42 +110,41 @@
         placeholder="Search company or role" aria-label="Search company or role"
         style="width:100%"></span>
   <select name="sort" aria-label="Sort by">
-    <option value="applied" {% if sort == 'applied' %}selected{% endif %}>newest applied first</option>
-    <option value="activity" {% if sort == 'activity' %}selected{% endif %}>most recent activity</option>
-    <option value="silence" {% if sort == 'silence' %}selected{% endif %}>quiet longest first</option>
-    <option value="company" {% if sort == 'company' %}selected{% endif %}>company A–Z</option>
+    <option value="applied" {% if sort == 'applied' %}selected{% endif %}>Newest applied first</option>
+    <option value="activity" {% if sort == 'activity' %}selected{% endif %}>Most recent activity</option>
+    <option value="silence" {% if sort == 'silence' %}selected{% endif %}>Quiet longest first</option>
+    <option value="company" {% if sort == 'company' %}selected{% endif %}>Company A to Z</option>
   </select>
   <button>Apply</button>
-  {% if q %}<a class="sm" href="{{ list_url(status=status, origin=origin, sort=sort, reason=reason, how=how) }}">Clear</a>{% endif %}
+  {% if q %}<a href="{{ list_url(status=status, origin=origin, sort=sort, reason=reason, how=how) }}">Clear</a>{% endif %}
 </form>
 
-<div class="bar" style="justify-content:space-between">
+<div class="rowline">
   <span class="tabs">
-    <a href="{{ list_url(status=status, q=q, sort=sort, reason=reason, how=how) }}" class="{{ 'active' if not origin }}">all</a>
-    <a href="{{ list_url(status=status, origin='applied', q=q, sort=sort, reason=reason, how=how) }}" class="{{ 'active' if origin == 'applied' }}">applied</a>
-    <a href="{{ list_url(status=status, origin='inbound', q=q, sort=sort, reason=reason, how=how) }}" class="{{ 'active' if origin == 'inbound' }}">inbound</a>
-    <a href="{{ list_url(status=status, origin='saved', q=q, sort=sort, reason=reason, how=how) }}" class="{{ 'active' if origin == 'saved' }}">saved</a>
+    <a href="{{ list_url(status=status, q=q, sort=sort, reason=reason, how=how) }}" class="{{ 'active' if not origin }}">All</a>
+    <a href="{{ list_url(status=status, origin='applied', q=q, sort=sort, reason=reason, how=how) }}" class="{{ 'active' if origin == 'applied' }}">Applied</a>
+    <a href="{{ list_url(status=status, origin='inbound', q=q, sort=sort, reason=reason, how=how) }}" class="{{ 'active' if origin == 'inbound' }}">Inbound</a>
+    <a href="{{ list_url(status=status, origin='saved', q=q, sort=sort, reason=reason, how=how) }}" class="{{ 'active' if origin == 'saved' }}">Saved</a>
   </span>
-  <span class="sm">
+  <span class="aside">
     {# The queue moved to its own page (21 Aug 2026); this is the nudge that
        replaces 15 rows of it sitting above the first trace. Amber only when
        there IS work, because --age is the "time passing, unanswered" token
        (UI rule 1) and that is exactly what these rows are. #}
-    {% if follow_ups %}<a href="/follow-ups" style="color:var(--age)">{{ follow_ups }}
-      need follow-up</a> · {% endif %}
-    <a href="/applications/new">Add an application manually</a>
+    {% if follow_ups %}<a class="warm" href="/follow-ups">{{ follow_ups }} need follow-up</a>{% endif %}
+    <a href="/applications/new">Add one by hand</a>
   </span>
 </div>
 
 {% if rows %}
 <div class="card">
   <div class="tl tl-head">
-    <span class="lab">company · role</span>
+    <span class="lab">Company and role</span>
     <span class="axis">
       {% for t in axis.ticks %}<span class="t{% if loop.first %} first{% endif %}" style="--x:{{ t.x }}">{{ t.label }}</span>{% endfor %}
       <span class="t last">today</span>
     </span>
-    <span class="lab" style="text-align:right">status · quiet for</span>
+    <span class="lab right">Days quiet</span>
   </div>
   {# Two groups, one list. Leads carry no applied date, but they do carry the
      outreach email itself as an event — trace.py colours that "viewed" (blue,
@@ -153,51 +154,51 @@
      default sort put them there; any other sort is taken literally. #}
   {% for r in rows %}
   {%- if leads_pinned and r.lead and loop.first %}
-  <div class="tl-sep">Inbound · awaiting your call</div>
+  <div class="tl-sep">Inbound, awaiting your call</div>
   {%- elif leads_pinned and not r.lead and not loop.first and rows[loop.index0 - 1].lead %}
   <div class="tl-sep">Applications</div>
   {%- endif %}
-  <a class="tl" href="/applications/{{ r.id }}" title="{{ r.trace_label }}">
+  {#- A tail is "live" (blue) only while it is fresh AND someone else moved
+      last; once it crosses the follow-up threshold it is a wait like any
+      other and takes the row's heat. The numeral follows the same rule. #}
+  {%- set live = r.tail and r.tail.role != 'applied' and not r.tail.aging %}
+  {%- set tok = 'interview_invite' if r.status == 'interviewing' else r.status %}
+  <a class="tl" href="/applications/{{ r.id }}" title="{{ r.trace_label }}" style="--heat:{{ r.heat }}%">
     <span class="name">
-      <span class="co">{{ r.company_display }}{% if r.origin == 'inbound' %}
-        <span class="badge" style="--c:var(--interested)">inbound</span>{% endif %}</span>
+      <span class="co">{{ r.company_display }}</span>
       <span class="ro"><span class="ro-t">{{ r.title_canonical }}</span>
+        {%- if r.origin == 'inbound' %}<span class="tag">inbound</span>{% endif %}
         {# How you applied, from the applied event's payload. Three states and
            they stay three: `is sameas true/false`, never truthiness, because
            NULL means "never recorded" and rendering that as "on-platform"
            would invent a fact about 111 older records. Grey on purpose —
            UI rule 1 reserves chroma for the state of the wait, and this is a
            property of the submission, not of anyone's response to it. #}
-        {%- if r.external is sameas true %}
-        <span class="badge" style="--c:var(--interested)">employer site</span>
-        {%- elif r.external is sameas false %}
-        <span class="badge" style="--c:var(--interested)">on-platform</span>
+        {%- if r.external is sameas true %}<span class="tag">employer site</span>
+        {%- elif r.external is sameas false %}<span class="tag">on-platform</span>
         {%- endif %}</span>
     </span>
     <span class="trace" style="--week:{{ axis.week }}">
-      {%- if r.tail %}<span class="seg{% if r.tail.aging %} aging{% endif %}"
-        style="--a:{{ r.tail.a }};--b:{{ r.tail.b }};--c:var(--{{ r.tail.role }})"></span>{% endif -%}
+      {%- if r.tail %}<span class="tail{% if live %} live{% endif %}"
+        style="--a:{{ r.tail.a }};--b:{{ r.tail.b }}"></span>{% endif -%}
       {%- for p in r.pts %}<span class="pt{% if p.hollow %} hollow{% endif %}"
         style="--x:{{ p.x }};--c:var(--{{ p.role }})"></span>{% endfor -%}
-      {%- if r.cap %}<span class="cap"
-        style="--x:{{ r.cap }};--c:var(--{{ 'interview_invite' if r.status == 'interviewing' else r.status }})"></span>{% endif -%}
+      {%- if r.cap %}<span class="cap" style="--x:{{ r.cap }};--c:var(--{{ tok }})"></span>{% endif -%}
     </span>
-    <span class="out">
-      {% if r.silent_days is not none and r.silent_days >= reminder_days %}
-        <span class="num" style="color:var(--age)">{{ r.silent_days }}d</span>
-      {% elif r.silent_days is not none %}
-        <span class="num">{{ r.silent_days }}d</span>
-      {% endif %}
-      <span class="badge" style="--c:var(--{{ 'interview_invite' if r.status == 'interviewing' else r.status }})">{{ r.status }}</span>
-      {#- Why, in grey: a property of the close, not of the wait (UI rule 1),
-          the same call as the on-platform badge. The KEY, not the label, so it
-          stays a word on a row; the title carries the full wording. Nothing
-          here is a link — the row is one already, and the filter lives in the
-          why-chips under the legend. #}
-      {%- if r.status == 'rejected' and r.reject_reason %}
-      <span class="badge" style="--c:var(--interested)"
-            title="rejected — {{ event_reasons.get(r.reject_reason, r.reject_reason) }}">{{ r.reject_reason | replace('_', ' ') }}</span>
-      {%- endif %}
+    <span class="rail">
+      {%- if r.silent_days is not none %}<b class="d{% if live %} live{% endif %}">{{ r.silent_days }}</b>
+      {%- else %}<b class="d dash">—</b>{% endif %}
+      <span class="s">
+        {#- The status word: coloured only when it IS a state of the wait
+            (someone engaged, closed, an offer); applied and interested stay
+            grey, whatever their token does on the funnel. #}
+        <span class="badge"{% if r.status not in ('applied', 'interested', 'withdrawn') %} style="--c:var(--{{ tok }})"{% endif %}>{{ r.status }}</span>
+        {#- Why, in grey: a property of the close, not of the wait (UI rule 1),
+            the same call as the on-platform tag. The KEY, not the label, so it
+            stays a word on a row; the title carries the full wording. #}
+        {%- if r.status == 'rejected' and r.reject_reason %}<span class="tag"
+              title="rejected, {{ event_reasons.get(r.reject_reason, r.reject_reason) }}">{{ r.reject_reason | replace('_', ' ') }}</span>{% endif %}
+      </span>
     </span>
   </a>
   {% endfor %}
@@ -207,8 +208,8 @@
   <a href="/{% if origin %}?origin={{ origin }}{% endif %}">Clear the search</a> to see every application.</p>
 {% else %}
 <p class="empty">No applications yet. Run the backfill, then process the queue:<br>
-<span class="mono">python -m pipeline.cli backfill &amp;&amp; python -m pipeline.cli work --once</span><br>
+<code>python -m pipeline.cli backfill &amp;&amp; python -m pipeline.cli work --once</code><br>
 No Gmail connected, or applying to something the extension can't reach?
-<a href="/applications/new">Add one manually</a>.</p>
+<a href="/applications/new">Add one by hand</a>.</p>
 {% endif %}
 {% endblock %}

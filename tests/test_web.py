@@ -555,7 +555,7 @@ check("an inbound the user pursued isn't pinned, but is placed by the date of "
 # to the very bottom of the page rather than merely interleave it.
 r = client.get("/")
 check("and the group is labelled, so the pin isn't mysterious",
-      "Inbound &middot; awaiting your call" in r.text or "Inbound · awaiting your call" in r.text)
+      "Inbound, awaiting your call" in r.text)
 
 # Identical timestamps, no tiebreaker = an order the planner picks. Asserting
 # stability is the point; which of the two comes first is not.
@@ -728,7 +728,9 @@ unset_row = row_for(unset_app, "Unspecified Apply Role")
 check("an unrecorded apply is labelled NEITHER — unknown is not a no",
       "on-platform" not in unset_row and "employer site" not in unset_row, unset_row)
 check("the flag is grey, not a new hue (UI rule 1 reserves chroma for the wait)",
-      "--c:var(--interested)" in row_for(ext_app, "External Apply Role"))
+      # A .tag is grey by construction — it takes no --c token at all, unlike
+      # a .badge, which is the status word and may.
+      '<span class="tag">employer site</span>' in row_for(ext_app, "External Apply Role"))
 
 print("manual entry: applied + outcome, including same-day ordering")
 r = client.post("/applications/new", data={
@@ -1588,7 +1590,7 @@ r = client.get(f"/applications/{northwind_app}/events/{nw_rej['id']}/edit")
 check("the edit route still refuses an emailed event", r.status_code == 404, r.status_code)
 r = client.get(f"/applications/{northwind_app}")
 check("the timeline offers the why-select on it, reading not recorded",
-      f"/events/{nw_rej['id']}/reason" in r.text and "why? — not recorded" in r.text,
+      f"/events/{nw_rej['id']}/reason" in r.text and "Why? Not recorded" in r.text,
       r.status_code)
 
 r = client.get("/?status=rejected&reason=unrecorded")
@@ -1680,7 +1682,7 @@ with db.connect() as conn:
 check("a blank clears it — the key goes, nothing else in the payload moves",
       r.status_code == 303 and p == nw_rej["payload"], p)
 check("the select then reads not recorded again",
-      "why? — not recorded" in client.get(f"/applications/{northwind_app}").text)
+      "Why? Not recorded" in client.get(f"/applications/{northwind_app}").text)
 client.post(f"/applications/{northwind_app}/events/{nw_rej['id']}/reason",
             data={"reason": "visa"})
 

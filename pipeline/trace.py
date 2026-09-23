@@ -37,6 +37,24 @@ _ROLE = {
 # read as "someone else moved".
 _OWN = {"follow_up_sent", "note", "applied"}
 
+# The wait has a temperature (23 Sep 2026). Amber used to be binary — a tail
+# either crossed `reminder_days` or it didn't — and on 277 real rows that put
+# 150 of them in the same flat amber, a highlighted list rather than a scale.
+# `heat()` grades it: 0 until the follow-up threshold, then linear to 100 at
+# FULL_HEAT_DAYS. One number drives both the row's numeral and its tail
+# through one color-mix in base.html, so the line and the figure always agree.
+# Eight weeks is a judgement, not a measurement: it is where a thread has
+# outlived every reply the author ever received (avg_days_to_resp is 4).
+FULL_HEAT_DAYS = 56
+
+
+def heat(silent_days, reminder_days: int) -> int:
+    """0..100: how far a silence has run past the follow-up threshold."""
+    if silent_days is None or silent_days < reminder_days:
+        return 0
+    span = max(FULL_HEAT_DAYS - reminder_days, 1)
+    return min(100, round(100 * (silent_days - reminder_days) / span))
+
 
 def _pct(value: float) -> str:
     return f"{max(0.0, min(100.0, value)):.3f}%"
@@ -84,6 +102,7 @@ def build(rows, events_by_app, now: datetime, reminder_days: int) -> dict:
                         "aging": silent >= reminder_days,
                         "role": _ROLE.get(last["type"], "applied")}
         r["pts"], r["tail"], r["cap"], r["silent_days"] = pts, tail, cap, silent
+        r["heat"] = heat(silent, reminder_days)
         r["trace_label"] = _describe(r, silent)
 
     return {"t0": t0, "t1": t1, "ticks": _ticks(t0, t1, span, x),
@@ -104,8 +123,19 @@ def _describe(row, silent) -> str:
 
 
 def _ticks(t0: datetime, t1: datetime, span: float, x) -> list[dict]:
-    """Week markers, thinned so labels never collide on a long search."""
+    """Axis labels: the start date, then month starts on a long search or
+    week markers on a short one, and never anything crowding "today".
+
+    Weekly labels thinned by two were the rule for every span until 23 Sep
+    2026, and on the list — 12 weeks, trace capped near 20rem (UI rule 10) —
+    the boxes of "2 Jul" and "16 Jul" measured 1px apart and "10 Sep" ran
+    into "today". Month names are two to three letters and at most one per
+    four weeks, so they fit whatever the column width; a thread of a few
+    weeks on the detail page (full width) keeps its weeks.
+    """
     weeks = max(1, int(span // (7 * 86400)))
+    if weeks >= 8:
+        return _month_ticks(t0, t1, x)
     every = 1 if weeks <= 10 else (2 if weeks <= 22 else 4)
     out, cur, i = [], t0, 0
     while cur <= t1:
@@ -117,4 +147,23 @@ def _ticks(t0: datetime, t1: datetime, span: float, x) -> list[dict]:
             out.append({"x": _pct(x(cur)), "label": f"{cur:%d %b}".lstrip("0")})
         cur += timedelta(days=7)
         i += 1
+    return out
+
+
+def _month_ticks(t0: datetime, t1: datetime, x) -> list[dict]:
+    """The start date, then the first of each month that falls comfortably
+    inside the axis — not within 6% of the start label, not past 90% where
+    the "today" label lives."""
+    out = [{"x": _pct(0.0), "label": f"{t0:%d %b}".lstrip("0")}]
+    year, month = t0.year, t0.month
+    while True:
+        month += 1
+        if month > 12:
+            month, year = 1, year + 1
+        cur = datetime(year, month, 1, tzinfo=t0.tzinfo)
+        if cur > t1:
+            break
+        pos = x(cur)
+        if 6 <= pos < 90:
+            out.append({"x": _pct(pos), "label": f"{cur:%b}"})
     return out

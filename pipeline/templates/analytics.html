@@ -5,49 +5,53 @@
 <h1>How the search is going</h1>
 
 {% set stages = [
-  ("applied",     summary.applied),
-  ("replied",     summary.responded),
-  ("interviewing", summary.interviews),
-  ("offers",      summary.offers)] %}
+  ("Applied",      summary.applied),
+  ("Replied",      summary.responded),
+  ("Interviewing", summary.interviews),
+  ("Offers",       summary.offers)] %}
 {% set top = summary.applied or 1 %}
 
+<div class="two">
+<div>
 <h2>Funnel</h2>
 <div class="card pad">
   <div class="fbars">
     {% for label, n in stages %}
-    <div class="fb" title="{{ n }} {{ label }}">
+    <div class="fb" title="{{ n }} {{ label | lower }}">
       <span class="lab">{{ label }}</span>
       <span class="track"><span class="fill" style="--w:{{ (100.0 * n / top) | round(1) }}%"></span></span>
-      <span class="val num">{{ n }}</span>
+      <span class="val">{{ n }}</span>
     </div>
     {% endfor %}
   </div>
-  <p class="sm quiet" style="margin:.7rem 0 0">
+  <p class="hint" style="margin-top:.8rem">
     {% if summary.response_rate is not none %}
-      <strong>{{ summary.response_rate }}%</strong> of applications get a reply{% if summary.avg_days_to_resp %},
-      after <strong>{{ summary.avg_days_to_resp }}</strong> days on average{% endif %}.
+      <b>{{ summary.response_rate }}%</b> of applications get a reply{% if summary.avg_days_to_resp %},
+      after <b>{{ summary.avg_days_to_resp }}</b> days on average{% endif %}.
     {% else %}Not enough applied history yet to compute a response rate.{% endif %}
   </p>
 </div>
+</div>
 
 {% if weekly %}
+<div>
 <h2>Week by week</h2>
 <div class="card pad">
   <div class="panel">
-    <div class="ptitle">Applications sent <span class="quiet">— peak {{ weekly[0].applied_peak }} in a week</span></div>
+    <p class="ptitle">Applications sent <span class="quiet">— peak {{ weekly[0].applied_peak }} in a week</span></p>
     <div class="spark">
       {% for w in weekly %}
-      <div class="col" title="week of {{ w.label }} — {{ w.applied }} sent">
+      <div class="col" title="week of {{ w.label }}: {{ w.applied }} sent">
         {% if w.applied %}<span class="wk" style="--h:{{ w.applied_h }};--c:var(--ink)"></span>{% endif %}
       </div>
       {% endfor %}
     </div>
   </div>
   <div class="panel">
-    <div class="ptitle">Replies received <span class="quiet">— peak {{ weekly[0].replied_peak }} in a week</span></div>
+    <p class="ptitle">Replies received <span class="quiet">— peak {{ weekly[0].replied_peak }} in a week</span></p>
     <div class="spark">
       {% for w in weekly %}
-      <div class="col" title="week of {{ w.label }} — {{ w.replied }} replies">
+      <div class="col" title="week of {{ w.label }}: {{ w.replied }} replies">
         {% if w.replied %}<span class="wk" style="--h:{{ w.replied_h }};--c:var(--accent)"></span>{% endif %}
       </div>
       {% endfor %}
@@ -57,90 +61,78 @@
     <span>{{ weekly[0].label }}</span>
     {% if weekly | length > 1 %}<span>{{ weekly[-1].label }}</span>{% endif %}
   </div>
-  <p class="sm quiet" style="margin:.5rem 0 0">
-    Each panel is scaled to its own peak — the two measures are an order of
-    magnitude apart, so their bar heights are not comparable across panels.
-  </p>
+  <p class="hint">Each panel is scaled to its own peak; the two measures are an
+    order of magnitude apart, so bar heights do not compare across panels.</p>
+</div>
 </div>
 {% endif %}
+</div>
 
 {% macro dim_table(title, rows, note=None) %}
 <h2>{{ title }}</h2>
 {% if rows %}
 <div class="card"><table>
-  <thead><tr><th></th><th>applied</th><th>replied</th><th>rate</th><th>interviews</th><th>avg days</th></tr></thead>
+  <thead><tr><th></th><th class="num">Applied</th><th class="num">Replied</th><th class="num">Rate</th><th class="num">Interviews</th><th class="num">Avg days</th></tr></thead>
   <tbody>{% for r in rows %}
-  <tr><td>{{ r.dim }}</td><td class="mono num">{{ r.applied }}</td>
-      <td class="mono num">{{ r.responded }}</td>
-      <td class="mono num">{% if r.response_rate is not none %}{{ r.response_rate }}%
-        {%- else %}<span title="fewer than {{ min_rate_n }} applications — too few to rate">—</span>{% endif %}</td>
-      <td class="mono num">{{ r.interviews }}</td>
-      <td class="mono num">{{ r.avg_days_to_resp or "—" }}</td></tr>
+  <tr><td>{{ r.dim }}</td><td class="num">{{ r.applied }}</td>
+      <td class="num">{{ r.responded }}</td>
+      <td class="num">{% if r.response_rate is not none %}{{ r.response_rate }}%
+        {%- else %}<span class="quiet" title="fewer than {{ min_rate_n }} applications, too few to rate">—</span>{% endif %}</td>
+      <td class="num">{{ r.interviews }}</td>
+      <td class="num">{{ r.avg_days_to_resp or "—" }}</td></tr>
   {% endfor %}</tbody>
 </table></div>
-{% if note %}<p class="sm quiet" style="margin:.45rem 0 0">{{ note }}</p>{% endif %}
-{% else %}<p class="empty">No applied events yet — this fills in as the funnel moves.</p>{% endif %}
+{% if note %}<p class="hint">{{ note }}</p>{% endif %}
+{% else %}<p class="empty">No applied events yet. This fills in as the funnel moves.</p>{% endif %}
 {% endmacro %}
 
 {{ dim_table("By platform", by_platform,
    "A rate needs at least " ~ min_rate_n ~ " applications before it means anything; thinner rows show counts only.") }}
 {{ dim_table("By technology (top extracted)", by_technology) }}
 {# One resume is a row of totals, not a comparison, so this renders only once
-   the dimension actually splits. A "tailored vs generic" panel used to sit
-   below on the same gate and never once passed it — the answer was always the
-   same. It was NOT the same question, though: that one asked about effort per
-   application, this one is which standing resume went out. See
-   analytics.by_resume. #}
+   the dimension actually splits. See analytics.by_resume. #}
 {% if by_resume | length > 1 %}
 {{ dim_table("By resume sent", by_resume) }}
 {% endif %}
 
 {# Why it closed. Not a dim_table: there is no rate to withhold, only counts,
    and the row that matters most is the one with no answer yet — "not
-   recorded" is the backlog, and it links straight to the rows to tag. Each
-   reason links to the list filtered the same way the why-chips do. `inbound`
-   is its own column because on the author's data 5 of 6 visa rejections were
-   recruiters who approached first and then dropped the thread — a different
-   fact about the market than "my applications get rejected for visa". #}
+   recorded" is the backlog, and it links straight to the rows to tag. #}
 {% if by_reason %}
 <h2>Why it closed</h2>
 <div class="card"><table>
-  <thead><tr><th></th><th>rejected</th><th>of which inbound</th></tr></thead>
+  <thead><tr><th></th><th class="num">Rejected</th><th class="num">Of which inbound</th></tr></thead>
   <tbody>{% for r in by_reason %}
   <tr><td><a href="/?status=rejected&amp;reason={{ r.key }}">{{ r.label }}</a></td>
-      <td class="mono num">{{ r.n }}</td>
-      <td class="mono num">{{ r.inbound or "—" }}</td></tr>
+      <td class="num">{{ r.n }}</td>
+      <td class="num">{{ r.inbound or "—" }}</td></tr>
   {% endfor %}</tbody>
 </table></div>
-<p class="sm quiet" style="margin:.45rem 0 0">
-  Counted per application, from the reason on its rejected event. "No reason
-  given" is an answer someone wrote down; "not recorded" is the backlog — click
-  it to tag them.
-</p>
+<p class="hint">Counted per application, from the reason on its rejected event.
+  “No reason given” is an answer someone wrote down; “not recorded” is the
+  backlog. Click it to tag them.</p>
 {% endif %}
 
 {# How it ended. The sibling of the table above, and unlike it complete without
    tagging: the stage is on the timeline. One bucket per application — visa
    first, then whether a human round ever happened — so the rows sum to the
-   rejected count. The three channel columns answer the question this was
-   built for: how many of the closes were a platform's form letter. #}
+   rejected count. #}
 {% if by_end %}
 <h2>How it ended</h2>
 <div class="card"><table>
-  <thead><tr><th></th><th>rejected</th><th>of which inbound</th>
-    <th>LinkedIn letter</th><th>other email</th><th>by hand</th></tr></thead>
+  <thead><tr><th></th><th class="num">Rejected</th><th class="num">Of which inbound</th>
+    <th class="num">LinkedIn’s letter</th><th class="num">Other email</th><th class="num">By hand</th></tr></thead>
   <tbody>{% for r in by_end %}
+  {# Lowercase on purpose: the same word as the legend chip it filters like. #}
   <tr><td><a href="/?status=rejected&amp;how={{ r.key }}">{{ r.label }}</a></td>
-      <td class="mono num">{{ r.n }}</td>
-      <td class="mono num">{{ r.inbound or "—" }}</td>
-      <td class="mono num">{{ r.linkedin or "—" }}</td>
-      <td class="mono num">{{ r.other_email or "—" }}</td>
-      <td class="mono num">{{ r.by_hand or "—" }}</td></tr>
+      <td class="num">{{ r.n }}</td>
+      <td class="num">{{ r.inbound or "—" }}</td>
+      <td class="num">{{ r.linkedin or "—" }}</td>
+      <td class="num">{{ r.other_email or "—" }}</td>
+      <td class="num">{{ r.by_hand or "—" }}</td></tr>
   {% endfor %}</tbody>
 </table></div>
-<p class="sm quiet" style="margin:.45rem 0 0">
-  A round is an interview invite, a call or message, or an offer. A visa close
-  counts as visa whatever its stage.
-</p>
+<p class="hint">A round is an interview invitation, a call or message, or an offer.
+  A visa close counts as visa whatever its stage.</p>
 {% endif %}
 {% endblock %}

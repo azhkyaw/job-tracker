@@ -2,74 +2,74 @@
 {% block title %}settings — tracker{% endblock %}
 {% block nav_settings %}active{% endblock %}
 {% block content %}
-<h1>Settings <span class="mono" style="color:var(--muted);font-size:.8em">{{ email }}</span></h1>
+<h1>Settings <span class="role">{{ email }}</span></h1>
 {% if msg %}<div class="note">{{ msg }}</div>{% endif %}
 
 {% if new_token %}
 <div class="note" style="--c:var(--age)">
-  <strong>Your API token</strong> — paste it into the extension options. Shown only once:
-  <div><code class="mono" id="newtok" style="user-select:all;word-break:break-all">{{ new_token }}</code></div>
+  <strong>Your API token.</strong> Paste it into the extension options. Shown only once:
+  <div><code id="newtok" style="user-select:all;word-break:break-all">{{ new_token }}</code></div>
 </div>
 {% endif %}
 
 <h2>Extension API token</h2>
-<form method="post" action="/settings/token">
+<form method="post" action="/settings/token" class="bar">
   <button>Mint a new token</button>
-  <span style="color:var(--muted)">invalidates the previous one immediately</span>
+  <span class="quiet sm">invalidates the previous one immediately</span>
 </form>
 
 <h2>Gmail</h2>
 {% if gmail_kind == 'imap' %}
-<p>Connected over IMAP as <span class="mono">{{ gmail_address or '' }}</span>.
-Status emails sync on the next <span class="mono">sync</span> run.</p>
+<p>Connected over IMAP as <b class="sans" style="font-weight:500">{{ gmail_address or '' }}</b>.
+Status emails sync on the next <code>sync</code> run.</p>
 <form method="post" action="/settings/gmail/disconnect"><button>Disconnect Gmail</button></form>
 {% if gmail_legacy_file %}
-<p class="note">Disconnecting here does not stop sync — a legacy
-<span class="mono">.gmail_token.json</span> file is also present on this server and is used
+<p class="note">Disconnecting here does not stop sync: a legacy
+<code>.gmail_token.json</code> file is also present on this server and is used
 as a fallback. Delete that file too if you want Gmail fully disconnected.</p>
 {% endif %}
 
 {% elif gmail_kind == 'oauth' %}
-<p>Connected via OAuth. Status emails sync on the next <span class="mono">sync</span> run.</p>
+<p>Connected via OAuth. Status emails sync on the next <code>sync</code> run.</p>
 <form method="post" action="/settings/gmail/disconnect"><button>Disconnect Gmail</button></form>
 {% if gmail_legacy_file %}
-<p class="note">Disconnecting here does not stop sync — a legacy
-<span class="mono">.gmail_token.json</span> file is also present on this server and is used
+<p class="note">Disconnecting here does not stop sync: a legacy
+<code>.gmail_token.json</code> file is also present on this server and is used
 as a fallback. Delete that file too if you want Gmail fully disconnected.</p>
 {% endif %}
 
 {% else %}
 {% if gmail_kind == 'unreadable' %}
-<p class="note">Stored Gmail credentials can't be decrypted —
-<span class="mono">TRACKER_SECRET_KEY</span> changed since they were saved. Reconnect below.</p>
+<p class="note">Stored Gmail credentials can't be decrypted:
+<code>TRACKER_SECRET_KEY</code> changed since they were saved. Reconnect below.</p>
 {% endif %}
 
-<form method="post" action="/settings/gmail/imap" style="display:grid;gap:.5rem;max-width:28rem">
+<form method="post" action="/settings/gmail/imap" class="stack" style="max-width:28rem">
   <label>Gmail address
     <input name="gmail_address" type="email" autocomplete="off"
       value="{{ gmail_address_default or '' }}" placeholder="you@gmail.com"></label>
   <label>App password
     <input name="app_password" type="password" autocomplete="off" placeholder="16 characters"></label>
-  <div><button class="primary">Connect Gmail</button></div>
-  <p style="color:var(--muted);margin:0">Grants full mailbox access (read, modify, delete,
-  and send) — broader than a read-only scope, but nothing is ever sent, and this stays on
+  <div class="actions"><button class="primary">Connect Gmail</button></div>
+  <p class="hint" style="margin:0">Grants full mailbox access (read, modify, delete
+  and send), broader than a read-only scope, but nothing is ever sent, and this stays on
   your own server. Generate one at
   <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">myaccount.google.com/apppasswords</a>
-  (requires 2-Step Verification). Not available for Workspace/school accounts, Advanced
-  Protection, or security-key-only 2-Step Verification — use OAuth below instead.</p>
+  (requires 2-Step Verification). Not available for Workspace or school accounts, Advanced
+  Protection, or security-key-only 2-Step Verification. Use OAuth below instead.</p>
 </form>
 
-<details style="margin-top:.75rem">
-  <summary style="cursor:pointer;color:var(--muted)">Workspace or Advanced Protection account? Use OAuth instead</summary>
+<details class="plain" style="margin-top:.75rem">
+  <summary>Workspace or Advanced Protection account? Use OAuth instead</summary>
   <div style="margin-top:.5rem">
     {% if gmail_web_configured %}
-    <p><a href="/oauth/gmail/start"><button class="primary" type="button">Connect Gmail via OAuth</button></a>
-       <span style="color:var(--muted)">read-only scope; tokens stored encrypted</span></p>
+    <p class="bar"><a href="/oauth/gmail/start"><button class="primary" type="button">Connect Gmail via OAuth</button></a>
+       <span class="quiet sm">read-only scope; tokens stored encrypted</span></p>
     {% else %}
     <p class="note">No web OAuth client configured on this server.
-    Single-user installs can use <span class="mono">python -m pipeline.cli auth --oauth</span>;
+    Single-user installs can use <code>python -m pipeline.cli auth --oauth</code>;
     to enable Connect Gmail via OAuth here, add a Google web-application client JSON as
-    <span class="mono">credentials-web.json</span>.</p>
+    <code>credentials-web.json</code>.</p>
     {% endif %}
   </div>
 </details>
@@ -81,44 +81,44 @@ as a fallback. Delete that file too if you want Gmail fully disconnected.</p>
   email{{ '' if queue.waiting == 1 else 's' }} waiting</strong>{% if queue.waiting_since %}
   since {{ queue.waiting_since|dtt }}{% endif %}.{% else %}Nothing waiting.{% endif %}</p>
 {% if queue.reason %}
-<p class="note" style="--c:var(--age)">Last failure: <code class="mono">{{ queue.reason }}</code></p>
+<p class="note" style="--c:var(--age)">Last failure: <code>{{ queue.reason }}</code></p>
 {% endif %}
 {% if dead_jobs %}
 <p>{{ dead_jobs|length }} job{{ '' if dead_jobs|length == 1 else 's' }} gave up after
 {{ max_attempts }} attempts:</p>
 <ul class="sm">
   {% for j in dead_jobs %}
-  <li><span class="mono">{{ j.type }}</span> queued {{ j.created_at|dtt }} —
-    <code class="mono">{{ j.reason or 'no error recorded' }}</code></li>
+  <li><code>{{ j.type }}</code> queued {{ j.created_at|dtt }}:
+    <code>{{ j.reason or 'no error recorded' }}</code></li>
   {% endfor %}
 </ul>
-<form method="post" action="/settings/queue/requeue">
+<form method="post" action="/settings/queue/requeue" class="bar">
   <button class="primary">Run them again</button>
-  <span class="quiet">fix the cause first — each gets a fresh {{ max_attempts }} attempts</span>
+  <span class="quiet sm">fix the cause first; each gets a fresh {{ max_attempts }} attempts</span>
 </form>
 {% endif %}
-<p class="quiet sm">Mail is fetched by <span class="mono">sync</span> and read by
-<span class="mono">work</span>. A wait that outlives both means the worker is not running,
-or cannot reach the API — the last failure above says which.</p>
+<p class="hint">Mail is fetched by <code>sync</code> and read by <code>work</code>.
+A wait that outlives both means the worker is not running, or cannot reach the API.
+The last failure above says which.</p>
 
 <h2>Appearance</h2>
-<p style="color:var(--muted)">Follow my system matches your OS/browser setting
+<p class="hint" style="margin:0 0 .6rem">Follow my system matches your OS or browser setting
 automatically; light or dark overrides it everywhere you're signed in.</p>
-<form method="post" action="/settings/theme" style="display:grid;gap:.5rem;max-width:24rem">
+<form method="post" action="/settings/theme" class="stack" style="max-width:24rem">
   <select name="theme" aria-label="Theme">
-    <option value="" {% if theme_pref == '' %}selected{% endif %}>— follow my system —</option>
-    <option value="light" {% if theme_pref == 'light' %}selected{% endif %}>light</option>
-    <option value="dark" {% if theme_pref == 'dark' %}selected{% endif %}>dark</option>
+    <option value="" {% if theme_pref == '' %}selected{% endif %}>Follow my system</option>
+    <option value="light" {% if theme_pref == 'light' %}selected{% endif %}>Light</option>
+    <option value="dark" {% if theme_pref == 'dark' %}selected{% endif %}>Dark</option>
   </select>
-  <div><button class="primary">Save theme</button></div>
+  <div class="actions"><button class="primary">Save theme</button></div>
 </form>
 
 <h2>Timezone</h2>
-<p style="color:var(--muted)">Everything is stored and matched in UTC — this only controls how
-dates/times are displayed to you.</p>
-<form method="post" action="/settings/timezone" style="display:grid;gap:.5rem;max-width:24rem">
+<p class="hint" style="margin:0 0 .6rem">Everything is stored and matched in UTC. This only
+controls how dates and times are displayed to you.</p>
+<form method="post" action="/settings/timezone" class="stack" style="max-width:24rem">
   <input name="timezone" list="tz-options" value="{{ timezone }}"
-    placeholder="e.g. Asia/Singapore (blank = UTC)">
+    placeholder="Asia/Singapore (blank means UTC)">
   <datalist id="tz-options">
     <option value="UTC">
     <option value="Asia/Singapore">
@@ -139,21 +139,22 @@ dates/times are displayed to you.</p>
     <option value="America/Chicago">
     <option value="America/Los_Angeles">
   </datalist>
-  <div><button class="primary">Save timezone</button></div>
+  <div class="actions"><button class="primary">Save timezone</button></div>
 </form>
 
-<h2>Resume profile (grounds your cover letters)</h2>
-<form method="post" action="/settings/profile" style="display:grid;gap:.5rem;max-width:44rem">
+<h2>Resume profile</h2>
+<p class="hint" style="margin:0 0 .6rem">Grounds your cover letters. The letter generator
+will not invent beyond this.</p>
+<form method="post" action="/settings/profile" class="stack" style="max-width:44rem">
   <textarea name="resume_profile" rows="10"
-    style="font:inherit;border:1px solid var(--line);border-radius:6px;padding:.5rem"
-    placeholder="Your real background, in your words — the letter generator will not invent beyond this.">{{ resume_profile }}</textarea>
-  <div><button class="primary">Save profile</button></div>
+    placeholder="Your real background, in your words.">{{ resume_profile }}</textarea>
+  <div class="actions"><button class="primary">Save profile</button></div>
 </form>
 
 <h2>Password</h2>
-<form method="post" action="/settings/password" style="display:grid;gap:.5rem;max-width:24rem">
-  <label>current <input type="password" name="current" autocomplete="current-password" required></label>
-  <label>new (8+ characters) <input type="password" name="new" autocomplete="new-password" required></label>
-  <div><button class="primary">Change password</button></div>
+<form method="post" action="/settings/password" class="stack" style="max-width:24rem">
+  <label>Current password <input type="password" name="current" autocomplete="current-password" required></label>
+  <label>New password, 8 characters or more <input type="password" name="new" autocomplete="new-password" required></label>
+  <div class="actions"><button class="primary">Change password</button></div>
 </form>
 {% endblock %}

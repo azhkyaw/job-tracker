@@ -4,27 +4,27 @@
 {% block content %}
 <h1>Delete this application?</h1>
 
-<div class="note" style="--c:var(--rejected)">
-  <strong>{{ a.company_display }} · {{ a.title_canonical }}</strong>
+<div class="note" style="--c:var(--rejected);max-width:44rem">
+  <strong>{{ a.company_display }}, {{ a.title_canonical }}</strong>
   <p class="quiet" style="margin:.5rem 0 0">This permanently deletes the job record and:</p>
   <ul class="quiet" style="margin:.4rem 0 0;padding-left:1.2em">
     <li>{{ summary.n_postings }} posting{{ '' if summary.n_postings == 1 else 's' }}</li>
     <li>{{ summary.n_events }} timeline event{{ '' if summary.n_events == 1 else 's' }}</li>
     <li>{{ summary.n_contacts }} contact{{ '' if summary.n_contacts == 1 else 's' }}</li>
     <li>{{ summary.n_artifacts }} generated artifact{{ '' if summary.n_artifacts == 1 else 's' }}
-      (cover letters — this text cannot be recovered)</li>
+      (cover letters; this text cannot be recovered)</li>
   </ul>
   {% if summary.n_emails %}
   <p class="quiet" style="margin:.6rem 0 0">
     {{ summary.n_emails }} linked email{{ '' if summary.n_emails == 1 else 's' }} will
-    <strong>not</strong> be deleted — they go back to <a href="/triage">triage</a> as unresolved.
+    <strong>not</strong> be deleted. They go back to <a href="/triage">triage</a> as unresolved.
   </p>
   {% endif %}
   <p style="color:var(--rejected);margin:.6rem 0 0">This cannot be undone.</p>
 </div>
 
-<form method="post" action="/applications/{{ a.id }}/delete">
+<form method="post" action="/applications/{{ a.id }}/delete" class="bar">
   <button class="danger" style="border-color:var(--rejected);color:var(--rejected)">Yes, permanently delete</button>
-  <a href="/applications/{{ a.id }}" style="margin-left:.8rem">Cancel</a>
+  <a href="/applications/{{ a.id }}">Cancel</a>
 </form>
 {% endblock %}

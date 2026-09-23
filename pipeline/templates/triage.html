@@ -5,51 +5,49 @@
 <h1>Triage</h1>
 <div class="tabs" style="margin-bottom:1.1rem">
   <a href="/triage?lane=actionable" class="{{ 'active' if lane == 'actionable' }}">
-    actionable{% if actionable_n %}<span class="pill">{{ actionable_n }}</span>{% endif %}</a>
+    Actionable{% if actionable_n %}<span class="pill">{{ actionable_n }}</span>{% endif %}</a>
   <a href="/triage?lane=inbound" class="{{ 'active' if lane == 'inbound' }}">
-    inbound{% if inbound_n %}<span class="pill">{{ inbound_n }}</span>{% endif %}</a>
+    Inbound{% if inbound_n %}<span class="pill">{{ inbound_n }}</span>{% endif %}</a>
 </div>
 {% if lane == 'inbound' %}
-<p class="quiet sm" style="margin:-0.4rem 0 1.2rem;max-width:70ch">
-  Recruiter and employer outreach about roles you didn't apply to. "Track as lead"
-  files it honestly — a real record with no applied event, so it never counts toward
-  your funnel or response rate unless you actually apply.
-</p>
+<p class="lede" style="margin-top:-.4rem">Recruiter and employer outreach about roles you
+  didn't apply to. “Track as lead” files it honestly: a real record with no applied
+  event, so it never counts toward your funnel or response rate unless you actually apply.</p>
 {% endif %}
 {% if not emails and not dupes %}
 <p class="empty">Nothing waiting in this lane.</p>
 {% endif %}
 {% for e in emails %}
 <div class="tri">
-  <div class="meta">
+  <div class="top">
     <span class="subject">{{ e.subject or "(no subject)" }}</span>
-    {% if e.classification %}<span class="badge" style="--c:var(--age)">{{ e.classification }}</span>{% endif %}
+    {% if e.classification %}<span class="badge" style="--c:var(--age)">{{ e.classification | replace('_', ' ') }}</span>{% endif %}
   </div>
-  <div class="facts">
-    {{ e.sender }} · {{ e.received_at | dtt }}
-    {%- if e.extraction %} · reads as {{ e.extraction.company or "company?" }} ·
-      {{ e.extraction.role_title or "role?" }} via {{ e.extraction.platform }}
-      {%- if e.match_score is not none %} · closest match scored {{ e.match_score }}{% endif %}
+  <div class="line">
+    {{ e.sender }}, {{ e.received_at | dtt }}
+    {%- if e.extraction %}. Reads as {{ e.extraction.company or "an unknown company" }},
+      {{ e.extraction.role_title or "role unknown" }}, via {{ e.extraction.platform }}
+      {%- if e.match_score is not none %}; closest match scored {{ e.match_score }}{% endif %}
     {%- endif %}
   </div>
   {% if e.body_text %}
-  <details style="margin:.3rem 0">
-    <summary class="quiet sm" style="cursor:pointer">Read email</summary>
-    <pre style="white-space:pre-wrap;font:inherit;margin:.5rem 0 0;max-width:70ch">{{ e.body_text }}</pre>
+  <details class="plain" style="margin:.1rem 0">
+    <summary>Read the email</summary>
+    <pre class="text">{{ e.body_text }}</pre>
   </details>
   {% endif %}
   <form method="post" action="/triage/{{ e.id }}">
     <input type="hidden" name="lane" value="{{ lane }}">
     <select name="application_id" aria-label="Application to file this under">
-      <option value="">— pick an application —</option>
+      <option value="">Pick an application</option>
       {% for o in options %}
-      <option value="{{ o.id }}">{{ o.company_display }} · {{ o.title_canonical }}</option>
+      <option value="{{ o.id }}">{{ o.company_display }}, {{ o.title_canonical }}</option>
       {% endfor %}
     </select>
     <button class="primary" name="action" value="link">File under this one</button>
     <span class="quiet sm">or start a new record for</span>
     <input type="text" name="company" value="{{ (e.extraction.company if e.extraction else '') or '' }}"
-           placeholder="company or agency" aria-label="Company" style="max-width:11rem">
+           placeholder="Company or agency" aria-label="Company" style="max-width:12rem">
     {% if lane == 'inbound' %}
     <button name="action" value="lead">Track as lead</button>
     {% else %}
@@ -64,17 +62,17 @@
 <h2>Possible duplicates</h2>
 {% for d in dupes %}
 <div class="tri">
-  <div class="meta">
-    <span class="subject">{{ d.comp_a or "?" }} · {{ d.title_a or "?" }}
-      <span class="mono quiet">({{ d.plat_a }})</span></span>
+  <div class="top">
+    <span class="subject">{{ d.comp_a or "?" }}, {{ d.title_a or "?" }}
+      <span class="quiet sans" style="font-size:.82rem">({{ d.plat_a }})</span></span>
     <span class="quiet">vs</span>
-    <span class="subject">{{ d.comp_b or "?" }} · {{ d.title_b or "?" }}
-      <span class="mono quiet">({{ d.plat_b }})</span></span>
+    <span class="subject">{{ d.comp_b or "?" }}, {{ d.title_b or "?" }}
+      <span class="quiet sans" style="font-size:.82rem">({{ d.plat_b }})</span></span>
   </div>
-  <div class="facts">job description similarity {{ "%.3f" | format(d.cosine_sim) }} ·
+  <div class="line">Job description similarity {{ "%.3f" | format(d.cosine_sim) }},
     title similarity {{ "%.2f" | format(d.title_sim) }}</div>
   <form method="post" action="/duplicates/{{ d.id }}">
-    <button class="primary" name="action" value="confirm">Same job — merge</button>
+    <button class="primary" name="action" value="confirm">Same job, merge them</button>
     <button name="action" value="reject">Different jobs</button>
   </form>
 </div>

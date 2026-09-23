@@ -2,82 +2,78 @@
 {% block title %}{{ a.company_display }} — tracker{% endblock %}
 {% block nav_apps %}active{% endblock %}
 {% block content %}
+{% set tok = 'interview_invite' if status == 'interviewing' else status %}
 
-<h1 style="margin-bottom:.3rem">{{ a.company_display }}
-  <span class="quiet" style="font-weight:400">· {{ a.title_canonical }}</span>
-  <span class="badge" style="--c:var(--{{ 'interview_invite' if status == 'interviewing' else status }});font-size:.7rem;vertical-align:.28em">{{ status }}</span>
-</h1>
-
-<div class="bar sm" style="margin-bottom:1.3rem;gap:.9rem">
-  <a href="/applications/{{ a.id }}/edit">Edit details</a>
+<h1>{{ a.company_display }} <span class="role">{{ a.title_canonical }}</span></h1>
+<div class="rowline" style="margin-bottom:1.2rem">
+  <span>
+    {#- The state, coloured only when it is one (rule 1); applied stays grey.
+        Then the wait, in words — the trace beneath draws it. #}
+    <span class="badge" style="font-size:.86rem{% if status not in ('applied', 'interested', 'withdrawn') %};--c:var(--{{ tok }}){% endif %}">{{ status }}</span>
+    {%- if a.silent_days is not none %}<span class="badge">{% if a.silent_days == 0 %}, something moved today{% else %}, quiet for {{ a.silent_days }} day{{ "s" if a.silent_days != 1 }}{% endif %}</span>{% endif %}
+  </span>
+  <span class="aside"><a href="/applications/{{ a.id }}/edit">Edit details</a></span>
 </div>
 
 {% if saved %}
-<div class="note" style="--c:var(--offer)"><strong>Saved</strong> — this record has been updated.</div>
+<div class="note" style="--c:var(--offer)"><strong>Saved.</strong> This record has been updated.</div>
 {% endif %}
 
-<h2>The thread</h2>
-<div class="card">
-  <div class="pad" style="padding-bottom:.2rem">
+<div class="card thread-card">
+  <div class="head">
     <div class="axis">
       {% for t in axis.ticks %}<span class="t{% if loop.first %} first{% endif %}" style="--x:{{ t.x }}">{{ t.label }}</span>{% endfor %}
       <span class="t last">today</span>
     </div>
-    <div class="trace" style="--week:{{ axis.week }};height:2rem">
-      {%- if a.tail %}<span class="seg{% if a.tail.aging %} aging{% endif %}"
-        style="--a:{{ a.tail.a }};--b:{{ a.tail.b }};--c:var(--{{ a.tail.role }})"></span>{% endif -%}
+    {%- set live = a.tail and a.tail.role != 'applied' and not a.tail.aging %}
+    <div class="trace" style="--week:{{ axis.week }};--heat:{{ a.heat }}%">
+      {%- if a.tail %}<span class="tail{% if live %} live{% endif %}"
+        style="--a:{{ a.tail.a }};--b:{{ a.tail.b }}"></span>{% endif -%}
       {%- for p in a.pts %}<span class="pt{% if p.hollow %} hollow{% endif %}"
         style="--x:{{ p.x }};--c:var(--{{ p.role }})" title="{{ p.label }}"></span>{% endfor -%}
-      {%- if a.cap %}<span class="cap"
-        style="--x:{{ a.cap }};--c:var(--{{ 'interview_invite' if status == 'interviewing' else status }})"></span>{% endif -%}
+      {%- if a.cap %}<span class="cap" style="--x:{{ a.cap }};--c:var(--{{ tok }})"></span>{% endif -%}
     </div>
-    {% if a.silent_days is not none %}
-    <p class="sm quiet" style="margin:.1rem 0 .6rem">
-      {% if a.silent_days == 0 %}Something moved today.
-      {% else %}Quiet for {{ a.silent_days }} day{{ "s" if a.silent_days != 1 }}.{% endif %}
-    </p>
-    {% endif %}
   </div>
-  <ul class="timeline" style="padding:0 1rem .5rem">
+  {# Each entry is a sentence: what happened (EVENT_LABELS, never the type
+     name), what was said, and how we know. Colour only where the event is a
+     state of the wait — theirs blue, a close rust, an offer green. #}
+  <ol class="thread">
     {% for e in events %}
+    {%- set et = {'recruiter_outreach': 'viewed'}.get(e.type, e.type) %}
     <li><span class="when">{{ e.occurred_at | dtt }}</span>
-        <span>{{ e.type }} <span class="mono quiet">via {{ e.source }}</span>
-        {% if 'external' in e.payload %}
-          {% if e.payload['external'] %}— applied via employer's website
-          {% else %}— applied on-platform (Easy Apply / quick apply)
-          {% endif %}
-        {% endif %}
+      <span class="what">
+        <b{% if et in ('viewed', 'engaged', 'interview_invite', 'offer', 'rejected') %} style="--c:var(--{{ et }})"{% endif %}>{{ EVENT_LABELS.get(e.type, e.type) }}</b>
+        {%- if 'external' in e.payload %}
+        <small>{% if e.payload['external'] %}on the employer's website{% else %}on-platform (Easy Apply){% endif %}</small>
+        {%- endif %}
+        {%- if e.payload.get('note') %}<q>{{ e.payload['note'] }}</q>{% endif %}
+        {%- if e.payload.get('status_detail') %}<q>{{ e.payload['status_detail'] }}</q>{% endif %}
         {%- if e.payload.get('reason') and e.type != 'rejected' %}
-          <span class="mono quiet">· {{ event_reasons.get(e.payload['reason'], e.payload['reason']) }}</span>
+        <small>{{ event_reasons.get(e.payload['reason'], e.payload['reason']) }}</small>
         {%- endif %}
-        {%- if e.payload.get('channel') %}
-          <span class="mono quiet">· via {{ event_channels.get(e.payload['channel'], e.payload['channel']) }}</span>
+        <small>{{ SOURCE_LABELS.get(e.source, 'via ' ~ e.source) }}{% if e.payload.get('channel') %}, {{ event_channels.get(e.payload['channel'], e.payload['channel']) }}{% endif %}</small>
+        {%- if e.source == 'manual' and e.type in manual_events %}
+        <small><a href="/applications/{{ a.id }}/events/{{ e.id }}/edit">Edit</a></small>
         {%- endif %}
-        {% if e.payload.get('note') %}— {{ e.payload['note'] }}{% endif %}
-        {% if e.payload.get('status_detail') %}— {{ e.payload['status_detail'] }}{% endif %}
-        {% if e.source == 'manual' and e.type in manual_events %}
-          <span class="sm quiet">· <a href="/applications/{{ a.id }}/events/{{ e.id }}/edit">edit</a></span>
-        {% endif %}</span>
         {#- Why, on every rejection whatever its source — the one field of an
             emailed event the user may write, since it is their annotation and
-            not the email's claim (web.py:set_rejection_reason). A select
-            showing the current value, the same shape as the visa select on
-            the extraction card below; the blank option clears. It IS the
-            reason's display on a rejected line, so the static span above
+            not the email's claim (web.py:set_rejection_reason). It IS the
+            reason's display on a rejected line, so the static line above
             skips rejected events rather than saying it twice. #}
         {%- if e.type == 'rejected' %}
         <form method="post" action="/applications/{{ a.id }}/events/{{ e.id }}/reason" class="why">
           <select name="reason" aria-label="Why they rejected you">
-            <option value="">{% if e.payload.get('reason') %}— clear the reason —{% else %}why? — not recorded{% endif %}</option>
+            <option value="">{% if e.payload.get('reason') %}Clear the reason{% else %}Why? Not recorded{% endif %}</option>
             {% for value, label in event_reasons.items() %}
             <option value="{{ value }}" {% if e.payload.get('reason') == value %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
           </select>
           <button>Save</button>
         </form>
-        {%- endif %}</li>
+        {%- endif %}
+      </span></li>
     {% endfor %}
-  </ul>
+  </ol>
 </div>
 
 {# Not every reply arrives through an ingest path — a recruiter rings, or
@@ -87,32 +83,31 @@
    happened. The reason select only means anything on a rejection; the route
    drops it otherwise, since there's no JS here to hide it. #}
 {% if event_error %}
-<div class="note" style="--c:var(--rejected)"><strong>Not recorded</strong> — {{ event_error }}</div>
+<div class="note" style="--c:var(--rejected);margin-top:.8rem"><strong>Not recorded.</strong> {{ event_error }}</div>
 {% endif %}
-<form method="post" action="/applications/{{ a.id }}/events"
-      style="margin-top:.7rem;display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
-  <span class="sm quiet">Record what happened:</span>
+<form method="post" action="/applications/{{ a.id }}/events" class="record">
+  <span class="lab">Record what happened:</span>
   <select name="type" aria-label="What happened">
     {% for value, label in manual_events.items() %}
     <option value="{{ value }}">{{ label }}</option>
     {% endfor %}
   </select>
   <select name="reason" aria-label="Reason, if they rejected you">
-    <option value="">reason (if rejected)</option>
+    <option value="">Reason, if rejected</option>
     {% for value, label in event_reasons.items() %}
     <option value="{{ value }}">{{ label }}</option>
     {% endfor %}
   </select>
   <select name="channel" aria-label="How you heard">
-    <option value="">how you heard</option>
+    <option value="">How you heard</option>
     {% for value, label in event_channels.items() %}
     <option value="{{ value }}">{{ label }}</option>
     {% endfor %}
   </select>
   <input type="date" name="occurred_on" max="{{ today }}" aria-label="When it happened"
-         title="When it actually happened — leave blank for now">
-  <input type="text" name="note" placeholder="optional detail" aria-label="Detail">
-  <button class="primary">Add to timeline</button>
+         title="When it actually happened. Leave blank for today">
+  <input type="text" name="note" placeholder="Detail, if any" aria-label="Detail" style="width:11rem">
+  <button class="primary">Add to the thread</button>
 </form>
 
 {% if form_answers %}
@@ -124,40 +119,34 @@
        interleaving is how you tell which employer an answer belongs to. The
        marker is the only hint that a question came round again. #}
     {% for q in form_answers %}
-    <dt>{{ q.question }}{% if q.occurrence %}<span class="mono quiet"> · entry {{ q.occurrence + 1 }}</span>{% endif %}</dt>
-    <dd>{{ q.answer }}{% if q.field_type %}<span class="mono quiet"> · {{ q.field_type }}</span>{% endif %}</dd>
+    <dt>{{ q.question }}{% if q.occurrence %} <span class="quiet sans" style="font-size:.78rem">entry {{ q.occurrence + 1 }}</span>{% endif %}</dt>
+    <dd>{{ q.answer }}{% if q.field_type %} <span class="quiet">{{ q.field_type }}</span>{% endif %}</dd>
     {% endfor %}
   </dl>
 </div>
-<p class="sm quiet" style="margin:.5rem 0 0">
-  Captured from the apply form when you submitted.
-  <a href="/answers">See every question you've been asked →</a>
-</p>
+<p class="hint">Captured from the apply form when you submitted.
+  <a href="/answers">See every question you've been asked</a>.</p>
 {% endif %}
 
 {% if extractions %}
 <h2>What the job description says</h2>
 {% for x in extractions %}
 <div class="card pad" style="margin-bottom:.7rem">
-  <form method="post" action="/extractions/{{ x.id }}/verify" style="display:grid;gap:.5rem">
+  <form method="post" action="/extractions/{{ x.id }}/verify" style="display:grid;gap:.6rem">
     <input type="hidden" name="application_id" value="{{ a.id }}">
-    <div class="mono quiet" style="font-size:.72rem">
-      via {{ x.platform }} · {{ x.model }} · {{ x.prompt_version }}
-      {% if x.verified %}· <span style="color:var(--offer)">verified by you</span>
-      {% else %}· not yet checked{% endif %}
-    </div>
-    <label class="sm quiet">languages
-      <input type="text" name="languages" value="{{ x.languages | join(', ') }}" aria-label="Languages"
-        style="max-width:100%;width:100%"></label>
-    <label class="sm quiet">technologies
-      <input type="text" name="technologies" value="{{ x.technologies | join(', ') }}" aria-label="Technologies"
-        style="max-width:100%;width:100%"></label>
-    <dl class="kv">
-      <dt>seniority</dt><dd>{{ x.seniority or "—" }}</dd>
-      <dt>salary</dt><dd>{% if x.salary_min %}{{ x.currency or "" }} {{ x.salary_min }}{% if x.salary_max and x.salary_max != x.salary_min %}–{{ x.salary_max }}{% endif %}{% else %}—{% endif %}</dd>
-      <dt>work mode</dt><dd>{{ x.work_mode or "—" }}</dd>
-      <dt>visa</dt><dd>
-        <select name="visa_signal" aria-label="Visa signal">
+    <p class="meta">Read from the {{ x.platform }} posting by {{ x.model }}, prompt {{ x.prompt_version }}.
+      {% if x.verified %}<b>Verified by you.</b>{% else %}Not yet checked by you.{% endif %}</p>
+    <dl class="facts">
+      <dt><label for="x-lang-{{ x.id }}">Languages</label></dt>
+      <dd><input type="text" id="x-lang-{{ x.id }}" name="languages" value="{{ x.languages | join(', ') }}"></dd>
+      <dt><label for="x-tech-{{ x.id }}">Technologies</label></dt>
+      <dd><input type="text" id="x-tech-{{ x.id }}" name="technologies" value="{{ x.technologies | join(', ') }}"></dd>
+      <dt>Seniority</dt><dd>{{ x.seniority or "" }}{% if not x.seniority %}<span class="quiet">Not stated</span>{% endif %}</dd>
+      <dt>Salary</dt><dd>{% if x.salary_min %}{{ x.currency or "" }} {{ x.salary_min }}{% if x.salary_max and x.salary_max != x.salary_min %}–{{ x.salary_max }}{% endif %}{% else %}<span class="quiet">Not stated</span>{% endif %}</dd>
+      <dt>Work mode</dt><dd>{{ x.work_mode or "" }}{% if not x.work_mode %}<span class="quiet">Not stated</span>{% endif %}</dd>
+      <dt><label for="x-visa-{{ x.id }}">Visa</label></dt>
+      <dd>
+        <select name="visa_signal" id="x-visa-{{ x.id }}" aria-label="Visa signal" style="width:auto">
           <option value="">{{ x.visa_signal }} (keep)</option>
           <option value="sponsors">sponsors</option>
           <option value="local_only">local_only</option>
@@ -166,7 +155,7 @@
         {% if x.visa_notes %}<span class="quiet">{{ x.visa_notes }}</span>{% endif %}
       </dd>
     </dl>
-    <div><button class="primary">{% if x.verified %}Save corrections{% else %}Looks right — verify{% endif %}</button></div>
+    <div><button class="primary">{% if x.verified %}Save corrections{% else %}Looks right{% endif %}</button></div>
   </form>
 </div>
 {% endfor %}
@@ -174,19 +163,19 @@
 
 <h2>Cover letter</h2>
 {% if cover_job and cover_job.state in ('pending', 'running') and cover_job.attempts == 0 %}
-<div class="note"><strong>Draft queued</strong> — it appears here once the worker runs.</div>
+<div class="note"><strong>Draft queued.</strong> It appears here once the worker runs.</div>
 {% elif cover_job and cover_job.state in ('pending', 'running') and cover_job.attempts > 0 %}
-<div class="note" style="--c:var(--age)">Draft generation failed and is retrying —
-  attempt {{ cover_job.attempts }} of {{ cover_max_attempts }}{% if cover_error %}: {{ cover_error }}{% endif %}</div>
+<div class="note" style="--c:var(--age)">Draft generation failed and is retrying,
+  attempt {{ cover_job.attempts }} of {{ cover_max_attempts }}{% if cover_error %}: <code>{{ cover_error }}</code>{% endif %}</div>
 {% elif cover_job and cover_job.state == 'dead' %}
 <div class="note" style="--c:var(--rejected)">Draft generation failed after
-  {{ cover_job.attempts }} attempts{% if cover_error %}: {{ cover_error }}{% endif %}</div>
+  {{ cover_job.attempts }} attempts{% if cover_error %}: <code>{{ cover_error }}</code>{% endif %}</div>
 {% endif %}
 {% for ar in artifacts %}
 <div class="card pad" style="margin-bottom:.7rem">
-  <div class="mono quiet" style="font-size:.72rem">{{ ar.kind }} · {{ ar.created_at | dtt }}{% if ar.model %} · {{ ar.model }}{% endif %}</div>
-  <details><summary style="cursor:pointer">Show text</summary>
-    <pre style="white-space:pre-wrap;font:inherit;margin:.5rem 0 0">{{ ar.content }}</pre>
+  <p class="meta" style="margin-bottom:.3rem">{{ ar.kind | replace('_', ' ') | capitalize }}, {{ ar.created_at | dtt }}{% if ar.model %}, by {{ ar.model }}{% endif %}</p>
+  <details class="plain"><summary>Show text</summary>
+    <pre class="text">{{ ar.content }}</pre>
   </details>
 </div>
 {% endfor %}
@@ -197,97 +186,85 @@
 </form>
 {% endif %}
 
-<h2>Postings</h2>
+<div class="two">
+<div>
+<h2>Posting{{ 's' if postings | length > 1 }}</h2>
 {% if postings %}
-<div class="card"><table>
-  <thead><tr><th>platform</th><th>title</th><th>location</th><th>pay</th>
-    <th>posted</th><th>ats</th><th>captured</th><th>jd</th><th></th></tr></thead>
-  <tbody>{% for p in postings %}
-  <tr><td class="mono">{{ p.platform }}</td><td>{{ p.title or "—" }}</td>
-      <td>{{ p.location or "—" }}
-        {%- if p.work_type %} <span class="mono quiet">· {{ p.work_type }}</span>{% endif %}</td>
-      {# What the AD said, verbatim — deliberately not the extractor's numbers.
-         A figure the employer printed and one a model inferred from prose are
-         different kinds of evidence and shouldn't share a column. #}
-      <td>{% if p.salary_raw %}{{ p.salary_raw }}
-        {%- if p.salary_match %} <span class="mono quiet">· profile match</span>{% endif %}
-        {%- else %}—{% endif %}</td>
-      <td class="mono">{% if p.posted_label %}{% if p.reposted %}reposted {% endif %}{{ p.posted_label }}{% else %}—{% endif %}</td>
-      <td class="mono">{{ p.ats or "—" }}</td>
-      <td class="mono">{{ p.captured_at | dt }} · {{ p.captured_via }}</td>
-      <td class="mono">{% if p.jd_text %}<details><summary style="cursor:pointer">yes</summary>
-        <pre style="white-space:pre-wrap;font:inherit;margin:.5rem 0 0;max-width:60rem">{{ p.jd_text }}</pre>
-      </details>{% else %}needs enrichment{% endif %}</td>
-      <td>{% if p.url %}<a href="{{ p.url }}">open</a>{% endif %}</td></tr>
-  {% endfor %}</tbody>
-</table></div>
+{% for p in postings %}
+{# The facts that exist, as label and value — a nine-column table was mostly
+   dashes. What the AD said, verbatim — deliberately not the extractor's
+   numbers: a figure the employer printed and one a model inferred from prose
+   are different kinds of evidence and shouldn't share a line. #}
+<dl class="facts"{% if not loop.last %} style="margin-bottom:1rem"{% endif %}>
+  <dt>Platform</dt><dd>{{ p.platform }}{% if p.url %} <span class="quiet">— <a href="{{ p.url }}">open the posting</a></span>{% endif %}</dd>
+  {% if p.title %}<dt>Title as posted</dt><dd>{{ p.title }}</dd>{% endif %}
+  {% if p.location or p.work_type %}<dt>Location</dt><dd>{{ p.location or "" }}{% if p.location and p.work_type %}, {% endif %}{{ p.work_type or "" }}</dd>{% endif %}
+  {% if p.salary_raw %}<dt>Pay as posted</dt><dd>{{ p.salary_raw }}{% if p.salary_match %} <span class="quiet">— within your range</span>{% endif %}</dd>{% endif %}
+  {% if p.posted_label or p.ats %}<dt>Posted</dt><dd>{% if p.posted_label %}{% if p.reposted %}reposted {% endif %}{{ p.posted_label }}{% endif %}{% if p.posted_label and p.ats %}, {% endif %}{% if p.ats %}via {{ p.ats }}{% endif %}</dd>{% endif %}
+  <dt>Captured</dt><dd>{{ p.captured_at | day }}, {{ SOURCE_LABELS.get(p.captured_via, 'via ' ~ p.captured_via) }}</dd>
+  <dt>Description</dt><dd>{% if p.jd_text %}<details class="plain"><summary>Show the description</summary>
+      <pre class="text">{{ p.jd_text }}</pre></details>{% else %}<span class="quiet">Not captured, needs enrichment</span>{% endif %}</dd>
+</dl>
+{% endfor %}
 {% else %}<p class="empty">No postings captured for this job yet.</p>{% endif %}
+</div>
 
+<div>
 <h2>Contacts</h2>
 {% if contacts %}
-<div class="card"><table>
-  <thead><tr><th>name</th><th>role</th><th>approached</th><th>notes</th><th></th></tr></thead>
-  <tbody>{% for c in contacts %}
-  <tr><td>{% if c.url %}<a href="{{ c.url }}">{{ c.name }}</a>{% else %}{{ c.name }}{% endif %}</td>
-      <td>{{ c.role or "—" }}</td><td class="mono">{{ "yes" if c.approached else "no" }}</td>
-      <td>{{ c.notes or "—" }}</td>
-      <td><a href="/applications/{{ a.id }}/contacts/{{ c.id }}/edit">edit</a>
-        <form method="post" action="/applications/{{ a.id }}/contacts/{{ c.id }}/delete" style="display:inline">
-          <button type="submit" class="danger" style="margin-left:.4rem">delete</button>
-        </form></td></tr>
-  {% endfor %}</tbody>
-</table></div>
+<ul class="list">
+  {% for c in contacts %}
+  <li><span class="k">{% if c.url %}<a href="{{ c.url }}">{{ c.name }}</a>{% else %}{{ c.name }}{% endif %}
+        {% if c.role %}<small>{{ c.role }}</small>{% endif %}</span>
+      <span class="v">{{ c.notes or "" }}{% if c.approached %}{% if c.notes %} {% endif %}<span class="quiet">Approached.</span>{% endif %}
+        <span class="acts"><a href="/applications/{{ a.id }}/contacts/{{ c.id }}/edit">Edit</a>
+          <form method="post" action="/applications/{{ a.id }}/contacts/{{ c.id }}/delete">
+            <button type="submit" class="link danger">Delete</button>
+          </form></span></span></li>
+  {% endfor %}
+</ul>
 {% endif %}
-<details {% if not contacts %}style="margin-top:-.2rem"{% else %}style="margin-top:.6rem"{% endif %}>
-  <summary class="sm quiet" style="cursor:pointer">
-    {% if contacts %}Add another contact{% else %}No contacts yet — add one{% endif %}</summary>
-  <form method="post" action="/applications/{{ a.id }}/contacts"
-        style="margin-top:.6rem;display:flex;gap:.5rem;flex-wrap:wrap;align-items:end">
-    <label class="sm quiet">name <input type="text" name="name" placeholder="recruiter name" required aria-label="Contact name"></label>
-    <label class="sm quiet">role <input type="text" name="role" placeholder="optional" aria-label="Role"></label>
-    <label class="sm quiet">url <input type="text" name="url" placeholder="optional profile URL" aria-label="URL"></label>
-    <label style="display:flex;align-items:center;gap:.3rem" class="sm quiet">
-      <input type="checkbox" name="approached" value="yes"> approached</label>
-    <input type="text" name="notes" placeholder="notes (optional)" aria-label="Notes">
-    <button class="primary">Add contact</button>
+<details class="plain" style="margin-top:.6rem">
+  <summary>{% if contacts %}Add another contact{% else %}No contacts yet. Add one{% endif %}</summary>
+  <form method="post" action="/applications/{{ a.id }}/contacts" class="stack" style="margin-top:.6rem">
+    <label>Name <input type="text" name="name" placeholder="Recruiter name" required aria-label="Contact name"></label>
+    <label>Role <input type="text" name="role" placeholder="Optional" aria-label="Role"></label>
+    <label>Profile URL <input type="text" name="url" placeholder="Optional" aria-label="URL"></label>
+    <label class="row"><input type="checkbox" name="approached" value="yes"> Approached</label>
+    <label>Notes <input type="text" name="notes" placeholder="Optional" aria-label="Notes"></label>
+    <div class="actions"><button class="primary">Add contact</button></div>
   </form>
 </details>
+</div>
+</div>
 
 {% if emails %}
 <h2>Emails</h2>
-<div class="card"><table>
-  <thead><tr><th>received</th><th>subject</th><th>from</th><th>type</th><th></th></tr></thead>
-  <tbody>{% for m in emails %}
-  <tr><td class="mono">{{ m.received_at | dtt }}</td><td>{{ m.subject or "—" }}</td>
-      <td class="mono">{{ m.sender }}</td>
-      <td>{% if m.classification %}<span class="badge" style="--c:var(--viewed)">{{ m.classification }}</span>{% endif %}</td>
-      <td>
-        <form method="post" action="/emails/{{ m.id }}/refile"
-              style="display:flex;gap:.3rem;align-items:center;flex-wrap:wrap">
-          <input type="hidden" name="redirect_to" value="/applications/{{ a.id }}">
-          <select name="application_id" aria-label="Re-file to a different application" style="max-width:14rem">
-            <option value="">— pick an application —</option>
-            {% for o in options %}
-            <option value="{{ o.id }}">{{ o.company_display }} · {{ o.title_canonical }}</option>
-            {% endfor %}
-          </select>
-          <button name="action" value="link">Re-file</button>
-          <button name="action" value="pending">Send to triage</button>
-          <button name="action" value="ignore">Ignore</button>
-        </form>
-      </td></tr>
-  {% endfor %}</tbody>
-</table></div>
-<p class="mono quiet" style="font-size:.75rem;margin:.5rem 0 0;max-width:60ch">
-  Wrong company? "Re-file" undoes just this email's events here and moves it to
-  the one you pick — the rest of this application's history is untouched. If
-  that empties this application entirely (it existed only because of this
-  email), it's deleted too.
-</p>
+<ul class="list">
+  {% for m in emails %}
+  <li><span class="k when">{{ m.received_at | dtt }}</span>
+      <span class="v"><span class="mail-sub">{{ m.subject or "(no subject)" }}</span>
+        <span class="mail-from">{{ m.sender }}{% if m.classification %}, read as <span class="badge" style="--c:var(--viewed)">{{ m.classification | replace('_', ' ') }}</span>{% endif %}</span>
+        <details class="refile"><summary>Re-file this email</summary>
+          <form method="post" action="/emails/{{ m.id }}/refile">
+            <input type="hidden" name="redirect_to" value="/applications/{{ a.id }}">
+            <select name="application_id" aria-label="Re-file to a different application" style="max-width:16rem">
+              <option value="">Pick an application</option>
+              {% for o in options %}
+              <option value="{{ o.id }}">{{ o.company_display }}, {{ o.title_canonical }}</option>
+              {% endfor %}
+            </select>
+            <button class="small" name="action" value="link">Move it</button>
+            <button class="small" name="action" value="pending">Send to triage</button>
+            <button class="small" name="action" value="ignore">Ignore</button>
+          </form>
+        </details></span></li>
+  {% endfor %}
+</ul>
+<p class="hint">Filed under the wrong company? Re-filing moves only this email and the
+  events it created; the rest of this thread stays. If that leaves this application
+  empty (it existed only because of this email), it is deleted too.</p>
 {% endif %}
 
-<p style="margin-top:2.5rem;text-align:right">
-  <a class="sm quiet" href="/applications/{{ a.id }}/delete"
-     style="color:var(--muted)">Delete this application</a>
-</p>
+<p class="footnote"><a href="/applications/{{ a.id }}/delete">Delete this application</a></p>
 {% endblock %}

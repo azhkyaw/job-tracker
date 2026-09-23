@@ -409,10 +409,14 @@ work" below stays a list of what is open, not a history of what was done.
 Lives in `.claude/rules/web-ui.md` (loads with `web.py` / `templates/`). The
 rules that must survive any edit, one line each: colour means exactly one
 thing, the state of the wait, and everything else is grey (blue engaged, amber
-waiting, rust closed, green offer); the dark palette is written TWICE and both
-copies change together; every trace on a page shares ONE axis; charts are
-single-series, never dual-axis; never print a rate below `analytics.MIN_RATE_N`;
-the app has no JS, ever.
+waiting, rust closed, green offer) — and since 23 Sep 2026 amber is GRADED by
+`trace.heat()` through one `--heat` variable per row, never a second amber;
+the dark palette is written TWICE and both copies change together; every
+trace on a page shares ONE axis; charts are single-series, never dual-axis;
+never print a rate below `analytics.MIN_RATE_N`; words on a page come from
+`web.EVENT_LABELS` / `SOURCE_LABELS`, never an event type or a `source` value;
+Newsreader carries words and IBM Plex Sans Condensed carries numbers, labels
+and controls, and nothing is monospace but real code; the app has no JS, ever.
 
 ## Gotchas learned the hard way in the original build
 

@@ -15,11 +15,19 @@ matching file instead of in every session (it can also be Read directly).
 Dates are the key to each case; the record itself is in the database. The
 tenancy invariant (#6) and the event-log invariant (#2) are still in CLAUDE.md.
 
-## UI design system (redesigned 28 Jul 2026)
+## UI design system (redesigned 28 Jul 2026, redrawn 23 Sep 2026)
 
 All CSS lives in one `<style>` block in `pipeline/templates/base.html` — no build step,
-no framework, no separate stylesheet. Fonts: **Archivo** (variable, `wdth`
-axis) + **DM Mono**, from Google Fonts.
+no framework, no separate stylesheet. Fonts since 23 Sep 2026: **Newsreader**
+(variable, `opsz` + `wght`, carries the record — names, roles, what happened,
+in sentences) + **IBM Plex Sans Condensed** (carries every number, date, label
+and control), from Google Fonts. Archivo + DM Mono were the 28 Jul pair; the
+redraw replaced them, and with them every uppercase tracked label, every
+monospace data label, every middle-dot meta string and every event-type name
+shown on a page (rule 15). Real code — a CLI command, a token, a traceback
+line — is still `<code>`/`.mono`. The 23 Sep mockup the redraw was built from
+is a private artifact, linked from the memory file
+`project_ui_redesign_vision_2026-09-23.md`.
 
 1. **Colour means exactly one thing: the state of the wait.** Blue
    (`--accent`) = someone engaged. Amber (`--age`) = time passing, unanswered.
@@ -35,9 +43,12 @@ axis) + **DM Mono**, from Google Fonts.
    equal specificity and source order is what lets a light pin win on a dark
    OS. Change one, change the other. (A missed second block is exactly how a
    contrast fix half-landed during the redesign.)
-3. **Hierarchy runs on Archivo's width axis, not only size/weight.**
-   `font-stretch:118%` for nameplates and numerals, 100% for prose. To give
-   something more presence, go wider before going bigger.
+3. **Hierarchy runs on the two faces, not on size alone** (was Archivo's
+   width axis until 23 Sep 2026). The serif is the record and the sans is the
+   apparatus: a company name is serif 600, a role is serif muted, a day-count
+   is sans 500 tabular, a column head is sans muted sentence case. To give
+   something more presence, change its face before changing its size — and
+   never put a number in the serif or a sentence in the sans.
 4. **`pipeline/trace.py` owns ALL trace geometry** and is pure — no DB, no
    template knowledge. Both the list and the detail page call
    `trace.build(rows, events_by_app, now, reminder_days)`, which annotates
@@ -226,6 +237,42 @@ axis) + **DM Mono**, from Google Fonts.
     rule 12's "two definitions" trap again. `/analytics` gets the sibling
     table, with the channel columns that answer the question as asked. Not a
     row badge: the trace already draws the rounds.
+14. **The wait has a temperature** (23 Sep 2026). Amber was binary — a tail
+    either crossed `REMINDER_DAYS` or it did not — and on 277 real rows that
+    put 150 in one flat amber: a highlighted list, not a scale. `trace.heat()`
+    grades it, 0 at the threshold and 100 at `trace.FULL_HEAT_DAYS` (56, a
+    judgement: where a thread has outlived every reply the author ever got),
+    and the row carries it as `--heat`. ONE `color-mix(in oklab, var(--age)
+    var(--heat), var(--muted))` in `base.html` drives the right rail's
+    numeral (`.tl .rail .d`), the tail (`.trace .tail`) and the follow-up
+    queue's count (`.fu-d`), so a figure and its line cannot disagree, and the
+    queue's 41 is the same colour as the register's 41 (the `/follow-ups`
+    route calls the same function). A tail is blue (`.live`) only while it is
+    fresh AND someone else moved last — once it crosses the threshold it is a
+    wait like any other and takes the heat. Rule 1 unchanged: this is amber
+    meaning the state of the wait more precisely, not a fifth hue. Buttons
+    and links went achromatic in the same change (ink primary, underlined ink
+    links) for the same reason — blue already means "someone engaged", and a
+    control is not a state.
+15. **Words on a page are the user's, never the log's** (23 Sep 2026).
+    `web.EVENT_LABELS` is the one map from an event type to what the thread
+    says ("Interview invitation", "You applied", "Rejected"), second person
+    because the page is the user's own record read back; `_MANUAL_EVENTS`
+    stays first person because that is the user speaking into a form.
+    `SOURCE_LABELS` does the same for `source`/`captured_via` ("by email",
+    "captured by the extension", "filed by hand"). A type missing from either
+    renders as itself, so a new one is readable before it is named. Column
+    heads and section heads are sentence case; the funnel's status words
+    (`applied`, `viewed`, `interviewing`, `rejected`) are the one vocabulary
+    that stays lowercase, because the row's status word, the legend and the
+    filter must read as the same word.
+16. **Axis labels are month starts on a long search, weeks on a short one**
+    (23 Sep 2026, `trace._ticks`). At the list's capped trace width, weekly
+    labels thinned by two measured 1px apart on 12 weeks of real data ("2 Jul"
+    against "16 Jul", "10 Sep" against "today"). Eight weeks and up the axis
+    shows the start date, then "Aug", "Sep"; under that it keeps its weeks.
+    The list and the detail page share the function, so a long thread on the
+    (full-width) detail page also gets months — sparse, and fine.
 
 ## Gotchas learned the hard way
 
@@ -345,9 +392,11 @@ axis) + **DM Mono**, from Google Fonts.
 
 ## Known-untested surfaces (verify on first real contact)
 
-- **The redesigned palette, on a real screen.** Layout, type, spacing,
-  responsive behaviour and contrast were all verified (contrast numerically —
-  0 WCAG AA failures in both themes); the *rendered colour* never was,
-  because Dark Reader owns the dev browser (see Gotchas). Nobody has yet
-  confirmed with their own eyes that the amber/blue/rust system reads the way
-  it is supposed to. Check this before putting screenshots in a README.
+- **The palette, on a real screen.** The 28 Jul palette was never seen
+  rendered (Dark Reader owns the dev browser — see Gotchas), and the 23 Sep
+  redraw's has been seen only as the mockup on claude.ai, in the dark theme,
+  where the heat gradient and the blue/rust rows read as intended; the LIGHT
+  theme has been checked numerically only (every text token ≥ 4.9:1 on
+  paper; the first draft's amber failed at 4.25 and was darkened to
+  `#9A5705`). Nobody has seen the APP itself render the new CSS without Dark
+  Reader in the way. Check this before putting screenshots in a README.

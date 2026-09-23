@@ -4,11 +4,11 @@
 <h1>Sign in</h1>
 {% if error %}<div class="note" style="--c:var(--rejected);max-width:24rem">{{ error }}</div>{% endif %}
 <div class="card pad" style="max-width:24rem">
-<form method="post" action="/login" style="display:grid;gap:.6rem">
-  <label class="sm quiet">email <input type="text" name="email" autocomplete="username" required style="width:100%"></label>
-  <label class="sm quiet">password <input type="password" name="password" autocomplete="current-password" required style="width:100%"></label>
-  <div><button class="primary">Sign in</button>
-  {% if signup_allowed %} <a href="/signup" style="margin-left:.8rem">Create an account</a>{% endif %}</div>
+<form method="post" action="/login" class="stack">
+  <label>Email <input type="text" name="email" autocomplete="username" required></label>
+  <label>Password <input type="password" name="password" autocomplete="current-password" required></label>
+  <div class="actions"><button class="primary">Sign in</button>
+  {% if signup_allowed %}<a href="/signup">Create an account</a>{% endif %}</div>
 </form>
 </div>
 {% endblock %}

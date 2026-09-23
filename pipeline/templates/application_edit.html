@@ -3,64 +3,57 @@
 {% block nav_apps %}active{% endblock %}
 {% block content %}
 <h1>Edit application</h1>
-<p style="color:var(--muted)">Correcting the record, not logging something new —
-to add an outcome use the timeline on the
-<a href="/applications/{{ a.id }}">detail page</a>.</p>
+<p class="lede" style="margin-top:-.4rem">Correcting the record, not logging something new.
+  To add an outcome, use the thread on the <a href="/applications/{{ a.id }}">application's page</a>.</p>
 
-{% if error %}<p class="empty" style="text-align:left">{{ error }}</p>{% endif %}
+{% if error %}<div class="note" style="--c:var(--rejected)">{{ error }}</div>{% endif %}
 
-<form method="post" action="/applications/{{ a.id }}/edit" style="display:grid;gap:.5rem;max-width:34rem">
-  <label>company <input type="text" name="company" value="{{ form.company }}" required></label>
-  <label>title <input type="text" name="title" value="{{ form.title }}" required></label>
+<form method="post" action="/applications/{{ a.id }}/edit" class="stack">
+  <label>Company <input type="text" name="company" value="{{ form.company }}" required></label>
+  <label>Title <input type="text" name="title" value="{{ form.title }}" required></label>
 
-  <label for="platform">platform</label>
+  <label for="platform">Platform</label>
   <select name="platform" id="platform" aria-label="Platform">
-    <option value="linkedin" {% if form.platform == 'linkedin' %}selected{% endif %}>linkedin</option>
-    <option value="jobstreet" {% if form.platform == 'jobstreet' %}selected{% endif %}>jobstreet</option>
-    <option value="indeed" {% if form.platform == 'indeed' %}selected{% endif %}>indeed</option>
-    <option value="other" {% if form.platform == 'other' %}selected{% endif %}>other</option>
+    <option value="linkedin" {% if form.platform == 'linkedin' %}selected{% endif %}>LinkedIn</option>
+    <option value="jobstreet" {% if form.platform == 'jobstreet' %}selected{% endif %}>JobStreet</option>
+    <option value="indeed" {% if form.platform == 'indeed' %}selected{% endif %}>Indeed</option>
+    <option value="other" {% if form.platform == 'other' %}selected{% endif %}>Other</option>
   </select>
 
-  <label>job URL (optional) <input type="text" name="url" value="{{ form.url }}"
-    placeholder="paste the listing URL — lets a later re-capture or email merge onto this record"></label>
+  <label>Job URL, optional <input type="text" name="url" value="{{ form.url }}"
+    placeholder="Paste the listing URL, so a later capture or email can merge onto this record"></label>
 
-  <label>location (optional) <input type="text" name="location" value="{{ form.location }}"
-    placeholder="e.g. Singapore, Remote"></label>
+  <label>Location, optional <input type="text" name="location" value="{{ form.location }}"
+    placeholder="Singapore, Remote"></label>
 
-  <div style="display:flex;gap:.5rem;align-items:end">
-    <label>applied <input type="date" name="applied_date" value="{{ form.applied_date }}" max="{{ today }}" required></label>
-    <label>time (optional) <input type="time" name="applied_time" value="{{ form.applied_time }}"></label>
+  <div class="pair">
+    <label>Applied on <input type="date" name="applied_date" value="{{ form.applied_date }}" max="{{ today }}" required></label>
+    <label>Time, optional <input type="time" name="applied_time" value="{{ form.applied_time }}"></label>
   </div>
 
-  <label for="external">how you applied (optional)</label>
+  <label for="external">How you applied, optional</label>
   <select name="external" id="external" aria-label="How you applied">
-    <option value="" {% if form.external == '' %}selected{% endif %}>— not set —</option>
-    <option value="no" {% if form.external == 'no' %}selected{% endif %}>on-platform (Easy Apply / quick apply)</option>
-    <option value="yes" {% if form.external == 'yes' %}selected{% endif %}>redirected to the employer's website</option>
+    <option value="" {% if form.external == '' %}selected{% endif %}>Not set</option>
+    <option value="no" {% if form.external == 'no' %}selected{% endif %}>On-platform (Easy Apply, quick apply)</option>
+    <option value="yes" {% if form.external == 'yes' %}selected{% endif %}>Redirected to the employer's website</option>
   </select>
 
-  <label>job description
+  <label>Job description
     <textarea name="jd_text" rows="10"
-      style="display:block;width:100%;font:inherit;border:1px solid var(--line);border-radius:6px;padding:.5rem;margin-top:.25rem"
-      placeholder="paste it here if you still have it — verified/extracted the same as a captured JD">{{ form.jd_text }}</textarea>
+      placeholder="Paste it here if you still have it. It is extracted and verified the same as a captured description.">{{ form.jd_text }}</textarea>
   </label>
-  <p class="mono" style="color:var(--muted);font-size:.78rem;margin:0">
-    Changing this re-runs extraction on the next
-    <span class="mono">python -m pipeline.cli work</span>; the previous
-    extraction is kept but superseded.
-  </p>
+  <p class="hint" style="margin:0">Changing this re-runs extraction on the next
+    <code>python -m pipeline.cli work</code>; the previous extraction is kept but superseded.</p>
 
-  <p style="color:var(--muted);font-size:.85rem">
-    Dates and times are read in your timezone (<strong>{{ tz_label }}</strong> —
-    <a href="/settings">change in Settings</a>). Leave time blank and the entry
-    is filed at midday, meaning "this date, time not recorded". Company and
-    title apply to the whole job; platform, URL, location and the job
-    description apply to the posting this application was filed through.
-  </p>
+  <p class="hint">Dates and times are read in your timezone, <b>{{ tz_label }}</b>
+    (<a href="/settings">change it in Settings</a>). Leave the time blank and the entry
+    is filed at midday, meaning “this date, time not recorded”. Company and title
+    apply to the whole job; platform, URL, location and the job description apply
+    to the posting this application was filed through.</p>
 
-  <div>
+  <div class="actions">
     <button class="primary">Save changes</button>
-    <a href="/applications/{{ a.id }}"><button type="button">Cancel</button></a>
+    <a href="/applications/{{ a.id }}">Cancel</a>
   </div>
 </form>
 {% endblock %}

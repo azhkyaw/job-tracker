@@ -409,3 +409,31 @@ the key to each real case.
    rounds already) and a LinkedIn-specific bucket (the channel lives in the
    chip's hover text and the analytics table; a fourth chip is one line if
    wanted).
+13. **The UI, redrawn** (23 Sep 2026). Asked to envision a new UI, then to
+   implement it. Looked first: rendered all 277 real rows and found the
+   list's axis labels physically colliding at the capped trace width (the
+   boxes of "2 Jul" and "16 Jul" 1px apart, "10 Sep" against "today"), the
+   trace column 90% empty gridline under newest-first because the axis is
+   12 weeks and most rows are under three, and Dark Reader active in the dev
+   profile (8 injected styles), so the 28 Jul palette had still never been
+   seen rendered. Kept every information-design rule that had been verified
+   against real data (`.claude/rules/web-ui.md` rules 1, 4-13: colour = the
+   state of the wait, one axis, funnel-as-filter, follow-ups as a page,
+   submission-date sort, no JS); replaced the visual language wholesale
+   (rules 3, 14-16): Newsreader + IBM Plex Sans Condensed for Archivo + DM
+   Mono, warm stone for blue-slate, no uppercase labels, no monospace outside
+   code, no middle-dot meta strings, sentences for event types
+   (`web.EVENT_LABELS`), facts as label/value lists for the nine-column
+   postings table, per-email re-file collapsed into a `<details>`, ink
+   buttons and links. The one new mechanism is `trace.heat()`: amber graded
+   from the follow-up threshold to eight weeks, one `--heat` per row driving
+   the rail numeral, the tail and the queue's count through one color-mix.
+   Axis ticks became month starts on spans of eight weeks and up. Contrast
+   verified numerically for both palettes (light amber darkened from AD6207
+   to 9A5705 after failing AA at 4.25:1). Four test anchors changed with the
+   copy ("Inbound, awaiting your call", "Why? Not recorded", "Same job,
+   merge them"); nothing behavioural moved. The mockup it was built from is
+   a private artifact linked from `project_ui_redesign_vision_2026-09-23.md`
+   in the memory directory. Still owed: eyes on the app itself without Dark
+   Reader, and the heat curve's 56-day ceiling is a judgement that a replay
+   over the 150 waiting rows could settle.
