@@ -245,6 +245,15 @@
   <li><span class="k when">{{ m.received_at | dtt }}</span>
       <span class="v"><span class="mail-sub">{{ m.subject or "(no subject)" }}</span>
         <span class="mail-from">{{ m.sender }}{% if m.classification %}, read as <span class="badge" style="--c:var(--viewed)">{{ m.classification | replace('_', ' ') }}</span>{% endif %}</span>
+        {# The same disclosure triage has. Absent, not empty, when the body
+           was never stored or has been purged (the INGEST_ALL retention rule
+           clears not_job_related bodies; a matched email normally keeps its
+           text). #}
+        {%- if m.body_text %}
+        <details class="plain"><summary>Read the email</summary>
+          <pre class="text">{{ m.body_text }}</pre>
+        </details>
+        {%- endif %}
         <details class="refile"><summary>Re-file this email</summary>
           <form method="post" action="/emails/{{ m.id }}/refile">
             <input type="hidden" name="redirect_to" value="/applications/{{ a.id }}">

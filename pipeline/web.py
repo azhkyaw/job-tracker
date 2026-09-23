@@ -885,7 +885,7 @@ def application_detail(request: Request, app_id: str, saved: str | None = None,
             "SELECT id, name, role, url, approached, notes FROM contacts "
             "WHERE job_id = %s ORDER BY name", (a["job_id"],)).fetchall()
         emails = conn.execute(
-            "SELECT id, sender, subject, received_at, classification FROM emails "
+            "SELECT id, sender, subject, received_at, classification, body_text FROM emails "
             "WHERE matched_application_id = %s ORDER BY received_at DESC", (a["id"],)).fetchall()
         extractions = conn.execute(
             """

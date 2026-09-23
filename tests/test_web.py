@@ -1318,9 +1318,11 @@ with db.connect() as conn, conn.transaction():
         (user_id, wrong_job)).fetchone()["id"]
     refile_email_id = conn.execute(
         """INSERT INTO emails (user_id, gmail_message_id, sender, subject, received_at,
-                               classification, extraction, matched_application_id, triage_state)
+                               classification, extraction, matched_application_id, triage_state,
+                               body_text)
            VALUES (%s, 'gm-refile-test', 'no-reply@ashbyhq.com', 'Thanks for applying', now(),
-                   'confirmation', %s, %s, 'auto_matched')
+                   'confirmation', %s, %s, 'auto_matched',
+                   'Thanks for applying to WrongCo. We will be in touch.')
            RETURNING id""",
         (user_id, Json({"company": "WrongCo", "platform": "ats"}), wrong_app)).fetchone()["id"]
     conn.execute(
@@ -1342,6 +1344,13 @@ with db.connect() as conn, conn.transaction():
     conn.execute(
         "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
         "VALUES (%s, %s, 'applied', 'manual', now(), '{}')", (user_id, right_app))
+
+# The email's own text is readable from the page it is filed under — the same
+# disclosure triage offers — so a misfiling can be judged without leaving the
+# thread. Hidden entirely, not shown empty, when there is no body to read.
+r = client.get(f"/applications/{wrong_app}")
+check("the detail page offers to read a linked email",
+      "Read the email" in r.text and "We will be in touch." in r.text, r.status_code)
 
 r = client.post(f"/emails/{refile_email_id}/refile",
                 data={"action": "link", "application_id": str(right_app),

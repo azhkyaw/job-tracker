@@ -136,6 +136,24 @@ invariants that govern this code (#3, #4, #9) are still in CLAUDE.md.
   a rule broader than any real case — now shares a word, as every real case
   did. The exact-title rescue stays load-bearing: it is still the only rule
   that reaches the Litware shape (neither name a subset of the other).
+- **A fifth duplicate of the 4 Aug shape, with a new reason rule 1 missed it**
+  (found 23 Sep 2026, made 7 Sep). An extension capture of a LinkedIn posting
+  that redirected to the employer's site ("Contoso Group Singapore", "Senior
+  Software Engineer"), and 66 minutes later the employer's iCIMS autoreply,
+  branded with the hiring subsidiary ("Contoso Media") and titled "Senior
+  Software Engineer (2026-170938)" — the ATS appends its requisition id to
+  every title. Company similarity 0.28 against the 0.6 gate; rule 2 fails
+  because neither word set contains the other ({contoso, media} vs {contoso,
+  group, singapore}); rule 1 fails on the SUFFIX alone — the shared word
+  "contoso" would have passed. Zero candidates, so a confirmation minted a
+  second record, `auto_matched` with a NULL score (the bullet below). The
+  classify job had also sat four days in the credit-balance outage, so the
+  duplicate appeared long after the capture. Re-filed through `refile_email`
+  (snapshot first); the empty record and its job were removed by the route,
+  277 → 276. Only ONE stored title carries a parenthesised requisition id, so
+  the matcher was not changed for it — if a second ATS mail does the same,
+  the general fix is to strip a trailing `(…id…)` before rule 1's equality,
+  not to add a sender to a list.
 - `emails.match_score` stores the best candidate score even for `pending`
   rows — that's the tuning dataset. **`NULL` means something different and
   more specific: ZERO candidates were found, not a low-confidence miss.** That
