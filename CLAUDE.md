@@ -50,7 +50,9 @@ it: the resume picker is PROMOTED to `applications.resume_file` (migration
 
 - `pipeline/web.py` — all routes (FastAPI + Jinja, no JS)
 - `pipeline/ingest.py` — the only place job/posting/application rows are created
-- `pipeline/matcher.py` — matches inbound email to an application, fabricates events
+- `pipeline/matcher.py` — matches an email to an application and files its event:
+  an employer's outcome for mail received, what the USER did for mail they
+  sent (`EVENT_TYPE`'s `sent_*` rows, migration 016 — never an employer's outcome)
 - `pipeline/mailbox.py` — mail-ingest orchestrator shared by IMAP + Gmail API;
   `body_from_parts()` is the ONE decision of which MIME part is the body
   (the HTML alternative, since 23 Sep 2026 — `.claude/rules/mail-ingest.md`
@@ -113,7 +115,7 @@ that can be Read directly at any time:
   `prompts/**`: thinking/effort measurements, model versioning, the outage story
 - `.claude/rules/database.md` — `migrations/**`, `db.py`, scripts: the
   four-places rule, CHECK names, gapped precedence, Neon pooler, view ordering
-- `docs/worklog.md` — the dated task register (tasks 1-15 with their
+- `docs/worklog.md` — the dated task register (tasks 1-16 with their
   measurements); what is still open is summarised under "Open work" below
 
 A rule file is tracked text, so the real-names rule (Commands) applies to it,
@@ -389,7 +391,9 @@ work" below stays a list of what is open, not a history of what was done.
     filtering, body storage, enqueueing, query building, and cursor
     persistence for every provider. A provider (`gmail_imap.ImapProvider`,
     `gmail_sync.GmailApiProvider`) only connects, searches, and returns the
-    normalised `{id, sender, subject, body_text, received_at}` dict — `id` is
+    normalised `{id, sender, subject, body_text, received_at, sent}` dict —
+    `sent` is Gmail's own SENT system label, since All Mail holds both
+    directions and everything downstream branches on it (migration 016); `id` is
     `gmail_message_id` as lowercase hex, identical on both paths since
     IMAP's `X-GM-MSGID` (decimal) and the API's message id (hex) are the same
     64-bit value. Never copy `is_candidate` / `store_message` / a query
@@ -608,19 +612,27 @@ Detail lives with each family's rule file; this is the index.
 
 ## Open work (as of 24 Sep 2026)
 
-The dated register behind each item, tasks 1-15 with their measurements, is
+The dated register behind each item, tasks 1-16 with their measurements, is
 `docs/worklog.md`; read the matching entry before acting on one.
 
 - **Bug, unfixed (2 Sep 2026):** `matcher._event_time` applies a stated
   `event_date` to interview invites, so the event lands on the INTERVIEW day
-  rather than the day the invite arrived (4 of 37 invites; inflates
-  `avg_days_to_resp`, stretches the trace axis past today). Fix shape: a stated
-  date moves confirmations and rejections only; keep an interview date in the
-  payload. Detail: `.claude/rules/matching.md`.
+  rather than the day the invite arrived (inflates `avg_days_to_resp`,
+  stretches the trace axis past today). Mail the user SENT is exempt since
+  24 Sep (task 16); on received mail, 8 events sit more than 3 days off their
+  email's arrival that day — 5 invites pushed forward (2 into the future), 1
+  rejection and 2 notes pulled BACK. **The fix shape recorded here before was
+  wrong for rejections**: a 7 Sep rejection quotes the date the application
+  was submitted and so filed on the 4 Aug apply day, before the `applied`
+  event; and a LinkedIn digest's "Applied on 29 Jul" was extracted as 2 Jul,
+  before the search began. The general rule: an event happens when its email
+  arrives, and any stated date belongs in the payload. Detail:
+  `.claude/rules/matching.md`.
 - **Follow-up drafting** on an age-capped queue: cap `/follow-ups` near 21
-  days (149 qualify on 24 Sep, 17 of them inside the cap; ONE
-  `follow_up_sent` has ever been filed, on 3 Sep), then build the draft next
-  to the button. (worklog task 4)
+  days (150 qualify on 24 Sep, 17 of them inside the cap), then build the
+  draft next to the button. Four `follow_up_sent` are on record: one filed
+  by hand, three recovered from follow-ups the user EMAILED, which since
+  migration 016 file themselves (task 16). (worklog task 4)
 - **Extension, next real Easy Apply:** verify 0.9.0 is live and the tab was
   opened after the reload; read `doc_source` and the sweep line. JobStreet still
   owes one clean submit with the race fix and salary capture together. (task 5)
@@ -644,6 +656,12 @@ The dated register behind each item, tasks 1-15 with their measurements, is
   postings extracted `local_only`, all applied to, 6 rejected, 16 waiting —
   and 40 of 55 rejections wait to be tagged at `/?reason=unrecorded` (24 Sep;
   task 12's `how=no_round&reason=unrecorded` is the bulk of that queue).
+- **Two emails from the sent-mail repair wait on the author** (task 16): the
+  two resume emails recovered from `not_job_related` sit in triage (neither
+  names a company, so the matcher could not place them), and a 23 Sep
+  follow-up to one employer is filed on ANOTHER employer's application — a
+  hand-link slip in triage, three links in 22 seconds. Re-file it from the
+  detail page; it moves as a `follow_up_sent`.
 - **Heat ceiling** (task 13): `trace.FULL_HEAT_DAYS` = 56 is a judgement,
   not a measurement; replay it over the waiting rows before tuning it, the
   way every other threshold here was settled.

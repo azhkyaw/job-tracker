@@ -486,3 +486,39 @@ the key to each real case.
    applied" was out of date on arrival. The 3 Sep thread still reads
    interviewing, the 27 Aug agency thread `applied`. Counts after: 24 on
    `/inbound`, 253 on `/`, 1 saved (task 14's day was 22 and 255).
+16. **Mail the user sent, filed as what they did** (24 Sep 2026). A
+   read-only data audit, asked for as "anything odd about the data",
+   ranked this first: grouping events by the email's SENDER showed 27
+   stored emails from the user's own addresses producing 28 events as if
+   an employer had sent them — replies in scheduling threads filed as
+   `interview_invite` (4 of one application's 19), follow-ups as notes, one
+   reply dated three weeks ahead off the interview day it quoted, and two
+   resume emails ruled `not_job_related` with bodies purged. Nothing in the
+   code or docs recorded that ingest reads All Mail and so reads both
+   directions. Probed the real mailbox read-only before designing: Gmail's
+   `\Sent` label is on 26 of the 27 own-address messages, and the 27th is a
+   confirmation the user FORWARDED in from another address — received, and
+   rightly a confirmation — so the label, not the From address, is the fact
+   (`.claude/rules/mail-ingest.md` has the wire form, which is not the one
+   Google's docs print). Built: migration 016 (`emails.sent_by_user`, four
+   `sent_*` classifications), both providers reading the label, a separate
+   `email_classify_sent_v1` so received mail is byte-identical, and the
+   matcher rules in `.claude/rules/matching.md` — including a latent bug
+   the tests exposed (`dispatch` never passed the classification to
+   `_create_application`). Suites: all eight green, with new checks in
+   test_llm, test_email_ingest and test_integration path 3g. Repair,
+   dry-run first and snapshotted (outside the repo, in
+   `job-tracker-snapshots/2026-09-24-sent-mail.json` beside it: 99 events,
+   10 applications): the 26 re-classified with the new prompt (16 reply, 7
+   application, 3 follow_up); each filed one had ONLY its own events
+   replaced, on the same application, dated to its send time; where the old
+   events included an `applied` fabricated by triage's "Create
+   application" (the email is what made the record), that start was kept.
+   Result: 0 `interview_invite` from the user's own mail (was 11), 3
+   `follow_up_sent` recovered, one inbound lead now `applied` (the user had
+   answered the recruiter with a resume), the two recovered resume emails
+   in triage (no company named in either), every audit invariant still 0.
+   Left for the author: one 23 Sep follow-up is filed on a different
+   employer's application, a hand-link slip made in triage three links in
+   22 seconds; the repair kept the human's match and corrected only the
+   event, so re-filing it from the detail page moves it cleanly.

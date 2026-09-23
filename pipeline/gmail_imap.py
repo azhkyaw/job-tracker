@@ -44,6 +44,11 @@ IMAP4_SSL = imaplib.IMAP4_SSL
 _ALL_MAIL_FALLBACKS = ("[Gmail]/All Mail", "INBOX")
 
 _MSGID_RE = re.compile(rb"X-GM-MSGID\s+(\d+)")
+_LABELS_RE = re.compile(rb"X-GM-LABELS\s+\(")
+# Gmail's system label for mail this account SENT. Applied by Gmail itself,
+# never by a message's content, so it is the fact rather than a guess from the
+# From address — see mailbox.store_message and migration 016.
+SENT_LABEL = "\\Sent"
 _ALL_FLAG_RE = re.compile(rb"\\All\b")
 _MAILBOX_NAME_RE = re.compile(rb'"([^"]*)"\s*$')
 
@@ -161,6 +166,48 @@ def _extract_body(msg: "email.message.Message") -> str:
     return mailbox.body_from_parts(plain, html)
 
 
+def _labels(metadata: bytes) -> list[str]:
+    """The X-GM-LABELS list from a FETCH response's metadata, decoded.
+
+    Each label is an IMAP astring, and the real server does not send system
+    labels the way Gmail's own IMAP-extensions page shows them: the docs
+    example is a bare atom, `(\\Inbox \\Sent Important)`, while imap.gmail.com
+    sends a QUOTED string with the backslash escaped — `("\\\\Sent")` on the
+    wire (verified against the author's mailbox, 24 Sep 2026). Both decode to
+    `\\Sent`. Tokenised rather than matched up to the first `)`, because a
+    user label is quoted and may itself contain spaces and parentheses
+    ("Jobs (2026)"). Labels arrive before the BODY[] literal in Gmail's
+    response, alongside X-GM-MSGID — also verified — so the metadata half of
+    the tuple is the only place to look."""
+    m = _LABELS_RE.search(metadata)
+    if m is None:
+        return []
+    labels: list[str] = []
+    i, n = m.end(), len(metadata)
+    while i < n:
+        c = metadata[i:i + 1]
+        if c == b")":
+            break
+        if c == b" ":
+            i += 1
+        elif c == b'"':
+            buf, i = bytearray(), i + 1
+            while i < n and metadata[i:i + 1] != b'"':
+                if metadata[i:i + 1] == b"\\":
+                    i += 1
+                buf += metadata[i:i + 1]
+                i += 1
+            labels.append(buf.decode("utf-8", "replace"))
+            i += 1
+        else:
+            j = i
+            while j < n and metadata[j:j + 1] not in (b" ", b")"):
+                j += 1
+            labels.append(metadata[i:j].decode("utf-8", "replace"))
+            i = j
+    return labels
+
+
 def _normalise(metadata: bytes, raw: bytes) -> dict:
     m = _MSGID_RE.search(metadata)
     if m is None:
@@ -177,6 +224,7 @@ def _normalise(metadata: bytes, raw: bytes) -> dict:
         "subject": _decode_header_value(msg.get("Subject", "")),
         "body_text": _extract_body(msg),
         "received_at": received_at,
+        "sent": SENT_LABEL in _labels(metadata),
     }
 
 
@@ -307,7 +355,8 @@ class ImapProvider:
         return uids
 
     def fetch(self, uid: int) -> dict | None:
-        data = self._uid_command("FETCH", str(uid), "(BODY.PEEK[] INTERNALDATE X-GM-MSGID)")
+        data = self._uid_command("FETCH", str(uid),
+                                 "(BODY.PEEK[] INTERNALDATE X-GM-MSGID X-GM-LABELS)")
         item = next((d for d in data if isinstance(d, tuple) and len(d) == 2), None)
         if item is None:  # message vanished between search and fetch
             return None

@@ -21,9 +21,14 @@ Provider protocol (duck-typed, no ABC):
     close() -> None
 
 Handles are provider-opaque (API = message-id string, IMAP = int UID).
-Normalised message: {"id", "sender", "subject", "body_text", "received_at"}
-— "id" is gmail_message_id as lowercase hex, identical on both paths;
-"received_at" is a tz-aware UTC datetime.
+Normalised message: {"id", "sender", "subject", "body_text", "received_at",
+"sent"} — "id" is gmail_message_id as lowercase hex, identical on both paths;
+"received_at" is a tz-aware UTC datetime (for a sent message, when it was
+sent); "sent" is True when Gmail's own SENT system label is on the message
+(`\\Sent` in IMAP's X-GM-LABELS, "SENT" in the API's labelIds), i.e. the
+user wrote it. Ingest reads All Mail, which holds both directions, and
+everything downstream — the classifier's prompt, the event a message becomes,
+the event's date — depends on which one it is (migration 016).
 
 This module imports neither `google*` nor `imaplib`, so it — and anything
 that only needs credential dispatch (web.py, cli.py) — stays importable on
@@ -294,12 +299,14 @@ def store_message(conn, user_id, msg: dict) -> bool:
         return False
     row = conn.execute(
         """
-        INSERT INTO emails (user_id, gmail_message_id, sender, subject, body_text, received_at)
-        VALUES (%s, %s, %s, %s, %s, %s)
+        INSERT INTO emails (user_id, gmail_message_id, sender, subject, body_text,
+                            received_at, sent_by_user)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (user_id, gmail_message_id) DO NOTHING
         RETURNING id
         """,
-        (user_id, msg["id"], msg["sender"], msg["subject"], msg["body_text"], msg["received_at"]),
+        (user_id, msg["id"], msg["sender"], msg["subject"], msg["body_text"],
+         msg["received_at"], msg["sent"]),
     ).fetchone()
     if row is None:
         return False

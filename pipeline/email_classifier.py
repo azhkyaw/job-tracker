@@ -32,6 +32,14 @@ from . import config, llm
 
 PROMPT_DIR = Path(__file__).resolve().parent.parent / "prompts"
 CLASSIFY_PROMPT_VERSION = "email_classify_v1"
+# Mail the USER sent (emails.sent_by_user, Gmail's SENT label — migration 016)
+# gets its own prompt rather than a v2 of the one above: that prompt's whole
+# vocabulary is what an EMPLOYER did, and asked about the user's own reply to
+# an interview thread it answered "interview_invite" (11 of 26 real sent
+# emails, 24 Sep 2026). A separate file leaves received mail byte-identical —
+# same prompt, same input, nothing to replay — and the sent prompt is chosen
+# by a label, never by the model.
+CLASSIFY_SENT_PROMPT_VERSION = "email_classify_sent_v1"
 EXTRACT_PROMPT_VERSION = "email_extract_v1"
 
 # Classification moved to Sonnet 5 on 4 Aug 2026; extraction stays on Haiku.
@@ -78,6 +86,18 @@ CLASSIFY_TYPES = {
     "confirmation", "rejection", "interview_invite",
     "recruiter_outreach", "status_update", "other",
 }
+# What the user DID by sending a message, as the sent prompt names it -> the
+# value stored in emails.classification. Prefixed in storage so no sent
+# message can ever read as something the other side did, in SQL or on a page;
+# matcher.EVENT_TYPE turns each into its event.
+SENT_TYPES = {
+    "application": "sent_application",
+    "follow_up": "sent_follow_up",
+    "reply": "sent_reply",
+    "withdrawal": "sent_withdrawal",
+}
+# Everything extract_email may be handed as a classification.
+ALL_TYPES = CLASSIFY_TYPES | set(SENT_TYPES.values())
 STATUS_DETAILS = {"viewed", "in_review", "shortlisted", "on_hold", "other"}
 PLATFORMS = {"linkedin", "jobstreet", "indeed", "ats", "direct", "unknown"}
 
@@ -87,7 +107,7 @@ PLATFORMS = {"linkedin", "jobstreet", "indeed", "ats", "direct", "unknown"}
 @dataclass
 class Classification:
     job_related: bool
-    type: str | None            # one of CLASSIFY_TYPES, or None when not job_related
+    type: str | None            # one of ALL_TYPES, or None when not job_related
     confidence: float
     reason: str
     model: str = CLASSIFY_MODEL
@@ -173,19 +193,29 @@ def _call_json(
 
 # --------------------------------------------------------------------------- validation
 
-def _validate_classification(d: dict) -> None:
-    if not isinstance(d.get("job_related"), bool):
-        raise ValueError("job_related must be a boolean")
-    conf = d.get("confidence")
-    if not isinstance(conf, (int, float)) or not 0.0 <= conf <= 1.0:
-        raise ValueError("confidence must be a number in [0, 1]")
-    if d["job_related"]:
-        if d.get("type") not in CLASSIFY_TYPES:
-            raise ValueError(f"type must be one of {sorted(CLASSIFY_TYPES)}")
-    elif d.get("type") not in (None,):
-        raise ValueError("type must be null when job_related is false")
-    if not isinstance(d.get("reason"), str):
-        raise ValueError("reason must be a string")
+def _classification_validator(types) -> Callable[[dict], None]:
+    """Validator for one prompt's vocabulary: CLASSIFY_TYPES for received
+    mail, SENT_TYPES' keys for sent mail. A received-mail type from the sent
+    prompt (or the reverse) is a validation error, so it gets the repair retry
+    instead of reaching the matcher as the wrong side's outcome."""
+    def validate(d: dict) -> None:
+        if not isinstance(d.get("job_related"), bool):
+            raise ValueError("job_related must be a boolean")
+        conf = d.get("confidence")
+        if not isinstance(conf, (int, float)) or not 0.0 <= conf <= 1.0:
+            raise ValueError("confidence must be a number in [0, 1]")
+        if d["job_related"]:
+            if d.get("type") not in types:
+                raise ValueError(f"type must be one of {sorted(types)}")
+        elif d.get("type") not in (None,):
+            raise ValueError("type must be null when job_related is false")
+        if not isinstance(d.get("reason"), str):
+            raise ValueError("reason must be a string")
+    return validate
+
+
+_validate_classification = _classification_validator(CLASSIFY_TYPES)
+_validate_sent_classification = _classification_validator(set(SENT_TYPES))
 
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -219,16 +249,22 @@ def classify_email(
     received_at: datetime,
     body: str,
     model: str = CLASSIFY_MODEL,
+    sent: bool = False,
 ) -> Classification:
     """`model` is a parameter so a replay (scripts/replay_classify.py) can run
     the SAME prompt, truncation and validation against a candidate model and
-    diff it with the stored decision — the worker never passes it."""
+    diff it with the stored decision — the worker never passes it.
+
+    `sent` is emails.sent_by_user: the user wrote this message, so it goes to
+    the sent-mail prompt and comes back as one of SENT_TYPES' stored values.
+    Received mail is untouched by the flag — same prompt, same input."""
+    version = CLASSIFY_SENT_PROMPT_VERSION if sent else CLASSIFY_PROMPT_VERSION
     data = _call_json(
         client,
         model=model,
-        system=_load_prompt(CLASSIFY_PROMPT_VERSION),
+        system=_load_prompt(version),
         user_content=_email_block(sender, subject, received_at, body, STAGE1_BODY_CHARS),
-        validate=_validate_classification,
+        validate=_validate_sent_classification if sent else _validate_classification,
         # 1500, not the 300 this used under Haiku. CLASSIFY_MODEL is a Sonnet 5
         # and this call omits `thinking`, which on that family means ADAPTIVE
         # THINKING IS ON at the default `high` effort — and max_tokens caps
@@ -246,11 +282,14 @@ def classify_email(
         # `effort` is the lever for spending less, not max_tokens.
         max_tokens=1500,
     )
+    ctype = data.get("type")
     return Classification(
         job_related=data["job_related"],
-        type=data.get("type"),
+        type=SENT_TYPES[ctype] if sent and ctype else ctype,
         confidence=float(data["confidence"]),
         reason=data["reason"],
+        model=model,
+        prompt_version=version,
     )
 
 
@@ -262,7 +301,7 @@ def extract_email(
     body: str,
     classification_type: str,
 ) -> Extraction:
-    if classification_type not in CLASSIFY_TYPES:
+    if classification_type not in ALL_TYPES:
         raise ValueError(f"unknown classification type: {classification_type}")
     user_content = (
         _email_block(sender, subject, received_at, body, STAGE2_BODY_CHARS)

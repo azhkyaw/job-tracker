@@ -27,6 +27,7 @@ import base64
 import json
 import os
 import sys
+from datetime import datetime, timezone
 from email.header import Header
 from email.message import EmailMessage
 from pathlib import Path
@@ -57,12 +58,21 @@ def check(label, cond, detail=""):
 
 # --------------------------------------------------------------------------- fake IMAP server
 
+# X-GM-LABELS exactly as imap.gmail.com puts it on the wire (captured from the
+# author's mailbox, 24 Sep 2026): each system label a QUOTED string with its
+# backslash escaped — not the bare `\Inbox` atom Gmail's own docs show.
+INBOX_LABELS = b'"\\\\Inbox"'
+SENT_LABELS = b'"\\\\Sent"'
+
+
 class _FakeMsg:
-    def __init__(self, msgid_decimal: int, internaldate: str, raw: bytes, matches: bool = True):
+    def __init__(self, msgid_decimal: int, internaldate: str, raw: bytes, matches: bool = True,
+                 labels: bytes = INBOX_LABELS):
         self.msgid_decimal = msgid_decimal
         self.internaldate = internaldate
         self.raw = raw
         self.matches = matches  # whether Gmail's server-side X-GM-RAW would hit this
+        self.labels = labels    # the X-GM-LABELS list's contents, wire bytes
 
 
 class FakeServer:
@@ -78,8 +88,9 @@ class FakeServer:
         self.list_response = rb'(\HasNoChildren \All) "/" "[Gmail]/Tous les messages"'
         self.login_calls = 0
 
-    def add(self, uid: int, msgid_decimal: int, internaldate: str, raw: bytes, matches: bool = True):
-        self.messages[uid] = _FakeMsg(msgid_decimal, internaldate, raw, matches)
+    def add(self, uid: int, msgid_decimal: int, internaldate: str, raw: bytes, matches: bool = True,
+            labels: bytes = INBOX_LABELS):
+        self.messages[uid] = _FakeMsg(msgid_decimal, internaldate, raw, matches, labels)
 
 
 class FakeIMAP:
@@ -165,8 +176,12 @@ class FakeIMAP:
         msg = self._srv.messages.get(uid)
         if msg is None:
             return ("OK", [b")"])
-        metadata = (f'{uid} (X-GM-MSGID {msg.msgid_decimal} INTERNALDATE "{msg.internaldate}" '
-                    f'BODY[] {{{len(msg.raw)}}}').encode()
+        # Items in the order imap.gmail.com sends them, and X-GM-LABELS only
+        # when asked for — a fake that always sent it would pass a provider
+        # that forgot to request it.
+        labels = b" X-GM-LABELS (" + msg.labels + b")" if "X-GM-LABELS" in spec else b""
+        metadata = (f"{uid} (X-GM-MSGID {msg.msgid_decimal}".encode() + labels
+                    + f' INTERNALDATE "{msg.internaldate}" BODY[] {{{len(msg.raw)}}}'.encode())
         return ("OK", [(metadata, msg.raw), b")"])
 
     def logout(self):
@@ -381,6 +396,53 @@ for dec in (1000000000001101, 1837402910584999, 1, 18446744073709551615):
     check(f"format({dec}, 'x') round-trips as int(hexid, 16)",
           int(hexid, 16) == dec and not hexid.startswith("0x"), hexid)
 
+print("pure functions: X-GM-LABELS, and the SENT label on both providers")
+# The first line is a real imap.gmail.com FETCH response (24 Sep 2026) — labels
+# before the BODY[] literal, the system label quoted with its backslash escaped.
+_real = (b'18707 (X-GM-MSGID 1877100524634312189 X-GM-LABELS ("\\\\Sent") UID 25549 '
+         b'INTERNALDATE "23-Sep-2026 05:49:19 +0000" BODY[] {402561}')
+check("the real server's quoted, escaped form decodes to \\Sent",
+      gmail_imap._labels(_real) == ["\\Sent"], gmail_imap._labels(_real))
+_docs = b'1 (X-GM-LABELS (\\Inbox \\Sent Important "Muy Importante"))'
+check("the bare-atom form Gmail's docs show decodes the same way",
+      gmail_imap._labels(_docs) == ["\\Inbox", "\\Sent", "Important", "Muy Importante"],
+      gmail_imap._labels(_docs))
+_paren = b'2 (X-GM-LABELS ("Jobs (2026)" "\\\\Inbox") UID 7)'
+check("a user label holding parentheses does not end the list early",
+      gmail_imap._labels(_paren) == ["Jobs (2026)", "\\Inbox"], gmail_imap._labels(_paren))
+check("an empty list and an absent item are both no labels",
+      gmail_imap._labels(b"3 (X-GM-LABELS () UID 8)") == []
+      and gmail_imap._labels(b"4 (UID 9 X-GM-MSGID 1)") == [])
+check("a user label merely NAMED Sent is not the system label",
+      gmail_imap.SENT_LABEL not in gmail_imap._labels(b'5 (X-GM-LABELS ("Sent" Sent))'))
+
+_SENT_ID = 1837402910583777
+_sent_body = "Tuesday 3pm works for me.\n"
+_sent = EmailMessage()
+_sent["From"] = "Jane Applicant <jane.applicant@example.com>"
+_sent["Subject"] = "Re: Interview availability"
+_sent.set_content(_sent_body)
+_sent_raw = _sent.as_bytes()
+_sent_meta = (f"6 (X-GM-MSGID {_SENT_ID}".encode() + b' X-GM-LABELS ("\\\\Sent")'
+              + f' INTERNALDATE "23-Sep-2026 05:49:19 +0000" BODY[] {{{len(_sent_raw)}}}'.encode())
+_sent_ms = int(datetime(2026, 9, 23, 5, 49, 19, tzinfo=timezone.utc).timestamp() * 1000)
+_sent_api = {"id": format(_SENT_ID, "x"), "internalDate": str(_sent_ms), "labelIds": ["SENT"],
+             "payload": {"mimeType": "text/plain",
+                         "headers": [{"name": "From", "value": _sent["From"]},
+                                     {"name": "Subject", "value": _sent["Subject"]}],
+                         "body": {"data": _b64(_sent_body)}}}
+_via_imap_n = gmail_imap._normalise(_sent_meta, _sent_raw)
+_via_api_n = gmail_sync._normalise(_sent_api)
+check("both providers mark a message carrying the SENT label as sent",
+      _via_imap_n["sent"] is True and _via_api_n["sent"] is True, (_via_imap_n, _via_api_n))
+check("...and normalise it to the identical dict (invariant #10)",
+      _via_imap_n == _via_api_n, (_via_imap_n, _via_api_n))
+_recv_meta = _sent_meta.replace(b'("\\\\Sent")', b'("\\\\Inbox" "\\\\Important")')
+_recv_api = {**_sent_api, "labelIds": ["INBOX", "IMPORTANT"]}
+check("without it, both say received",
+      gmail_imap._normalise(_recv_meta, _sent_raw)["sent"] is False
+      and gmail_sync._normalise(_recv_api)["sent"] is False)
+
 
 # --------------------------------------------------------------------------- fixtures
 
@@ -409,6 +471,9 @@ server.add(999, MSGID_MAX, "20-Jul-2026 12:00:00 +0000",
                       "<p>Interview on Jul 24 with Jane Recruiter</p></body></html>"))
 
 MY_HEX_IDS = [format(d, "x") for d in (MSGID_1, MSGID_2, MSGID_MAX)]  # MSGID_3 never stored
+# The sent-mail scenario's two messages: one the user sent, one the reply to it.
+MSGID_SENT, MSGID_RECV = 1837402910585101, 1837402910585102
+SENT_HEX_IDS = [format(d, "x") for d in (MSGID_SENT, MSGID_RECV)]
 
 
 # --------------------------------------------------------------------------- B/C: backfill
@@ -559,6 +624,42 @@ with db.connect() as conn:
           search_cmd5[2] != "UID", search_cmd5)
     provider5.close()
 
+    # ----------------------------------------------------------------- sent mail
+
+    print("sent mail: Gmail's SENT label reaches emails.sent_by_user")
+    # All Mail holds both directions. The user's reply in an interview thread
+    # and the employer's answer to it must arrive with the direction attached —
+    # everything downstream (prompt, event, date) branches on it. INGEST_ALL
+    # because a reply's subject need not carry a pre-filter keyword.
+    sent_server = FakeServer(uidvalidity=3000)
+    sent_server.list_response = server.list_response
+    sent_server.add(11, MSGID_SENT, "23-Sep-2026 05:49:19 +0000",
+                    _mk_msg("Jane Applicant <jane.applicant@example.com>",
+                            "Re: Interview availability", "Tuesday 3pm works for me."),
+                    labels=SENT_LABELS)
+    sent_server.add(12, MSGID_RECV, "23-Sep-2026 06:10:00 +0000",
+                    _mk_msg("hr@northwind.example", "Re: Interview availability",
+                            "See you on Tuesday."))
+    FakeIMAP.server = sent_server
+    config.INGEST_ALL = True
+    try:
+        provider_s = gmail_imap.ImapProvider(TEST_ADDRESS, GOOD_PASSWORD)
+        stored_s = mailbox.backfill(conn, provider_s, user_id, months=1)
+    finally:
+        config.INGEST_ALL = False
+    check("both directions stored", stored_s == 2, stored_s)
+    fetch_specs = [c[3] for c in provider_s._conn.commands if c[:2] == ("UID", "FETCH")]
+    check("every FETCH asked for X-GM-LABELS",
+          fetch_specs and all("X-GM-LABELS" in s for s in fetch_specs), fetch_specs)
+    flags = {r["gmail_message_id"]: r["sent_by_user"] for r in conn.execute(
+        "SELECT gmail_message_id, sent_by_user FROM emails "
+        "WHERE user_id = %s AND gmail_message_id = ANY(%s)", (user_id, SENT_HEX_IDS)).fetchall()}
+    check("the message carrying \\Sent is stored as sent by the user",
+          flags.get(SENT_HEX_IDS[0]) is True, flags)
+    check("the reply that came back is stored as received",
+          flags.get(SENT_HEX_IDS[1]) is False, flags)
+    provider_s.close()
+
     # ----------------------------------------------------------------- auth failure
 
     print("auth failure: wrong app password")
@@ -708,7 +809,7 @@ with db.connect() as conn:
     # other suite is touched.
     my_email_ids = [str(r["id"]) for r in conn.execute(
         "SELECT id FROM emails WHERE user_id = %s AND gmail_message_id = ANY(%s)",
-        (user_id, MY_HEX_IDS)).fetchall()]
+        (user_id, MY_HEX_IDS + SENT_HEX_IDS)).fetchall()]
     conn.execute(
         """UPDATE job_queue SET state = 'done'
            WHERE type = 'classify_email' AND state = 'pending'

@@ -18,6 +18,7 @@ import importlib
 import json
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-dummy-key")
@@ -260,5 +261,61 @@ for k, v in _saved.items():
     else:
         os.environ[k] = v
 stages()
+
+
+# ---------------------------------------------------------------- sent mail
+
+print("classify: mail the user sent has its own prompt and vocabulary")
+
+
+class ScriptedClient:
+    """Stands in for llm.Client: canned replies in order, every request kept."""
+
+    def __init__(self, *replies):
+        self.replies, self.calls = list(replies), []
+
+    def complete(self, **kw):
+        self.calls.append(kw)
+        return self.replies.pop(0)
+
+
+def verdict(**d):
+    return json.dumps({"job_related": True, "confidence": 0.9, "reason": "stub", **d})
+
+
+_WHEN = datetime(2026, 9, 23, 5, 49, tzinfo=timezone.utc)
+_prompt = email_classifier._load_prompt
+cl = ScriptedClient(verdict(type="follow_up"))
+c = email_classifier.classify_email(cl, "Me <me@example.com>", "Re: Interview", _WHEN,
+                                    "Any update since the first round?", sent=True)
+check("sent mail is classified by the sent prompt",
+      cl.calls[0]["system"] == _prompt("email_classify_sent_v1"), cl.calls[0]["system"][:60])
+check("...and stored under its prefixed type, never the prompt's bare word",
+      c.type == "sent_follow_up", c.type)
+check("...and the row records which prompt decided it",
+      c.prompt_version == "email_classify_sent_v1", c.prompt_version)
+
+cl = ScriptedClient(verdict(type="interview_invite"), verdict(type="reply"))
+c = email_classifier.classify_email(cl, "Me <me@example.com>", "Re: Interview", _WHEN,
+                                    "Tuesday 3pm works for me.", sent=True)
+check("an employer-side type from the sent prompt fails validation and is repaired",
+      len(cl.calls) == 2 and c.type == "sent_reply", (len(cl.calls), c.type))
+
+cl = ScriptedClient(verdict(type="reply"), verdict(type="interview_invite"))
+c = email_classifier.classify_email(cl, "HR <hr@example.com>", "Interview", _WHEN,
+                                    "Can you do Tuesday?")
+check("received mail keeps email_classify_v1 and its vocabulary, byte for byte",
+      cl.calls[0]["system"] == _prompt("email_classify_v1") and c.type == "interview_invite"
+      and c.prompt_version == "email_classify_v1" and len(cl.calls) == 2,
+      (c.type, c.prompt_version, len(cl.calls)))
+
+cl = ScriptedClient(json.dumps({"job_related": False, "type": None, "confidence": 0.95,
+                                "reason": "personal"}))
+c = email_classifier.classify_email(cl, "Me <me@example.com>", "Dinner", _WHEN, "7pm?", sent=True)
+check("a sent message ruled not job-related has no type", c.type is None and not c.job_related, c)
+
+for word, stored in email_classifier.SENT_TYPES.items():
+    check(f"extract_email accepts the stored sent type {stored!r}",
+          stored in email_classifier.ALL_TYPES, email_classifier.ALL_TYPES)
 
 print("\nALL LLM PATHS PASS")

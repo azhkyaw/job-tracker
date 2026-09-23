@@ -4,9 +4,10 @@ dispatch() is the single entry point the worker calls after stage-2
 extraction. Outcomes:
 
   auto    — confident match: event appended, email auto_matched
-  create  — confirmation with no candidate: new job + application + email_only
-            posting created (the backfill path; posting has no JD text, which
-            is the derived "needs_enrichment" state)
+  create  — confirmation (or the user's own emailed application,
+            sent_application) with no candidate: new job + application +
+            email_only posting created (the backfill path; posting has no JD
+            text, which is the derived "needs_enrichment" state)
   pending — everything uncertain: email lands in the triage queue, no writes
             to applications/events (never a silent guess)
 """
@@ -26,7 +27,21 @@ EVENT_TYPE = {
     "interview_invite": "interview_invite",
     "recruiter_outreach": "recruiter_outreach",
     "other": "note",
+    # Mail the USER sent (migration 016). Every one is something the user did —
+    # none is an employer's outcome, so a reply in an interview thread can no
+    # longer file as the employer inviting them (11 of 26 real sent emails did,
+    # before 24 Sep 2026). A reply changes no status; a follow-up is the
+    # follow_up_sent the reminders queue has always been waiting for.
+    "sent_application": "applied",
+    "sent_follow_up": "follow_up_sent",
+    "sent_reply": "note",
+    "sent_withdrawal": "withdrawn",
 }
+
+# Classifications that may mint a record when nothing matches: an employer's
+# receipt, or the user's own application sent by email. Either is proof an
+# application exists; everything else waits in triage for a human.
+_CREATES = {"confirmation", "sent_application"}
 
 _CANDIDATES_BASE = """
 SELECT a.id  AS application_id,
@@ -231,11 +246,21 @@ def find_match(conn, user_id, extraction: Extraction, occurred_at: datetime) -> 
 
 # --------------------------------------------------------------------------- writes
 
-def _event_time(extraction: Extraction, received_at: datetime) -> datetime:
+def _event_time(extraction: Extraction, email_row) -> datetime:
     """§8: the email's stated event date wins over the received date — but
     stated dates never carry a time, so borrow received_at's time-of-day
     rather than defaulting to midnight, which otherwise collapses same-day
-    events to identical timestamps and loses their ordering."""
+    events to identical timestamps and loses their ordering.
+
+    Never for mail the user SENT: what they did happened when they sent it.
+    The extractor still finds a date in their message — usually the interview
+    day the thread is arranging, quoted under the reply — and applying it
+    filed a reply confirming a slot three weeks in the FUTURE (24 Sep 2026).
+    Indexed, not .get(): a caller that selected emails without the column
+    would otherwise treat every sent message as received, silently."""
+    received_at = email_row["received_at"]
+    if email_row["sent_by_user"]:
+        return received_at
     if extraction.event_date:
         stated = datetime.strptime(extraction.event_date, "%Y-%m-%d").date()
         return datetime.combine(stated, received_at.timetz())
@@ -253,6 +278,15 @@ def _event_type(classification: str, extraction: Extraction) -> tuple[str, dict]
 def _append_event(conn, user_id, application_id, email_row, classification,
                   extraction: Extraction) -> None:
     etype, payload = _event_type(classification, extraction)
+    if etype == "applied" and conn.execute(
+            "SELECT 1 FROM events WHERE application_id = %s AND type = 'applied'",
+            (application_id,)).fetchone():
+        # A resume the user emails for a role already on record — applied on the
+        # platform, then sent to the recruiter too — belongs to that
+        # application; it does not start a second one. Two `applied` events on
+        # one record is the recording artefact the analytics would count as two
+        # starts, so the message files as a note on the timeline instead.
+        etype = "note"
     from psycopg.types.json import Json
     conn.execute(
         """
@@ -261,7 +295,7 @@ def _append_event(conn, user_id, application_id, email_row, classification,
         VALUES (%s, %s, %s, 'email', %s, %s, %s)
         """,
         (user_id, application_id, etype,
-         _event_time(extraction, email_row["received_at"]), email_row["id"], Json(payload)),
+         _event_time(extraction, email_row), email_row["id"], Json(payload)),
     )
     if extraction.recruiter and extraction.recruiter.get("name"):
         conn.execute(
@@ -302,7 +336,7 @@ def _create_application(conn, user_id, email_row, extraction: Extraction,
     company_norm = norm_company(extraction.company or "")
     title = extraction.role_title or "unknown role"
     platform = extraction.platform if extraction.platform in ("linkedin", "jobstreet", "indeed") else "other"
-    occurred_at = _event_time(extraction, email_row["received_at"])
+    occurred_at = _event_time(extraction, email_row)
 
     job = conn.execute(
         "INSERT INTO jobs (user_id, company_norm, title_canonical) VALUES (%s, %s, %s) RETURNING id",
@@ -325,7 +359,10 @@ def _create_application(conn, user_id, email_row, extraction: Extraction,
         """,
         (user_id, job["id"], posting["id"], origin),
     ).fetchone()
-    if classification != "recruiter_outreach":
+    # Not when the email's OWN event is the application (the user's resume,
+    # sent_application): _append_event below files that `applied`, and a
+    # fabricated one alongside it would be the same start recorded twice.
+    if classification != "recruiter_outreach" and EVENT_TYPE.get(classification) != "applied":
         from psycopg.types.json import Json
         conn.execute(
             """
@@ -341,7 +378,7 @@ def _create_application(conn, user_id, email_row, extraction: Extraction,
 
 def dispatch(conn, user_id, email_row, classification: str, extraction: Extraction) -> MatchResult:
     """Route one extracted email; updates the emails row with the outcome."""
-    occurred_at = _event_time(extraction, email_row["received_at"])
+    occurred_at = _event_time(extraction, email_row)
 
     if classification == "recruiter_outreach":
         # By definition "a role the user did NOT apply to" (see the classify
@@ -354,10 +391,11 @@ def dispatch(conn, user_id, email_row, classification: str, extraction: Extracti
         result = find_match(conn, user_id, extraction, occurred_at)
 
         if result.action == "pending" and not result.had_candidates \
-                and classification == "confirmation" \
+                and classification in _CREATES \
                 and norm_company(extraction.company or ""):
             result = MatchResult("create",
-                                 _create_application(conn, user_id, email_row, extraction))
+                                 _create_application(conn, user_id, email_row, extraction,
+                                                     classification))
         elif result.action == "auto":
             _append_event(conn, user_id, result.application_id, email_row,
                           classification, extraction)

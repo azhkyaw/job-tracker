@@ -68,7 +68,7 @@ def main() -> int:
     if args.since:
         where.append("received_at >= %s")
         params.append(args.since)
-    sql = ("SELECT id, sender, subject, received_at, body_text, classification, "
+    sql = ("SELECT id, sender, subject, received_at, body_text, sent_by_user, classification, "
            "classify_confidence, model FROM emails WHERE " + " AND ".join(where)
            + " ORDER BY received_at" + (f" LIMIT {int(args.limit)}" if args.limit else ""))
     with db.connect() as conn:
@@ -87,7 +87,7 @@ def main() -> int:
         try:
             c = email_classifier.classify_email(
                 client, row["sender"], row["subject"] or "", row["received_at"],
-                row["body_text"] or "", model=args.model)
+                row["body_text"] or "", model=args.model, sent=row["sent_by_user"])
             got = (c.job_related, c.type)
             conf, reason, err = c.confidence, c.reason, None
         except llm.Unavailable:

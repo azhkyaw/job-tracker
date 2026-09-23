@@ -187,6 +187,31 @@ invariants that govern this code (#3, #4, #9) are still in CLAUDE.md.
   the parenthetical is the only thing distinguishing two live applications.
   Note this rule pushes toward MORE auto-matching, i.e. the silent direction,
   so the replay is the evidence that clears it, not the argument.
+- **Mail the user SENT files what the user did, never an employer's outcome**
+  (24 Sep 2026, migration 016; the ingest side is in
+  `.claude/rules/mail-ingest.md`). `EVENT_TYPE` maps the four `sent_*`
+  classifications: an application to `applied`, a follow-up to
+  `follow_up_sent` (which is what takes a record off `/follow-ups`), a reply
+  to a note (no status moves), a withdrawal to `withdrawn`. Three rules sit
+  beside it. `_event_time` returns the SEND time for sent mail, whatever
+  `event_date` the extractor found — in the user's own message that date is
+  the other side's event (the interview being arranged), never theirs; it
+  reads `email_row["sent_by_user"]` by index, so a caller that selected
+  emails without the column fails loudly instead of treating every sent
+  message as received. `_append_event` turns an `applied` into a note when
+  the record already has one: a resume emailed for a role already applied
+  to on the platform is part of that application, and two `applied` events
+  on one record read as two starts. And `_CREATES` lets the user's own
+  emailed application mint a record when nothing matches, as a confirmation
+  always could — a reply or follow-up never does. **Writing that exposed a
+  latent bug**: `dispatch` called `_create_application` WITHOUT the
+  classification, so it always took the default `"confirmation"`. Harmless
+  while only confirmations could create; for an emailed resume it would have
+  filed a confirmation the employer never sent beside a fabricated
+  `applied`. `tests/test_integration.py` path 3g pins each rule and loops
+  `SENT_TYPES` against both `EVENT_TYPE` and the DB CHECK. The extractor
+  needed no change: on all 26 real sent emails it named the counterpart's
+  company and recruiter off the quoted thread, never the user.
 - **A bare date has no time-of-day — never default it to midnight.** Midnight
   UTC displays as the previous day for non-UTC users, and local midnight sits
   on the date boundary so it shifts if the user later changes timezone. The
@@ -207,3 +232,12 @@ invariants that govern this code (#3, #4, #9) are still in CLAUDE.md.
   (`trace.build` takes `t1 = max(now, last stamp)`); and `silent_days` reads
   0 until the date passes. Fix shape: let a stated date move confirmations
   and rejections only, and keep an interview date in the event payload.
+  **That shape is wrong for rejections, found by the 24 Sep 2026 data
+  audit.** A rejection that arrived 7 Sep quotes the date the application was
+  submitted ("...on 04/08/2026"), so it filed on the apply day and sorts
+  BEFORE the `applied` event — a same-day rejection that never happened. And
+  two LinkedIn "new activity in jobs you applied for" digests whose body
+  reads "Applied on 29 Jul" were extracted with `event_date` 2 Jul, filing
+  notes before the search began. The rule that covers every case: an event
+  happens when its email arrives; a stated date belongs in the payload.
+  Sent mail already follows it (the bullet on sent mail, above).

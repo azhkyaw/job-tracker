@@ -128,6 +128,39 @@ orchestrator invariant (#10) is still in CLAUDE.md.
   (same "Applied on" day, one application, one confirmation), so nothing was
   mis-filed. Pinned in `tests/test_email_ingest.py` for both providers,
   byte-identical, and on the FakeIMAP backfill path.
+- **All Mail holds what the user SENDS, and until 24 Sep 2026 nothing
+  recorded which direction a message went.** Ingest reads `[Gmail]/All Mail`
+  for parity with the API (bullet below), so the user's own replies arrived
+  alongside the employer's mail and went through a classifier and matcher
+  written for mail FROM an employer. Measured by that day's data audit: 26
+  of 1,119 stored emails were the user's own, producing 28 events — 11
+  `interview_invite` (the user confirming a slot, filed as the employer
+  inviting them; one dated three weeks AHEAD off the interview day quoted
+  below the reply), 13 notes (among them three follow-ups chasing a silent
+  employer, while the reminders queue believed exactly one follow-up had
+  ever been sent), and two resume emails — i.e. two applications — ruled
+  `not_job_related` with their bodies purged. Fixed by migration 016
+  (`emails.sent_by_user`), read from **Gmail's own SENT system label, not the
+  From address**: a label is applied by Gmail when the account sends, so
+  aliases need no address list, and a message the user FORWARDED in from a
+  second account of their own is correctly received — the real case, a
+  confirmation forwarded from another address, whose content is the
+  employer's and which a From-address rule would have misfiled. Verified on
+  the real mailbox first: all 26 own-address messages but that forward carry
+  `\Sent`, nothing else does, and every sent message inside the ingest
+  window is stored (the mailbox's other 471 predate it — no ingest gap).
+  **The real server does not send the label the way Google's docs show it.**
+  The IMAP-extensions page prints bare atoms, `(\Inbox \Sent Important)`;
+  imap.gmail.com sends each system label as a QUOTED string with its
+  backslash escaped — `X-GM-LABELS ("\\Sent")` on the wire — before the
+  `BODY[]` literal, beside `X-GM-MSGID`. `gmail_imap._labels()` tokenises
+  both forms (a user label is quoted and may contain parentheses, so no
+  regex to the first `)`), and the fake server emits the real form, and
+  only when asked — a fake that always sent labels would pass a provider
+  that forgot to request them. The API spelling is `"SENT"` in `labelIds`;
+  `gmail_sync._normalise` is now pure so the suite holds both providers'
+  dicts identical. What a sent message becomes downstream:
+  `.claude/rules/matching.md` and `.claude/rules/llm.md`.
 - **`imaplib.IMAP4._command()` does zero quoting.** Every argument is
   concatenated onto the wire verbatim — `select("[Gmail]/All Mail")` sends
   two unquoted atoms and gets `BAD`, and an `X-GM-RAW` query containing

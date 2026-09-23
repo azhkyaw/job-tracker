@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from psycopg.types.json import Json
 
-from pipeline import db, email_classifier, worker
+from pipeline import analytics, db, email_classifier, matcher, worker
 from pipeline.email_classifier import Classification, Extraction
 
 NOW = datetime(2026, 7, 21, 8, 0, tzinfo=timezone.utc)
@@ -40,6 +40,13 @@ FAKE_CLASSIFY = {
     "rebrand-confirmation": Classification(True, "confirmation", 0.93, "stub"),
     "tagline-confirmation": Classification(True, "confirmation", 0.93, "stub"),
     "stranger-invite": Classification(True, "interview_invite", 0.93, "stub"),
+    # Mail the user SENT (emails.sent_by_user) — path 3g.
+    "sent-reply": Classification(True, "sent_reply", 0.9, "stub"),
+    "sent-follow-up": Classification(True, "sent_follow_up", 0.9, "stub"),
+    "sent-resume-again": Classification(True, "sent_application", 0.9, "stub"),
+    "sent-resume-new": Classification(True, "sent_application", 0.9, "stub"),
+    "sent-reply-stranger": Classification(True, "sent_reply", 0.9, "stub"),
+    "sent-withdrawal": Classification(True, "sent_withdrawal", 0.9, "stub"),
 }
 def _fake_extraction(**kw):
     """Mirror the real extract_email(): raw always carries the full payload."""
@@ -101,20 +108,44 @@ FAKE_EXTRACT = {
                                              role_title="Staff Platform Engineer",
                                              platform="linkedin"),
 }
+# The user's own messages in a thread about the seeded Proseware application.
+# The extractor reads the counterpart correctly off the quoted thread (verified
+# on all 26 real sent emails, 24 Sep 2026) — and still finds a date in it: the
+# interview day being arranged, which is the other side's event, not the
+# user's. event_date is set on every one so path 3g can prove it is ignored.
+_proseware = dict(company="Proseware Pte Ltd", role_title="Backend Engineer",
+                  platform="direct", event_date="2026-08-14",
+                  recruiter={"name": "Jane Recruiter", "email": None})
+for _k in ("sent-reply", "sent-follow-up", "sent-resume-again", "sent-withdrawal"):
+    FAKE_EXTRACT[_k] = _fake_extraction(**_proseware)
+FAKE_EXTRACT["sent-resume-new"] = _fake_extraction(company="Lucerne Publishing",
+                                                   role_title="Platform Engineer",
+                                                   platform="direct", event_date="2026-07-01")
+FAKE_EXTRACT["sent-reply-stranger"] = _fake_extraction(company="Trey Research",
+                                                       role_title="Data Engineer",
+                                                       platform="direct")
 
-email_classifier.classify_email = lambda client, sender, subject, received, body: \
-    FAKE_CLASSIFY[subject]
+CLASSIFY_CALLS: list[tuple[str, bool]] = []   # (subject, sent) — what the worker asked
+
+
+def _fake_classify(client, sender, subject, received, body, sent=False):
+    CLASSIFY_CALLS.append((subject, sent))
+    return FAKE_CLASSIFY[subject]
+
+
+email_classifier.classify_email = _fake_classify
 email_classifier.extract_email = lambda client, sender, subject, received, body, ctype: \
     FAKE_EXTRACT[subject]
 
 
 # ---------------------------------------------------------------- helpers
 
-def seed_email(conn, user_id, key, sender="noreply@linkedin.com"):
+def seed_email(conn, user_id, key, sender="noreply@linkedin.com", sent=False):
     row = conn.execute(
-        """INSERT INTO emails (user_id, gmail_message_id, sender, subject, body_text, received_at)
-           VALUES (%s, %s, %s, %s, 'body', %s) RETURNING id""",
-        (user_id, f"gm-{key}", sender, key, NOW),
+        """INSERT INTO emails (user_id, gmail_message_id, sender, subject, body_text,
+                               received_at, sent_by_user)
+           VALUES (%s, %s, %s, %s, 'body', %s, %s) RETURNING id""",
+        (user_id, f"gm-{key}", sender, key, NOW, sent),
     ).fetchone()
     db.enqueue(conn, user_id, "classify_email", {"email_id": str(row["id"])})
     return row["id"]
@@ -341,6 +372,113 @@ with db.connect() as conn:
     check("Northwind's timeline untouched by the stranger's interview invite",
           northwind_events_after == northwind_events_before,
           (northwind_events_before, northwind_events_after))
+
+    print("path 3g: mail the user SENT is what they did, never the employer's outcome")
+    # 24 Sep 2026: ingest reads All Mail, which holds the user's own replies,
+    # and 26 of them had been classified and filed as if the employer sent
+    # them — 11 interview_invite events for the user confirming a slot, one of
+    # them dated three weeks in the future off the interview day quoted below
+    # it, and a follow-up chasing a silent employer filed as a note.
+    pw_job = conn.execute(
+        "INSERT INTO jobs (user_id, company_norm, title_canonical) "
+        "VALUES (%s, 'proseware', 'Backend Engineer') RETURNING id", (user_id,)).fetchone()
+    conn.execute(
+        "INSERT INTO postings (user_id, job_id, platform, platform_job_id, captured_via) "
+        "VALUES (%s, %s, 'linkedin', 'LI-proseware-1', 'extension')", (user_id, pw_job["id"]))
+    pw_app = conn.execute(
+        "INSERT INTO applications (user_id, job_id) VALUES (%s, %s) RETURNING id",
+        (user_id, pw_job["id"])).fetchone()
+    conn.execute(
+        "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+        "VALUES (%s, %s, 'applied', 'extension', %s, %s)",
+        (user_id, pw_app["id"], NOW.replace(day=16), Json({})))
+    conn.commit()
+
+    def pw_events():
+        return conn.execute(
+            "SELECT type, occurred_at FROM events WHERE application_id = %s ORDER BY created_at",
+            (pw_app["id"],)).fetchall()
+
+    def pw_status():
+        return conn.execute("SELECT status FROM application_status WHERE application_id = %s",
+                            (pw_app["id"],)).fetchone()["status"]
+
+    me = "Jane Applicant <jane.applicant@example.com>"
+    e10 = seed_email(conn, user_id, "sent-reply", sender=me, sent=True)
+    conn.commit()
+    drain(conn)
+    s10 = email_state(conn, e10)
+    check("the worker told the classifier this message was sent",
+          ("sent-reply", True) in CLASSIFY_CALLS, CLASSIFY_CALLS)
+    check("received mail is still classified as received",
+          ("northwind-rejection", False) in CLASSIFY_CALLS, CLASSIFY_CALLS)
+    check("the user's reply auto-matches its own thread's application",
+          s10["triage_state"] == "auto_matched"
+          and str(s10["matched_application_id"]) == str(pw_app["id"]), s10)
+    ev10 = pw_events()[-1]
+    check("...and files as a note, never as the employer inviting them",
+          ev10["type"] == "note", ev10)
+    check("...dated when it was SENT, not the interview day quoted in the thread",
+          ev10["occurred_at"] == NOW, ev10)
+    check("...and moves no status", pw_status() == "applied", pw_status())
+
+    check("before following up, the application waits in the reminders queue",
+          any(str(r["id"]) == str(pw_app["id"]) for r in analytics.reminders(conn, user_id)))
+    e11 = seed_email(conn, user_id, "sent-follow-up", sender=me, sent=True)
+    conn.commit()
+    drain(conn)
+    check("a follow-up the user sent files as follow_up_sent",
+          pw_events()[-1]["type"] == "follow_up_sent", pw_events())
+    check("...which takes the application off the reminders queue",
+          not any(str(r["id"]) == str(pw_app["id"]) for r in analytics.reminders(conn, user_id)))
+
+    e12 = seed_email(conn, user_id, "sent-resume-again", sender=me, sent=True)
+    conn.commit()
+    drain(conn)
+    applied_n = sum(1 for e in pw_events() if e["type"] == "applied")
+    check("a resume emailed for a role already on record adds a note, not a second start",
+          pw_events()[-1]["type"] == "note" and applied_n == 1, pw_events())
+
+    e13 = seed_email(conn, user_id, "sent-resume-new", sender=me, sent=True)
+    conn.commit()
+    drain(conn)
+    s13 = email_state(conn, e13)
+    check("a resume emailed to an employer with no record creates one",
+          s13["triage_state"] == "auto_matched" and s13["matched_application_id"], s13)
+    ev13 = conn.execute(
+        "SELECT type, occurred_at FROM events WHERE application_id = %s",
+        (s13["matched_application_id"],)).fetchall()
+    check("...with exactly ONE applied event (its own, not a fabricated twin)",
+          [e["type"] for e in ev13] == ["applied"], ev13)
+    check("...dated when the resume was sent", ev13[0]["occurred_at"] == NOW, ev13)
+
+    e14 = seed_email(conn, user_id, "sent-reply-stranger", sender=me, sent=True)
+    conn.commit()
+    drain(conn)
+    s14 = email_state(conn, e14)
+    check("a reply with no record waits in triage; replies never mint records",
+          s14["triage_state"] == "pending" and s14["matched_application_id"] is None, s14)
+
+    e15 = seed_email(conn, user_id, "sent-withdrawal", sender=me, sent=True)
+    conn.commit()
+    drain(conn)
+    check("a withdrawal the user sent closes the application as withdrawn",
+          pw_status() == "withdrawn", pw_status())
+
+    # Loop the registry, not a hand-picked sample (CLAUDE.md gotcha): every
+    # stored sent type has an event, and migration 016's CHECK accepts it.
+    import psycopg
+    for stored in email_classifier.SENT_TYPES.values():
+        check(f"{stored!r} maps to an event", stored in matcher.EVENT_TYPE, matcher.EVENT_TYPE)
+        conn.execute("SAVEPOINT sent_type")
+        try:
+            conn.execute("UPDATE emails SET classification = %s WHERE id = %s", (stored, e14))
+            accepted = True
+        except psycopg.errors.CheckViolation:
+            accepted = False
+        conn.execute("ROLLBACK TO SAVEPOINT sent_type")
+        check(f"{stored!r} is accepted by emails_classification_check", accepted)
+    conn.commit()
 
     print("path 4: failure backoff")
     db.enqueue(conn, user_id, "classify_email",

@@ -95,6 +95,25 @@ prompt/model versioning invariant (#5) and the worker invariant (#7) are still i
   production model replayed on 30 of the new bodies agreed with the record
   29/30, so a high disagreement rate is about the candidate, not the
   rewrite. A better corpus, not an apples-to-apples one.
+- **Sent mail has its own classify prompt, not a v2 of the received one**
+  (24 Sep 2026, migration 016). `email_classify_v1`'s whole vocabulary is
+  what an EMPLOYER did; handed the user's own reply to an interview thread
+  it answered `interview_invite` — 11 of 26 real sent emails. A v2 with a
+  direction rule would have changed the input of every received email too
+  and needed a replay to clear; a separate `email_classify_sent_v1`, chosen
+  by `emails.sent_by_user` (a Gmail label, never the model), leaves received
+  mail byte-identical and asks what the USER did: application, follow_up,
+  reply, withdrawal, stored with a `sent_` prefix so no sent row can read as
+  the other side's. Each prompt validates against its OWN vocabulary, so an
+  employer-side type from the sent prompt is a validation error and gets the
+  repair retry instead of reaching the matcher. Run over the 26 real sent
+  emails (Sonnet 5): 16 reply, 7 application, 3 follow_up, all plausible on
+  reading; the one resume email it called a reply (0.70) said "as
+  requested in our discussion", which is the thread's own account of it.
+  `scripts/replay_classify.py` passes the flag, so a replay of sent rows
+  uses the sent prompt, and `Classification.model` now records the model
+  actually called (it defaulted to `CLASSIFY_MODEL` even under a replay's
+  `model=`).
 
 
 ## Known-untested surfaces (verify on first real contact)

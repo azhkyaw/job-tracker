@@ -64,6 +64,7 @@ def handle_classify_email(conn, job: dict) -> None:
     c = email_classifier.classify_email(
         _client(), email["sender"], email["subject"] or "",
         email["received_at"], email["body_text"] or "",
+        sent=email["sent_by_user"],
     )
     if c.job_related:
         conn.execute(

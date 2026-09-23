@@ -129,7 +129,9 @@ already does.
 
 The refactor is a provider boundary, not a rewrite. Both providers emit one
 normalised dict — `{id, sender, subject, body_text, received_at}` — and
-everything downstream of that is untouched.
+everything downstream of that is untouched. (Since 24 Sep 2026 the dict
+also carries `sent`, Gmail's own SENT label: All Mail holds the user's
+outgoing mail too, and migration 016 records the direction.)
 
 | Today (`pipeline/gmail_sync.py`) | IMAP equivalent |
 |---|---|

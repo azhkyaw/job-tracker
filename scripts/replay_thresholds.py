@@ -66,7 +66,7 @@ def main():
         cur.execute("select id::text, created_at from applications")
         born = {r["id"]: r["created_at"] for r in cur.fetchall()}
         cur.execute("""
-            select id::text, user_id, received_at, classification, extraction,
+            select id::text, user_id, received_at, sent_by_user, classification, extraction,
                    matched_application_id::text target, triage_state, match_score
             from emails
             where extraction is not null and matched_application_id is not null
@@ -81,7 +81,7 @@ def main():
                             platform=x.get("platform") or "other", ats=x.get("ats"),
                             event_date=x.get("event_date"), status_detail=x.get("status_detail"),
                             recruiter=x.get("recruiter"), notes=x.get("notes"))
-            occurred_at = matcher._event_time(ex, e["received_at"])
+            occurred_at = matcher._event_time(ex, e)
             cands = candidates(conn, e["user_id"], ex, e["received_at"], born)
             pid = ex.platform in ("linkedin", "jobstreet", "indeed")
             scored = sorted(((matcher._score(c, occurred_at, pid), c) for c in cands),

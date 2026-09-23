@@ -94,6 +94,28 @@ def _headers(msg: dict) -> dict:
             for h in msg.get("payload", {}).get("headers", [])}
 
 
+# Gmail's system label for mail this account SENT — the API spelling of the
+# `\Sent` gmail_imap reads from X-GM-LABELS. Applied by Gmail itself ("SENT
+# and DRAFT are applied automatically by the system"), so it is a fact about
+# the message, not an inference from its From address. Migration 016.
+SENT_LABEL = "SENT"
+
+
+def _normalise(msg: dict) -> dict:
+    """One `messages.get(format="full")` resource -> the provider-normalised
+    dict mailbox.store_message takes (its docstring has the contract). Pure,
+    so the suite can hold it byte-identical to gmail_imap._normalise."""
+    headers = _headers(msg)
+    return {
+        "id": msg["id"],
+        "sender": headers.get("from", ""),
+        "subject": headers.get("subject", ""),
+        "body_text": extract_body(msg.get("payload")),
+        "received_at": datetime.fromtimestamp(int(msg["internalDate"]) / 1000, tz=timezone.utc),
+        "sent": SENT_LABEL in (msg.get("labelIds") or []),
+    }
+
+
 # --------------------------------------------------------------------------- listing
 
 def _list_message_ids(service, query: str) -> list[str]:
@@ -168,14 +190,7 @@ class GmailApiProvider:
             if err.resp.status == 404:  # vanished between search and fetch
                 return None
             raise
-        headers = _headers(msg)
-        return {
-            "id": msg["id"],
-            "sender": headers.get("from", ""),
-            "subject": headers.get("subject", ""),
-            "body_text": extract_body(msg.get("payload")),
-            "received_at": datetime.fromtimestamp(int(msg["internalDate"]) / 1000, tz=timezone.utc),
-        }
+        return _normalise(msg)
 
     def incremental_handles(self, state) -> list[str]:
         """Used when there is no cursor or the cursor expired (History API
