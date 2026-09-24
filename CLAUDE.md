@@ -18,6 +18,10 @@ superseded but retained for its Gmail restricted-scope compliance analysis.
 Installing the extension on a second device (an existing account, not a
 fresh signup) — including the single-token-per-account gotcha regenerating
 it silently breaks other devices with: `docs/extension-install.md`.
+Capturing on employer career sites and their ATS forms, beyond the three
+platforms — not built, analysis only (24 Sep 2026): the measured gap, an
+18-vendor survey of how job pages expose a job, and the plan, in
+`docs/career-sites.md`.
 Open-weight models on an OpenAI-compatible server (vLLM first) go through
 `pipeline/llm.py` (Key files); the hands-on lab that verifies it against a
 real server on GCP, stage by stage with results recorded, is
@@ -657,6 +661,12 @@ The dated register behind each item, tasks 1-23 with their measurements, is
   and the tab was opened after the reload; read `doc_source` and the sweep
   line. JobStreet still owes one clean submit with the race fix and salary
   capture together. (tasks 5, 18)
+- **Employer career sites** (`docs/career-sites.md`): analysis only. 51
+  LinkedIn "Apply on company website" applications carry 0 screening
+  answers, and an application made directly on an employer's site exists
+  only as its mail. Four decisions are the author's before phase A (its
+  §14): static ATS hosts vs per-site opt-in, id namespacing vs a new
+  platform value, redacting NRIC/DOB/race answers, write at submit.
 - **Release blockers:** LICENSE (Apache-2.0 recommended), split the extension
   into its own repo, decide whether CLAUDE.md ships; `audit_names.py --history`
   is the pre-publish check. (task 3)
