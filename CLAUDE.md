@@ -20,7 +20,7 @@ fresh signup) — including the single-token-per-account gotcha regenerating
 it silently breaks other devices with: `docs/extension-install.md`.
 Capturing on employer career sites and their ATS forms, beyond the three
 platforms — the measured gap, an 18-vendor survey of how job pages expose a
-job, and the plan, in `docs/career-sites.md` (phase A built 24 Sep 2026).
+job, and the plan, in `docs/career-sites.md` (phases A and B built 24 Sep 2026).
 Open-weight models on an OpenAI-compatible server (vLLM first) go through
 `pipeline/llm.py` (Key files); the hands-on lab that verifies it against a
 real server on GCP, stage by stage with results recorded, is
@@ -104,10 +104,11 @@ Nationality and work authorisation stay recorded: the visa analysis reads them.
 - `pipeline/templates/` — every page; ALL CSS is one `<style>` block in `base.html`
 - `extension/` — browser capture (LinkedIn/JobStreet/Indeed adapters + shared/);
   `shared/jobposting.js` reads ANY job page off its schema.org JobPosting and
-  owns the one ATS vendor table, and `adapters/generic.js` is what the popup
-  injects on a site with no adapter (`docs/career-sites.md`; its posting id
-  `<host>/<token>` is `joburl.generic_id` in Python, both held to
-  `tests/job_urls.json`)
+  owns the one ATS vendor table; `adapters/generic.js` is what the popup
+  injects on a site with no adapter AND the static content script on ATS
+  hosts, where it finds the application form by structure and captures on
+  its submit (`docs/career-sites.md`; its posting id `<host>/<token>` is
+  `joburl.generic_id` in Python, both held to `tests/job_urls.json`)
 - `migrations/` — append-only numbered schema files (invariant #8)
 - `tests/` — seven Python suites + `test_extension.js` (Node, no DB), see Commands
 
@@ -677,11 +678,15 @@ The dated register behind each item, tasks 1-23 with their measurements, is
   LinkedIn "Apply on company website" applications carry 0 screening
   answers, and an application made directly on an employer's site exists
   only as its mail. Its four decisions were taken 24 Sep 2026, all as
-  recommended (its §14). Built the same day: withheld sensitive answers and
-  phase A (the popup captures ANY job page, extension 0.11.0; the reader
-  verified on a real career site by in-page evaluation, the popup's injection
-  path not yet run live — reload the extension, then capture one). Next is
-  phase B: submit hooks on ATS forms that complete a LinkedIn external apply.
+  recommended (its §14). Built the same day: withheld sensitive answers,
+  phase A (the popup captures ANY job page) and phase B (a submit on an ATS
+  form is captured with its answers and completes the job board record that
+  opened the tab; extension 0.12.0). Verified by in-page evaluation on real
+  pages; NOT yet run live through the extension — the popup's injection, a
+  real ATS submit, and the opener link all wait on the next real external
+  apply (reload the extension first; `.claude/rules/extension.md` says what
+  to read). Workday and SuccessFactors forms sit behind a candidate sign-in
+  and are unverified. Phase C (per-site opt-in for employer domains) is next.
 - **Release blockers:** LICENSE (Apache-2.0 recommended), split the extension
   into its own repo, decide whether CLAUDE.md ships; `audit_names.py --history`
   is the pre-publish check. (task 3)

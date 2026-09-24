@@ -322,6 +322,15 @@ check("clean drops the picker on both layouts and keeps the real question",
           {"question": "Mark job as a top choice", "answer": "No", "type": "checkbox"},
           {"question": "Resume link", "answer": "https://x.example/cv.pdf",
            "type": "text"}])] == ["Resume link"])
+# A captcha's hidden response field inside an ATS's application form (Lever's
+# hCaptcha, measured 24 Sep 2026) — the extension skips it as machinery, and
+# this is the second line, should one ever arrive.
+check("clean drops a captcha's response field, keeps the question beside it",
+      [r["question"] for r in clean([
+          {"question": "g-recaptcha-response", "answer": "03AFcWeA.token", "type": "textarea"},
+          {"question": "h-captcha-response", "answer": "P1_eyJ0eXAi.token", "type": "textarea"},
+          {"question": "cf-turnstile-response", "answer": "0.token", "type": "text"},
+          {"question": "Notice period", "answer": "1 month", "type": "text"}])] == ["Notice period"])
 r_res = post({"platform": "linkedin", "platform_job_id": "LI-qa-resume",
               "url": "https://www.linkedin.com/jobs/view/4243/",
               "company": "Meridian Systems", "title": "Applied AI Engineer",

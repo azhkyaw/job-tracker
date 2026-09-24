@@ -2,8 +2,8 @@
 
 **Author:** AZ
 **Status:** Accepted; being built. The four decisions in §14 were taken on
-24 Sep 2026, all as recommended. Built the same day: the redaction in §11 and
-phase A (§12). Phase B is next.
+24 Sep 2026, all as recommended. Built the same day: the redaction in §11,
+phase A and phase B (§12). Phase C is next.
 **Date:** 24 September 2026
 **Scope:** What it takes for the extension to capture a job, and the
 application made for it, on an employer's own career site or its applicant
@@ -500,6 +500,58 @@ permissions. A job description reaches the next direct application.
   and per-vendor `answerFormRoot` and submit hooks.
 
 This closes the 0-of-51 answer gap and fixes the applied time.
+
+**Built 24 Sep 2026, extension 0.12.0:**
+
+- **Measured first, read-only, on four vendors' live apply pages** (Lever,
+  Greenhouse, Ashby, Workable): the form root, the submit control, and
+  whether the job's title appears on the form page. Workday and
+  SuccessFactors put the form behind a candidate sign-in, so they were not
+  read.
+- **The rule is structural, not per vendor** (`adapters/generic.js`):
+  - The application is the `<form>` that takes the resume. Otherwise it is
+    the nearest container of every visible control, and only on a page that
+    has a file input or an apply-flow address.
+  - Never a container that also holds a password field.
+  - The submit is a control inside it whose words send an application.
+  - The one vendor list left is two language-independent hooks (Lever's
+    `#btn-submit`, Workable's `data-ui="apply-button"`).
+- **Ashby has no `<form>` at all**, which is why the root is found by what it
+  holds. On Ashby's live page the rule first chose `<body>`: reCAPTCHA's
+  hidden response field sits outside the form, and the common container
+  then was the whole page. Now only visible controls place the root.
+- **The same field would have been stored as an answer**, with its token as
+  the value, since the sweep names an unlabelled control by its `name`.
+  Lever's hCaptcha writes one INSIDE its form. `answers.js` now skips a
+  control that is both unrendered and named only by its own attribute.
+  Both conditions are required: Easy Apply hides its native radios behind
+  labelled wrappers. The server drops the three captchas' response keys as
+  a second line.
+- **Run in each of the three pages that load without sign-in** (Lever's
+  stalled in the browser tab, so it was read as fetched HTML), the rule
+  picked the right root, and exactly one button out of 5, 10 and 22 as the
+  submit.
+- **The link is `sender.tab.openerTabId` plus a title check.**
+  - The board's click stashes its job under its own tab
+    (`background.js:stashExternal`).
+  - The submit takes the entry whose title matches
+    (`jobposting.js:sameJob`), or the only entry when the page shows no
+    title. Anything else links nothing.
+  - A board tab's box still asking "Capture this application?" becomes the
+    receipt when the submit saves the application.
+- **Changed from the plan:**
+  - An ATS listing stashes its job as the page loads, not on an "Apply"
+    click: no per-vendor opening selectors, and the apply page gets the
+    listing's clean title and JD.
+  - A field read by fallback (a tab title) is marked weak, and the listing's
+    stash replaces it.
+- **NOT yet run live through the extension:**
+  - a real submit;
+  - the opener link, including whether LinkedIn's external button sets
+    `openerTabId` at all;
+  - the receipt handoff.
+  Read the popup's provenance line on the next external apply
+  (`.claude/rules/extension.md`).
 
 **C. Per-site opt-in plus the declared handoff** (§7, §9).
 

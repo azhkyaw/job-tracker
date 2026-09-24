@@ -705,3 +705,23 @@ the key to each real case.
    reader returned the title, company, location, posted date, vendor and the
    full 6,506-character JD. Not yet run live: the popup's injection path,
    which needs the extension reloaded. Next: phase B.
+26. **Employer career sites, phase B** (24 Sep 2026). A submit on an ATS's
+   own application form is captured with its answers, and when a job
+   board's "Apply on company website" opened that tab, it completes the
+   board's record instead of starting a second one. The forms were read
+   first, live and read-only, on Lever, Greenhouse, Ashby and Workable. What
+   they share became the rule: the application is where the resume goes,
+   it never asks for a password, and a control inside it says it sends it.
+   Ashby has no `<form>`, so the root is found by what it holds. Running the
+   rule in Ashby's real page found a defect first: reCAPTCHA's hidden field,
+   outside the form, dragged the root to `<body>`, and the sweep would have
+   stored the captcha's token as an answer. The fix is `answers.js:machinery()`
+   (unrendered AND named only by its own attribute — visibility alone would
+   re-lose Easy Apply's hidden radios), plus a server drop. After it, each
+   of the three pages gave one root and one submit button (out of 5, 10 and
+   22). The link is the browser's `openerTabId` plus a title check
+   (`jobposting.js:sameJob`). Anything ambiguous files its own record,
+   visible and mergeable, rather than risk the wrong one. Content scripts
+   run on 11 ATS host patterns, SuccessFactors limited to `/career*`.
+   Extension 0.12.0. Unverified: LinkedIn setting `openerTabId`, a real
+   submit, and Workday and SuccessFactors behind their sign-ins.

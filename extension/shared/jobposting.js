@@ -415,6 +415,13 @@
       job.work_type = workType(p.employmentType);
       job._prov.title_source = ld.length ? "jsonld" : "microdata";
     }
+    // Fields filled by a fallback are WEAK, and capture.js lets a keyed stash
+    // of this same job replace them. Gaps-only merging assumes the page in
+    // front of the user reads best, which is false exactly here: an apply
+    // page that dropped the JobPosting (Lever, Workable, Personio — measured
+    // 24 Sep 2026) yields its tab title, "Contoso - Senior Engineer", while
+    // the listing it came from published the clean title a minute earlier.
+    job._prov.weak = [];
     if (!job.title) {
       // <h1> first: on a job page it is the job's title, where og:title and
       // the tab title tend to wrap it ("Job Application for X at Y").
@@ -423,11 +430,39 @@
       const og = meta(doc, 'meta[property="og:title"]');
       job.title = h1t || og || str(doc.title);
       job._prov.title_source = h1t ? "h1" : og ? "og" : job.title ? "doctitle" : null;
+      if (job.title) job._prov.weak.push("title");
     }
-    if (!job.company) job.company = meta(doc, 'meta[property="og:site_name"]');
+    if (!job.company) {
+      job.company = meta(doc, 'meta[property="og:site_name"]');
+      if (job.company) job._prov.weak.push("company");
+    }
     if (!job.title && !job.jd_text) return null;
     return job;
   }
 
-  window.__trackerJobPosting = { read, idFrom, atsOfUrl, vendorOf, htmlToText };
+  /* Are two titles the same job's? For linking a submit on an ATS to the
+   * external apply that opened it, where the ATS and the job board word one
+   * role differently: "Software Engineer (Real-time Collaborative Platform –
+   * Full Stack)" on the form, "Software Engineer" on the board. So one title's
+   * words CONTAINED in the other's counts — but only from two words up, since
+   * a bare "Engineer" is inside every title — and otherwise the word sets must
+   * overlap well past half: "Senior AI Engineer" against "Agentic AI Engineer"
+   * shares exactly half and is two different roles
+   * (.claude/rules/matching.md). */
+  const words = (s) => new Set((str(s) || "").normalize("NFKC").toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u).filter(Boolean));
+
+  function sameJob(a, b) {
+    const A = words(a), B = words(b);
+    if (!A.size || !B.size) return false;
+    const shared = [...A].filter((w) => B.has(w)).length;
+    const small = Math.min(A.size, B.size);
+    if (small >= 2 && shared === small) return true;
+    return shared / (A.size + B.size - shared) >= 0.6;
+  }
+
+  // `self` in the service worker, which imports this file for sameJob so the
+  // rule exists once; `window` in a page, where the two are the same object.
+  (typeof window !== "undefined" ? window : self).__trackerJobPosting =
+    { read, idFrom, atsOfUrl, vendorOf, htmlToText, sameJob };
 })();

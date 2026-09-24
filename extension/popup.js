@@ -210,6 +210,20 @@ chrome.storage.local.get({ provenance: [] }, ({ provenance }) => {
     }
     // A same-tab stash is a GUESS about which job was meant, used only for what
     // a real read left empty. Worth seeing every time it supplies anything.
+    // An ATS submit and the job board's external apply that opened its tab
+    // (docs/career-sites.md §8). A link is the happy path and reads plainly;
+    // candidates with no link means the titles disagreed, so the submit filed
+    // its own record — worth checking once for a duplicate.
+    if (p.linked) {
+      li.append(` — completed the job board's record (matched by ${
+        p.linked === "opener+title" ? "the tab that opened this one and the title" : "the tab that opened this one"})`);
+    } else if (p.candidates) {
+      const w = document.createElement("span");
+      w.className = "warn";
+      w.textContent = ` — the opening tab had ${p.candidates} external apply(s), none with this `
+        + `title; filed as its own record — check for a duplicate`;
+      li.append(w);
+    }
     if (p.fromGuess && p.fromGuess.length) {
       const g = document.createElement("span");
       g.className = "warn";

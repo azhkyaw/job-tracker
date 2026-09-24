@@ -67,7 +67,9 @@
     }
   }
 
-  const send = (payload) => tell({ type: "tracker-capture", payload });
+  // `extra` rides beside the payload for the worker only — notifyOpener, when
+  // this capture completed the record a job board's tab started.
+  const send = (payload, extra) => tell({ type: "tracker-capture", payload, ...(extra || {}) });
 
   /* "Is this enough to save?" — a job id alone identifies a record but names
    * nothing, so a read that produced only one is not yet an answer. The single
@@ -115,7 +117,9 @@
   function buildPayload(trigger, external, ats, job, recruiter, answers, tags, completed) {
     return {
       completed: !!completed,
-      platform: adapter.platform,
+      // A job's own platform wins: an ATS submit linked to the job board's
+      // record (withStashedJob) files as that board's posting, not 'other'.
+      platform: job.platform || adapter.platform,
       platform_job_id: job.platform_job_id || null,
       url: job.url || location.href,
       company: job.company || null,
@@ -153,6 +157,19 @@
     const path = ev.composedPath ? ev.composedPath() : [ev.target];
     for (const el of path) {
       if (el && el.matches && el.matches(sel)) return el;
+    }
+    return null;
+  }
+
+  /* A completion the ADAPTER recognises by rule rather than by a fixed
+   * selector or text — the generic ATS adapter's "a submit-worded control
+   * inside the application form" (adapters/generic.js). Same composedPath
+   * walk as the two above. */
+  function adapterCompletionTarget(ev) {
+    if (!adapter.isCompletion) return null;
+    const path = ev.composedPath ? ev.composedPath() : [ev.target];
+    for (const el of path) {
+      if (el && el.tagName && adapter.isCompletion(el)) return el;
     }
     return null;
   }
@@ -278,6 +295,10 @@
 
   let host = null;
   let unmount = null;        // tears down the live popover's own listeners
+  // The ask-first box of an external apply, while it still waits for an
+  // answer — so a submit on the employer's site that completed this record
+  // can replace it with a receipt instead of leaving it asking (§8).
+  let pendingConfirm = null;
   function mount(html) {
     if (unmount) unmount();
     if (host) host.remove();
@@ -456,7 +477,9 @@
         <div class="ft"><span class="s"></span></div>
       </div>`);
     const status = ui.root.querySelector(".s");
+    pendingConfirm = { ui, host };
     ui.root.querySelector("button[data-save]").addEventListener("click", () => {
+      pendingConfirm = null;
       status.textContent = "Saving…";
       onDone({ note: ui.root.querySelector("input").value.trim() },
              (msg, ok) => { status.textContent = msg; if (ok) ui.fade(2200); });
@@ -647,6 +670,14 @@
           // repaired in a minute. A live read of the tab's own top frame is a
           // fact about the page in front of the user; a same-tab stash is a
           // guess about which job they meant. Rank them accordingly.
+          // A field the page read by FALLBACK (its tab title, og:site_name —
+          // jobposting.js marks these weak) loses to this same job's KEYED
+          // stash: an ATS listing publishes the clean title, and its apply
+          // page often shows only "Contoso - Senior Engineer" in the tab.
+          const weakened = [];
+          if (exact && was && job._prov && job._prov.weak) {
+            for (const k of job._prov.weak) if (was[k]) { job[k] = null; weakened.push(k); }
+          }
           if (exact) fillGaps(job, was);
           // Only when identity is still missing — a healthy deferred apply
           // (JobStreet's review page, an Easy Apply whose stash hit) pays
@@ -668,40 +699,66 @@
             // snapshot of THE SAME JOB disagreeing (the Southridge/Adatum wrong
             // title). A same-tab guess is a different job by construction when
             // it is wrong, so flagging it here would cry wolf.
+            // (Weakened fields are left out: there the stash winning is the
+            // rule working, not the page and the snapshot disagreeing.)
             const disagreed = (was && exact)
               ? ["title", "company"].filter(
-                  (k) => pageSaw[k] && was[k] && pageSaw[k] !== was[k])
+                  (k) => !weakened.includes(k) && pageSaw[k] && was[k] && pageSaw[k] !== was[k])
               : [];
-            // Emitted for EVERY completed capture now, not only when a stash
-            // was found. The 18 Aug loss above wrote nothing here at all — the
-            // one shape the buffer most needed to show was the one it stayed
-            // silent about, which made "no stash" and "no capture" look
-            // identical from the popup.
-            tell({
-              type: "tracker-provenance",
-              detail: {
-                at: Date.now(), url: location.href, id: job.platform_job_id || null,
-                source: (job._prov && job._prov.title_source) || null,
-                layout: (job._prov && job._prov.layout) || null,
-                stashed: !!was,
-                exact,
-                askedTop: stillBlind,
-                // Recorded because "frame 0 was asked and had nothing" and "I
-                // believed I WAS frame 0, so nobody was asked" produce the
-                // identical empty result, and they are different bugs: the
-                // first is a page that lost its job card, the second is a tab
-                // whose top document is the preload page itself.
-                topFrame: isTopFrame,
-                tabUrl,
-                fromTop,
-                fromUrl,
-                fromGuess,
-                disagreed,
-                page: { title: pageSaw.title, company: pageSaw.company },
-                stash: was ? { title: was.title || null, company: was.company || null } : null,
-              },
+            // An ATS submit in a tab a job board's "Apply on company website"
+            // opened: the application being sent IS the one that board's tab
+            // recorded (or is still asking about), so the capture takes that
+            // record's identity — platform, job id, title, JD — and brings the
+            // form's answers, the vendor and the real submit time to it,
+            // instead of starting a second record for the same job
+            // (docs/career-sites.md §8). The worker decides from the browser's
+            // own tab relationship plus a title check (background.js).
+            const link = adapter.linksOpener
+              ? tell({ type: "tracker-take-external", title: job.title || null })
+              : Promise.resolve(null);
+            return link.then((r) => {
+              let linked = null;
+              if (r && r.job) {
+                const ats = job.ats;
+                for (const k of Object.keys(job)) if (k !== "_prov") delete job[k];
+                Object.assign(job, r.job, { ats: ats || r.job.ats || null });
+                linked = r.via || "opener";
+                job._linked = linked;
+              }
+              // Emitted for EVERY completed capture now, not only when a stash
+              // was found. The 18 Aug loss above wrote nothing here at all — the
+              // one shape the buffer most needed to show was the one it stayed
+              // silent about, which made "no stash" and "no capture" look
+              // identical from the popup.
+              tell({
+                type: "tracker-provenance",
+                detail: {
+                  // `linked` names how an ATS submit found the job board's
+                  // record; `candidates` how many it chose among when it did not.
+                  linked, candidates: (r && r.candidates) || 0,
+                  at: Date.now(), url: location.href, id: job.platform_job_id || null,
+                  source: (job._prov && job._prov.title_source) || null,
+                  layout: (job._prov && job._prov.layout) || null,
+                  stashed: !!was,
+                  exact,
+                  askedTop: stillBlind,
+                  // Recorded because "frame 0 was asked and had nothing" and "I
+                  // believed I WAS frame 0, so nobody was asked" produce the
+                  // identical empty result, and they are different bugs: the
+                  // first is a page that lost its job card, the second is a tab
+                  // whose top document is the preload page itself.
+                  topFrame: isTopFrame,
+                  tabUrl,
+                  fromTop,
+                  fromUrl,
+                  fromGuess,
+                  disagreed,
+                  page: { title: pageSaw.title, company: pageSaw.company },
+                  stash: was ? { title: was.title || null, company: was.company || null } : null,
+                },
+              });
+              return job;
             });
-            return job;
           });
         })
         .catch(() => job);
@@ -824,9 +881,24 @@
     // Every DOM read above is synchronous and already done; only now is it
     // safe to wait on the worker. Merging first would risk the submit's own
     // navigation tearing the page down before the form had been read.
-    const merged = withStashedJob(job, completed);
+    // The popup's "Capture this job as applied" is the fallback for a submit
+    // no hook saw, so it gets the same merging a detected submit does: this
+    // job's listing stash, and on an employer's site opened by a job board,
+    // the link to that board's record. The payload's own `completed` flag is
+    // untouched — a popup click is not the moment the form was sent.
+    const merged = withStashedJob(job, completed || (explicit && trigger === "apply"));
 
-    if (external && !explicit) {
+    // A COMPLETED external apply — the submit on the employer's own form — is
+    // the evidence the ask-first box exists to wait for, so it writes at once.
+    if (external && !explicit && !completed) {
+      // The click is opening the employer's site in another tab. Remember
+      // this job for it: a submit there asks the worker for the job its tab
+      // was opened for, and completes THIS record with the form's answers
+      // and the real submit time (§8; background.js:takeExternal). Stashed
+      // whatever the answer below turns out to be — the form may be sent
+      // before this box is answered, or instead of it.
+      merged.then((j) => tell({ type: "tracker-stash-external",
+                                job: { ...j, _prov: undefined, platform: adapter.platform } }));
       // Ask first, then write — see confirmPopover.
       confirmPopover((tags, report) => {
         merged
@@ -854,11 +926,14 @@
     merged.then((j) => {
       const payload = buildPayload(trigger, external, ats, j, recruiter, answers,
                                    { note: null }, completed);
-      send(payload).then((res) => showResult(payload, res));
+      send(payload, j._linked ? { notifyOpener: true } : null)
+        .then((res) => showResult(payload, res));
     });
   }
 
   /* --------------------------------------------- apply detection (delegated) */
+
+  let lastCompletionAt = 0;
 
   document.addEventListener("click", (ev) => {
     const sel = (adapter.applySelectors || []).join(",");
@@ -902,8 +977,18 @@
     // applied time here — to when the application was actually sent, not when
     // the form was opened. Harmless in the first case: with no event on record
     // yet, there is nothing to correct.
-    const submitHit = textMatchTarget(ev) || completionTarget(ev);
-    if (submitHit) capture("apply", false, null, true);
+    const submitHit = textMatchTarget(ev) || completionTarget(ev) ||
+                      adapterCompletionTarget(ev);
+    if (submitHit) {
+      // A double click, or a second press while the form validates, is one
+      // application. The server is idempotent about it anyway; this spares
+      // the user a second receipt.
+      if (Date.now() - lastCompletionAt < 3000) return;
+      lastCompletionAt = Date.now();
+      // Off the three platforms, a submit is by definition on the employer's
+      // own system — the external apply the row's grey badge names.
+      capture("apply", adapter.platform === "other", null, true);
+    }
   }, true);
 
   chrome.runtime.onMessage.addListener((msg, _sender, respond) => {
@@ -918,6 +1003,18 @@
         capture("apply", adapter.platform === "other" ? true : null, null, false, true);
       } else {
         capture("manual", false, null, false, true);
+      }
+      respond({ ok: true });
+    }
+    /* The application this tab's external apply was asking about has been
+     * sent and saved from the employer's site, in the tab this click opened
+     * (§8). A box still asking "Capture this application?" is now asking about
+     * something already done, so it becomes the receipt. Only the LIVE box:
+     * one already answered or dismissed is left alone. */
+    if (msg && msg.type === "tracker-external-completed") {
+      if (pendingConfirm && pendingConfirm.host === host) {
+        pendingConfirm = null;
+        receiptPopover(msg.detail || { ok: true });
       }
       respond({ ok: true });
     }

@@ -3,6 +3,10 @@
  * https page would be blocked as mixed content). Also keeps a small ring
  * buffer of capture failures the popup surfaces, and relays a subframe's
  * receipt to the tab's top frame. */
+// The job reader's title rule (sameJob), so the link decision below and the
+// tests share ONE definition of "the same job's title".
+importScripts("shared/jobposting.js");
+
 const DEFAULTS = { apiBase: "http://127.0.0.1:8000", token: "" };
 
 async function settings() {
@@ -196,6 +200,77 @@ async function takePendingJob(key, tabId) {
   return { job: rec ? rec.job : null, exact };
 }
 
+/* The job an EXTERNAL apply left for, remembered under the tab that clicked
+ * it — a job board's "Apply on company website" (docs/career-sites.md §8).
+ *
+ * That click opens the employer's site in a new tab; a submit there asks for
+ * the job ITS tab was opened for, by `sender.tab.openerTabId` — the browser's
+ * own record of which tab opened which, readable without the `tabs`
+ * permission (it gates only url, pendingUrl, title and favIconUrl). So the
+ * link is a fact about the tabs, not a guess about the job, which is why it
+ * may wait as long as the keyed job stash does: a sign-in plus a new
+ * candidate account can take most of an hour.
+ *
+ * One board tab can open several employer sites before any is submitted, so
+ * the opener's entries are a short list and the submit names its own title:
+ *  - a title that matches exactly one entry (jobposting.js sameJob) links it;
+ *  - no title and exactly one entry links it (the tab relationship alone);
+ *  - anything else links nothing, and the submit files its own record. A
+ *    duplicate is visible and mergeable; a submit filed onto a DIFFERENT
+ *    job's record is neither — the preference invariant #3 states. That is
+ *    also the case of browsing on from the opened page to another job at the
+ *    same employer: one entry, a title that disagrees, no link. */
+const EXTERNAL_TTL_MS = 2 * 60 * 60 * 1000;
+const EXTERNAL_PER_TAB = 5;
+
+async function _externalJobs() {
+  const { externalJobs = {} } = await new Promise((res) =>
+    chrome.storage.local.get({ externalJobs: {} }, res));
+  const now = Date.now();
+  for (const [tab, list] of Object.entries(externalJobs)) {
+    const fresh = list.filter((e) => now - e.at <= EXTERNAL_TTL_MS);
+    if (fresh.length) externalJobs[tab] = fresh; else delete externalJobs[tab];
+  }
+  return externalJobs;
+}
+
+async function stashExternal(tabId, job) {
+  if (tabId == null || !job) return;
+  const all = await _externalJobs();
+  const list = (all[tabId] || []).filter((e) =>
+    !(job.platform_job_id && e.job.platform_job_id === job.platform_job_id));
+  list.unshift({ at: Date.now(), job });
+  all[tabId] = list.slice(0, EXTERNAL_PER_TAB);
+  await setLocal({ externalJobs: all });
+}
+
+/* Returns { job, via, candidates } — `via` is "opener" (one entry, no title
+ * to check) or "opener+title"; `candidates` counts what was there to choose
+ * from, for the provenance line when nothing was chosen. */
+async function takeExternal(openerTabId, title) {
+  if (openerTabId == null) return { job: null, candidates: 0 };
+  const all = await _externalJobs();
+  const list = all[openerTabId] || [];
+  let pick = null;
+  let via = null;
+  if (title) {
+    const J = self.__trackerJobPosting;
+    const hits = list.filter((e) => J.sameJob(e.job.title, title));
+    if (hits.length === 1) { pick = hits[0]; via = "opener+title"; }
+  } else if (list.length === 1) {
+    pick = list[0];
+    via = "opener";
+  }
+  if (!pick) {
+    await setLocal({ externalJobs: all });      // persist the prune
+    return { job: null, candidates: list.length };
+  }
+  all[openerTabId] = list.filter((e) => e !== pick);
+  if (!all[openerTabId].length) delete all[openerTabId];
+  await setLocal({ externalJobs: all });
+  return { job: pick.job, via, candidates: list.length };
+}
+
 async function api(path, body) {
   const { apiBase, token } = await settings();
   if (!token) return { ok: false, error: "no API token set in options" };
@@ -231,11 +306,37 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
         ok: true, id: r.body.application_id, label: r.body.label,
         answers: r.body.answers, enriched: r.body.enriched, apiBase: r.base,
       });
+      // An ATS submit that completed the record a job board's tab started:
+      // tell that tab, so a box still asking "Capture this application?"
+      // turns into the receipt (capture.js). Needs host permission for the
+      // opener's site — linkedin.com has it; elsewhere this quietly fails and
+      // the box simply stays until dismissed.
+      const opener = sender.tab && sender.tab.openerTabId;
+      if (msg.notifyOpener && opener != null) {
+        chrome.tabs.sendMessage(opener, {
+          type: "tracker-external-completed",
+          detail: { ok: true, id: r.body.application_id, label: r.body.label,
+                    answers: r.body.answers, enriched: r.body.enriched, apiBase: r.base },
+        }, { frameId: 0 }).catch(() => {});
+      }
       // apiBase travels back so the receipt can link straight to the record —
       // only the worker knows it (it lives in chrome.storage.sync).
       respond({ ok: true, apiBase: r.base, ...r.body });
     })();
     return true;                       // async respond
+  }
+
+  // Same worker-lifetime rule as the job stash below: sent by the click that
+  // opens the employer's site, the worst moment to be racing a shutdown.
+  if (msg && msg.type === "tracker-stash-external") {
+    stashExternal(sender.tab && sender.tab.id, msg.job).then(() => respond({ ok: true }));
+    return true;
+  }
+
+  if (msg && msg.type === "tracker-take-external") {
+    takeExternal(sender.tab && sender.tab.openerTabId, msg.title || null)
+      .then((r) => respond(r));
+    return true;
   }
 
   // `return true` + respond() is NOT decoration here: it holds the message

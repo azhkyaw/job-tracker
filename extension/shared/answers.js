@@ -498,6 +498,27 @@
     };
   }
 
+  /* Page MACHINERY, not a question: a control nobody can see whose only name
+   * is its own name/placeholder attribute — labelFor()'s last fallback. A
+   * captcha's response field is exactly that (reCAPTCHA's
+   * `g-recaptcha-response`, hCaptcha's `h-captcha-response`): hidden, named
+   * for code, and holding a token. On Easy Apply it never mattered, since the
+   * captcha sits outside the dialog; on an ATS it sits INSIDE the application
+   * (Lever's hCaptcha writes into its form, and on Ashby the reCAPTCHA field
+   * is the one control outside the form's pane — measured live 24 Sep 2026),
+   * where the sweep would have filed the token as the answer to a question
+   * called "g-recaptcha-response".
+   * BOTH conditions, never visibility alone: the rebuilt Easy Apply hides its
+   * native radios and checkboxes behind ARIA wrappers, and those have a real
+   * label (the wrapper's) — skipping on visibility is how every radio answer
+   * would be lost again. */
+  const rendered = (el) => !el.getClientRects || el.getClientRects().length > 0;
+  function machinery(el, question) {
+    if (rendered(el)) return false;
+    const own = ((el.getAttribute && el.getAttribute("placeholder")) || el.name || "").trim();
+    return !!own && question === own;
+  }
+
   function sweep() {
     syncKey();
     let root = null;
@@ -540,6 +561,7 @@
         continue;
       }
       const question = labelFor(el);
+      if (question && machinery(el, question)) continue;
       const answer = valueOf(el);
       // Counted before the value check so an unlabelled control shows up in
       // the diagnostic even when it's also empty — "no label resolved" is the
@@ -594,7 +616,7 @@
       if ((el.type || "").toLowerCase() === "radio") { trySweep(); return; }
       const answer = valueOf(el);
       const question = labelFor(el);
-      if (!question || !answer) return;
+      if (!question || !answer || machinery(el, question)) return;
       syncKey();
 
       // The sweep is the primary source and the only thing that knows a

@@ -75,6 +75,11 @@ _RESUME_FILE = re.compile(r"^[^/\\:]+\.(?:pdf|docx?)$", re.I)
 _CONTROL_NORM_RES = (
     re.compile(r"^mark job as a top choice\b"),
     re.compile(r"^follow .+ to stay up to date\b"),
+    # A captcha's hidden response field, named for code and holding a token.
+    # The extension skips it (answers.js:machinery — unrendered and named only
+    # by its own name attribute); this is the second line, for the three
+    # captchas ATS forms carry, once an ATS put one INSIDE the application.
+    re.compile(r"^(g recaptcha|h captcha|cf turnstile) response$"),
 )
 
 # Questions whose ANSWER is identity or protected-characteristic data: an

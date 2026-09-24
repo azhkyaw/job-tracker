@@ -408,6 +408,7 @@ function node(tag, attrs = {}, kids = []) {
       return out;
     },
     querySelector(sel) { return this.querySelectorAll(sel)[0] || null; },
+    matches(sel) { return matches(this, sel); },
     closest(sel) {
       for (let x = this; x; x = x.parentElement) if (matches(x, sel)) return x;
       return null;
@@ -831,6 +832,173 @@ console.log("\njobposting.js read(): JSON-LD, microdata and the fallbacks");
   check("atsOfUrl: an employer's own host is no vendor", J.atsOfUrl("https://careers.contoso.com/"), null);
   check("htmlToText: flattened text with entities (Workday)",
         J.htmlToText("Design &amp; build   services &nbsp;today"), "Design & build services today");
+}
+
+console.log("\nanswers.js: a captcha's hidden response field is machinery, not a question");
+{
+  // Lever's hCaptcha writes its response field INSIDE the application form.
+  // It is unrendered and named only by its own name attribute — labelFor()'s
+  // last fallback — so the token would have been filed as an answer.
+  const token = node("textarea", { name: "h-captcha-response", value: "P1_eyJ0eXAiOiJKV1Qi.token" });
+  token.getClientRects = () => [];
+  // A HIDDEN control with a REAL label must survive: the rebuilt Easy Apply
+  // hides its native checkboxes behind a labelled ARIA wrapper.
+  const box = node("input", { type: "checkbox", id: "tc", checked: true });
+  box.getClientRects = () => [];
+  const form = node("form", {}, [
+    node("label", { for: "nm" }, ["Full name"]), node("input", { type: "text", id: "nm", value: "Jane Doe" }),
+    node("div", { role: "checkbox", "aria-label": "I agree to the privacy notice" }, [box]),
+    token,
+  ]);
+  check("the captcha token is skipped; a hidden control with its own label is kept",
+        sweepOf(form), [
+          { question: "Full name", answer: "Jane Doe", type: "text" },
+          { question: "I agree to the privacy notice", answer: "Yes", type: "checkbox" }]);
+}
+
+console.log("\njobposting.js sameJob: linking an ATS submit to the external apply that opened it");
+{
+  // The board and the ATS word one role differently; the rule must link the
+  // first pair and refuse the rest (background.js:takeExternal).
+  const cases = [
+    ["Software Engineer (Real-time Collaborative Platform – Full Stack)", "Software Engineer", true],
+    ["Senior Backend Engineer", "Senior Backend Engineer - Singapore", true],
+    ["AVP, Software Engineer", "AVP Software Engineer", true],
+    ["Data Engineer", "Senior Frontend Engineer", false],
+    // shares exactly half its words and is two different roles (matching.md)
+    ["Senior AI Engineer", "Agentic AI Engineer", false],
+    // a one-word title is inside every title, so containment needs two words
+    ["Engineer", "Senior Platform Engineer", false],
+    ["", "Software Engineer", false],
+  ];
+  for (const [a, b, want] of cases) check(`sameJob ${JSON.stringify(a)} ~ ${JSON.stringify(b)}`, J.sameJob(a, b), want);
+}
+{
+  // A fallback title is marked weak — capture.js lets this job's keyed stash
+  // (the listing's JSON-LD) replace it. Lever's apply page, as read live:
+  // no JobPosting, no <h1>, the title only in an <h2> and the tab title.
+  const j = J.read(pageDoc([node("h2", {}, ["Software Engineer"])], "Contoso - Software Engineer"),
+                   makeLoc("https://jobs.lever.co/contoso/53e23908-0da6-47a5-a482-39be676e9ee6/apply"));
+  check("fallback title is read, and marked weak", [j.title, j._prov.weak],
+        ["Contoso - Software Engineer", ["title"]]);
+  const k = J.read(pageDoc([ld({ "@type": "JobPosting", title: "Software Engineer",
+                                 hiringOrganization: "Contoso" })]),
+                   makeLoc("https://jobs.lever.co/contoso/53e23908-0da6-47a5-a482-39be676e9ee6"));
+  check("a structured read has nothing weak", k._prov.weak, []);
+}
+
+/* ------------------------------ adapters/generic.js on an ATS's own pages
+ *
+ * The application form and its submit, as read LIVE on 24 Sep 2026 from four
+ * vendors' real apply pages (read-only — nothing typed or sent): Lever,
+ * Greenhouse, Ashby (which has no <form> at all) and Workable. Placeholder
+ * names; the structure is the measured one. The sign-in and wizard shapes
+ * are the rules' own reasons, not a live read — Workday and SuccessFactors
+ * put the form behind a candidate sign-in. */
+
+const GENERIC_SRC = fs.readFileSync(path.join(ROOT, "extension/adapters/generic.js"), "utf8");
+
+function loadGeneric(kids, href, title = "") {
+  const doc = pageDoc(kids, title);
+  const loc = makeLoc(href);
+  const sandbox = { URL, URLSearchParams, console, setTimeout: () => 0 };
+  sandbox.window = { document: doc, location: loc };
+  sandbox.document = doc;
+  sandbox.location = loc;
+  vm.createContext(sandbox);
+  vm.runInContext(JOBPOSTING_SRC, sandbox);
+  vm.runInContext(GENERIC_SRC, sandbox);
+  return sandbox.window.__trackerAdapter;
+}
+const text = (name) => node("input", { type: "text", name });
+const file = (name) => node("input", { type: "file", name });
+const button = (label, attrs = {}) => node("button", attrs, [label]);
+
+console.log("\ngeneric.js: the application form and its submit, per vendor (read live 24 Sep 2026)");
+{
+  const LEVER = "https://jobs.lever.co/contoso/53e23908-0da6-47a5-a482-39be676e9ee6";
+  const submit = button("Submit application", { id: "btn-submit", type: "button", "data-qa": "btn-submit" });
+  const captcha = button("", { id: "hcaptchaSubmitBtn", type: "submit", class: "hidden" });
+  const form = node("form", { id: "application-form", method: "POST" },
+                    [text("name"), text("email"), file("resume"), node("textarea", { name: "comments" }), captcha, submit]);
+  const a = loadGeneric([node("h2", {}, ["Software Engineer"]), form], `${LEVER}/apply`);
+  check("Lever: the root is the form that takes the resume", a.answerFormRoot() === form, true);
+  check("Lever: button#btn-submit (type=button, posts by script) is the submit", a.isCompletion(submit), true);
+  check("Lever: the hidden hCaptcha submit is not", a.isCompletion(captcha), false);
+  check("Lever: the listing and its /apply page share one key",
+        a.answerFormKey() === loadGeneric([], LEVER).answerFormKey(), true);
+}
+{
+  // Greenhouse: the job page carries the form inline; its own "Apply" button
+  // (and "Autofill my application") sit ABOVE the form, and the resume
+  // widget's own buttons sit inside it.
+  const apply = button("Apply", { type: "button", "aria-label": "Apply" });
+  const attach = button("Attach", { type: "button" });
+  const submit = button("Submit application", { type: "submit" });
+  const form = node("form", { id: "application-form", method: "get" },
+                    [text("first_name"), text("email"), file("resume"), attach, file("cover_letter"), submit]);
+  const a = loadGeneric([node("h1", {}, ["Forward Deployed Engineer"]), apply, form],
+                        "https://job-boards.greenhouse.io/northwind/jobs/4377390009");
+  check("Greenhouse: root is the inline form", a.answerFormRoot() === form, true);
+  check("Greenhouse: 'Submit application' inside it is the submit", a.isCompletion(submit), true);
+  check("Greenhouse: the page's own 'Apply' button, outside the form, is not", a.isCompletion(apply), false);
+  check("Greenhouse: the resume widget's 'Attach' is not", a.isCompletion(attach), false);
+}
+{
+  // Ashby: NO <form> element. The controls live in a container with a stable
+  // class; the submit is a bare <button> with hashed classes and no type.
+  const submit = button("Submit Application", { class: "_button_zyh3g_28 _primary_zyh3g_97" });
+  const pane = node("div", { class: "ashby-job-posting-right-pane" },
+                    [node("div", {}, [text("name"), text("email")]), node("div", {}, [file("resume"), file("cover")]),
+                     node("div", {}, [text("linkedin")]), submit]);
+  // …and, as on the live page, reCAPTCHA's hidden response field portalled to
+  // <body>, OUTSIDE the pane. Counting it made the whole page the root.
+  const captcha = node("textarea", { name: "g-recaptcha-response", class: "g-recaptcha-response" });
+  captcha.getClientRects = () => [];
+  const a = loadGeneric([node("div", { class: "header" }, [node("h1", {}, ["Senior Solutions Architect"])]), pane,
+                         node("div", { class: "grecaptcha-badge" }, [captcha])],
+                        "https://jobs.ashbyhq.com/fabrikam/d9b9d44f-0a87-4237-b101-360052373643/application");
+  check("Ashby (no <form>): root is the container of every VISIBLE control, not <body>",
+        a.answerFormRoot() === pane, true);
+  check("Ashby: the typeless 'Submit Application' button is the submit", a.isCompletion(submit), true);
+}
+{
+  // Workable: a data-ui hook on both the form and its submit.
+  const submit = button("Submit application", { type: "submit", "data-ui": "apply-button" });
+  const form = node("form", { "data-ui": "application-form" }, [text("firstname"), file("resume"), submit]);
+  const a = loadGeneric([node("h1", {}, ["Senior Consultant"]), form],
+                        "https://apply.workable.com/contoso/j/B4A1D41ABA/apply/");
+  check("Workable: root is the application form", a.answerFormRoot() === form, true);
+  check("Workable: data-ui='apply-button' is the submit", a.isCompletion(submit), true);
+}
+console.log("\ngeneric.js: what must NOT be an application");
+{
+  // A candidate sign-in on an apply path (Workday, SuccessFactors): a
+  // password field anywhere in the container disqualifies it, so the
+  // username is never swept as an answer and its button never "applies".
+  const signIn = button("Submit", { type: "submit" });
+  const a = loadGeneric([node("form", {}, [text("email"), node("input", { type: "password", name: "pw" }), signIn])],
+                        "https://contoso.wd3.myworkdayjobs.com/Contoso/job/Engineer_R120291/apply");
+  // (=== null, not the node itself: a wrongly-found root is a DOM node with
+  // circular parent links, which check()'s JSON comparison cannot print.)
+  check("sign-in on an apply path: no root", a.answerFormRoot() === null, true);
+  check("sign-in: its 'Submit' is not an application", a.isCompletion(signIn), false);
+  // A listing with a search box and nothing to upload: not an apply flow.
+  const b = loadGeneric([node("input", { type: "search", name: "q" }), text("location")],
+                        "https://jobs.lever.co/contoso/53e23908-0da6-47a5-a482-39be676e9ee6");
+  check("a listing with no resume field and no apply path: no root", b.answerFormRoot() === null, true);
+}
+{
+  // A wizard step with no file input of its own (Workday's later steps) is
+  // still the application, by its address; "Save and Continue" advances it
+  // and only "Submit" sends it.
+  const next = button("Save and Continue");
+  const submit = button("Submit");
+  const step = node("div", {}, [text("q1"), text("q2"), node("select", { name: "q3" }), next, submit]);
+  const a = loadGeneric([step], "https://contoso.wd3.myworkdayjobs.com/Contoso/job/Engineer_R120291/apply/applyManually");
+  check("wizard step on an apply path: root found without a file input", a.answerFormRoot() === step, true);
+  check("wizard: 'Save and Continue' is not the submit", a.isCompletion(next), false);
+  check("wizard: 'Submit' is", a.isCompletion(submit), true);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

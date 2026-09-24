@@ -13,6 +13,18 @@ extension read the ONE page in front of you, once (Chrome's `activeTab`): the
 job details the page publishes for search engines, its title, and which hiring
 system it runs on. It keeps no access to that site afterwards.
 
+**Hiring systems' own application pages.** The extension also runs on the
+sites of the hiring systems employers use to take applications (Greenhouse,
+Lever, Ashby, Workable, Workday, SuccessFactors' career pages, SmartRecruiters,
+iCIMS, JazzHR, Breezy). There it does what it does on LinkedIn's Easy Apply:
+when YOU click the form's own submit button, it saves the job and the form's
+questions and answers to your tracker. It never reads a sign-in form (a
+password field anywhere in the form rules it out), and it skips a page's
+hidden machinery, such as a captcha's response field. When that page was
+opened by a job board's "Apply on company website", the application is filed
+onto the record the job board started. That link comes from the browser's own
+note of which tab opened which, not from reading your tabs' addresses.
+
 On an in-page apply form (LinkedIn Easy Apply today) it also reads the
 questions that form asks and the answers you gave, so your own tracker can
 show what you told that employer. Two consequences worth stating plainly:
@@ -50,10 +62,13 @@ may still walk away without applying — nothing is sent until you confirm.
 - Stored locally: your API base URL and token (chrome.storage.sync), a ring
   buffer of the last 10 capture failures (chrome.storage.local), and the
   in-progress apply form's answers for the tab you're applying in
-  (sessionStorage, cleared on capture).
-- Permissions: content scripts on the three job sites; storage; activeTab
-  and scripting, which together let a popup click read the page in front of
-  you and nothing else.
+  (sessionStorage, cleared on capture), and, for up to two hours, the job
+  an "Apply on company website" click left for, so the employer's form can
+  be filed onto it (chrome.storage.local).
+- Permissions: content scripts on the three job sites and on the hiring
+  systems' application pages listed above; storage; activeTab and scripting,
+  which together let a popup click read the page in front of you and nothing
+  else.
   Host access to your own server (localhost by default; remote origins only
   when you grant them in Options), plus linkedin.com — needed only so the
   receipt can be drawn in the page's top frame instead of inside the Easy

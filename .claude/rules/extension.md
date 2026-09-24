@@ -680,6 +680,27 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   tail, `_CONTROL_NORM_RES`'s anchored rule misses it and a dead singleton row
   lands in the bank per employer.
 
+- **A captcha's hidden response field reads as a question, and its token as
+  the answer** (found 24 Sep 2026, before it cost anything).
+  - **How:** `labelFor()`'s last fallback names a control by its own `name`
+    attribute. reCAPTCHA's `g-recaptcha-response` and hCaptcha's
+    `h-captcha-response` are textareas named for code and holding a token.
+  - **Why it never showed on Easy Apply:** the captcha sits outside the dialog
+    the sweep reads. On an ATS it does not: Lever's hCaptcha writes its field
+    INSIDE the application form. On Ashby's live page the reCAPTCHA field was
+    the one control of 22 outside the form's pane, and counting it made
+    `generic.js`'s root the whole `<body>`.
+  - **The fix is two conditions together:**
+    - `answers.js:machinery()` skips a control that is unrendered AND named
+      only by its own attribute.
+    - Visibility alone would re-lose every radio answer: the rebuilt Easy
+      Apply hides its native radios behind labelled ARIA wrappers (the
+      `<dialog>` gotcha above).
+  - **Also:** the ATS root is placed by visible controls only, and the server
+    drops the three captchas' response keys as a second line.
+  - **The general lesson:** a control's `name` is a fallback for a label, and a
+    hidden control with nothing but a name is page machinery.
+
 ## Known-untested surfaces (verify on first real contact)
 
 - **Extension DOM selectors** (`extension/adapters/*.js`) — best-effort against
@@ -847,3 +868,29 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   reader and the id rule, NOT `capture.js`, whose new `explicit` path (the
   popup's "applied" writes at once, even for an employer site) is reasoned,
   not tested.
+- **Phase B (extension 0.12.0, 24 Sep 2026): capture on an ATS form's
+  submit, and the link to the job board record that opened the tab — never
+  run live through the extension.**
+  - **Verified:** the rules (`generic.js`: root and submit) were run inside
+    the live apply pages of Ashby, Workable and Greenhouse. Each picked the
+    right root and exactly one submit button. Lever was read as fetched HTML.
+  - **Not verified, in order of doubt:**
+    1. Whether LinkedIn's external button sets `openerTabId` on the tab it
+       opens (it resolves the destination server-side and may open the tab
+       in a way that leaves none).
+    2. Workday and SuccessFactors, whose forms sit behind a candidate sign-in
+       and were never seen. The wizard rule — a Workday step with no file
+       input is still the application, by its `/apply` address — is
+       reasoned.
+    3. The receipt handoff to the board's tab (needs host permission for the
+       board; LinkedIn has it).
+  - **What to read on the next external apply, in the popup:**
+    - The provenance line should say "completed the job board's record".
+    - A warn line with candidates but no link means the titles disagreed and
+      a second record was filed; check for a duplicate.
+    - Neither, with the applied record carrying no answers, means `linked`
+      never ran: the submit was not detected. Check that `chrome://extensions`
+      reads 0.12.0 and that the tab was opened after the reload.
+  - **Not covered by `tests/test_extension.js`:** `capture.js` and
+    `background.js` — the weak-field merge, the link, the stash — are
+    reasoned, not tested.
