@@ -488,8 +488,32 @@
     return host ? { host, pattern: `*://${host}/*` } : null;
   }
 
+  /* A Chrome match pattern ("*://*.successfactors.com/portalcareer*") as a
+   * regular expression over a whole URL — one translation, used where the
+   * extension must say "does this page get the capture scripts?" without the
+   * browser to ask: the toolbar icon's rule (background.js, which hands it to
+   * declarativeContent, i.e. RE2 — so only constructs RE2 and JavaScript read
+   * alike) and the popup's covered-page check. Match-pattern semantics: `*` as
+   * the scheme means http or https; `*.` before a host means the host or any
+   * subdomain of it, never a mere suffix (`evil-linkedin.com` is not
+   * linkedin.com); a pattern names no port, so any port matches; `*` in the
+   * path is any run of characters. */
+  function matchPatternRegex(pattern) {
+    const m = /^(\*|https?):\/\/([^/]+)(\/.*)$/.exec(pattern || "");
+    if (!m) return null;
+    const esc = (s) => s.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
+    const scheme = m[1] === "*" ? "https?" : m[1];
+    let host;
+    if (m[2] === "*") host = "[^/:]+";
+    else if (m[2].startsWith("*.")) host = `([^/:]*\\.)?${esc(m[2].slice(2))}`;
+    else host = esc(m[2]);
+    const path = m[3].split("*").map(esc).join(".*");
+    return `^${scheme}://${host}(:[0-9]+)?${path}`;
+  }
+
   // `self` in the service worker, which imports this file for sameJob so the
   // rule exists once; `window` in a page, where the two are the same object.
   (typeof window !== "undefined" ? window : self).__trackerJobPosting =
-    { read, idFrom, atsOfUrl, vendorOf, htmlToText, sameJob, pickListed, siteOf };
+    { read, idFrom, atsOfUrl, vendorOf, htmlToText, sameJob, pickListed, siteOf,
+      matchPatternRegex };
 })();

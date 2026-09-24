@@ -757,3 +757,17 @@ the key to each real case.
    real pair from task 27, each form title chose its own listing over the
    sibling role. The second-posting link for board records is deferred.
    Extension 0.13.0. Not yet run live: enabling a site, then a real apply.
+29. **A toolbar icon that says whether this page is captured** (24 Sep 2026).
+   The extension had no icon, only Chrome's default letter. Designed with
+   `scripts/make_icons.py`: a capture frame around a trace, the list page's
+   own mark. Following the colour rule, it is grey at rest and blue when
+   capturing, where the trace ends in an amber dot, the wait an application
+   starts. Hollow against filled keeps the two states apart without colour.
+   Concepts were rendered at real toolbar sizes on light and dark toolbars,
+   then judged. A bare trace read as a key, a rising one as a wrench, a
+   list as any menu, a bare viewfinder as every screenshot tool. At 16 px the
+   inner trace blurs, so that size draws frame and dot on the pixel grid,
+   and heavier strokes read as a die's five. The switch is a
+   `declarativeContent` rule over the same patterns the capture scripts use,
+   because a tab's own icon survives navigation (Chrome resets it only on
+   close). Extension 0.14.0. Not yet seen in a real toolbar.

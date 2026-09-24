@@ -736,6 +736,23 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
     from the form alone files as "unknown company". The listing has both, so
     per-site opt-in on the employer's domain (phase C) is the fix.
 
+- **A tab's own toolbar icon does NOT reset when the tab navigates** (Chrome
+  docs: it "automatically resets when the tab is closed").
+  - **Why that rules out the obvious design:** content scripts saying hello
+    and `chrome.action.setIcon({tabId})` would leave the "capturing here"
+    icon on every page browsed to afterwards, unless the worker also watched
+    `tabs.onUpdated`, waking on every page load in every tab and racing the
+    content scripts.
+  - **Built instead (extension 0.14.0, 24 Sep 2026):** the icon is a
+    `declarativeContent` rule that Chrome evaluates on each navigation and
+    undoes itself.
+    - Its pages are the manifest's content-script patterns plus the enabled
+      sites, translated by `jobposting.js:matchPatternRegex`. The test loops
+      every manifest pattern through it.
+    - It wants image DATA, not paths, so the worker decodes the PNGs with
+      `OffscreenCanvas`.
+    - The icons themselves come from `scripts/make_icons.py`.
+
 ## Known-untested surfaces (verify on first real contact)
 
 - **Extension DOM selectors** (`extension/adapters/*.js`) — best-effort against
@@ -953,3 +970,12 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   - **Covered by tests:** `pickListed` and `siteOf` are pure and in
     `tests/test_extension.js`. The popup, worker and registration code are
     not.
+- **The toolbar icon's two states (0.14.0) have never been seen in a real
+  toolbar.** The rule's regexes are tested; the rule itself, and the PNG
+  decode in the worker, are not.
+  - **Check after reloading:** grey with a hollow dot on any ordinary page,
+    blue with an amber dot on LinkedIn, on an ATS form, and on an enabled
+    career site. Back to grey on navigating away.
+  - **If it stays grey everywhere,** `syncIconRule` threw; it is caught so
+    capture never suffers. The service worker's console (chrome://extensions
+    → "service worker") names the error.

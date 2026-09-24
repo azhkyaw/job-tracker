@@ -1,12 +1,19 @@
 {
   "manifest_version": 3,
   "name": "Job Tracker Capture",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "description": "Captures job descriptions and the apply form's screening questions at the moment you apply on LinkedIn, JobStreet, and Indeed — and, from the toolbar, on any employer's job page — and sends them to your personal tracker.",
+  "icons": {
+    "16": "icons/on-16.png",
+    "32": "icons/on-32.png",
+    "48": "icons/on-48.png",
+    "128": "icons/on-128.png"
+  },
   "permissions": [
     "storage",
     "activeTab",
-    "scripting"
+    "scripting",
+    "declarativeContent"
   ],
   "host_permissions": [
     "http://127.0.0.1/*",
@@ -22,7 +29,12 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Job Tracker"
+    "default_title": "Job Tracker",
+    "default_icon": {
+      "16": "icons/off-16.png",
+      "24": "icons/off-24.png",
+      "32": "icons/off-32.png"
+    }
   },
   "content_scripts": [
     {

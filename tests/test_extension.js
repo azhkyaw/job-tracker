@@ -920,6 +920,34 @@ console.log("\njobposting.js pickListed: which remembered job a submit belongs t
   check("siteOf: garbage", site("not a url"), null);
 }
 
+console.log("\njobposting.js matchPatternRegex: which pages the icon (and the popup) call covered");
+{
+  // One translation from Chrome match patterns to regexes, for the toolbar
+  // icon's declarativeContent rule and the popup. The cases pin match-pattern
+  // semantics, including the two a naive suffix test gets wrong.
+  const cover = (p, url) => new RegExp(J.matchPatternRegex(p)).test(url);
+  const cases = [
+    ["*://*.linkedin.com/*", "https://www.linkedin.com/jobs/view/1/", true],
+    ["*://*.linkedin.com/*", "https://linkedin.com/", true],
+    ["*://*.linkedin.com/*", "https://evil-linkedin.com/jobs/", false],
+    ["*://*.linkedin.com/*", "https://www.linkedin.com.evil.example/", false],
+    ["*://*.successfactors.com/portalcareer*", "https://career10.successfactors.com/portalcareer?_s.crb=x", true],
+    ["*://*.successfactors.com/career*", "https://career10.successfactors.com/careers?company=x", true],
+    ["*://*.successfactors.com/career*", "https://performancemanager10.successfactors.com/sf/home", false],
+    ["*://jobs.lever.co/*", "http://jobs.lever.co/contoso/x", true],
+    ["*://jobs.lever.co/*", "https://jobs.lever.co.evil.example/", false],
+    ["http://127.0.0.1/*", "http://127.0.0.1:8000/captures", true],
+    ["*://careers.contoso.com/*", "https://careers.contoso.com/job/Engineer/42/", true],
+  ];
+  for (const [p, url, want] of cases) check(`${p} ~ ${url}`, cover(p, url), want);
+  // Loop the REGISTRY, not a hand-picked list: every pattern the manifest
+  // injects on must translate, or the icon stays grey on a covered site.
+  const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, "extension/manifest.json"), "utf8"));
+  const bad = manifest.content_scripts.flatMap((cs) => cs.matches)
+    .filter((p) => !J.matchPatternRegex(p));
+  check("every manifest content-script pattern translates", bad, []);
+}
+
 /* ------------------------------ adapters/generic.js on an ATS's own pages
  *
  * The application form and its submit, as read LIVE on 24 Sep 2026 from four

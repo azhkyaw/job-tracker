@@ -176,6 +176,9 @@ work" below stays a list of what is open, not a history of what was done.
   `backfill -m 12 [--email x]`, `sync` (the 15-min cron entry, exits non-zero
   if any account failed)
 - Backlog: `uv run python -m pipeline.cli scan` (enqueue JD extraction/embeddings)
+- Extension icons: `uv run --with pillow python scripts/make_icons.py
+  [--preview sheet.png]` regenerates `extension/icons/` from its geometry;
+  the design and the concepts it beat are in its docstring
 - Answer keys: `uv run python -m pipeline.cli renorm-answers [--apply]` after any
   change to `norm_question` (dry run by default; `.claude/rules/extension.md`);
   `redact-answers [--apply]` after any change to `is_sensitive` (dry run by

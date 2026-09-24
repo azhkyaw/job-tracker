@@ -313,6 +313,51 @@ async function syncSites() {
       runAt: "document_idle", allFrames: true, persistAcrossSessions: true,
     })));
   }
+  await syncIconRule(want).catch(() => {});
+}
+
+/* ------------------------------------------------------------ toolbar icon
+ *
+ * The icon says whether the extension captures on the page in front of you:
+ * grey with a hollow dot anywhere else (manifest action.default_icon), blue
+ * with an amber dot on a page it captures on (scripts/make_icons.py has the
+ * design). The switch is a declarativeContent RULE, evaluated by Chrome on
+ * every navigation and undone the moment a page stops matching — so the
+ * worker is never woken per page load, and no content script races it. The
+ * alternative, chrome.action.setIcon per tab from a content script's hello,
+ * does not survive: a tab's own icon "automatically resets when the tab is
+ * closed" (Chrome docs) — NOT when it navigates — so it would stay blue on
+ * every page browsed to after a supported one.
+ *
+ * The rule's pages are exactly the capture scripts' pages: the manifest's
+ * content_scripts patterns and the enabled sites, one list, translated by
+ * jobposting.js:matchPatternRegex. declarativeContent wants image DATA, not
+ * paths, so the PNGs are decoded here. */
+async function _iconData(state) {
+  const out = {};
+  for (const size of [16, 32]) {
+    const blob = await (await fetch(chrome.runtime.getURL(`icons/${state}-${size}.png`))).blob();
+    const bitmap = await createImageBitmap(blob);
+    const ctx = new OffscreenCanvas(size, size).getContext("2d");
+    ctx.drawImage(bitmap, 0, 0);
+    out[size] = ctx.getImageData(0, 0, size, size);
+  }
+  return out;
+}
+
+async function syncIconRule(enabledHosts) {
+  const J = self.__trackerJobPosting;
+  const patterns = [
+    ...chrome.runtime.getManifest().content_scripts.flatMap((cs) => cs.matches),
+    ...enabledHosts.map((h) => `*://${h}/*`),
+  ];
+  const DC = chrome.declarativeContent;
+  const conditions = patterns.map((p) => J.matchPatternRegex(p)).filter(Boolean)
+    .map((re) => new DC.PageStateMatcher({ pageUrl: { urlMatches: re } }));
+  const imageData = await _iconData("on");
+  await new Promise((res) => DC.onPageChanged.removeRules(undefined, res));
+  await new Promise((res) => DC.onPageChanged.addRules(
+    [{ conditions, actions: [new DC.SetIcon({ imageData })] }], res));
 }
 
 /* Enable one host, and start on the page the user is looking at: the listing

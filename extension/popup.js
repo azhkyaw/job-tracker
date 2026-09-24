@@ -12,15 +12,12 @@
  * the tab opened (.claude/rules/extension.md), and injecting the generic
  * reader there would file a LinkedIn job as platform 'other'. The hosts come
  * from the manifest's own content_scripts, so there is no second list. */
-const STATIC_HOSTS = chrome.runtime.getManifest().content_scripts
+// Whole patterns, path included — SuccessFactors is covered only under
+// /career* and /portalcareer*, and an SAP HR page on the same host is not.
+const STATIC_PATTERNS = chrome.runtime.getManifest().content_scripts
   .flatMap((cs) => cs.matches)
-  .map((m) => m.replace(/^[^:]+:\/\/(\*\.)?/, "").replace(/\/.*$/, ""));
-const onStaticHost = (url) => {
-  try {
-    const h = new URL(url).hostname;
-    return STATIC_HOSTS.some((s) => h === s || h.endsWith("." + s));
-  } catch (e) { return false; }
-};
+  .map((p) => new RegExp(window.__trackerJobPosting.matchPatternRegex(p)));
+const onStaticHost = (url) => STATIC_PATTERNS.some((re) => re.test(url || ""));
 const INJECT = ["shared/jobposting.js", "adapters/generic.js", "shared/capture.js"];
 const LOOK = "Check the page for the capture popover.";
 

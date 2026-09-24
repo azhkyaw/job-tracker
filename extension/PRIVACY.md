@@ -81,6 +81,9 @@ may still walk away without applying — nothing is sent until you confirm.
   which together let a popup click read the page in front of you and nothing
   else; and, only for sites you turn on yourself, access to that one site
   (an optional permission Chrome asks you for, site by site).
+  declarativeContent lets the toolbar icon turn blue on a page the extension
+  captures on. Chrome itself checks each page's address against the
+  extension's own list of sites. The extension reads nothing to do it.
   Host access to your own server (localhost by default; remote origins only
   when you grant them in Options), plus linkedin.com — needed only so the
   receipt can be drawn in the page's top frame instead of inside the Easy
