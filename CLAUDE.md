@@ -60,7 +60,8 @@ it: the resume picker is PROMOTED to `applications.resume_file` (migration
 - `pipeline/dedup.py` — the only place two jobs are merged (`merge_jobs`)
 - `pipeline/trace.py` — pure timeline/axis geometry for list + detail pages
 - `pipeline/analytics.py` — funnel, response-rate, weekly, reminders and
-  rejection-reason queries
+  rejection-reason queries, and `reapplications` (the follow-up queue's
+  "you applied again" suggestion; `web.mark_reapplied` files it)
 - `pipeline/llm.py` — the ONE door to every model call (8 Sep 2026). Two
   backends behind `Client.complete()`: Anthropic (default; the request is
   byte-identical to what the stages sent before, so every measured
@@ -111,7 +112,7 @@ that can be Read directly at any time:
 - `.claude/rules/matching.md` — `matcher.py`, `dedup.py`, `ingest.py`: the
   `COMPANY_TRGM_MIN` rescue, the margin, boilerplate suffixes, event dates
 - `.claude/rules/web-ui.md` — `web.py`, `templates/**`, `trace.py`,
-  `analytics.py`: the UI design system (rules 1-11) plus every Jinja, CSS,
+  `analytics.py`: the UI design system (rules 1-17) plus every Jinja, CSS,
   FastAPI and ORDER BY gotcha
 - `.claude/rules/llm.md` — `llm.py`, `email_classifier.py`, `worker.py`,
   `prompts/**`: thinking/effort measurements, model versioning, the outage story
@@ -219,6 +220,13 @@ work" below stays a list of what is open, not a history of what was done.
   messages are tracked text too: both put a name back during the very session
   that removed them. `git filter-repo` also drops the `origin` remote — re-add
   it before the force-push, and re-clone the other machine afterwards.
+  **A third blind spot, found twice on 24 Sep 2026: the SHORT form.** A strong
+  hit is a full stored name; the one word a case is spoken of by (a company's
+  first word, where the database stores two) is only a weak token hit, buried
+  among ~1,600 weak lines — so a worklog entry about records the session just
+  worked on reads clean to the audit and carries three real names. Before
+  committing, grep the diff's ADDED lines for the short names of the records
+  the session touched: `git diff -U0 | grep '^+' | grep -iE 'name1|name2'`.
 - **Dev DB shell:** the dev DB is Neon now (`docs/windows-dev.md` → Managed
   Postgres), reached via `TRACKER_DATABASE_URL` in `.env` same as the app.
   Local Docker Postgres is only `scripts/test.ps1`'s throwaway DB —
@@ -499,6 +507,24 @@ rest of this file went" above.
   wrong tree (8 Sep 2026; reset before push). Check `$?` after each step that
   matters, or chain with `&&` explicitly. `uv run` itself propagates the
   exit code correctly — verified.
+- **One commit per issue from a working tree that holds several, without
+  `git add -p`** (interactive, unavailable here; done twice on 24 Sep 2026).
+  A file only one issue touched is a plain `git add`. For a file several
+  touched, build each commit's version from the FINAL text by undoing the
+  later issues' edits in a script (assert every anchor matches exactly once,
+  `ast.parse` the result, print the diff size per stage), store it with
+  `git hash-object -w --no-filters` and `git update-index --cacheinfo
+  100644,<sha>,<path>`; the working tree never changes. Blobs must be LF,
+  since the index is (`--no-filters` stores the bytes as given). A clean tree
+  after the last commit proves the commits sum to what was tested; each
+  INTERMEDIATE commit still needs its own suite run, in a worktree:
+  `git worktree add --detach <dir> <sha>`, a `.venv` junction to the real
+  one (`New-Item -ItemType Junction`), and `COMPOSE_PROJECT_NAME=job-tracker`
+  — Compose names its project after the directory, so from `wt-x` test.ps1
+  reports `service "db" is not running`, which reads as Docker being down.
+  Delete the JUNCTION before `git worktree remove`
+  (`[IO.Directory]::Delete($j, $false)`): a recursive delete that follows it
+  empties the real `.venv`.
 - **Windows: `uvicorn --reload`'s process tree outlives a single `taskkill`.**
   The PID `netstat`/`Get-NetTCPConnection` reports often isn't the real
   root — cross-check via `Get-CimInstance Win32_Process -Filter
@@ -604,7 +630,8 @@ Detail lives with each family's rule file; this is the index.
   0.9.0 `<dialog>` sweep and `getJob()`'s self-document fallback are UNVERIFIED
   on a real apply — read `doc_source` and the "Recent form sweeps" line on the
   next Easy Apply; `getRecruiter()` has one card of evidence; textareas have
-  never been stored; Indeed has never been exercised.
+  never been stored; Indeed has never been exercised; 0.10.1's `normKey` is
+  proven in `tests/test_extension.js` only, never on a live wizard.
 - **Mail** (`.claude/rules/mail-ingest.md`): IMAP verified on a real inbox
   28 Jul 2026; the web IMAP connect form, Gmail web OAuth and the full `-m 12`
   window are not.
@@ -620,15 +647,16 @@ The dated register behind each item, tasks 1-21 with their measurements, is
 `docs/worklog.md`; read the matching entry before acting on one.
 
 - **Follow-up drafting** on an age-capped queue: cap `/follow-ups` near 21
-  days (150 qualify on 24 Sep, 17 of them inside the cap), then build the
-  draft next to the button. 15 of the 150 are marked on the page as an
+  days (150 qualify on 24 Sep, 10 of them inside the cap by that evening,
+  17 that morning — the queue ages), then build the draft next to the button. 15 of the 150 are marked on the page as an
   earlier application to a role applied to again (task 19) and leave the
   queue as the author confirms them. Four `follow_up_sent` are on record: one filed
   by hand, three recovered from follow-ups the user EMAILED, which since
   migration 016 file themselves (task 16). (worklog task 4)
-- **Extension, next real Easy Apply:** verify 0.9.0 is live and the tab was
-  opened after the reload; read `doc_source` and the sweep line. JobStreet still
-  owes one clean submit with the race fix and salary capture together. (task 5)
+- **Extension, next real Easy Apply:** verify 0.10.1 is live on BOTH machines
+  and the tab was opened after the reload; read `doc_source` and the sweep
+  line. JobStreet still owes one clean submit with the race fix and salary
+  capture together. (tasks 5, 18)
 - **Release blockers:** LICENSE (Apache-2.0 recommended), split the extension
   into its own repo, decide whether CLAUDE.md ships; `audit_names.py --history`
   is the pre-publish check. (task 3)
@@ -647,14 +675,25 @@ The dated register behind each item, tasks 1-21 with their measurements, is
   label experimental before release. (task 6)
 - **Visa signal vs outcome is still two unjoined facts** (task 9): 22
   postings extracted `local_only`, all applied to, 6 rejected, 16 waiting —
-  and 40 of 55 rejections wait to be tagged at `/?reason=unrecorded` (24 Sep;
-  task 12's `how=no_round&reason=unrecorded` is the bulk of that queue).
+  and 40 of 54 rejected applications wait to be tagged at
+  `/?reason=unrecorded` (24 Sep; task 12's `how=no_round&reason=unrecorded`
+  is the bulk of that queue).
 - **Two emails from the sent-mail repair wait on the author** (task 16): the
   two resume emails recovered from `not_job_related` sit in triage (neither
   names a company, so the matcher could not place them), and a 23 Sep
   follow-up to one employer is filed on ANOTHER employer's application — a
   hand-link slip in triage, three links in 22 seconds. Re-file it from the
   detail page; it moves as a `follow_up_sent`.
+- **The 24 Sep data audit's leftovers are the author's clicks, not code**
+  (tasks 19-21): 15 rows marked on `/follow-ups` as an earlier application
+  to a role applied to again, each with "Same role, close" (the studio's
+  four were left undecided on purpose); 3 blind extension captures (29 Jul,
+  18 Aug, 20 Aug) that re-capturing from the popup on each job page fixes;
+  16 referral emails in triage's inbound lane. Decided and NOT open: one
+  company under two names (6 pairs; deferred until a `norm_company` replay
+  says otherwise), rejections filed twice (cosmetic), answers that differ
+  between employers (the author's own). Offered, not built: a popup
+  "Capture this job as applied" button (task 20).
 - **Heat ceiling** (task 13): `trace.FULL_HEAT_DAYS` = 56 is a judgement,
   not a measurement; replay it over the waiting rows before tuning it, the
   way every other threshold here was settled.
