@@ -2,8 +2,8 @@
 
 **Author:** AZ
 **Status:** Accepted; being built. The four decisions in §14 were taken on
-24 Sep 2026, all as recommended. Built the same day: the redaction in §11,
-phase A and phase B (§12). Phase C is next.
+24 Sep 2026, all as recommended. Built the same day: the redaction in §11
+and phases A, B and C (§12). Awaiting a real apply through each to verify.
 **Date:** 24 September 2026
 **Scope:** What it takes for the extension to capture a job, and the
 application made for it, on an employer's own career site or its applicant
@@ -558,6 +558,42 @@ This closes the 0-of-51 answer gap and fixes the applied time.
 - The case in §2 becomes automatic, from the listing through to the
   career{N} submit.
 - The employer's own posting attaches to the job by explicit link.
+
+**Built 24 Sep 2026, extension 0.13.0** (the first bullet above; the second
+was deferred):
+
+- **"Always capture on <site>" in the popup** asks Chrome for that one host
+  (`*://host/*`, from `optional_host_permissions`).
+  - The worker registers the generic scripts for it
+    (`chrome.scripting.registerContentScripts`) and injects them into the
+    open tab at once.
+  - A site runs them only while it is in `enabledSites` AND its permission
+    stands. Permission alone would also enable a remote tracker server that
+    `options.js` asks for.
+  - `syncSites()` re-derives the registrations on install, on startup and on
+    every permission change.
+  - The permission prompt can close the popup before its own code resumes,
+    so the grant is completed from `chrome.permissions.onAdded`, matched to
+    a `pendingSite` note the popup wrote.
+- **The declared handoff became the tab itself.** It is not a destination
+  host: the listing's "Apply now" goes to its OWN domain first
+  (`/talentcommunity/apply/…`), so the host its link names is not the host
+  the form is on.
+  - Every listing that publishes a JobPosting remembers its job under its
+    tab, in the store phase B built for the opener.
+  - A submit asks for the opener's list first (a job board's record wins),
+    then its own tab's, and takes the one entry whose title is the same job
+    (`jobposting.js:pickListed`). The measured SuccessFactors form titles
+    the job "VP - … AI Engineer (1234)": the listing's title with its
+    requisition number appended, which the containment rule accepts, while
+    rejecting a sibling role that shares three of its four words.
+  - The record takes the listing's identity: company, clean title, JD, and
+    its `<host>/<token>` id.
+- **Not built:** the second posting for a job board record, which needs a
+  server change and waits on phase B's opener link being seen to work.
+- **NOT yet run live through the extension:** enabling a site (a
+  chrome-extension:// page no automation may click), and a real submit
+  after it.
 
 **What to read on first real contact:**
 

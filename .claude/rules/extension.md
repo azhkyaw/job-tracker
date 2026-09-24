@@ -930,3 +930,26 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   - **Not covered by `tests/test_extension.js`:** `capture.js` and
     `background.js` — the weak-field merge, the link, the stash — are
     reasoned, not tested.
+- **Phase C (extension 0.13.0, 24 Sep 2026): enabling an employer's own
+  career domain, and filing its ATS submit onto the listing the tab showed —
+  never run live.**
+  - **What cannot be automated:** enabling happens in the extension's popup,
+    a chrome-extension:// page claude-in-chrome may not touch. The first run
+    is the user's.
+  - **What to check after enabling:**
+    - `chrome://extensions` shows the site under "Site access".
+    - The LevelDB (Procedures, above) has `enabledSites` and an
+      `externalJobs` entry for the tab, holding the listing's job.
+  - **After the application is sent:** the provenance line should read
+    "filed onto the listing this tab showed first", and the record should
+    carry the listing's `<host>/<token>` id, company and JD, with the form's
+    answers.
+  - **Untested assumptions, in order of doubt:**
+    1. That the permission prompt's closing the popup is really handled by
+       `permissions.onAdded` (the `pendingSite` note).
+    2. That `registerContentScripts` registrations survive an unpacked
+       reload. `syncSites()` on `onInstalled` re-derives them either way.
+    3. That `tracker-ping` keeps a page from being injected twice.
+  - **Covered by tests:** `pickListed` and `siteOf` are pure and in
+    `tests/test_extension.js`. The popup, worker and registration code are
+    not.

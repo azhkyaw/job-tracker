@@ -217,7 +217,15 @@
     const src = job && job._prov && job._prov.title_source;
     if (src !== "jsonld" && src !== "microdata") return false;
     try {
+      // Keyed by the id: for an apply page on the same site (Lever's /apply).
       chrome.runtime.sendMessage({ type: "tracker-stash-job", key: adapter.answerFormKey(), job })
+        .catch(() => {});
+      // And under this TAB: for a hiring system on ANOTHER site, reached in
+      // this same tab — an employer's career site sends you to its ATS, whose
+      // form names neither the company nor the job the way the listing does
+      // (docs/career-sites.md phase C; background.js:takeExternal).
+      chrome.runtime.sendMessage({ type: "tracker-stash-external",
+                                   job: { ...job, _prov: undefined } })
         .catch(() => {});
     } catch (e) { /* no extension context: a test, or a reloaded extension */ }
     return true;

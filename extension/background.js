@@ -244,32 +244,117 @@ async function stashExternal(tabId, job) {
   await setLocal({ externalJobs: all });
 }
 
-/* Returns { job, via, candidates } — `via` is "opener" (one entry, no title
- * to check) or "opener+title"; `candidates` counts what was there to choose
- * from, for the provenance line when nothing was chosen. */
-async function takeExternal(openerTabId, title) {
-  if (openerTabId == null) return { job: null, candidates: 0 };
+/* Returns { job, via, candidates }.
+ *
+ * Two lists are consulted, in order, each by jobposting.js:pickListed:
+ *  1. the OPENER tab's — a job board's external apply (phase B). It wins: the
+ *     record the board started is the one this application completes;
+ *  2. the submitting tab's OWN — the listing the tab showed before it moved
+ *     on to the hiring system (phase C). An employer's career site sends the
+ *     candidate to its ATS in the same tab (a SuccessFactors site: listing on
+ *     careers.<employer>, form on career{N}.successfactors.com), and only the
+ *     listing names the company and carries the JD; the form shows neither.
+ * `via` is "opener" / "tab", with "+title" when a title picked it;
+ * `candidates` counts what was there, for the provenance line when nothing
+ * was chosen. */
+async function takeExternal(openerTabId, ownTabId, title) {
   const all = await _externalJobs();
-  const list = all[openerTabId] || [];
-  let pick = null;
-  let via = null;
-  if (title) {
-    const J = self.__trackerJobPosting;
-    const hits = list.filter((e) => J.sameJob(e.job.title, title));
-    if (hits.length === 1) { pick = hits[0]; via = "opener+title"; }
-  } else if (list.length === 1) {
-    pick = list[0];
-    via = "opener";
+  const J = self.__trackerJobPosting;
+  const lists = [["opener", openerTabId], ["tab", ownTabId]]
+    .filter(([, id]) => id != null && all[id] && all[id].length);
+  const candidates = lists.reduce((n, [, id]) => n + all[id].length, 0);
+  for (const [via, id] of lists) {
+    const pick = J.pickListed(all[id], title);
+    if (!pick) continue;
+    all[id] = all[id].filter((e) => e !== pick.entry);
+    if (!all[id].length) delete all[id];
+    await setLocal({ externalJobs: all });
+    return { job: pick.entry.job, via: pick.byTitle ? `${via}+title` : via, candidates };
   }
-  if (!pick) {
-    await setLocal({ externalJobs: all });      // persist the prune
-    return { job: null, candidates: list.length };
-  }
-  all[openerTabId] = list.filter((e) => e !== pick);
-  if (!all[openerTabId].length) delete all[openerTabId];
-  await setLocal({ externalJobs: all });
-  return { job: pick.job, via, candidates: list.length };
+  await setLocal({ externalJobs: all });        // persist the prune
+  return { job: null, candidates };
 }
+
+/* ------------------------------------------------ sites enabled by the user
+ *
+ * "Always capture on this site" (popup): an employer's own career domain,
+ * which no manifest can list in advance. The popup asks Chrome for that ONE
+ * host; this worker then registers the generic capture scripts for it.
+ *
+ * A site runs them only while BOTH hold: it is in `enabledSites` AND Chrome's
+ * permission for it stands. Permission alone is not enough — options.js also
+ * asks for an origin, a remote tracker server's, and that server's pages must
+ * never get job-capture scripts. Registration is derived from the two by
+ * syncSites(), run on install, on startup and on every permission change, so
+ * a site revoked in chrome://extensions stops running them too. */
+const SITE_SCRIPTS = ["shared/jobposting.js", "adapters/generic.js",
+                      "shared/answers.js", "shared/capture.js"];
+const siteScriptId = (host) => `site-${host}`;
+
+async function _enabledSites() {
+  const { enabledSites = [] } = await new Promise((res) =>
+    chrome.storage.local.get({ enabledSites: [] }, res));
+  return enabledSites;
+}
+
+async function syncSites() {
+  const sites = await _enabledSites();
+  const { origins = [] } = await chrome.permissions.getAll();
+  const granted = new Set(origins);
+  const want = sites.filter((h) => granted.has(`*://${h}/*`));
+  const have = (await chrome.scripting.getRegisteredContentScripts())
+    .map((s) => s.id).filter((id) => id.startsWith("site-"));
+  const drop = have.filter((id) => !want.some((h) => siteScriptId(h) === id));
+  if (drop.length) await chrome.scripting.unregisterContentScripts({ ids: drop });
+  const add = want.filter((h) => !have.includes(siteScriptId(h)));
+  if (add.length) {
+    await chrome.scripting.registerContentScripts(add.map((h) => ({
+      id: siteScriptId(h), matches: [`*://${h}/*`], js: SITE_SCRIPTS,
+      runAt: "document_idle", allFrames: true, persistAcrossSessions: true,
+    })));
+  }
+}
+
+/* Enable one host, and start on the page the user is looking at: the listing
+ * is what needs remembering, and waiting for a reload would miss it. A page
+ * that already has the scripts (the popup's own capture injects them) is
+ * left alone — a second copy would capture every submit twice. */
+async function enableSite(host, tabId) {
+  const sites = await _enabledSites();
+  if (!sites.includes(host)) await setLocal({ enabledSites: [...sites, host] });
+  await syncSites();
+  if (tabId == null) return;
+  const live = await chrome.tabs.sendMessage(tabId, { type: "tracker-ping" }, { frameId: 0 })
+    .then((r) => !!(r && r.ok)).catch(() => false);
+  if (!live) {
+    await chrome.scripting.executeScript({ target: { tabId }, files: SITE_SCRIPTS })
+      .catch(() => {});
+  }
+}
+
+async function disableSite(host) {
+  const sites = await _enabledSites();
+  await setLocal({ enabledSites: sites.filter((h) => h !== host) });
+  await chrome.permissions.remove({ origins: [`*://${host}/*`] }).catch(() => false);
+  await syncSites();
+}
+
+chrome.runtime.onInstalled.addListener(() => { syncSites().catch(() => {}); });
+chrome.runtime.onStartup.addListener(() => { syncSites().catch(() => {}); });
+chrome.permissions.onRemoved.addListener(() => { syncSites().catch(() => {}); });
+// The permission prompt can close the popup before its own code runs on, so
+// the grant is completed HERE: the popup notes which host it asked for, and a
+// matching grant within two minutes enables it.
+chrome.permissions.onAdded.addListener((perms) => {
+  (async () => {
+    const { pendingSite } = await new Promise((res) =>
+      chrome.storage.local.get({ pendingSite: null }, res));
+    if (!pendingSite || Date.now() - pendingSite.at > 2 * 60 * 1000) return;
+    if (!(perms.origins || []).includes(`*://${pendingSite.host}/*`)) return;
+    await setLocal({ pendingSite: null });
+    await enableSite(pendingSite.host, pendingSite.tabId);
+  })().catch(() => {});
+});
 
 async function api(path, body) {
   const { apiBase, token } = await settings();
@@ -334,8 +419,22 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
   }
 
   if (msg && msg.type === "tracker-take-external") {
-    takeExternal(sender.tab && sender.tab.openerTabId, msg.title || null)
+    takeExternal(sender.tab && sender.tab.openerTabId, sender.tab && sender.tab.id,
+                 msg.title || null)
       .then((r) => respond(r));
+    return true;
+  }
+
+  // From the popup, which has no tab of its own: the host and the tab travel
+  // in the message. The permission itself is Chrome's, asked for by the popup.
+  if (msg && msg.type === "tracker-enable-site") {
+    enableSite(msg.host, msg.tabId).then(() => respond({ ok: true }))
+      .catch((e) => respond({ ok: false, error: String(e && e.message || e) }));
+    return true;
+  }
+  if (msg && msg.type === "tracker-disable-site") {
+    disableSite(msg.host).then(() => respond({ ok: true }))
+      .catch((e) => respond({ ok: false, error: String(e && e.message || e) }));
     return true;
   }
 

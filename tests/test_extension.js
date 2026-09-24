@@ -887,6 +887,39 @@ console.log("\njobposting.js sameJob: linking an ATS submit to the external appl
   check("a structured read has nothing weak", k._prov.weak, []);
 }
 
+console.log("\njobposting.js pickListed: which remembered job a submit belongs to");
+{
+  // The measured case (24 Sep 2026, placeholder names): an employer's career
+  // site sends the candidate to its SuccessFactors form in the same tab, and
+  // the form's <h1> is the listing's title with the requisition number
+  // appended. Two sibling roles were browsed in that tab first.
+  const entry = (title, id) => ({ at: 1, job: { title, platform_job_id: id } });
+  const platformRole = entry("VP - Platform AI Engineer", "careers.contoso.com/1000001");
+  const appliedRole = entry("VP - Applied AI Engineer", "careers.contoso.com/1000002");
+  const pick = (entries, title) => { const p = J.pickListed(entries, title); return p && [p.entry.job.platform_job_id, p.byTitle]; };
+  check("the form's '… (1234)' title picks its own listing, not the sibling role",
+        pick([appliedRole, platformRole], "VP - Platform AI Engineer (1234)"), ["careers.contoso.com/1000001", true]);
+  check("…and the sibling's form picks the sibling",
+        pick([appliedRole, platformRole], "VP - Applied AI Engineer (1235)"), ["careers.contoso.com/1000002", true]);
+  check("a title matching NO listing links nothing (browsed on to another job)",
+        pick([appliedRole], "Head of Data Platform (1299)"), null);
+  check("a title matching TWO listings links nothing, however likely either is",
+        pick([appliedRole, entry("VP - Applied AI Engineer", "careers.contoso.com/77")], "VP - Applied AI Engineer"), null);
+  check("no title and one listing: the tab relationship alone", pick([appliedRole], null),
+        ["careers.contoso.com/1000002", false]);
+  check("no title and two listings: nothing", pick([appliedRole, platformRole], null), null);
+  check("an empty list: nothing", pick([], "VP - Applied AI Engineer"), null);
+}
+{
+  const site = (u) => { const s = J.siteOf(u); return s && [s.host, s.pattern]; };
+  check("siteOf: one host, both schemes, nothing wider",
+        site("https://Careers.Contoso.com/job/Engineer/42/?locale=en_GB"),
+        ["careers.contoso.com", "*://careers.contoso.com/*"]);
+  check("siteOf: chrome:// cannot be enabled", site("chrome://extensions/"), null);
+  check("siteOf: file:// cannot be enabled", site("file:///C:/jobs.html"), null);
+  check("siteOf: garbage", site("not a url"), null);
+}
+
 /* ------------------------------ adapters/generic.js on an ATS's own pages
  *
  * The application form and its submit, as read LIVE on 24 Sep 2026 from four

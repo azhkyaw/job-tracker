@@ -742,3 +742,18 @@ the key to each real case.
    and only "Apply" of 74 buttons, at both addresses. Extension 0.12.1.
    The form page names no company and suffixes the title with its
    requisition number; phase C's listing opt-in is what supplies both.
+28. **Employer career sites, phase C** (24 Sep 2026). "Always capture on
+   <site>" in the popup asks Chrome for that one host; the worker registers
+   the generic scripts there and injects them into the open tab. A site runs
+   them only while it is in `enabledSites` AND its permission stands, so a
+   remote tracker server's granted origin never gets them. Registrations
+   are re-derived on install, startup and every permission change, and a
+   grant is completed from `permissions.onAdded` in case the prompt closed
+   the popup. The handoff from listing to form is the TAB: an employer's
+   "Apply now" first goes to its own domain, so the host its link names is
+   not the host the form is on. Each listing remembers its job under its
+   tab, and a submit takes the opener's list first, then its own tab's,
+   picking the one title that is the same job (`pickListed`). Run on the
+   real pair from task 27, each form title chose its own listing over the
+   sibling role. The second-posting link for board records is deferred.
+   Extension 0.13.0. Not yet run live: enabling a site, then a real apply.

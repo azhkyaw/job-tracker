@@ -10,6 +10,8 @@
          color:#FFFFFF;border-radius:6px;padding:6px 12px;width:100%}
   button.sec{background:transparent;color:#1F53BE;margin-top:6px}
   #out{margin-top:8px;color:#5A6873;min-height:1.2em}
+  #site{margin-top:10px;padding-top:10px;border-top:1px solid #CCD5DB}
+  #site .note{margin-top:4px;color:#5A6873;font-size:.9em}
   h4{margin:.9em 0 .3em;font-size:.8em;color:#5A6873;text-transform:uppercase;letter-spacing:.06em}
   ul{margin:0;padding-left:1.1em;color:#9A4231}
   li{margin-bottom:.2em;word-break:break-all}
@@ -24,7 +26,8 @@
     body{color:#DBE3EA;background:#181E25}
     button{border-color:#7FB0FF;background:#7FB0FF;color:#0A1017}
     button.sec{background:transparent;color:#7FB0FF}
-    #out,h4,li.none,ul#sweeps,ul#prov{color:#8695A2}
+    #out,h4,li.none,ul#sweeps,ul#prov,#site .note{color:#8695A2}
+    #site{border-top-color:#262F39}
     ul{color:#E28D79}
     #sweeps b,#prov b{color:#DBE3EA}
     #sweeps .warn,#prov .warn{color:#E28D79}
@@ -33,10 +36,15 @@
 <button id="applied">Capture this job as applied</button>
 <button id="cap" class="sec">Capture this job as interested</button>
 <div id="out"></div>
+<div id="site" hidden>
+  <button id="site-toggle" class="sec"></button>
+  <div class="note" id="site-note"></div>
+</div>
 <h4>Recent capture failures</h4>
 <ul id="fails"><li class="none">none</li></ul>
 <h4>Recent form sweeps</h4>
 <ul id="sweeps"><li class="none">none</li></ul>
 <h4>Title source</h4>
 <ul id="prov"><li class="none">none</li></ul>
+<script src="shared/jobposting.js"></script>
 <script src="popup.js"></script>

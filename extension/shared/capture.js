@@ -705,14 +705,15 @@
               ? ["title", "company"].filter(
                   (k) => !weakened.includes(k) && pageSaw[k] && was[k] && pageSaw[k] !== was[k])
               : [];
-            // An ATS submit in a tab a job board's "Apply on company website"
-            // opened: the application being sent IS the one that board's tab
-            // recorded (or is still asking about), so the capture takes that
-            // record's identity — platform, job id, title, JD — and brings the
-            // form's answers, the vendor and the real submit time to it,
-            // instead of starting a second record for the same job
-            // (docs/career-sites.md §8). The worker decides from the browser's
-            // own tab relationship plus a title check (background.js).
+            // An ATS submit whose job was remembered elsewhere: in the tab a
+            // job board's "Apply on company website" opened (phase B), or on
+            // the employer's own listing this tab showed before it moved on to
+            // the hiring system (phase C). The application being sent IS that
+            // job, so the capture takes its identity — platform, job id,
+            // title, company, JD — and brings the form's answers, the vendor
+            // and the real submit time to it, instead of starting a second,
+            // thinner record (docs/career-sites.md §7-8). The worker decides,
+            // from the browser's own tab records plus a title check.
             const link = adapter.linksOpener
               ? tell({ type: "tracker-take-external", title: job.title || null })
               : Promise.resolve(null);
@@ -926,7 +927,9 @@
     merged.then((j) => {
       const payload = buildPayload(trigger, external, ats, j, recruiter, answers,
                                    { note: null }, completed);
-      send(payload, j._linked ? { notifyOpener: true } : null)
+      // Only a link THROUGH the opener has a board tab to tell; a link to
+      // this tab's own listing (an employer's career site, phase C) does not.
+      send(payload, (j._linked || "").startsWith("opener") ? { notifyOpener: true } : null)
         .then((res) => showResult(payload, res));
     });
   }
@@ -1011,6 +1014,12 @@
      * (§8). A box still asking "Capture this application?" is now asking about
      * something already done, so it becomes the receipt. Only the LIVE box:
      * one already answered or dismissed is left alone. */
+    /* "Is this page already running the capture scripts?" — asked by the
+     * worker before it injects them into a tab the user just enabled a site
+     * in; a second copy would capture every submit twice. */
+    if (msg && msg.type === "tracker-ping") {
+      respond({ ok: true, platform: adapter.platform });
+    }
     if (msg && msg.type === "tracker-external-completed") {
       if (pendingConfirm && pendingConfirm.host === host) {
         pendingConfirm = null;

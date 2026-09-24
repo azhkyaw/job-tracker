@@ -20,7 +20,7 @@ fresh signup) — including the single-token-per-account gotcha regenerating
 it silently breaks other devices with: `docs/extension-install.md`.
 Capturing on employer career sites and their ATS forms, beyond the three
 platforms — the measured gap, an 18-vendor survey of how job pages expose a
-job, and the plan, in `docs/career-sites.md` (phases A and B built 24 Sep 2026).
+job, and the plan, in `docs/career-sites.md` (phases A-C built 24 Sep 2026).
 Open-weight models on an OpenAI-compatible server (vLLM first) go through
 `pipeline/llm.py` (Key files); the hands-on lab that verifies it against a
 real server on GCP, stage by stage with results recorded, is
@@ -688,8 +688,11 @@ The dated register behind each item, tasks 1-23 with their measurements, is
   to read). Workday's form sits behind a candidate sign-in and is
   unverified. SuccessFactors' was read signed in after the first real apply
   there was missed (worklog task 27, fixed in 0.12.1). A capture from that
-  form alone lacks the company and the JD, which only the listing has. Phase
-  C (per-site opt-in for employer domains) is next, and supplies both.
+  form alone lacks the company and the JD, which only the listing has, so
+  phase C (0.13.0, task 28) lets the user enable an employer's own domain
+  from the popup. Its listings remember their job per tab, and the ATS
+  submit in that tab is filed onto it. Not yet run live: enabling a site,
+  then a real apply.
 - **Release blockers:** LICENSE (Apache-2.0 recommended), split the extension
   into its own repo, decide whether CLAUDE.md ships; `audit_names.py --history`
   is the pre-publish check. (task 3)

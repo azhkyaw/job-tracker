@@ -50,6 +50,56 @@ async function captureAs(as) {
 
 document.getElementById("applied").addEventListener("click", () => captureAs("applied"));
 document.getElementById("cap").addEventListener("click", () => captureAs("interested"));
+
+/* "Always capture on <this site>" — an employer's own career domain, which no
+ * manifest can list in advance (docs/career-sites.md phase C). Enabled, the
+ * site gets the generic capture scripts on every visit: each listing
+ * remembers its job for its tab, and the application sent on the hiring
+ * system that tab moves on to is filed onto that job with its company and
+ * JD — which the hiring system's own form often does not show.
+ *
+ * Shown only on a web page no manifest entry already covers. The permission
+ * is asked for HERE, inside the click, as Chrome requires; the worker does the
+ * rest, and completes it from chrome.permissions.onAdded if the prompt closes
+ * this popup first (the `pendingSite` note is how it knows which host). */
+(async () => {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const site = tab && window.__trackerJobPosting.siteOf(tab.url || "");
+  if (!site || onStaticHost(tab.url)) return;
+  const box = document.getElementById("site");
+  const btn = document.getElementById("site-toggle");
+  const note = document.getElementById("site-note");
+  const { enabledSites = [] } = await chrome.storage.local.get({ enabledSites: [] });
+  const on = enabledSites.includes(site.host) &&
+    await chrome.permissions.contains({ origins: [site.pattern] });
+  box.hidden = false;
+  if (on) {
+    btn.textContent = `Stop capturing on ${site.host}`;
+    note.textContent = "Each job you open here is remembered for its tab, so the " +
+      "application you send on its hiring system is filed onto it.";
+  } else {
+    btn.textContent = `Always capture on ${site.host}`;
+    note.textContent = "For an employer's own careers site. Chrome will ask to let " +
+      "the extension read this one site; you can stop it here any time.";
+  }
+  btn.addEventListener("click", async () => {
+    if (on) {
+      const r = await chrome.runtime.sendMessage({ type: "tracker-disable-site", host: site.host });
+      note.textContent = r && r.ok ? `Stopped. Nothing runs on ${site.host} now.`
+                                   : `Couldn't stop it: ${(r && r.error) || "no response"}`;
+      btn.disabled = true;
+      return;
+    }
+    await chrome.storage.local.set({ pendingSite: { host: site.host, tabId: tab.id, at: Date.now() } });
+    const granted = await chrome.permissions.request({ origins: [site.pattern] });
+    if (!granted) { note.textContent = "Chrome didn't grant access, so nothing changed."; return; }
+    const r = await chrome.runtime.sendMessage({ type: "tracker-enable-site", host: site.host, tabId: tab.id });
+    note.textContent = r && r.ok
+      ? "On. This page's job is remembered now; apply as usual."
+      : `Access granted, but setting it up failed: ${(r && r.error) || "no response"}`;
+    btn.disabled = true;
+  });
+})();
 chrome.storage.local.get({ failures: [] }, ({ failures }) => {
   if (!failures.length) return;
   const ul = document.getElementById("fails");
@@ -214,14 +264,17 @@ chrome.storage.local.get({ provenance: [] }, ({ provenance }) => {
     // (docs/career-sites.md §8). A link is the happy path and reads plainly;
     // candidates with no link means the titles disagreed, so the submit filed
     // its own record — worth checking once for a duplicate.
-    if (p.linked) {
+    if (p.linked && p.linked.startsWith("opener")) {
       li.append(` — completed the job board's record (matched by ${
         p.linked === "opener+title" ? "the tab that opened this one and the title" : "the tab that opened this one"})`);
+    } else if (p.linked) {
+      li.append(` — filed onto the listing this tab showed first (matched by ${
+        p.linked === "tab+title" ? "the title" : "the tab alone"})`);
     } else if (p.candidates) {
       const w = document.createElement("span");
       w.className = "warn";
-      w.textContent = ` — the opening tab had ${p.candidates} external apply(s), none with this `
-        + `title; filed as its own record — check for a duplicate`;
+      w.textContent = ` — ${p.candidates} remembered job(s) (the opening tab's, or this tab's `
+        + `listing), none with this title; filed as its own record — check for a duplicate`;
       li.append(w);
     }
     if (p.fromGuess && p.fromGuess.length) {

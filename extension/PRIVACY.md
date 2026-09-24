@@ -25,6 +25,17 @@ opened by a job board's "Apply on company website", the application is filed
 onto the record the job board started. That link comes from the browser's own
 note of which tab opened which, not from reading your tabs' addresses.
 
+**Employers' own career sites, only the ones you turn on.** On a site like
+careers.<employer>.com, the popup offers "Always capture on <that site>".
+Clicking it makes Chrome ask you to grant the extension that ONE site. From
+then on, on that site:
+- each job page you open is remembered for its tab, locally, for up to two
+  hours;
+- when that tab moves on to the employer's hiring system and you submit the
+  application, the application is filed onto that job.
+"Stop capturing on <that site>" in the popup, or removing the site in
+chrome://extensions, ends it.
+
 On an in-page apply form (LinkedIn Easy Apply today) it also reads the
 questions that form asks and the answers you gave, so your own tracker can
 show what you told that employer. Two consequences worth stating plainly:
@@ -68,7 +79,8 @@ may still walk away without applying — nothing is sent until you confirm.
 - Permissions: content scripts on the three job sites and on the hiring
   systems' application pages listed above; storage; activeTab and scripting,
   which together let a popup click read the page in front of you and nothing
-  else.
+  else; and, only for sites you turn on yourself, access to that one site
+  (an optional permission Chrome asks you for, site by site).
   Host access to your own server (localhost by default; remote origins only
   when you grant them in Options), plus linkedin.com — needed only so the
   receipt can be drawn in the page's top frame instead of inside the Easy

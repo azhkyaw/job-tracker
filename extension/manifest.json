@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Job Tracker Capture",
-  "version": "0.12.1",
+  "version": "0.13.0",
   "description": "Captures job descriptions and the apply form's screening questions at the moment you apply on LinkedIn, JobStreet, and Indeed — and, from the toolbar, on any employer's job page — and sends them to your personal tracker.",
   "permissions": [
     "storage",

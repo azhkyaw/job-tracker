@@ -461,8 +461,35 @@
     return shared / (A.size + B.size - shared) >= 0.6;
   }
 
+  /* Which remembered job a submit belongs to, from one tab's short list
+   * (background.js:takeExternal asks this of the opener tab's list, then of
+   * the submitting tab's own). With the submit's title: the ONE entry whose
+   * title is the same job's, or nothing. Without a title: the only entry, or
+   * nothing. Anything ambiguous links nothing, and the submit files its own
+   * record — a duplicate is visible and mergeable, a submit filed onto the
+   * wrong job is neither (invariant #3). */
+  function pickListed(entries, title) {
+    if (!entries || !entries.length) return null;
+    if (title) {
+      const hits = entries.filter((e) => e && e.job && sameJob(e.job.title, title));
+      return hits.length === 1 ? { entry: hits[0], byTitle: true } : null;
+    }
+    return entries.length === 1 ? { entry: entries[0], byTitle: false } : null;
+  }
+
+  /* The site an "Always capture on this site" click enables: one host, both
+   * schemes — `*://careers.contoso.com/*` — and nothing wider. Only web pages
+   * qualify; chrome:// and file:// cannot be granted. */
+  function siteOf(href) {
+    let u;
+    try { u = new URL(href); } catch (e) { return null; }
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    const host = u.hostname.toLowerCase();
+    return host ? { host, pattern: `*://${host}/*` } : null;
+  }
+
   // `self` in the service worker, which imports this file for sameJob so the
   // rule exists once; `window` in a page, where the two are the same object.
   (typeof window !== "undefined" ? window : self).__trackerJobPosting =
-    { read, idFrom, atsOfUrl, vendorOf, htmlToText, sameJob };
+    { read, idFrom, atsOfUrl, vendorOf, htmlToText, sameJob, pickListed, siteOf };
 })();
