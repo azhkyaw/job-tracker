@@ -451,6 +451,17 @@ is a private artifact, linked from the memory file
   http.server`, then navigate/screenshot that. Mint the cookie directly via
   `pipeline.auth.create_session(conn, user_id)` in a one-off script rather
   than needing the real login password.
+- **A `<textarea>` comes back with CRLF line breaks, whatever it was given**
+  (found 24 Sep 2026). The HTML spec normalises every textarea's submitted
+  value to CRLF, while the extension and stored emails use LF, and the
+  TestClient sends whatever the test wrote — so "an unchanged JD does not
+  re-enqueue extraction" passed for weeks while every real save of the edit
+  form re-queued the JD's extraction, nulled its embedding and rewrote the
+  text with CRs (50 of 245 stored JDs had them). `web._form_text` normalises
+  EVERY textarea (JD on both forms, contact notes, the resume profile), and
+  the JD change test normalises the stored side too, so a CR written by a
+  machine that has not pulled still compares equal. Test with the browser's
+  shape: `tests/test_web.py` resubmits a JD with `\r\n`.
 - **Jinja prints Python `None` as the literal string `"None"`**, not empty,
   when interpolated directly (`{{ x }}`). Bit us in
   `<input value="{{ e.extraction.company }}">` when `company` was `null` —

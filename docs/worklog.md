@@ -597,3 +597,25 @@ the key to each real case.
    (`job-tracker-snapshots/2026-09-24-saved-origin.json`): 257 applied, 24
    inbound, 0 saved. Not built, offered: a popup button to capture a job as
    applied. Suites: all eight green; the tag had no test before.
+21. **The audit's minor items** (24 Sep 2026). Re-measured all ten first;
+   two of the "minor" ones hid real mechanisms. Duplicate extraction rows (7)
+   had two causes: queue duplicates (a `scan` re-run during the outage) and
+   the edit form re-queuing an UNCHANGED JD, because browsers submit
+   textareas with CRLF and the comparison was raw — which had also written
+   CRs into 50 of 245 stored JDs. Fixed both (`worker.handle_extract_jd`'s
+   time guard, `web._form_text` on every textarea), normalised the 50,
+   deleted the 7 older rows; the guard was then seen working live. The JD
+   never extracted was a 3 Aug hand-transferred JD (a raw UPDATE skips the
+   pipeline): `scan` + `work --once` drained it and the 3 jobs pending since
+   02:46 (4 Haiku calls). Expired sessions (18) now clear on every login.
+   Email-made postings get `company_norm` like captured ones (29
+   backfilled). The truncated title is JobStreet's own cut — its own email
+   subject carries the same text — so nothing to fix. The author's calls:
+   the 11 keystroke snapshots in three "City" answers deleted (the prefix
+   rule found 9; the whole lists showed 2 typo'd ones of the same kind), one
+   employer's 15 referral emails left in triage for them, duplicate rejections left
+   (cosmetic), one-company-two-names deferred. Left for the author: the 3
+   blind captures, fixable by re-capturing each posting from the popup
+   (it fills the JD, queues extraction and adds no event to an applied
+   record). Snapshots for every repair in `job-tracker-snapshots/`. Suites:
+   all eight green, 6 new checks.

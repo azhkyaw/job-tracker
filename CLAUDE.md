@@ -117,7 +117,7 @@ that can be Read directly at any time:
   `prompts/**`: thinking/effort measurements, model versioning, the outage story
 - `.claude/rules/database.md` — `migrations/**`, `db.py`, scripts: the
   four-places rule, CHECK names, gapped precedence, Neon pooler, view ordering
-- `docs/worklog.md` — the dated task register (tasks 1-20 with their
+- `docs/worklog.md` — the dated task register (tasks 1-21 with their
   measurements); what is still open is summarised under "Open work" below
 
 A rule file is tracked text, so the real-names rule (Commands) applies to it,
@@ -616,7 +616,7 @@ Detail lives with each family's rule file; this is the index.
 
 ## Open work (as of 24 Sep 2026)
 
-The dated register behind each item, tasks 1-20 with their measurements, is
+The dated register behind each item, tasks 1-21 with their measurements, is
 `docs/worklog.md`; read the matching entry before acting on one.
 
 - **Follow-up drafting** on an age-capped queue: cap `/follow-ups` near 21
@@ -643,7 +643,7 @@ The dated register behind each item, tasks 1-20 with their measurements, is
 - **Catch-up sweep** `backfill -d 21` under `INGEST_ALL`, deferred 7 Aug 2026
   (~200-400 classify calls, ~$2-3). (task 1)
 - **Dedup and extraction verification have never run on real data** (0
-  embeddings, 0 of 247 extractions verified on 24 Sep); exercise once or
+  embeddings, 0 of 245 extractions verified on 24 Sep); exercise once or
   label experimental before release. (task 6)
 - **Visa signal vs outcome is still two unjoined facts** (task 9): 22
   postings extracted `local_only`, all applied to, 6 rejected, 16 waiting —

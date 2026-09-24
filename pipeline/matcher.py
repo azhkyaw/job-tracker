@@ -360,13 +360,16 @@ def _create_application(conn, user_id, email_row, extraction: Extraction,
     ).fetchone()
     posting = conn.execute(
         """
-        INSERT INTO postings (user_id, job_id, platform, company_raw, title,
-                              ats, captured_via, captured_at)
-        VALUES (%s, %s, %s, %s, %s, %s, 'email_only', %s)
+        INSERT INTO postings (user_id, job_id, platform, company_raw, company_norm,
+                              title, ats, captured_via, captured_at)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, 'email_only', %s)
         RETURNING id
         """,
-        (user_id, job["id"], platform, extraction.company, extraction.role_title,
-         extraction.ats, occurred_at),
+        # company_norm beside company_raw, as ingest.upsert_record stores it:
+        # dedup reads the posting's own, and until 24 Sep 2026 29 of 32
+        # email-made postings had none.
+        (user_id, job["id"], platform, extraction.company, company_norm or None,
+         extraction.role_title, extraction.ats, occurred_at),
     ).fetchone()
     app = conn.execute(
         """

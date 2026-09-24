@@ -122,6 +122,17 @@ def handle_extract_jd(conn, job: dict) -> None:
     posting = _get_posting(conn, _payload(job)["posting_id"])
     if not posting["jd_text"]:
         raise ValueError(f"posting {posting['id']} has no jd_text")
+    # An extraction made AFTER this job was queued already read the posting's
+    # current JD — a later JD change queues a job of its own — so this one has
+    # nothing left to do. Five of the seven duplicate extraction rows on
+    # 24 Sep 2026 were two jobs for one posting waiting in the queue together
+    # (a `scan` re-run while the 4-8 Sep outage held the first); the other
+    # two were edit-form saves that re-queued an unchanged JD (web._form_text).
+    # A time test rather than a UNIQUE: re-extracting after a JD edit, which
+    # appends a row by design, has to keep working.
+    if conn.execute("SELECT 1 FROM extractions WHERE posting_id = %s AND extracted_at > %s",
+                    (posting["id"], job["created_at"])).fetchone():
+        return
     x = jd_extraction.extract(_client(), posting["jd_text"], posting["title"])
     conn.execute(
         """

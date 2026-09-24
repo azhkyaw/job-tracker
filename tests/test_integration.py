@@ -233,11 +233,14 @@ with db.connect() as conn:
     s2 = email_state(conn, e2)
     check("auto_matched via create", s2["triage_state"] == "auto_matched", s2)
     new_app = conn.execute(
-        """SELECT a.id, a.applied_via_posting_id, j.company_norm, p.captured_via, p.jd_text
+        """SELECT a.id, a.applied_via_posting_id, j.company_norm, p.captured_via, p.jd_text,
+                  p.company_norm AS posting_norm
            FROM applications a JOIN jobs j ON j.id = a.job_id
            LEFT JOIN postings p ON p.id = a.applied_via_posting_id
            WHERE a.id = %s""", (s2["matched_application_id"],)).fetchone()
     check("job created with normalized company", new_app["company_norm"] == "acme", new_app)
+    check("...and its posting carries it too, as a captured one does",
+          new_app["posting_norm"] == "acme", new_app)
     check("posting is email_only needing enrichment",
           new_app["captured_via"] == "email_only" and new_app["jd_text"] is None, new_app)
     evs = {r["type"] for r in conn.execute(

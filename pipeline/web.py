@@ -891,7 +891,7 @@ def manual_entry_create(
 
     company_s, title_s, location_s = company.strip(), title.strip(), location.strip()
     company_norm = norm_company(company_s) or None
-    outcome_s, note_s, jd_s = outcome.strip(), note.strip(), jd_text.strip()
+    outcome_s, note_s, jd_s = outcome.strip(), note.strip(), _form_text(jd_text)
     # Same concept as /captures' payload.external — True = redirected to the
     # employer's site to finish, False = handled on-platform (LinkedIn's
     # "Easy Apply", Indeed Apply, etc.). "" (unset) omits the key entirely,
@@ -1270,7 +1270,7 @@ def edit_application(
             "external": external}
 
     company_s, title_s, location_s = company.strip(), title.strip(), location.strip()
-    jd_s = jd_text.strip()
+    jd_s = _form_text(jd_text)
     company_norm = norm_company(company_s) or None
     external_val = {"yes": True, "no": False}.get(external.strip().lower())
 
@@ -1381,7 +1381,10 @@ def edit_application(
                 "WHERE job_id = %s",
                 (company_s, company_norm, title_s, a["job_id"]))
             if primary is not None:
-                jd_changed = (jd_s or None) != primary["jd_text"]
+                # Both sides normalised: a JD stored with CRs by the old form
+                # (or by a machine that has not pulled this) is still the same
+                # text as the one the browser sends back.
+                jd_changed = (jd_s or None) != (_form_text(primary["jd_text"]) or None)
                 conn.execute(
                     "UPDATE postings SET platform = %s, platform_job_id = %s, "
                     "url = %s, location = %s, jd_text = %s WHERE id = %s",
@@ -1425,6 +1428,19 @@ def _event_error(app_id: str, msg: str):
     from urllib.parse import quote
     return RedirectResponse(f"/applications/{app_id}?event_error={quote(msg)}",
                             status_code=303)
+
+
+def _form_text(s: str | None) -> str:
+    """A <textarea>'s value as the app stores it: LF line breaks, trimmed.
+
+    Browsers submit every textarea with CRLF breaks — the HTML spec requires
+    it — while the extension and every stored email use LF. Until 24 Sep 2026
+    the edit form compared the JD it read back against the stored one as raw
+    strings, so saving the form with the JD untouched counted as a change: it
+    re-queued the JD's extraction (2 of the 7 duplicate extraction rows),
+    cleared its embedding, and rewrote the text with CRs (50 of 245 stored
+    JDs). Every textarea goes through this."""
+    return (s or "").replace("\r\n", "\n").replace("\r", "\n").strip()
 
 
 def _parse_occurred_on(occurred_on: str, tz):
@@ -1829,7 +1845,7 @@ def add_contact(
             "VALUES (%s, %s, %s, %s, %s, 'manual', %s, "
             "CASE WHEN %s THEN now() ELSE NULL END, %s)",
             (user["id"], a["job_id"], name_s, role.strip() or None, url.strip() or None,
-             approached_val, approached_val, notes.strip() or None))
+             approached_val, approached_val, _form_text(notes) or None))
     return RedirectResponse(f"/applications/{app_id}", status_code=303)
 
 
@@ -1877,7 +1893,7 @@ def edit_contact(
                 WHERE id = %(id)s
                 """,
                 {"name": name_s, "role": role.strip() or None, "url": url.strip() or None,
-                 "notes": notes.strip() or None, "approached": approached_val, "id": c["id"]})
+                 "notes": _form_text(notes) or None, "approached": approached_val, "id": c["id"]})
     return RedirectResponse(f"/applications/{app_id}", status_code=303)
 
 
@@ -2661,7 +2677,7 @@ def settings_profile(request: Request, resume_profile: str = Form("")):
     user = _login_user(request)
     with db.connect() as conn, conn.transaction():
         conn.execute("UPDATE users SET resume_profile = NULLIF(%s, '') WHERE id = %s",
-                     (resume_profile.strip(), user["id"]))
+                     (_form_text(resume_profile), user["id"]))
     return RedirectResponse("/settings", status_code=303)
 
 

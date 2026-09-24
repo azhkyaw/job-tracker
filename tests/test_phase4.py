@@ -80,9 +80,19 @@ check("short password rejected", new_client().post(
 print("login")
 check("wrong password rejected", new_client().post(
     "/login", data={"email": "alice@example.com", "password": "wrong"}).status_code == 401)
+with db.connect() as conn, conn.transaction():
+    dead = conn.execute(
+        "INSERT INTO sessions (user_id, expires_at) SELECT id, now() - interval '1 day' "
+        "FROM users WHERE email = 'alice@example.com' RETURNING id").fetchone()["id"]
+    live_before = conn.execute("SELECT count(*) AS n FROM sessions WHERE expires_at > now()").fetchone()["n"]
 carol = new_client()
 r = carol.post("/login", data={"email": "alice@example.com", "password": "alicepass1"})
 check("correct password creates session", r.status_code == 303 and "session" in carol.cookies)
+with db.connect() as conn:
+    check("a login clears expired sessions", conn.execute(
+        "SELECT 1 FROM sessions WHERE id = %s", (dead,)).fetchone() is None)
+    check("...and leaves every live one, plus the new", conn.execute(
+        "SELECT count(*) AS n FROM sessions WHERE expires_at > now()").fetchone()["n"] == live_before + 1)
 
 print("tenant isolation — web layer")
 r = alice.post("/captures", headers={"Authorization": f"Bearer {alice_token}"}, json={

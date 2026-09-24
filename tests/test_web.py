@@ -1285,6 +1285,28 @@ with db.connect() as conn:
         "AND payload->>'posting_id' = %s", (str(jd_posting),)).fetchone()["n"]
     check("unchanged jd does not re-enqueue extraction", q == 0, q)
 
+# ...and the same as a BROWSER sends it. Every textarea is submitted with CRLF
+# breaks (the HTML spec), while stored JDs use LF, so until 24 Sep 2026 saving
+# the form with the JD untouched counted as a change: a duplicate extraction,
+# a cleared embedding, and CRs written into the stored text.
+_edit = {"company": "Edit Test Co", "title": "Senior Backend Engineer",
+         "platform": "linkedin", "applied_date": "2026-05-12"}
+client.post(f"/applications/{edit_app}/edit",
+            data={**_edit, "jd_text": "Build data pipelines.\nGo and Postgres."})
+with db.connect() as conn, conn.transaction():
+    conn.execute("DELETE FROM job_queue WHERE type = 'extract_jd' "
+                 "AND payload->>'posting_id' = %s", (str(jd_posting),))
+client.post(f"/applications/{edit_app}/edit",
+            data={**_edit, "jd_text": "Build data pipelines.\r\nGo and Postgres.\r\n"})
+with db.connect() as conn:
+    q = conn.execute(
+        "SELECT count(*) AS n FROM job_queue WHERE type = 'extract_jd' "
+        "AND payload->>'posting_id' = %s", (str(jd_posting),)).fetchone()["n"]
+    check("the same jd with a browser's CRLF breaks is not a change", q == 0, q)
+    p = conn.execute("SELECT jd_text FROM postings WHERE id = %s", (jd_posting,)).fetchone()
+    check("...and is stored with LF breaks", p["jd_text"] == "Build data pipelines.\nGo and Postgres.",
+          p["jd_text"])
+
 r = client.post(f"/applications/{edit_app}/edit", data={
     "company": "Edit Test Co", "title": "Senior Backend Engineer", "platform": "linkedin",
     "applied_date": "2026-05-12", "jd_text": ""})

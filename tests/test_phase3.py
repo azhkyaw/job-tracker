@@ -142,6 +142,19 @@ with db.connect() as conn:
         "WHERE platform_job_id = 'P3-A'").fetchone()
     check("embedding stored", emb["has"] is True)
 
+# Two jobs for one posting waiting together (a `scan` re-run while the queue
+# was stalled, 8 Sep 2026) must extract once, not twice — while a job queued
+# after the last extraction, as a JD edit queues one, still runs.
+with db.connect() as conn, conn.transaction():
+    pa = conn.execute("SELECT id, user_id FROM postings WHERE platform_job_id = 'P3-A'").fetchone()
+    for _ in range(2):
+        db.enqueue(conn, pa["user_id"], "extract_jd", {"posting_id": str(pa["id"])})
+drain()
+with db.connect() as conn:
+    n_x = conn.execute("SELECT count(*) AS n FROM extractions WHERE posting_id = %s",
+                       (pa["id"],)).fetchone()["n"]
+    check("two queued jobs for one posting add ONE extraction, not two", n_x == 2, n_x)
+
 print("dedup: auto merge (cross-platform, same role)")
 rb = cap("P3-B", "Vantage Tech", "Senior AI Engineer (LLM)", "JD-B", platform="jobstreet",
          answers=[{"question": "Notice period", "answer": "2 months"},

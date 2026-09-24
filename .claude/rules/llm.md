@@ -48,6 +48,23 @@ prompt/model versioning invariant (#5) and the worker invariant (#7) are still i
   matched `high` 12/12, but with no cost upside there is no reason to move off
   the default. If classify cost ever needs cutting, the lever is input —
   `STAGE1_BODY_CHARS`, or caching the system prompt — not effort.
+- **A queued job can be a duplicate of one still waiting, and `extract_jd`
+  now checks** (24 Sep 2026). 7 postings had two extraction rows. Five were
+  two jobs for one posting waiting together — a `cli scan` re-run while the
+  4-8 Sep outage held the first batch (`scan` enqueues for every posting with
+  no extraction, and a pending job is not an extraction yet); two were
+  edit-form saves that re-queued an unchanged JD (the CRLF gotcha in
+  `.claude/rules/web-ui.md`). `handle_extract_jd` returns early when an
+  extraction newer than the JOB's own `created_at` exists: that extraction
+  already read the current JD, since a later JD change queues a job of its
+  own. A time test, not a UNIQUE on (posting, prompt, model), because the JD
+  edit path appends a row by design and the page reads the newest. Verified
+  live the same day: `scan` queued the 3 postings that already had a job
+  waiting a second time, and the drain produced one row each. The duplicates
+  were deleted (older row of each pair; the page reads the newest), snapshot
+  `job-tracker-snapshots/2026-09-24-extractions-and-crlf.json`. The same
+  shape is possible for any job type whose enqueuer does not look at the
+  queue; `extract_jd` is the one with evidence.
 - **A billing error is not the job's fault, and the queue charged every job
   for it anyway** (3-7 Sep 2026). The Anthropic account ran out of credit at
   4 Sep 00:25 SGT, mid-run. Sync kept storing mail; the worker retried every

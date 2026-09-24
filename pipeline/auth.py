@@ -58,6 +58,10 @@ def user_id_for_token(conn, supplied: str | None):
 # ---------------------------------------------------------------- sessions
 
 def create_session(conn, user_id) -> str:
+    # Expired sessions were rejected on lookup but never deleted: 18 of 33
+    # rows were dead on 24 Sep 2026. Every login clears them, for every user —
+    # this is the admin connection, and a dead session is nobody's data.
+    conn.execute("DELETE FROM sessions WHERE expires_at < now()")
     row = conn.execute(
         "INSERT INTO sessions (user_id, expires_at) VALUES (%s, %s) RETURNING id",
         (user_id, datetime.now(timezone.utc) + timedelta(days=SESSION_DAYS)),
