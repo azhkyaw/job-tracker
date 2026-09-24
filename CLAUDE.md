@@ -695,7 +695,10 @@ The dated register behind each item, tasks 1-23 with their measurements, is
   phase C (0.13.0, task 28) lets the user enable an employer's own domain
   from the popup. Its listings remember their job per tab, and the ATS
   submit in that tab is filed onto it. Not yet run live: enabling a site,
-  then a real apply.
+  then a real apply. A live SuccessFactors submit WAS captured (worklog
+  task 30), and without the site enabled it filed as "unknown company"; its
+  receipt now asks for the company (0.15.0). Open: an email-side rescue that
+  names a nameless record from its confirmation, to be replayed first.
 - **Release blockers:** LICENSE (Apache-2.0 recommended), split the extension
   into its own repo, decide whether CLAUDE.md ships; `audit_names.py --history`
   is the pre-publish check. (task 3)

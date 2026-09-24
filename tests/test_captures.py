@@ -689,6 +689,44 @@ check("tag 404s on a malformed id, never 500s",
       client.post("/captures/not-a-uuid/tag", json={"note": "x"},
                   headers=AUTH).status_code == 404)
 
+print("a capture that names no employer: the receipt asks, the tag route fills it")
+# 24 Sep 2026: a real SuccessFactors submit was captured with 60 answers and
+# no company — the form never names the employer — so the record read
+# "unknown company", which no confirmation email can match.
+r_anon = post({"platform": "other", "platform_job_id": "career10.successfactors.com/1234",
+               "company": None, "title": "AVP, Software Engineer", "trigger": "apply",
+               "completed": True, "external": True, "ats": "successfactors"})
+anon = r_anon.json()
+check("a nameless capture says so, for the receipt to ask",
+      r_anon.status_code == 200 and anon["company_known"] is False, r_anon.text)
+check("a named capture says it is known", post(SITE).json()["company_known"] is True)
+t = client.post(f"/captures/{anon['application_id']}/tag", json={"company": "Contoso Pte Ltd"},
+                headers=AUTH)
+check("the receipt's company fills the placeholder",
+      t.status_code == 200 and t.json()["company"] is True
+      and t.json()["label"] == "Contoso Pte Ltd · AVP, Software Engineer", t.text)
+with db.connect() as conn:
+    row = conn.execute(
+        "SELECT j.company_norm, p.company_raw, p.company_norm AS pnorm FROM applications a "
+        "JOIN jobs j ON j.id = a.job_id JOIN postings p ON p.job_id = j.id "
+        "WHERE a.id = %s::uuid", (anon["application_id"],)).fetchone()
+    check("…normalised on the job and the posting alike (norm_company, invariant #4)",
+          (row["company_norm"], row["company_raw"], row["pnorm"]) == ("contoso", "Contoso Pte Ltd", "contoso"),
+          row)
+t2 = client.post(f"/captures/{anon['application_id']}/tag", json={"company": "Fabrikam"},
+                 headers=AUTH)
+check("a record that names its employer is never overwritten from a receipt",
+      t2.status_code == 409, t2.text)
+r_anon2 = post({"platform": "other", "platform_job_id": "career10.successfactors.com/1235",
+                "title": "Data Engineer", "trigger": "apply"})
+t3 = client.post(f"/captures/{r_anon2.json()['application_id']}/tag", json={"company": "Pte Ltd"},
+                 headers=AUTH)
+check("a 'company' that normalises to nothing is refused, not stored", t3.status_code == 422, t3.text)
+check("a note alone still works, and says no company was set",
+      client.post(f"/captures/{r_anon2.json()['application_id']}/tag", json={"note": "via referral"},
+                  headers=AUTH).json() == {"ok": True, "note": True, "company": False,
+                                           "label": "unknown company · Data Engineer"})
+
 print("manual capture -> interested")
 r4 = post({"platform": "indeed", "platform_job_id": "IN-42",
            "company": "Solstice Mobility", "title": "AI Platform Engineer",

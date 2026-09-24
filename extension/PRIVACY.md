@@ -36,6 +36,11 @@ then on, on that site:
 "Stop capturing on <that site>" in the popup, or removing the site in
 chrome://extensions, ends it.
 
+When a hiring system's form doesn't name the employer, the receipt asks you
+for it instead. Its suggestion comes from the page's own address and the
+site you arrived from. Both are read in your browser, and the company goes
+to your tracker only if you press Save.
+
 On an in-page apply form (LinkedIn Easy Apply today) it also reads the
 questions that form asks and the answers you gave, so your own tracker can
 show what you told that employer. Two consequences worth stating plainly:

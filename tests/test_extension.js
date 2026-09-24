@@ -920,6 +920,49 @@ console.log("\njobposting.js pickListed: which remembered job a submit belongs t
   check("siteOf: garbage", site("not a url"), null);
 }
 
+console.log("\njobposting.js: an employer the capture could not name");
+{
+  // SuccessFactors' form <h1> appends the requisition number (measured live
+  // 24 Sep 2026: "AVP, Software Engineer (1234)", address career_job_req_id=1234).
+  const SF = "https://career10.successfactors.com/portalcareer?company=Contoso&career_ns=job_application&career_job_req_id=1234";
+  const id = J.idFrom(SF);
+  check("the page's own requisition number is stripped",
+        J.stripRequisition("AVP, Software Engineer (1234)", id), "AVP, Software Engineer");
+  check("…in square brackets, or written 'Req #1234', too",
+        [J.stripRequisition("AVP, Software Engineer [1234]", id),
+         J.stripRequisition("AVP, Software Engineer (Req #1234)", id)],
+        ["AVP, Software Engineer", "AVP, Software Engineer"]);
+  check("a number that is NOT this page's id stays: it may be part of the name",
+        J.stripRequisition("Graduate Programme (2027)", id), "Graduate Programme (2027)");
+  check("words in brackets stay: 'Engineer (Backend)' and 'Engineer (Web)' are two jobs",
+        J.stripRequisition("Senior Engineer (Backend)", id), "Senior Engineer (Backend)");
+  check("a title that IS only the number is left alone",
+        J.stripRequisition("(1234)", id), "(1234)");
+  const j = J.read(pageDoc([node("h1", {}, ["AVP, Software Engineer (1234)"])],
+                           "Career Opportunities: Apply for AVP, Software Engineer (1234)"), makeLoc(SF));
+  check("read(): the form's title comes out bare, and says what it was",
+        [j.title, j._prov.title_stripped], ["AVP, Software Engineer", "AVP, Software Engineer (1234)"]);
+}
+{
+  const at = (href) => makeLoc(href);
+  const s = (href, ref) => { const r = J.suggestCompany(at(href), ref); return [r.name, r.site]; };
+  const SF = "https://career10.successfactors.com/portalcareer?company=Contoso&career_ns=job_application";
+  check("the tenant in the address names it; the listing's site is the one to turn on",
+        s(SF, "https://careers.contoso.com/"), ["Contoso", "careers.contoso.com"]);
+  check("after a postback (no tenant): the brand from the career site's own host",
+        s("https://career10.successfactors.com/portalcareer?_s.crb=x", "https://careers.contoso.com/"),
+        ["contoso", "careers.contoso.com"]);
+  check("a tenant CODE is not a name",
+        s("https://career10.successfactors.com/portalcareer?company=C0001234567P", ""), [null, null]);
+  check("a job board's referrer names the board, not the employer",
+        s("https://jobs.lever.co/contoso/x/apply", "https://www.linkedin.com/"), [null, null]);
+  check("a hiring system's own referrer (its sign-in page) names nothing",
+        s("https://career10.successfactors.com/portalcareer?_s.crb=x", "https://career10.successfactors.com/careers"),
+        [null, null]);
+  check("no referrer and no tenant: nothing to suggest",
+        s("https://apply.workable.com/contoso/j/B4A1D41ABA/apply/", ""), [null, null]);
+}
+
 console.log("\njobposting.js matchPatternRegex: which pages the icon (and the popup) call covered");
 {
   // One translation from Chrome match patterns to regexes, for the toolbar

@@ -436,8 +436,72 @@
       job.company = meta(doc, 'meta[property="og:site_name"]');
       if (job.company) job._prov.weak.push("company");
     }
+    const bare = stripRequisition(job.title, id);
+    if (bare !== job.title) { job._prov.title_stripped = job.title; job.title = bare; }
     if (!job.title && !job.jd_text) return null;
     return job;
+  }
+
+  /* An ATS form's title with its own requisition number appended —
+   * SuccessFactors' <h1> reads "AVP, Software Engineer (1234)" (measured live
+   * 24 Sep 2026) — loses the suffix, but ONLY when that number is the one in
+   * the page's own address (`career_job_req_id=1234`, i.e. idFrom's token).
+   * Stripping every trailing parenthesis would merge "Engineer (Backend)" with
+   * "Engineer (Web)"; a number the page itself proves is its id is no part of
+   * the job's name. The suffix also defeats exact-title email matching
+   * (.claude/rules/matching.md). */
+  function stripRequisition(title, id) {
+    if (!title || !id) return title;
+    const token = id.platform_job_id.slice(id.platform_job_id.indexOf("/") + 1);
+    if (!token || token.includes("/")) return title;
+    const esc = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const m = new RegExp(`^(.*?)\\s*[([]\\s*(?:req\\w*\\s*)?#?\\s*${esc}\\s*[)\\]]\\s*$`, "i").exec(title);
+    return m && m[1].trim() ? m[1].trim() : title;
+  }
+
+  /* A company to SUGGEST when a capture found none — shown on the receipt for
+   * the user to confirm or correct, never stored on its own say-so. Two
+   * sources, in order:
+   *  1. the page address's own `company` parameter — how SuccessFactors names
+   *     its tenant (`?company=Contoso`, measured); dropped when it is not a name
+   *     (digits, or longer than a name);
+   *  2. the site the user came FROM, when it is a different site: an
+   *     employer's careers.<brand>.com hands over to its hiring system, so the
+   *     referrer's host minus the careers/jobs/www labels names the brand.
+   * The first survives only until a postback (SuccessFactors then drops it),
+   * the second only when no sign-in page came between — which is why this is
+   * a suggestion, and why phase C's listing stash is the real fix. */
+  // Where a referrer names the SOURCE of a click, not the employer: the job
+  // boards this extension serves, and search.
+  const NOT_EMPLOYERS = ["linkedin.com", "jobstreet.com", "jobstreet.com.sg", "jobstreet.com.my",
+                         "jobstreet.co.id", "seek.com.au", "indeed.com", "google.com", "bing.com"];
+
+  // Returns { name, site }: `name` the suggestion (or null), `site` the
+  // employer's own site the user came from (or null) — the one to turn on in
+  // the popup so the next application there needs no question at all.
+  function suggestCompany(loc, referrer) {
+    let site = null;
+    try {
+      const from = new URL(referrer).hostname.toLowerCase();
+      const here = (loc.hostname || "").toLowerCase();
+      // A vendor's or a job board's host names them, not the employer.
+      if (from && from !== here && !vendorOfHost(from) &&
+          !NOT_EMPLOYERS.some((s) => from === s || from.endsWith("." + s))) site = from;
+    } catch (e) { /* no referrer */ }
+    let name = null;
+    try {
+      const tenant = (new URL(loc.href).searchParams.get("company") || "").trim();
+      // A name, not a tenant CODE ("C0001234567P"): starts with a letter,
+      // no run of four digits.
+      if (tenant && /^[\p{L}][\p{L}\p{N} &.'-]{0,39}$/u.test(tenant) && !/\d{4}/.test(tenant)) {
+        name = tenant;
+      }
+    } catch (e) { /* no usable address */ }
+    if (!name && site) {
+      const labels = site.split(".").filter((l) => !/^(www\d*|careers?|jobs?|apply|recruit\w*|talent)$/.test(l));
+      name = labels[0] || null;
+    }
+    return { name, site };
   }
 
   /* Are two titles the same job's? For linking a submit on an ATS to the
@@ -515,5 +579,5 @@
   // rule exists once; `window` in a page, where the two are the same object.
   (typeof window !== "undefined" ? window : self).__trackerJobPosting =
     { read, idFrom, atsOfUrl, vendorOf, htmlToText, sameJob, pickListed, siteOf,
-      matchPatternRegex };
+      matchPatternRegex, stripRequisition, suggestCompany };
 })();

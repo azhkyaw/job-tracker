@@ -272,6 +272,9 @@
           border:1px solid #CCD5DB;border-radius:6px;padding:5px 8px;
           background:transparent;color:#141C24}
     input::placeholder{color:#5A6873}
+    .co{align-items:center}
+    .co input{margin-top:0;flex:1}
+    .co button.t{flex:none}
     input:focus{outline:2px solid #1F53BE;outline-offset:-1px}
     .ft{display:flex;align-items:baseline;gap:8px;margin-top:8px;
         font-size:11.5px;color:#5A6873;min-height:1.3em}
@@ -383,18 +386,33 @@
     // came out 175 `false`, 22 unset and not one `true`, so the question was
     // being answered the same way every time and measured nothing. The note is
     // what survives, because a note says something different each time.
+    // The record names no employer — an ATS form alone (SuccessFactors') shows
+    // none, and "unknown company" matches no confirmation email, so the first
+    // reply would mint a duplicate. Ask here, while the user knows the answer,
+    // prefilled with a suggestion to confirm (never stored unconfirmed), and
+    // name the site to turn on so the next application there is not asked.
+    const ask = d.company_known === false;
+    const sugg = (d.suggest && d.suggest.name) || "";
+    const site = d.suggest && d.suggest.site;
+    const askHtml = ask ? `
+        <div class="row co">
+          <input type="text" placeholder="Company" aria-label="Company" value="${esc(sugg)}">
+          <button class="t" data-co="1">Save</button></div>
+        <div class="qa">This form didn't name the employer.${site
+          ? ` Turn on "Always capture on ${esc(site)}" in the toolbar popup and its listings will.`
+          : ""}</div>` : "";
     const ui = mount(`
       <div class="box">
         <div class="hd"><span class="tick">&#10003;</span>
           <span>${d.enriched ? "Saved — enriched an existing record" : "Saved to tracker"}</span>
           <button class="x" title="Dismiss" aria-label="Dismiss">&times;</button></div>
         <div class="sub">${esc(d.label || "")}</div>
-        ${qa}
+        ${qa}${askHtml}
         <input type="text" placeholder="add a note&hellip;" aria-label="Note">
         <div class="ft"><span class="s"></span>${link}</div>
       </div>`);
     const status = ui.root.querySelector(".s");
-    const note = ui.root.querySelector("input");
+    const note = ui.root.querySelector("input[aria-label='Note']");
     const tag = (body, ok) =>
       tell({ type: "tracker-tag", id: d.id, body })
         .then((r) => {
@@ -413,7 +431,31 @@
     note.addEventListener("keydown", (e) => { if (e.key === "Enter") commitNote(); });
     note.addEventListener("blur", commitNote);
     note.addEventListener("focus", () => { status.textContent = "Enter to save the note"; });
-    ui.fade(8000);
+    if (!ask) { ui.fade(8000); return; }
+    // A question waits for its answer: no countdown while it is open (the
+    // confirm box's rule), and the × still dismisses it unanswered.
+    ui.hold();
+    const co = ui.root.querySelector("input[aria-label='Company']");
+    const coBtn = ui.root.querySelector("button[data-co]");
+    const sub = ui.root.querySelector(".sub");
+    const saveCompany = () => {
+      const v = co.value.trim();
+      if (!v) { status.textContent = "Type the company's name first."; return; }
+      coBtn.disabled = true;
+      tell({ type: "tracker-tag", id: d.id, body: { company: v } }).then((r) => {
+        if (r && r.ok) {
+          status.textContent = "Company saved.";
+          if (r.label) sub.textContent = r.label;
+          co.disabled = true;
+          ui.fade(2500);
+        } else {
+          coBtn.disabled = false;
+          status.textContent = `Couldn't save that: ${(r && r.error) || "no response"}`;
+        }
+      });
+    };
+    coBtn.addEventListener("click", saveCompany);
+    co.addEventListener("keydown", (e) => { if (e.key === "Enter") saveCompany(); });
   }
 
   /* Save failed. No auto-dismiss and a retry button: this is the only state
@@ -509,7 +551,8 @@
     const label = [payload.company, payload.title].filter(Boolean).join(" · ");
     const detail = (res && res.ok)
       ? { ok: true, id: res.application_id, label: res.label || label,
-          answers: res.answers, enriched: res.enriched, apiBase: res.apiBase }
+          answers: res.answers, enriched: res.enriched, apiBase: res.apiBase,
+          company_known: res.company_known, suggest: res.suggest || null }
       : { ok: false, label, payload,
           error: (res && res.error) || "no response — is `serve` running?" };
     // Prefer the top frame. On Easy Apply this code is running inside the
@@ -929,7 +972,11 @@
                                    { note: null }, completed);
       // Only a link THROUGH the opener has a board tab to tell; a link to
       // this tab's own listing (an employer's career site, phase C) does not.
-      send(payload, (j._linked || "").startsWith("opener") ? { notifyOpener: true } : null)
+      // A capture that names no employer carries a SUGGESTION for the receipt
+      // to offer, read here where the page's address and referrer are.
+      const J = window.__trackerJobPosting;
+      const suggest = !j.company && J ? J.suggestCompany(location, document.referrer) : null;
+      send(payload, { notifyOpener: (j._linked || "").startsWith("opener"), suggest })
         .then((res) => showResult(payload, res));
     });
   }

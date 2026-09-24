@@ -970,6 +970,22 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   - **Covered by tests:** `pickListed` and `siteOf` are pure and in
     `tests/test_extension.js`. The popup, worker and registration code are
     not.
+- **The receipt's "Company" question (0.15.0, 24 Sep 2026) has never been
+  seen.** What it replaces was seen: a live SuccessFactors submit (23:44)
+  was captured perfectly — 60 answers, one withheld, the real submit time —
+  and filed as "unknown company", because the form names no employer and
+  the site had not been enabled. It was repaired by hand through `/edit`.
+  - **What should happen next time on such a form:**
+    - the receipt stays open (no countdown) with a Company field,
+      pre-filled from SuccessFactors' `?company=` tenant or the career site
+      the tab came from, and naming that site to turn on;
+    - Save fills the record through `/captures/{id}/tag`, which only ever
+      replaces the "unknown company" placeholder.
+  - **The title arrives without the "(1234)" suffix:** `stripRequisition`
+    removes it only when it equals the address's own requisition id.
+  - **Untested:** whether `document.referrer` still names the career site
+    after SuccessFactors' sign-in step. It probably does not; then only the
+    tenant can suggest, and after a postback not even that.
 - **The toolbar icon's two states (0.14.0) have never been seen in a real
   toolbar.** The rule's regexes are tested; the rule itself, and the PNG
   decode in the worker, are not.

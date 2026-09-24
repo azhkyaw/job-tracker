@@ -2365,15 +2365,22 @@ def captures(payload: CaptureIn, authorization: str | None = Header(None)):
             conn.execute("UPDATE applications SET resume_file = %s WHERE id = %s",
                          (resume, app_id))
 
+        # Whether the RECORD names its employer — not merely this capture: a
+        # nameless capture of a job already named elsewhere needs nothing.
+        named = conn.execute("SELECT company_norm <> %s AS n FROM jobs WHERE id = %s",
+                             (ingest.UNKNOWN_COMPANY, job_id)).fetchone()["n"]
         return {"application_id": str(app_id), "posting_id": str(posting_id),
                 "created": r["created"], "enriched": r["enriched"],
-                "answers": n_answers,
+                "answers": n_answers, "company_known": named,
                 "label": f"{payload.company or 'unknown company'}"
                          f" · {payload.title or 'unknown role'}"}
 
 
 class TagIn(BaseModel):
     note: str | None = None
+    # The employer, for a capture that could not name one — typed or confirmed
+    # by the user on the receipt (a SuccessFactors form never shows it).
+    company: str | None = None
 
 
 @app.post("/captures/{application_id}/tag")
@@ -2393,6 +2400,13 @@ def capture_tag(application_id: str, payload: TagIn,
     carries. Kept as its own route rather than folded into /captures for the
     same reason it was split out: the capture must not wait on a human.
     An empty note is ignored rather than logged.
+
+    `company` (24 Sep 2026) names the employer of a capture that could not:
+    an ATS form alone (SuccessFactors') shows none, and "unknown company"
+    matches no confirmation email, so the first reply would mint a
+    duplicate. Only ever FILLS the placeholder: a record that already names
+    its employer is refused, so a stray receipt cannot overwrite a real name
+    (correcting one is the edit page's job, which re-checks everything).
     """
     user_id = _bearer_user_id(authorization)
     with db.connect_scoped(user_id) as conn, conn.transaction():
@@ -2404,7 +2418,18 @@ def capture_tag(application_id: str, payload: TagIn,
                 "INSERT INTO events (user_id, application_id, type, source, "
                 "occurred_at, payload) VALUES (%s, %s, 'note', 'extension', now(), %s)",
                 (user_id, a["id"], Json({"note": note})))
-        return {"ok": True, "note": bool(note)}
+        company = (payload.company or "").strip()
+        if company:
+            norm = norm_company(company)
+            if not norm:
+                raise HTTPException(422, f'"{company}" does not name a company')
+            if a["company_norm"] != ingest.UNKNOWN_COMPANY:
+                raise HTTPException(409, "this record already names its company")
+            conn.execute("UPDATE jobs SET company_norm = %s WHERE id = %s", (norm, a["job_id"]))
+            conn.execute("UPDATE postings SET company_raw = %s, company_norm = %s "
+                         "WHERE job_id = %s AND company_raw IS NULL", (company, norm, a["job_id"]))
+        return {"ok": True, "note": bool(note), "company": bool(company),
+                "label": f"{company or a['company_display']} · {a['title_canonical']}"}
 
 
 # --------------------------------------------------------------------------- phase 3 routes

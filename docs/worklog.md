@@ -771,3 +771,24 @@ the key to each real case.
    `declarativeContent` rule over the same patterns the capture scripts use,
    because a tab's own icon survives navigation (Chrome resets it only on
    close). Extension 0.14.0. Not yet seen in a real toolbar.
+30. **"Unknown company" from an ATS form** (24 Sep 2026). The first live
+   SuccessFactors submit (23:44) was captured whole: 60 answers including a
+   four-entry work history, the formal-name answer withheld, the real submit
+   time, and vendor successfactors. It still filed as "unknown company ·
+   AVP, Software Engineer (1234)": the form names no employer, and the site
+   had not been turned on (the extension's store held no enabled sites and
+   no listing stash). It was the only nameless record of 285. Repaired
+   through `/edit` from the listing (company, clean title, 6,506-character
+   JD, the listing's own id), with the applied instant restored to the
+   microsecond and all 60 answers kept; the snapshot is
+   `2026-09-24-sf-avp-identity.json`. Fixed for next time without relying on
+   the user remembering the site switch:
+   - `stripRequisition` drops a title suffix only when it equals the
+     address's own requisition id;
+   - a nameless capture's receipt now ASKS for the company, pre-filled from
+     the tenant or the career site the tab came from, and names the site to
+     turn on. It stays open until answered.
+   `/captures/{id}/tag` gained `company`, which only ever replaces the
+   placeholder. Not built: an email-side rescue that names a nameless record
+   from its confirmation. It waits for that email to reach the database to
+   be replayed against. Extension 0.15.0.
