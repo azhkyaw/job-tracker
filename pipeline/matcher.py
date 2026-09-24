@@ -61,8 +61,27 @@ JOIN jobs j ON j.id = a.job_id
 WHERE a.user_id = %(user_id)s
   AND """
 
+# The company gate. Word containment — one name's words inside the other's,
+# either way round — has been part of it since 24 Sep 2026; until then it was
+# only rescue rule 2 (below), which runs when the gate admits NOBODY, so one
+# sibling name clearing the gate hid the record containment would have found.
+# Measured that day, all 432 filed emails replayed against the live records
+# (placeholder names, real measurements): mail under an employer's short name
+# could no longer reach the two applications stored as "wide world group" once
+# two others were stored as "wide world"; a recruiter's "margie consulting
+# group" reached two UNRELATED consulting groups (similarity >= 0.6) and never
+# its own record, stored under that name plus a tagline; and mail from an
+# agency's "trey talent" auto-matched a REJECTED lead of that name while the
+# live interview thread, stored "trey talent x woodgrove bank", was not even
+# a candidate. Admitting containment in the gate
+# changed 5 decisions: 2 wrong -> right, 2 triage -> right, 1 right -> triage
+# (two name forms of one agency then compete on the margin), none wrong.
+# On 21 Aug the same change measured +1/-1 — `.claude/rules/matching.md` had
+# asked for a re-measure if suppression grew, and it had.
 _CANDIDATES_SQL = _CANDIDATES_BASE + """(j.company_norm = %(company)s
-       OR similarity(j.company_norm, %(company)s) >= %(cmin)s)
+       OR similarity(j.company_norm, %(company)s) >= %(cmin)s
+       OR string_to_array(j.company_norm, ' ') @> string_to_array(%(company)s, ' ')
+       OR string_to_array(j.company_norm, ' ') <@ string_to_array(%(company)s, ' '))
 """
 
 # Last resort when the company gate above admits NOBODY. Two independent rules,
@@ -157,20 +176,23 @@ _CANDIDATES_SQL = _CANDIDATES_BASE + """(j.company_norm = %(company)s
 # weaker: same gains, but it leaves the fourth Woodgrove mail — whose
 # extraction read "Woodgrove Singapore", neither a subset nor a superset of
 # "woodgrove southeast asia" — on the agency.
+#
+# Since 24 Sep 2026 rule 2 lives in the gate itself (see _CANDIDATES_SQL), so
+# this runs only when no name is even contained in another's and carries rule
+# 1 alone — kept here, rule 2 could only find rows the gate had already
+# admitted. Rule 1 stays a RESCUE on purpose: admitting "same title, any
+# company that shares a word" to the gate was the variant measured as much
+# worse on 21 Aug (29 correct matches lost to same-titled strangers).
 _CANDIDATES_RESCUE_SQL = (_CANDIDATES_BASE + """(
           -- rule 1: the same title, exactly, AND one company word in common
           -- (a stranger with no company resemblance cannot be rescued by its
           -- title alone — see "measured a second time" above)
-          (%(title)s::text IS NOT NULL
-           AND lower(btrim(coalesce(j.title_canonical, '')))
-             = lower(btrim(%(title)s))
-           AND EXISTS (SELECT 1 FROM unnest(string_to_array(j.company_norm, ' ')) AS w(word)
-                       WHERE length(w.word) >= __WMIN__
-                         AND w.word = ANY(string_to_array(%(company)s, ' '))))
-          -- rule 2: one company name's words contain the other's, either way
-          -- round (the email may carry the longer or the shorter form)
-       OR string_to_array(j.company_norm, ' ') @> string_to_array(%(company)s, ' ')
-       OR string_to_array(j.company_norm, ' ') <@ string_to_array(%(company)s, ' ')
+          %(title)s::text IS NOT NULL
+          AND lower(btrim(coalesce(j.title_canonical, '')))
+            = lower(btrim(%(title)s))
+          AND EXISTS (SELECT 1 FROM unnest(string_to_array(j.company_norm, ' ')) AS w(word)
+                      WHERE length(w.word) >= __WMIN__
+                        AND w.word = ANY(string_to_array(%(company)s, ' ')))
       )
 """).replace("__WMIN__", str(int(config.RESCUE_SHARED_WORD_MIN)))
 
@@ -226,11 +248,12 @@ def find_match(conn, user_id, extraction: Extraction, occurred_at: datetime) -> 
     }
     cands = conn.execute(_CANDIDATES_SQL, params).fetchall()
     if not cands:
-        # The company gate admitted nobody — fall back to an exact title or a
-        # containing company name, so a rebranded sender can still reach its own
-        # application rather than silently minting a second one. This can only
-        # ADD candidates where there were none; AUTO_MATCH_SCORE and
-        # AUTO_MATCH_MARGIN still decide the outcome. See _CANDIDATES_RESCUE_SQL.
+        # The company gate admitted nobody, not even by word containment — fall
+        # back to an exact title under a name that shares a word, so a
+        # rebranded sender can still reach its own application rather than
+        # silently minting a second one. This can only ADD candidates where
+        # there were none; AUTO_MATCH_SCORE and AUTO_MATCH_MARGIN still decide
+        # the outcome. See _CANDIDATES_RESCUE_SQL.
         cands = conn.execute(_CANDIDATES_RESCUE_SQL, params).fetchall()
     if not cands:
         return MatchResult("pending")

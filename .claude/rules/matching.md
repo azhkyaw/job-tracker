@@ -92,6 +92,31 @@ invariants that govern this code (#3, #4, #9) are still in CLAUDE.md.
   either way. So it stands as-is. The number to watch is the suppression count:
   **1 of 296 today**. Re-measure before touching it — the fix only becomes worth
   its cost if that grows.
+  **It grew, and rule 2 moved into the gate on 24 Sep 2026.** Found from one
+  email the author pointed at (placeholder names, real measurements): an
+  employer's own ATS mail filed under `wide world` beside two
+  LinkedIn-captured `wide world group` applications (similarity 0.40), after
+  which that employer's short-name mail could not reach the August pair at
+  all. A reachability replay of all 432 filed emails against the live
+  records found three shapes of suppression — that one; a recruiter's
+  "margie consulting group" admitted to two UNRELATED consulting groups
+  (>= 0.6) and never to its own record, stored under the name plus a
+  tagline; and the worst, an agency's `trey talent` mail auto-matching a
+  REJECTED same-titled lead at exactly 0.75 while the live interview thread,
+  `trey talent x woodgrove bank`, was no candidate: a silent wrong match on
+  a live thread. With containment in the gate, 5
+  decisions change — 2 wrong -> right, 2 triage -> right, 1 right -> triage
+  (the two name forms of one agency then compete on the margin) — and none
+  go wrong; replayed again on the shipped code, 294 auto onto their record,
+  0 onto another, 0 suppressed. Rule 1 stays a rescue (as a gate term it was
+  the 21 Aug disaster). `tests/test_integration.py` path 3i pins both
+  shapes, and fails on the old matcher with the first shape's signature (0.423,
+  triage). What is left is a class no string rule reaches — a parent brand
+  (a telco group writing for its subsidiary), an agency or its client under
+  another name or an abbreviation, a spelling (`<name>.com` against
+  `<name> Company`): 20 of 432 emails, 8 (application, name) pairs. They land in triage, visibly, never on a wrong record; the
+  author chose to leave them there rather than learn aliases from triage
+  links (a slip-link would teach a wrong alias).
 - **Rule 1 made the silent wrong match the paragraph above only feared, and
   now requires a shared company word** (23 Sep 2026). A recruiter's mail
   from "Woodgrove" (company_sim 0.417 against the extension's "Woodgrove

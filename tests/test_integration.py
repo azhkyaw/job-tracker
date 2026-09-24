@@ -42,6 +42,8 @@ FAKE_CLASSIFY = {
     "tagline-confirmation": Classification(True, "confirmation", 0.93, "stub"),
     "stranger-invite": Classification(True, "interview_invite", 0.93, "stub"),
     "alpine-invite": Classification(True, "interview_invite", 0.93, "stub"),
+    "lamna-dp-rejection": Classification(True, "rejection", 0.93, "stub"),
+    "lamna-ai-invite": Classification(True, "interview_invite", 0.93, "stub"),
     # Mail the user SENT (emails.sent_by_user) — path 3g.
     "sent-reply": Classification(True, "sent_reply", 0.9, "stub"),
     "sent-follow-up": Classification(True, "sent_follow_up", 0.9, "stub"),
@@ -119,6 +121,14 @@ FAKE_EXTRACT = {
     "alpine-invite": _fake_extraction(company="Alpine Ski House",
                                       role_title="Platform Engineer",
                                       platform="linkedin", event_date="2026-08-04"),
+    # Path 3i: mail under the SHORT name of an employer whose records use two
+    # (24 Sep 2026: an employer's short name beside the same name + "Group", an
+    # agency's name beside its "<agency> x <client>" record). "lamna" is 0.50 and 0.26
+    # similar to the longer forms, under COMPANY_TRGM_MIN, as the real ones were.
+    "lamna-dp-rejection": _fake_extraction(company="Lamna", role_title="Data Platform Engineer",
+                                           platform="ats"),
+    "lamna-ai-invite": _fake_extraction(company="Lamna", role_title="AI Engineer",
+                                        platform="direct"),
 }
 # The user's own messages in a thread about the seeded Proseware application.
 # The extractor reads the counterpart correctly off the quoted thread (verified
@@ -546,6 +556,44 @@ with db.connect() as conn:
     check("...so nothing on the timeline sits after the latest mail", conn.execute(
         "SELECT max(occurred_at) AS m FROM events WHERE application_id = %s",
         (as_app["id"],)).fetchone()["m"] == NOW)
+
+    print("path 3i: a sibling name no longer hides an employer's record")
+    # Word containment was only a RESCUE, run when the company gate admitted
+    # nobody; one record under the short name then hid every record under the
+    # long one. Measured 24 Sep 2026 over 432 real filed emails: an employer's
+    # short-name mail could not reach its "<name> Group" applications, and an
+    # agency's mail about a live interview auto-matched a REJECTED lead of the
+    # same title.
+    def _lamna(company, title, events, origin="applied"):
+        j = conn.execute("INSERT INTO jobs (user_id, company_norm, title_canonical) "
+                         "VALUES (%s, %s, %s) RETURNING id", (user_id, company, title)).fetchone()
+        conn.execute("INSERT INTO postings (user_id, job_id, platform, captured_via) "
+                     "VALUES (%s, %s, 'linkedin', 'extension')", (user_id, j["id"]))
+        a_ = conn.execute("INSERT INTO applications (user_id, job_id, origin) VALUES (%s, %s, %s) "
+                          "RETURNING id", (user_id, j["id"], origin)).fetchone()
+        for etype, at in events:
+            conn.execute("INSERT INTO events (user_id, application_id, type, source, occurred_at, "
+                         "payload) VALUES (%s, %s, %s, 'manual', %s, '{}')",
+                         (user_id, a_["id"], etype, at))
+        return str(a_["id"])
+    from datetime import timedelta as _td
+    _lamna("lamna", "Frontend Engineer", [("applied", NOW - _td(days=30))])  # a sibling, another role
+    # An old lead of the same title, never applied to and since closed — the
+    # shape of the real one (a rejected inbound lead with no applied event).
+    lead = _lamna("lamna", "AI Engineer", [("recruiter_outreach", NOW - _td(days=20)),
+                                           ("rejected", NOW - _td(days=15))], origin="inbound")
+    dp = _lamna("lamna group", "Data Platform Engineer", [("applied", NOW - _td(days=10))])
+    live = _lamna("lamna x woodgrove bank", "AI Engineer", [("applied", NOW)])  # the live thread
+    conn.commit()
+    e17 = seed_email(conn, user_id, "lamna-dp-rejection", sender="noreply@lamna.example")
+    e18 = seed_email(conn, user_id, "lamna-ai-invite", sender="recruiter@lamna.example")
+    conn.commit()
+    drain(conn)
+    s17, s18 = email_state(conn, e17), email_state(conn, e18)
+    check("short-name mail reaches the record under the long name (was: triage, never a candidate)",
+          s17["triage_state"] == "auto_matched" and str(s17["matched_application_id"]) == dp, s17)
+    check("...and a same-titled sibling lead no longer captures the live thread's mail (was: auto onto the lead)",
+          str(s18["matched_application_id"]) == live and str(s18["matched_application_id"]) != lead, s18)
 
     print("path 4: failure backoff")
     db.enqueue(conn, user_id, "classify_email",

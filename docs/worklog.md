@@ -655,3 +655,20 @@ the key to each real case.
    verification/OTP mail and personal mail, and every portal mail belongs to
    a recorded application or to one started and never submitted. Lesson:
    an audit of what was set aside has to read what the classifier read.
+23. **Can an employer's mail still reach its application?** (24 Sep 2026).
+   The author pointed at one correctly filed ATS confirmation; behind it,
+   the company check was hiding two other applications to the same employer
+   stored under a second name, and the item task 21 had deferred as "one company, two
+   names" turned out not to be cosmetic. Asked for a comprehensive check:
+   every filed email replayed against today's records through the matcher's
+   own SQL and scoring, and every application tried under every name its
+   employer had used. Found the suppression shape three times — one of them
+   a live interview thread whose next email would have auto-filed onto a
+   rejected lead of the same title — and a separate class of names sharing
+   no word (parent brands, agency/client names, a spelling). Measured
+   moving word containment from the rescue into the gate (5 decisions: 4
+   better, 1 to triage, 0 wrong; a wash on 21 Aug) and, on the author's
+   go-ahead, shipped it with path 3i, validated against the old matcher.
+   The no-shared-word class stays in triage by the author's choice. Also
+   linked that employer's referral email onto the application it led to (triage
+   route, snapshot first). Detail: `.claude/rules/matching.md`.

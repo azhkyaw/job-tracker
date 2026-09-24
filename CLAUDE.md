@@ -118,7 +118,7 @@ that can be Read directly at any time:
   `prompts/**`: thinking/effort measurements, model versioning, the outage story
 - `.claude/rules/database.md` — `migrations/**`, `db.py`, scripts: the
   four-places rule, CHECK names, gapped precedence, Neon pooler, view ordering
-- `docs/worklog.md` — the dated task register (tasks 1-22 with their
+- `docs/worklog.md` — the dated task register (tasks 1-23 with their
   measurements); what is still open is summarised under "Open work" below
 
 A rule file is tracked text, so the real-names rule (Commands) applies to it,
@@ -643,7 +643,7 @@ Detail lives with each family's rule file; this is the index.
 
 ## Open work (as of 24 Sep 2026)
 
-The dated register behind each item, tasks 1-22 with their measurements, is
+The dated register behind each item, tasks 1-23 with their measurements, is
 `docs/worklog.md`; read the matching entry before acting on one.
 
 - **Follow-up drafting** on an age-capped queue: cap `/follow-ups` near 21
@@ -687,13 +687,14 @@ The dated register behind each item, tasks 1-22 with their measurements, is
   to a role applied to again, each with "Same role, close" (the studio's
   four were left undecided on purpose); 3 blind extension captures (29 Jul,
   18 Aug, 20 Aug) that re-capturing from the popup on each job page fixes;
-  16 referral emails in triage's inbound lane, plus (task 22) two same-minute
+  15 referral emails in triage's inbound lane, plus (task 22) two same-minute
   confirmations the margin held back for one studio's repeated title and a
   24 Sep sent reply. Sync had not run since 01:45 that day — check the
   15-minute cron on whichever machine runs it. Decided and NOT open: one
-  company under two names (6 pairs; deferred until a `norm_company` replay
-  says otherwise), rejections filed twice (cosmetic), answers that differ
-  between employers (the author's own). Offered, not built: a popup
+  company under two names — where one name contains the other the matcher
+  now handles it (task 23); names sharing no word (a parent brand, an
+  agency's client) land in triage by choice — rejections filed twice
+  (cosmetic), answers that differ between employers (the author's own). Offered, not built: a popup
   "Capture this job as applied" button (task 20).
 - **Heat ceiling** (task 13): `trace.FULL_HEAT_DAYS` = 56 is a judgement,
   not a measurement; replay it over the waiting rows before tuning it, the
