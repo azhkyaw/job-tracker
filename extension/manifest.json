@@ -1,11 +1,12 @@
 {
   "manifest_version": 3,
   "name": "Job Tracker Capture",
-  "version": "0.10.2",
-  "description": "Captures job descriptions and the apply form's screening questions at the moment you apply on LinkedIn, JobStreet, and Indeed, and sends them to your personal tracker.",
+  "version": "0.11.0",
+  "description": "Captures job descriptions and the apply form's screening questions at the moment you apply on LinkedIn, JobStreet, and Indeed — and, from the toolbar, on any employer's job page — and sends them to your personal tracker.",
   "permissions": [
     "storage",
-    "activeTab"
+    "activeTab",
+    "scripting"
   ],
   "host_permissions": [
     "http://127.0.0.1/*",
@@ -29,6 +30,7 @@
         "*://*.linkedin.com/*"
       ],
       "js": [
+        "shared/jobposting.js",
         "adapters/linkedin.js",
         "shared/answers.js",
         "shared/capture.js"
@@ -45,6 +47,7 @@
         "*://*.seek.com.au/*"
       ],
       "js": [
+        "shared/jobposting.js",
         "adapters/jobstreet.js",
         "shared/answers.js",
         "shared/capture.js"
@@ -56,6 +59,7 @@
         "*://*.indeed.com/*"
       ],
       "js": [
+        "shared/jobposting.js",
         "adapters/indeed.js",
         "shared/answers.js",
         "shared/capture.js"

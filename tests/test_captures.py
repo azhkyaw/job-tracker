@@ -540,6 +540,72 @@ with db.connect() as conn:
         == _answers.REDACTED)
     check("a second run finds nothing to do", _answers.redact_stored(conn) == [])
 
+print("employer career sites: one id rule with the extension (docs/career-sites.md)")
+from pipeline import joburl                                            # noqa: E402
+_URLS = _json.loads((Path(__file__).resolve().parent / "job_urls.json")
+                    .read_text(encoding="utf-8"))["cases"]
+for url, want in _URLS:
+    got = joburl.generic_id(url)
+    check(f"generic_id {url}", got == want, got)
+check("parse: an employer's page is platform 'other', its url kept minus the fragment",
+      joburl.parse("https://careers.contoso.com/job/Engineer/1234567890/?locale=en_GB#apply")
+      == ("other", "careers.contoso.com/1234567890",
+          "https://careers.contoso.com/job/Engineer/1234567890/?locale=en_GB"))
+check("parse: a pasted link without its scheme still reads",
+      joburl.parse("careers.contoso.com/job/Engineer/42/")[:2]
+      == ("other", "careers.contoso.com/42"))
+check("parse: a bare site names no job",
+      joburl.parse("https://careers.contoso.com/") == (None, None, "https://careers.contoso.com/"))
+check("parse: the three platforms are unchanged",
+      joburl.parse("https://www.linkedin.com/jobs/view/123/")
+      == ("linkedin", "123", "https://www.linkedin.com/jobs/view/123/"))
+
+SITE = {"platform": "other", "platform_job_id": "careers.contoso.com/9876543210",
+        "url": "https://careers.contoso.com/job/Engineer/9876543210/",
+        "company": "Contoso", "title": "AVP, Software Engineer", "jd_text": "the JD",
+        "trigger": "apply", "external": True, "ats": "successfactors",
+        "posted_label": "24 Sep 2026",
+        # the line jobposting.js renders from a JobPosting's baseSalary
+        "salary_raw": "SGD 134,400 – 176,400 per year"}
+r_site = post(SITE)
+check("a career-site capture is created", r_site.status_code == 200 and r_site.json()["created"],
+      r_site.text)
+site_app = r_site.json()["application_id"]
+with db.connect() as conn:
+    p = conn.execute(
+        "SELECT p.platform, p.platform_job_id, p.ats, p.posted_label, p.salary_min, "
+        "p.salary_max, p.salary_currency, p.salary_period FROM applications a "
+        "JOIN postings p ON p.id = a.applied_via_posting_id WHERE a.id = %s::uuid",
+        (site_app,)).fetchone()
+    check("posting keeps platform, namespaced id, vendor and the posted date",
+          (p["platform"], p["platform_job_id"], p["ats"], p["posted_label"])
+          == ("other", "careers.contoso.com/9876543210", "successfactors", "24 Sep 2026"), p)
+    check("the rendered baseSalary line parses into numbers, currency and period",
+          (int(p["salary_min"]), int(p["salary_max"]), p["salary_currency"], p["salary_period"])
+          == (134400, 176400, "SGD", "annual"), p)
+    ev = conn.execute("SELECT payload FROM events WHERE application_id = %s::uuid "
+                      "AND type = 'applied'", (site_app,)).fetchone()["payload"]
+    check("applied on the employer's site: external true", ev == {"external": True}, ev)
+check("the same page captured again converges on one record",
+      post(SITE).json()["application_id"] == site_app)
+r_twin = post({**SITE, "platform_job_id": "careers.fabrikam.example/9876543210",
+               "url": "https://careers.fabrikam.example/jobs/9876543210",
+               "company": "Fabrikam", "title": "Data Engineer"})
+check("another employer's same bare number is a different record, never a collision",
+      r_twin.json()["application_id"] != site_app, r_twin.text)
+
+# The popup's "Capture this job as applied" on a PLATFORM page cannot tell Easy
+# Apply from an external apply, and sends external: null — the event must then
+# say nothing, as manual entry's blank does (web-ui rule 9b: three states).
+r_unknown = post({"platform": "linkedin", "platform_job_id": "LI-popup-applied",
+                  "company": "Tailspin", "title": "ML Engineer", "trigger": "apply",
+                  "external": None})
+with db.connect() as conn:
+    ev = conn.execute("SELECT payload FROM events WHERE application_id = %s::uuid "
+                      "AND type = 'applied'", (r_unknown.json()["application_id"],)).fetchone()
+    check("external unknown: the applied event carries no external key",
+          ev["payload"] == {}, ev)
+
 print("a capture with no form answers is unchanged")
 r7 = post({"platform": "indeed", "platform_job_id": "IN-qa-none",
            "company": "Quiet Co", "title": "Data Engineer", "trigger": "apply"})

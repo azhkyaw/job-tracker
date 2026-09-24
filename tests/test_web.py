@@ -786,6 +786,34 @@ with db.connect() as conn:
         (unset_app,)).fetchone()["payload"]
     check("external omitted when not set", "external" not in payload, payload)
 
+print("manual entry: an employer's own site is platform 'other', with the extension's id")
+# docs/career-sites.md §10. The form defaults to LinkedIn, so the likeliest slip
+# is a career-site link left on it: refused with the fix named, rather than
+# stored with no id — a record that could then never converge with a capture.
+SITE_URL = "https://careers.contoso.com/job/Singapore-Engineer/1234567890/?locale=en_GB"
+SITE = {"company": "Career Site Co", "title": "Platform Engineer", "url": SITE_URL,
+        "applied_date": "2026-04-12", "after": "view"}
+r = client.post("/applications/new", data={**SITE, "platform": "linkedin"})
+check("a career-site link left on LinkedIn is refused, naming the fix",
+      r.status_code == 400 and "Pick “other”" in r.text, r.status_code)
+r = client.post("/applications/new", data={**SITE, "platform": "other"})
+check("the same link on 'other' is created", r.status_code == 303, r.text)
+site_app = r.headers["location"].rsplit("/", 1)[1]
+with db.connect() as conn:
+    p = conn.execute(
+        "SELECT p.platform, p.platform_job_id, p.url FROM applications a "
+        "JOIN postings p ON p.id = a.applied_via_posting_id WHERE a.id = %s::uuid",
+        (site_app,)).fetchone()
+    check("its id is the extension's <host>/<token>",
+          (p["platform"], p["platform_job_id"]) == ("other", "careers.contoso.com/1234567890"), p)
+# What the popup sends for the same page: it must land on the SAME record.
+r = client.post("/captures", headers={"Authorization": f"Bearer {os.environ['TRACKER_API_TOKEN']}"},
+                json={"platform": "other", "platform_job_id": "careers.contoso.com/1234567890",
+                      "url": SITE_URL, "company": "Career Site Co", "title": "Platform Engineer",
+                      "jd_text": "the JD, read off the page", "trigger": "apply", "external": True})
+check("a capture of that page converges on the manual record",
+      r.status_code == 200 and r.json()["application_id"] == site_app, r.text)
+
 print("list: how-you-applied flag, three states kept three")
 r = client.get("/")
 

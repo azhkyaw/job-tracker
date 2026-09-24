@@ -8,6 +8,7 @@
        padding:12px;min-width:280px}
   button{font:inherit;cursor:pointer;border:1px solid #1F53BE;background:#1F53BE;
          color:#FFFFFF;border-radius:6px;padding:6px 12px;width:100%}
+  button.sec{background:transparent;color:#1F53BE;margin-top:6px}
   #out{margin-top:8px;color:#5A6873;min-height:1.2em}
   h4{margin:.9em 0 .3em;font-size:.8em;color:#5A6873;text-transform:uppercase;letter-spacing:.06em}
   ul{margin:0;padding-left:1.1em;color:#9A4231}
@@ -22,13 +23,15 @@
   @media (prefers-color-scheme: dark){
     body{color:#DBE3EA;background:#181E25}
     button{border-color:#7FB0FF;background:#7FB0FF;color:#0A1017}
+    button.sec{background:transparent;color:#7FB0FF}
     #out,h4,li.none,ul#sweeps,ul#prov{color:#8695A2}
     ul{color:#E28D79}
     #sweeps b,#prov b{color:#DBE3EA}
     #sweeps .warn,#prov .warn{color:#E28D79}
   }
 </style>
-<button id="cap">Capture this job as interested</button>
+<button id="applied">Capture this job as applied</button>
+<button id="cap" class="sec">Capture this job as interested</button>
 <div id="out"></div>
 <h4>Recent capture failures</h4>
 <ul id="fails"><li class="none">none</li></ul>

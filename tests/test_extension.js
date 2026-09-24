@@ -360,7 +360,7 @@ function matches(node, sel) {
   return sel.split(",").some((s) => {
     s = s.trim();
     if (s === "*") return true;
-    const m = /^([a-zA-Z]*)((?:#[\w-]+|\.[\w-]+|\[[^\]]+\])*)$/.exec(s);
+    const m = /^([a-zA-Z][a-zA-Z0-9]*)?((?:#[\w-]+|\.[\w-]+|\[[^\]]+\])*)$/.exec(s);
     if (!m) throw new Error(`fake DOM: selector not supported: ${s}`);
     if (m[1] && node.tagName !== m[1].toUpperCase()) return false;
     for (const part of (m[2] || "").match(/#[\w-]+|\.[\w-]+|\[[^\]]+\]/g) || []) {
@@ -672,6 +672,165 @@ console.log("\nanswers.js isSensitive: one list with pipeline/answers.py:is_sens
   check("the real value was never written to sessionStorage",
         sandbox._writes.length > 0 && sandbox._writes.every((w) => !w.includes("Female")),
         true);
+}
+
+/* ------------------------------------ shared/jobposting.js: any job page
+ *
+ * The generic reader (docs/career-sites.md §5). Every page below reproduces a
+ * shape MEASURED in the 24 Sep 2026 survey of 18 ATS vendors (§4 of that doc:
+ * live server HTML or the vendor's own bundle code), with placeholder names —
+ * the same rule as the answers.js fixtures above: a fixture that does not
+ * match a real page is worth less than none. */
+
+const JOBPOSTING_SRC = fs.readFileSync(path.join(ROOT, "extension/shared/jobposting.js"), "utf8");
+
+function loadJobPosting() {
+  const sandbox = { URL, URLSearchParams, console, window: {} };
+  vm.createContext(sandbox);
+  vm.runInContext(JOBPOSTING_SRC, sandbox);
+  return sandbox.window.__trackerJobPosting;
+}
+
+// A page: the fake DOM's nodes under one body, and a tab title.
+function pageDoc(kids, title = "") {
+  const body = node("body", {}, kids);
+  return {
+    title,
+    querySelector: (s) => body.querySelector(s),
+    querySelectorAll: (s) => body.querySelectorAll(s),
+  };
+}
+const ld = (obj) => node("script", { type: "application/ld+json" },
+                        [typeof obj === "string" ? obj : JSON.stringify(obj)]);
+const J = loadJobPosting();
+// The fields read() owns, without _prov — compared whole, so a field that
+// starts arriving unexpectedly fails here too.
+const fields = (j) => j && Object.fromEntries(
+  ["platform_job_id", "url", "company", "title", "jd_text", "location",
+   "posted_label", "salary_raw", "work_type", "ats"].map((k) => [k, j[k]]));
+
+console.log("\njobposting.js idFrom: one list with pipeline/joburl.py:generic_id");
+{
+  const { cases } = JSON.parse(fs.readFileSync(path.join(__dirname, "job_urls.json"), "utf8"));
+  for (const [url, want] of cases) {
+    const got = J.idFrom(url);
+    check(`idFrom ${url}`, got ? got.platform_job_id : null, want);
+  }
+}
+
+console.log("\njobposting.js read(): JSON-LD, microdata and the fallbacks");
+{
+  // Lever: JSON-LD on the job page; nested Organization; addressLocality
+  // carrying the whole place with region and country NULL; employmentType
+  // "Full-time", which is not a schema.org value; HTML description.
+  const LEVER = "https://jobs.lever.co/contoso/53e23908-0da6-47a5-a482-39be676e9ee6";
+  const j = J.read(pageDoc([ld({
+    "@context": "https://schema.org", "@type": "JobPosting",
+    title: "Senior Backend Engineer",
+    hiringOrganization: { "@type": "Organization", name: "Contoso Markets", logo: null },
+    description: "<p>Build <b>APIs</b> &amp; services.</p><ul><li>Go</li><li>Postgres</li></ul>",
+    datePosted: "2026-04-30", employmentType: "Full-time",
+    jobLocation: { "@type": "Place", address: { addressLocality: "Singapore, Singapore",
+                                               addressRegion: null, addressCountry: null } },
+  })], "Contoso Markets - Senior Backend Engineer"), makeLoc(LEVER));
+  check("JSON-LD (Lever shape): every field", fields(j), {
+    platform_job_id: "jobs.lever.co/53e23908-0da6-47a5-a482-39be676e9ee6",
+    url: LEVER, company: "Contoso Markets", title: "Senior Backend Engineer",
+    jd_text: "Build APIs & services.\n\n• Go\n• Postgres", location: "Singapore, Singapore",
+    posted_label: "30 Apr 2026", salary_raw: null, work_type: "Full time", ats: "lever" });
+  check("JSON-LD: title_source", j._prov.title_source, "jsonld");
+}
+{
+  // SuccessFactors Career Site Builder on an employer's own domain: MICRODATA
+  // only, hiringOrganization as a bare <meta content>, datePosted in Java's
+  // Date.toString() form, the place in streetAddress alone — and the vendor
+  // named nowhere but in the host its scripts load from.
+  const SF = "https://careers.contoso.com/job/Singapore-AVP%2C-Software-Engineer/1234567890/";
+  const j = J.read(pageDoc([
+    node("div", { itemscope: "", itemtype: "http://schema.org/JobPosting" }, [
+      node("span", { itemprop: "title" }, ["AVP, Software Engineer"]),
+      node("meta", { itemprop: "hiringOrganization", content: "Contoso" }),
+      node("meta", { itemprop: "datePosted", content: "Thu Sep 24 00:00:00 UTC 2026" }),
+      node("meta", { itemprop: "validThrough", content: "Tue Dec 01 16:00:00 UTC 2026" }),
+      node("div", { itemprop: "jobLocation", itemscope: "", itemtype: "http://schema.org/Place" }, [
+        node("div", { itemprop: "address", itemscope: "", itemtype: "http://schema.org/PostalAddress" }, [
+          node("meta", { itemprop: "streetAddress", content: "Singapore, SG" })])]),
+      node("span", { itemprop: "description" }, ["Design and build trading platform services."]),
+    ]),
+    node("script", { src: "//rmkcdn.successfactors.com/0a1b2c3d/js/app.js" }),
+  ], "AVP, Software Engineer Job Details | Contoso"), makeLoc(SF));
+  check("microdata (SuccessFactors shape): every field", fields(j), {
+    platform_job_id: "careers.contoso.com/1234567890", url: SF, company: "Contoso",
+    title: "AVP, Software Engineer", jd_text: "Design and build trading platform services.",
+    location: "Singapore, SG", posted_label: "24 Sep 2026", salary_raw: null,
+    work_type: null, ats: "successfactors" });
+  check("microdata: title_source", j._prov.title_source, "microdata");
+  check("microdata: vendor recorded as the layout", j._prov.layout, "successfactors");
+}
+{
+  // Teamtailor and JazzHR together: an Organization block before the
+  // JobPosting, a @graph, entity-ENCODED HTML (decoded twice), a trailing space
+  // on the name (Personio), a jobLocation array whose first entry is all empty
+  // strings, an ISO datePosted with an offset, employmentType as an array, and
+  // Ashby's numeric baseSalary with Workable's string minValue.
+  const j = J.read(pageDoc([
+    ld({ "@type": "Organization", name: "Contoso" }),
+    ld({ "@context": "http://schema.org/", "@graph": [
+      { "@type": "WebPage", name: "Careers" },
+      { "@type": "JobPosting", title: "SMB Account Executive",
+        hiringOrganization: { name: "Contoso " },
+        description: "&lt;h4&gt;About us&lt;/h4&gt;&lt;p&gt;We sell R&amp;amp;D tools.&lt;/p&gt;",
+        jobLocation: [{ address: { addressLocality: "", addressRegion: "", addressCountry: "" } },
+                      { address: { addressLocality: "Singapore", addressCountry: "SG" } }],
+        datePosted: "2026-01-18T19:56:45+01:00", employmentType: ["FULL_TIME"],
+        baseSalary: { "@type": "MonetaryAmount", currency: "SGD",
+                      value: { "@type": "QuantitativeValue", minValue: "134400.00",
+                               maxValue: 176400, unitText: "YEAR" } } }] }),
+  ]), makeLoc("https://contoso.teamtailor.com/jobs/7069638-smb-account-executive"));
+  check("@graph, encoded HTML, arrays, salary: every field", fields(j), {
+    platform_job_id: "contoso.teamtailor.com/7069638",
+    url: "https://contoso.teamtailor.com/jobs/7069638-smb-account-executive",
+    company: "Contoso", title: "SMB Account Executive",
+    jd_text: "About us\n\nWe sell R&D tools.", location: "Singapore, SG",
+    posted_label: "18 Jan 2026", salary_raw: "SGD 134,400 – 176,400 per year",
+    work_type: "Full time", ats: "teamtailor" });
+}
+{
+  // Greenhouse publishes NO JobPosting; the employer's site embeds its form
+  // in an iframe. The <h1> is the job, the tab title wraps it.
+  const j = J.read(pageDoc([
+    node("meta", { property: "og:title", content: "Job Application for Staff Engineer at Northwind Labs" }),
+    node("meta", { property: "og:site_name", content: "Northwind Labs" }),
+    node("h1", {}, ["Staff Engineer"]),
+    node("iframe", { src: "https://boards.greenhouse.io/embed/job_app?for=northwind&token=4377390009" }),
+  ], "Northwind Labs - Staff Engineer"), makeLoc("https://careers.northwind.example/jobs?gh_jid=4377390009"));
+  check("no JobPosting: <h1> title, og:site_name company, no JD", fields(j), {
+    platform_job_id: "careers.northwind.example/4377390009",
+    url: "https://careers.northwind.example/jobs?gh_jid=4377390009",
+    company: "Northwind Labs", title: "Staff Engineer", jd_text: null, location: null,
+    posted_label: null, salary_raw: null, work_type: null, ats: "greenhouse" });
+  check("no JobPosting: title_source says which fallback answered", j._prov.title_source, "h1");
+}
+{
+  // A hand-templated block with a raw newline inside a string — illegal JSON,
+  // common in the wild — still reads; and a page listing several postings
+  // picks the one whose url is this page.
+  const raw = '{"@type":"JobPosting","title":"Data\nEngineer","hiringOrganization":"Fabrikam"}';
+  const j = J.read(pageDoc([ld(raw)]), makeLoc("https://careers.fabrikam.example/jobs/88"));
+  check("raw control character in JSON-LD: recovered", j && [j.title, j.company], ["Data Engineer", "Fabrikam"]);
+  const two = J.read(pageDoc([ld([
+    { "@type": "JobPosting", title: "First", url: "https://careers.fabrikam.example/jobs/1" },
+    { "@type": "JobPosting", title: "Second", url: "https://careers.fabrikam.example/jobs/2" }])]),
+    makeLoc("https://careers.fabrikam.example/jobs/2"));
+  check("several postings: the one whose url is this page", two.title, "Second");
+}
+{
+  check("a page naming no job at all: null, so capture's guard fires",
+        J.read(pageDoc([]), makeLoc("https://careers.contoso.com/")), null);
+  check("atsOfUrl: JazzHR's applytojob host", J.atsOfUrl("https://contoso.applytojob.com/apply/x"), "jazzhr");
+  check("atsOfUrl: an employer's own host is no vendor", J.atsOfUrl("https://careers.contoso.com/"), null);
+  check("htmlToText: flattened text with entities (Workday)",
+        J.htmlToText("Design &amp; build   services &nbsp;today"), "Design & build services today");
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

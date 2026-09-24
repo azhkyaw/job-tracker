@@ -2,8 +2,8 @@
 
 **Author:** AZ
 **Status:** Accepted; being built. The four decisions in §14 were taken on
-24 Sep 2026, all as recommended. The redaction in §11 is built; the rest of
-phase A (§12) is in progress.
+24 Sep 2026, all as recommended. Built the same day: the redaction in §11 and
+phase A (§12). Phase B is next.
 **Date:** 24 September 2026
 **Scope:** What it takes for the extension to capture a job, and the
 application made for it, on an employer's own career site or its applicant
@@ -467,6 +467,30 @@ explicit "attach to this job" parameter (§10), never a similarity match.
 
 The employer-site listing becomes capturable with one click, with no standing
 permissions. A job description reaches the next direct application.
+
+**Built 24 Sep 2026, extension 0.11.0:**
+
+- `extension/shared/jobposting.js` is the reader (`read`, `idFrom`,
+  `atsOfUrl`, `vendorOf`), and now also owns the ATS vendor table that
+  `capture.js` used to keep.
+- `extension/adapters/generic.js` is what the popup injects, and
+  `joburl.generic_id` is `idFrom` in Python.
+- **Two changes beyond this plan:**
+  - The popup's "applied" capture writes at once even for an employer site.
+    The click is the confirmation the ask-first popover would request.
+  - `/captures` accepts `external: null`: "applied" on a platform page cannot
+    tell Easy Apply from the employer's site, so it records neither.
+- **Manual entry now refuses an employer's link left on the form's default,
+  LinkedIn.** Stored with no id, such a record could never converge with a
+  capture of the page.
+- **Verified:**
+  - 33 URL shapes against both implementations.
+  - Every reader shape in §4.3 against a fake DOM, with two rules
+    mutation-tested (each mutation turns its tests red).
+  - The reader run inside the real page of §2, which yielded everything
+    §2 describes and the full 6,506-character job description.
+- **Not yet run live:** the popup's injection path. It needs the unpacked
+  extension reloaded first.
 
 **B. ATS hooks that complete the LinkedIn external record** (§8).
 

@@ -802,6 +802,16 @@ _EVENT_CHANNELS = {
 }
 
 
+def _platform_mismatch(parsed: str, picked: str) -> str:
+    """The form's platform and its URL disagree. Since 24 Sep 2026 joburl
+    reads ANY site's URL — an employer's own or its ATS is platform 'other' —
+    so the likeliest case is a career-site link left on the default LinkedIn."""
+    if parsed == "other":
+        return ("That link is to an employer's own site or its hiring system, but you "
+                f"picked {picked}. Pick “other” for it, or use the job board's link.")
+    return f"That looks like a {parsed} URL, but you picked {picked}. Fix one of them."
+
+
 def _manual_ctx(conn, user, tz, *, form, error=None, added=None, merged=False):
     return {
         "form": form, "error": error, "added": added, "merged": merged,
@@ -969,8 +979,7 @@ def manual_entry_create(
         if error is None:
             parsed_platform, platform_job_id, canonical_url = joburl.parse(url or None)
             if parsed_platform and parsed_platform != platform:
-                error = (f"That looks like a {parsed_platform} URL, but you picked "
-                         f"{platform}. Fix one of them.")
+                error = _platform_mismatch(parsed_platform, platform)
 
     with db.connect_scoped(user["id"]) as conn:
         if error:
@@ -1305,8 +1314,7 @@ def edit_application(
         if error is None:
             parsed_platform, platform_job_id, canonical_url = joburl.parse(url or None)
             if parsed_platform and parsed_platform != platform:
-                error = (f"That looks like a {parsed_platform} URL, but you picked "
-                         f"{platform}. Fix one of them.")
+                error = _platform_mismatch(parsed_platform, platform)
 
     with db.connect_scoped(user["id"]) as conn:
         a = _get_application(conn, app_id)
@@ -2215,7 +2223,11 @@ class CaptureIn(BaseModel):
     title: str | None = None
     jd_text: str | None = None
     trigger: str = "apply"              # apply | manual
-    external: bool = False              # redirected to employer site to finish
+    # True = sent on the employer's own site, False = on the platform (Easy
+    # Apply, Quick Apply), None = not known: the popup's "Capture this job as
+    # applied" on a platform page cannot tell which, and a guess would put the
+    # wrong grey badge on the row (web-ui rule 9b keeps the three apart).
+    external: bool | None = False
     # "this click was the SUBMIT, not the start". Platforms whose apply button
     # navigates (JobStreet) are captured when the flow OPENS, because deferring
     # to a completion signal that a live DOM change could silently break would
@@ -2289,11 +2301,13 @@ def captures(payload: CaptureIn, authorization: str | None = Header(None)):
                 "SELECT 1 FROM events WHERE application_id = %s AND type = 'applied'",
                 (app_id,)).fetchone()
             if has_applied is None:            # double-click safe
+                # An unknown channel omits the key, as manual entry's blank does.
                 conn.execute(
                     "INSERT INTO events (user_id, application_id, type, source, "
                     "occurred_at, payload) VALUES (%s, %s, 'applied', 'extension', "
                     "now(), %s)",
-                    (user_id, app_id, Json({"external": payload.external})))
+                    (user_id, app_id, Json({} if payload.external is None
+                                           else {"external": payload.external})))
             elif payload.completed:
                 # The submit landed, and the event on record was written by the
                 # click that only OPENED the form — minutes earlier, on a

@@ -830,3 +830,20 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   `_prov.title_source == "class"`). Worth watching, and `title_source` in the
   provenance buffer is what will say when it happens — a run of `doctitle` on
   `/jobs/view/` is the leading indicator.
+- **The popup's capture on a page with no adapter (extension 0.11.0,
+  24 Sep 2026) has never run live** (`docs/career-sites.md` phase A).
+  `shared/jobposting.js`'s reader has: evaluated inside a real SuccessFactors
+  career page, it returned the page's title, company, location, posted date,
+  vendor and full JD. The path around it has not. That path: the popup's
+  first message finds no listener; `chrome.scripting.executeScript` injects
+  `jobposting.js` + `generic.js` + `capture.js` into the active tab under
+  activeTab; the second message lands. What to read on the first run: the
+  popover appears on the page; the record's posting reads platform `other`,
+  an id of the form `<host>/<token>`, and an `ats`; the provenance line says
+  `via microdata` or `via jsonld`. On a platform page, the popup saying "The
+  extension was reloaded since this page opened" is the guard working (a
+  dead content script must not get the generic reader, or a LinkedIn job
+  files as `other`), not a failure. `tests/test_extension.js` covers the
+  reader and the id rule, NOT `capture.js`, whose new `explicit` path (the
+  popup's "applied" writes at once, even for an employer site) is reasoned,
+  not tested.

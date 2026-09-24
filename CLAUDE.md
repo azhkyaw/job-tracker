@@ -19,9 +19,8 @@ Installing the extension on a second device (an existing account, not a
 fresh signup) — including the single-token-per-account gotcha regenerating
 it silently breaks other devices with: `docs/extension-install.md`.
 Capturing on employer career sites and their ATS forms, beyond the three
-platforms — not built, analysis only (24 Sep 2026): the measured gap, an
-18-vendor survey of how job pages expose a job, and the plan, in
-`docs/career-sites.md`.
+platforms — the measured gap, an 18-vendor survey of how job pages expose a
+job, and the plan, in `docs/career-sites.md` (phase A built 24 Sep 2026).
 Open-weight models on an OpenAI-compatible server (vLLM first) go through
 `pipeline/llm.py` (Key files); the hands-on lab that verifies it against a
 real server on GCP, stage by stage with results recorded, is
@@ -103,7 +102,12 @@ Nationality and work authorisation stay recorded: the visa analysis reads them.
 - `pipeline/joburl.py` — paste-a-link job-id derivation for manual entry; mirrors
   the adapters' URL logic, and the adapters are the source of truth
 - `pipeline/templates/` — every page; ALL CSS is one `<style>` block in `base.html`
-- `extension/` — browser capture (LinkedIn/JobStreet/Indeed adapters + shared/)
+- `extension/` — browser capture (LinkedIn/JobStreet/Indeed adapters + shared/);
+  `shared/jobposting.js` reads ANY job page off its schema.org JobPosting and
+  owns the one ATS vendor table, and `adapters/generic.js` is what the popup
+  injects on a site with no adapter (`docs/career-sites.md`; its posting id
+  `<host>/<token>` is `joburl.generic_id` in Python, both held to
+  `tests/job_urls.json`)
 - `migrations/` — append-only numbered schema files (invariant #8)
 - `tests/` — seven Python suites + `test_extension.js` (Node, no DB), see Commands
 
@@ -673,8 +677,11 @@ The dated register behind each item, tasks 1-23 with their measurements, is
   LinkedIn "Apply on company website" applications carry 0 screening
   answers, and an application made directly on an employer's site exists
   only as its mail. Its four decisions were taken 24 Sep 2026, all as
-  recommended (its §14): static ATS hosts plus per-site opt-in, namespaced
-  ids, withheld sensitive answers (built), write at submit. Phase A is next.
+  recommended (its §14). Built the same day: withheld sensitive answers and
+  phase A (the popup captures ANY job page, extension 0.11.0; the reader
+  verified on a real career site by in-page evaluation, the popup's injection
+  path not yet run live — reload the extension, then capture one). Next is
+  phase B: submit hooks on ATS forms that complete a LinkedIn external apply.
 - **Release blockers:** LICENSE (Apache-2.0 recommended), split the extension
   into its own repo, decide whether CLAUDE.md ships; `audit_names.py --history`
   is the pre-publish check. (task 3)

@@ -1,13 +1,55 @@
-document.getElementById("cap").addEventListener("click", async () => {
+/* Capture from the toolbar — on ANY page, since 24 Sep 2026
+ * (docs/career-sites.md, phase A).
+ *
+ * The three platforms carry a content script already, so the message simply
+ * lands. Everywhere else nothing is listening, and the popup injects the
+ * generic reader into THIS tab and asks again: activeTab grants that for the
+ * page in front of the user at the moment they click, and for nothing else —
+ * no standing access to any site, which is what PRIVACY.md promises.
+ *
+ * A platform page where the message does NOT land is not a candidate for the
+ * generic reader: its script is dead because the extension was reloaded after
+ * the tab opened (.claude/rules/extension.md), and injecting the generic
+ * reader there would file a LinkedIn job as platform 'other'. The hosts come
+ * from the manifest's own content_scripts, so there is no second list. */
+const STATIC_HOSTS = chrome.runtime.getManifest().content_scripts
+  .flatMap((cs) => cs.matches)
+  .map((m) => m.replace(/^[^:]+:\/\/(\*\.)?/, "").replace(/\/.*$/, ""));
+const onStaticHost = (url) => {
+  try {
+    const h = new URL(url).hostname;
+    return STATIC_HOSTS.some((s) => h === s || h.endsWith("." + s));
+  } catch (e) { return false; }
+};
+const INJECT = ["shared/jobposting.js", "adapters/generic.js", "shared/capture.js"];
+const LOOK = "Check the page for the capture popover.";
+
+async function deliver(tabId, msg) {
+  try { await chrome.tabs.sendMessage(tabId, msg); return true; } catch (e) { return false; }
+}
+
+async function captureAs(as) {
   const out = document.getElementById("out");
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab) return;
-  chrome.tabs.sendMessage(tab.id, { type: "tracker-capture-manual" }, () => {
-    out.textContent = chrome.runtime.lastError
-      ? "This page isn't a supported job site."
-      : "Check the page for the capture popover.";
-  });
-});
+  const msg = { type: "tracker-capture-manual", as };
+  if (await deliver(tab.id, msg)) { out.textContent = LOOK; return; }
+  if (onStaticHost(tab.url)) {
+    out.textContent = "The extension was reloaded since this page opened — refresh it, then capture again.";
+    return;
+  }
+  try {
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: INJECT });
+  } catch (e) {
+    // chrome:// pages, the Web Store and file:// refuse injection outright.
+    out.textContent = `This page can't be captured (${(e && e.message) || e}).`;
+    return;
+  }
+  out.textContent = (await deliver(tab.id, msg)) ? LOOK : "Couldn't reach this page.";
+}
+
+document.getElementById("applied").addEventListener("click", () => captureAs("applied"));
+document.getElementById("cap").addEventListener("click", () => captureAs("interested"));
 chrome.storage.local.get({ failures: [] }, ({ failures }) => {
   if (!failures.length) return;
   const ul = document.getElementById("fails");

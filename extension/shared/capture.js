@@ -103,43 +103,13 @@
     return isTopFrame;                       // still the DOM's guess if unanswered
   });
 
-  // Hostname suffix -> ATS vendor. Only for genuinely external applies (the
-  // employer's own domain never matches these) — an in-house/direct careers
-  // page correctly yields no match rather than a guess.
-  const ATS_HOSTS = {
-    "greenhouse.io": "greenhouse",
-    "lever.co": "lever",
-    "myworkdayjobs.com": "workday",
-    "myworkday.com": "workday",
-    "ashbyhq.com": "ashby",
-    "icims.com": "icims",
-    "smartrecruiters.com": "smartrecruiters",
-    "jobvite.com": "jobvite",
-    "bamboohr.com": "bamboohr",
-    "taleo.net": "taleo",
-    "successfactors.com": "successfactors",
-    "workable.com": "workable",
-    "breezy.hr": "breezy",
-    "personio.com": "personio",
-    "personio.de": "personio",
-    "recruitee.com": "recruitee",
-    "teamtailor.com": "teamtailor",
-    "jazzhr.com": "jazzhr",
-    // JazzHR serves customer job boards from applytojob.com, not jazzhr.com —
-    // a real external apply resolved to wideworld.applytojob.com (4 Aug 2026) and
-    // came back with no ATS despite being a textbook JazzHR board.
-    "applytojob.com": "jazzhr",
-    "paylocity.com": "paylocity",
-  };
-
+  // The ATS vendor of an external apply's destination. The host table lives in
+  // shared/jobposting.js, the one registry — it also names the vendor behind
+  // an employer's own domain from the hosts that page loads, which a destination
+  // URL alone never could. An in-house careers page correctly yields null.
   function detectAts(urlStr) {
-    if (!urlStr) return null;
-    let hostname;
-    try { hostname = new URL(urlStr).hostname.toLowerCase(); } catch (e) { return null; }
-    for (const [domain, vendor] of Object.entries(ATS_HOSTS)) {
-      if (hostname === domain || hostname.endsWith("." + domain)) return vendor;
-    }
-    return null;
+    const J = window.__trackerJobPosting;
+    return urlStr && J ? J.atsOfUrl(urlStr) : null;
   }
 
   function buildPayload(trigger, external, ats, job, recruiter, answers, tags, completed) {
@@ -152,7 +122,9 @@
       title: job.title || null,
       jd_text: job.jd_text || null,
       trigger,
-      external: !!external,
+      // Three states, not two: null is "not known" (a popup capture on a
+      // platform page can't tell Easy Apply from the employer's site).
+      external: external == null ? null : !!external,
       note: tags.note || null,
       recruiter_name: (recruiter && recruiter.name) || null,
       recruiter_url: (recruiter && recruiter.url) || null,
@@ -163,7 +135,9 @@
       salary_raw: job.salary_raw || null,
       work_type: job.work_type || null,
       salary_match: job.salary_match ?? null,
-      ats: ats || null,
+      // The destination's vendor for an external apply; else the page's own,
+      // which the generic reader names (a career site's vendor lives there).
+      ats: ats || job.ats || null,
       answers: (answers && answers.length) ? answers : null,
     };
   }
@@ -734,7 +708,11 @@
     } catch (e) { return Promise.resolve(job); }
   }
 
-  function capture(trigger, external, ats, completed) {
+  /* `explicit`: the user said so, from the toolbar popup. It writes at once
+   * even when `external` is true — the ask-first popover exists because
+   * "Apply on company website" only proves a tab opened, and a click on
+   * "Capture this job as applied" is the answer that popover would ask for. */
+  function capture(trigger, external, ats, completed, explicit) {
     // Snapshot the job DOM NOW, not later: platforms routinely swap the page's
     // content out from under us — e.g. LinkedIn's Easy Apply replaces the top
     // card (title/company/location) with an "application sent" confirmation
@@ -763,7 +741,7 @@
         const rescued = usable(top) ? top
                       : (adapter.jobFromUrl ? adapter.jobFromUrl(tabUrl) : null);
         if (rescued && rescued.platform_job_id) {
-          proceed(rescued, trigger, external, ats, completed);
+          proceed(rescued, trigger, external, ats, completed, explicit);
           return;
         }
         tell({
@@ -791,18 +769,20 @@
             layout: (job && job._prov && job._prov.layout) || null,
           },
         });
-        if (external) notCapturedPopover();
+        // The popup's own capture says so too: it has just told the user to
+        // look at the page for a popover, and silence there reads as success.
+        if (external || explicit) notCapturedPopover();
       });
       return;
     }
-    proceed(job, trigger, external, ats, completed);
+    proceed(job, trigger, external, ats, completed, explicit);
   }
 
   /* The capture proper, entered once a job has been identified — from the page
    * (the normal case) or from the last-resort rescue above. Split out so the
    * rescue can be awaited without the healthy path ever paying for a round
    * trip, and without duplicating the send/receipt logic to serve it. */
-  function proceed(job, trigger, external, ats, completed) {
+  function proceed(job, trigger, external, ats, completed, explicit) {
     // Same breadcrumb for the path that never consults a stash (an immediate
     // apply), so "where did this title come from" is answerable for EVERY
     // capture rather than only deferred ones. withStashedJob emits the richer
@@ -846,7 +826,7 @@
     // navigation tearing the page down before the form had been read.
     const merged = withStashedJob(job, completed);
 
-    if (external) {
+    if (external && !explicit) {
       // Ask first, then write — see confirmPopover.
       confirmPopover((tags, report) => {
         merged
@@ -927,9 +907,18 @@
   }, true);
 
   chrome.runtime.onMessage.addListener((msg, _sender, respond) => {
-    /* Manual capture from the popup ("interested", no apply). */
+    /* Capture from the toolbar popup: "interested" (no apply), or "applied" —
+     * for an application no hook saw: made on a site with no adapter, or one
+     * the platform hook missed (worklog task 20). Applied off the three
+     * platforms is the employer's own site by definition; on a platform page
+     * the popup cannot tell Easy Apply from an external apply, so it says
+     * nothing rather than guess. */
     if (msg && msg.type === "tracker-capture-manual") {
-      capture("manual", false, null);
+      if (msg.as === "applied") {
+        capture("apply", adapter.platform === "other" ? true : null, null, false, true);
+      } else {
+        capture("manual", false, null, false, true);
+      }
       respond({ ok: true });
     }
     /* A subframe's capture, relayed here so the receipt outlives that frame.

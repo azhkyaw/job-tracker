@@ -6,6 +6,13 @@ description, title, and company from the page you are viewing and sends it —
 with the tags you enter — to the tracker server YOU configured, authenticated
 with YOUR token.
 
+**Any other job page, only when you ask (since 24 Sep 2026).** On an employer's
+career site or its hiring system, nothing runs until you click "Capture this
+job as applied" or "as interested" in the toolbar popup. That click lets the
+extension read the ONE page in front of you, once (Chrome's `activeTab`): the
+job details the page publishes for search engines, its title, and which hiring
+system it runs on. It keeps no access to that site afterwards.
+
 On an in-page apply form (LinkedIn Easy Apply today) it also reads the
 questions that form asks and the answers you gave, so your own tracker can
 show what you told that employer. Two consequences worth stating plainly:
@@ -44,7 +51,9 @@ may still walk away without applying — nothing is sent until you confirm.
   buffer of the last 10 capture failures (chrome.storage.local), and the
   in-progress apply form's answers for the tab you're applying in
   (sessionStorage, cleared on capture).
-- Permissions: content scripts on the three job sites; storage; activeTab.
+- Permissions: content scripts on the three job sites; storage; activeTab
+  and scripting, which together let a popup click read the page in front of
+  you and nothing else.
   Host access to your own server (localhost by default; remote origins only
   when you grant them in Options), plus linkedin.com — needed only so the
   receipt can be drawn in the page's top frame instead of inside the Easy

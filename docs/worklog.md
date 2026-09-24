@@ -689,3 +689,19 @@ the key to each real case.
    in the store AND in `sessionStorage`. `cli redact-answers [--apply]`
    withholds rows stored before the rule (the dry run prints questions,
    never values; no undo). Extension 0.10.2.
+25. **Employer career sites, phase A** (24 Sep 2026). Asked to support an
+   employer's own career site (a SuccessFactors Career Site Builder page on
+   its own domain), analysed first in `docs/career-sites.md`: 51 of 283
+   applications went LinkedIn → employer site with 0 screening answers,
+   direct career-site applications existed only as 11 mail-made shells, and
+   an 18-vendor survey measured how job pages expose a job. The author took
+   all four of its §14 decisions as recommended. Built: the toolbar popup
+   captures ANY page as applied or interested (activeTab + scripting, the
+   generic reader injected on the click); `extension/shared/jobposting.js`
+   reads schema.org JobPosting as JSON-LD or microdata in every shape the
+   survey found; a posting's id is `<host>/<token>`, with
+   `joburl.generic_id` its Python twin and `tests/job_urls.json` (33 shapes)
+   holding them together. Run inside the real page that prompted it, the
+   reader returned the title, company, location, posted date, vendor and the
+   full 6,506-character JD. Not yet run live: the popup's injection path,
+   which needs the extension reloaded. Next: phase B.
