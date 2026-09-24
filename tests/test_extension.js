@@ -971,7 +971,47 @@ console.log("\ngeneric.js: the application form and its submit, per vendor (read
   check("Workable: root is the application form", a.answerFormRoot() === form, true);
   check("Workable: data-ui='apply-button' is the submit", a.isCompletion(submit), true);
 }
+console.log("\ngeneric.js: SuccessFactors' signed-in form (read live 24 Sep 2026)");
+{
+  // form#careerform: 59 fields in COLLAPSED sections (display:none until the
+  // candidate opens each), real <label for> labels, no file input (the resume
+  // is an attachment widget), and "Save"/"Apply" as <span role=button>. After
+  // any postback the address is /portalcareer?_s.crb=… — no career_ns — and
+  // that is where a real application went unrecorded.
+  const field = (id, lbl) => {
+    const input = node("input", { type: "text", id });
+    input.getClientRects = () => [];            // inside a closed section
+    return [node("label", { for: id }, [lbl]), input];
+  };
+  const section = node("div", { class: "sectionContentClosed" },
+    [...field("fn", "* First Name"), ...field("ln", "* Last Name"), ...field("em", "* Email"),
+     ...field("ph", "* Contact Number"), ...field("cc", "* Country Code (e.g. +65)"),
+     ...field("np", "Notice period")]);
+  const save = node("span", { role: "button", id: "487:_saveBtn", class: "rcmSaveButton" }, ["Save"]);
+  const apply = node("span", { role: "button", id: "487:_submitBtn", class: "rcmSaveButton" }, ["Apply"]);
+  const form = node("form", { id: "careerform", name: "careerform" },
+                    [node("div", { id: "rcmJobApplicationCtr" }, [section, save, apply])]);
+  const a = loadGeneric([form], "https://career10.successfactors.com/portalcareer?_s.crb=x");
+  check("SuccessFactors after a postback (no career_ns): root is the form", a.answerFormRoot() === form, true);
+  check("SuccessFactors: the <span role=button> 'Apply' is the submit", a.isCompletion(apply), true);
+  check("SuccessFactors: 'Save' is not", a.isCompletion(save), false);
+  check("SuccessFactors: no near miss on the real submit", a.nearMiss(apply), null);
+  const b = loadGeneric([form], "https://career10.successfactors.com/portalcareer?career_ns=job_application");
+  check("SuccessFactors as first loaded (career_ns): root is still the form", b.answerFormRoot() === form, true);
+}
+
 console.log("\ngeneric.js: what must NOT be an application");
+{
+  // A job-alert or talent-community sign-up: a form that says "Submit" but
+  // has the fields of a sign-up, not an application.
+  const submit = button("Submit", { type: "submit" });
+  const a = loadGeneric([node("form", {}, [text("email"), text("keywords"), text("location"), submit])],
+                        "https://jobs.lever.co/contoso");
+  check("a three-field sign-up form saying 'Submit': no root", a.answerFormRoot() === null, true);
+  check("...so its 'Submit' is not an application", a.isCompletion(submit), false);
+  check("...and the miss says why (the popup shows it)", a.nearMiss(submit),
+        "no application form found on this page");
+}
 {
   // A candidate sign-in on an apply path (Workday, SuccessFactors): a
   // password field anywhere in the container disqualifies it, so the

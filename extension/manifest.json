@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Job Tracker Capture",
-  "version": "0.12.0",
+  "version": "0.12.1",
   "description": "Captures job descriptions and the apply form's screening questions at the moment you apply on LinkedIn, JobStreet, and Indeed — and, from the toolbar, on any employer's job page — and sends them to your personal tracker.",
   "permissions": [
     "storage",
@@ -75,6 +75,8 @@
         "*://*.myworkdayjobs.com/*",
         "*://*.successfactors.com/career*",
         "*://*.successfactors.eu/career*",
+        "*://*.successfactors.com/portalcareer*",
+        "*://*.successfactors.eu/portalcareer*",
         "*://jobs.smartrecruiters.com/*",
         "*://*.icims.com/*",
         "*://*.applytojob.com/*",

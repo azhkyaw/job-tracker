@@ -701,6 +701,41 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   - **The general lesson:** a control's `name` is a fallback for a label, and a
     hidden control with nothing but a name is page machinery.
 
+- **A content-script path narrowed from OUTSIDE a sign-in was wrong, and the
+  miss was silent** (24 Sep 2026, the first real SuccessFactors apply after
+  0.12.0).
+  - **What was narrowed, and why:** `*://*.successfactors.com/career*`, so
+    the script would never run on the SAP HR systems served from the same
+    domain.
+  - **Where the form actually is:** after sign-in, SuccessFactors serves the
+    application at `/portalcareer?career_ns=job_application…`, and after any
+    postback (the register step, a Save, an upload) at
+    `/portalcareer?_s.crb=…`. The second address carries no `career_ns` at
+    all.
+  - **The loss:** two real applications to one employer went unrecorded, and the ring
+    buffers held nothing about them. The reconstruction came from Chrome's
+    History database (paths and parameter NAMES only), plus the extension's
+    `active_permissions` in `Secure Preferences` to prove 0.12.0 was loaded
+    (it had been, 11 s before).
+  - **Fixed three ways:**
+    - the manifest now also covers `/portalcareer*`;
+    - `generic.js` roots on a `<form>` of five or more fields that holds a
+      submit-worded control, so the form is found whatever the address says
+      (verified in the live signed-in form: `form#careerform`, 59 fields, and
+      only "Apply" of 74 buttons, at both addresses);
+    - a click on a submit-worded control the rule rejects now lands in the
+      popup's failure list with the reason (`nearMiss`).
+  - **The lessons:**
+    - A path guessed for a page nobody has seen is a guess, whatever the
+      manifest's syntax makes it look like.
+    - The failing branch needs its own diagnostic — the lesson of the
+      `withStashedJob` breadcrumb, again.
+  - **Also read off that form:** no company anywhere on the page (no
+    JobPosting, no `og:site_name`, only the URL's `company=` tenant), and an
+    `<h1>` title with the requisition number appended ("… (1234)"). A capture
+    from the form alone files as "unknown company". The listing has both, so
+    per-site opt-in on the employer's domain (phase C) is the fix.
+
 ## Known-untested surfaces (verify on first real contact)
 
 - **Extension DOM selectors** (`extension/adapters/*.js`) — best-effort against
@@ -878,10 +913,11 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
     1. Whether LinkedIn's external button sets `openerTabId` on the tab it
        opens (it resolves the destination server-side and may open the tab
        in a way that leaves none).
-    2. Workday and SuccessFactors, whose forms sit behind a candidate sign-in
-       and were never seen. The wizard rule — a Workday step with no file
-       input is still the application, by its `/apply` address — is
-       reasoned.
+    2. Workday, whose form sits behind a candidate sign-in and was never
+       seen. The wizard rule — a Workday step with no file input is still the
+       application, by its `/apply` address — is reasoned. SuccessFactors WAS
+       read, signed in (the gotcha above): the rule finds its form and
+       submit, and a real submit through the extension is still to come.
     3. The receipt handoff to the board's tab (needs host permission for the
        board; LinkedIn has it).
   - **What to read on the next external apply, in the popup:**

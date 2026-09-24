@@ -50,26 +50,41 @@
   const APPLY_PATH = /(^|\/)(apply|application)(\/|$)/i;
 
   /* The element holding the application's answerable controls, or null when
-   * this page has none.
-   *
-   * A page qualifies when it holds a file input (the resume) or its address is
-   * an apply flow, and never when the controls share a container with a
-   * password field — that is a candidate sign-in, and its username is not an
-   * answer. Where the file input sits in a <form> free of passwords, that form
-   * is the root (Lever, Greenhouse, Workable). Otherwise it is the nearest
-   * container of every VISIBLE answerable control on the page (Ashby's
-   * `ashby-job-posting-right-pane`: all 21 visible controls). */
+   * this page has none. Never a container that also holds a password field:
+   * that is a candidate sign-in, and its username is not an answer. In order:
+   *  1. the <form> the resume's file input sits in (Lever, Greenhouse,
+   *     Workable);
+   *  2. a <form> with the fields of an application and a control inside it
+   *     that says it sends one (SuccessFactors, whose address cannot be
+   *     trusted — see below);
+   *  3. on a page with a file input or an apply-flow address, the nearest
+   *     container of every VISIBLE answerable control (Ashby's
+   *     `ashby-job-posting-right-pane`: all 21 visible controls; a Workday
+   *     wizard step). */
   function applicationRoot(doc, loc) {
     const all = controlsIn(doc);
     if (all.length < 2) return null;
     const files = all.filter(isFile);
-    const applyFlow = APPLY_PATH.test(loc.pathname || "") ||
-      /career_ns=job_application/i.test(loc.search || "");
-    if (!files.length && !applyFlow) return null;
     for (const f of files) {
       const form = f.closest("form");
       if (form && !hasPassword(form)) return form;
     }
+    // A form that SAYS it sends an application, with the fields of one. The
+    // SuccessFactors form, read live 24 Sep 2026 (form#careerform: 59 fields,
+    // no file input — its resume is an attachment widget — and "Apply" as a
+    // <span role=button>), sits at an address that drops career_ns after any
+    // postback (a Save, an upload, the register step), and a real application
+    // was missed exactly there. Five fields at least, so a job-alert or
+    // sign-up form (one to three, measured on the four other vendors) is not
+    // taken for one.
+    for (const b of doc.querySelectorAll("button, input, [role='button']")) {
+      if (!submitWorded(b)) continue;
+      const form = b.closest("form");
+      if (form && !hasPassword(form) && controlsIn(form).length >= MIN_FORM_FIELDS) return form;
+    }
+    const applyFlow = APPLY_PATH.test(loc.pathname || "") ||
+      /career_ns=job_application/i.test(loc.search || "");
+    if (!files.length && !applyFlow) return null;
     // The controls a person can SEE decide the container. Measured live on
     // Ashby: 21 controls sit in its form pane and the 22nd is reCAPTCHA's
     // hidden response field, portalled to <body> — counting it made the whole
@@ -93,7 +108,11 @@
   const label = (el) => (el.textContent || el.value || "")
     .replace(INVISIBLE, "").replace(/\s+/g, " ").trim();
 
-  function isSubmitControl(el, doc, loc) {
+  const MIN_FORM_FIELDS = 5;
+
+  // A control that says it sends an application — whether or not it is inside
+  // one. isSubmitControl() adds the "inside the application" half.
+  function submitWorded(el) {
     if (!el || !el.tagName) return false;
     const type = (el.getAttribute("type") || "").toLowerCase();
     const buttonish = el.tagName === "BUTTON" ||
@@ -101,9 +120,26 @@
       el.getAttribute("role") === "button";
     if (!buttonish) return false;
     const hooked = SUBMIT_HOOKS.some((s) => el.matches && el.matches(s));
-    if (!hooked && !SUBMIT_WORDS.test(label(el))) return false;
+    return hooked || SUBMIT_WORDS.test(label(el));
+  }
+
+  function isSubmitControl(el, doc, loc) {
+    if (!submitWorded(el)) return false;
     const root = applicationRoot(doc, loc);
     return !!root && inside(el, root);
+  }
+
+  /* Why a submit-worded control was NOT taken for the application's submit,
+   * or null when it was. The failing branch's own diagnostic: on 24 Sep 2026
+   * a real SuccessFactors application went unrecorded and left nothing in
+   * any buffer — the script never ran on its address, and had it run, a
+   * rejected submit would have been just as silent. Only browser history
+   * could reconstruct it. */
+  function whyNotSubmit(el, doc, loc) {
+    if (!submitWorded(el)) return null;
+    const root = applicationRoot(doc, loc);
+    if (!root) return "no application form found on this page";
+    return inside(el, root) ? null : "the button is outside the application form";
   }
 
   const adapter = {
@@ -135,11 +171,39 @@
     isCompletion(el) {
       return isSubmitControl(el, document, location);
     },
-    // Pure forms of the two rules, for tests/test_extension.js.
+    // Why a submit-worded control was turned down, or null (the popup's
+    // near-miss line, below).
+    nearMiss(el) {
+      return whyNotSubmit(el, document, location);
+    },
+    // Pure forms of the rules, for tests/test_extension.js.
     applicationRoot,
     isSubmitControl,
   };
   window.__trackerAdapter = adapter;
+
+  // A press on something that says "Apply"/"Submit" which the rule turned
+  // down goes into the popup's failure list with the reason — so the next
+  // missed application explains itself. The page's own address only, never
+  // its query: a candidate portal's query carries session tokens.
+  let lastMissAt = 0;
+  if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id) {
+    document.addEventListener("click", (ev) => {
+      if (Date.now() - lastMissAt < 3000) return;
+      const path = ev.composedPath ? ev.composedPath() : [ev.target];
+      const el = path.find((x) => x && x.tagName && submitWorded(x));
+      const reason = el && whyNotSubmit(el, document, location);
+      if (!reason) return;
+      lastMissAt = Date.now();
+      try {
+        chrome.runtime.sendMessage({
+          type: "tracker-capture-failure",
+          detail: { platform: "other", at: Date.now(), url: location.origin + location.pathname,
+                    error: `"${label(el).slice(0, 40)}" was not captured: ${reason}` },
+        }).catch(() => {});
+      } catch (e) { /* context gone */ }
+    }, true);
+  }
 
   /* Remember the job while its listing is on screen. Apply pages drop the
    * JobPosting the listing published (Lever, Workable, Personio), so without

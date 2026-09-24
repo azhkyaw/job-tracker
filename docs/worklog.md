@@ -725,3 +725,20 @@ the key to each real case.
    run on 11 ATS host patterns, SuccessFactors limited to `/career*`.
    Extension 0.12.0. Unverified: LinkedIn setting `openerTabId`, a real
    submit, and Workday and SuccessFactors behind their sign-ins.
+27. **The first real SuccessFactors apply was missed** (24 Sep 2026).
+   Reported as "it didn't trigger". Nothing had reached the tracker, and the
+   extension's buffers held nothing about the apply, because no content
+   script had run. Chrome's History database (paths and parameter names
+   only) showed the application form at `/portalcareer…`, outside phase B's
+   `/career*` pattern, and, after the register postback, at an address with
+   no `career_ns`. `Secure Preferences` proved 0.12.0 had been loaded.
+   (While checking, the one record the popup had made that evening was
+   missing; the author had deleted it.) With permission, the signed-in form
+   was read in the author's own browser, read-only: `form#careerform`, 59
+   fields in collapsed sections, no file input, and "Apply" as a `<span
+   role=button>`. Fixed: the `/portalcareer*` pattern; a root rule for a
+   form of 5+ fields that holds a submit-worded control; and the missed
+   submit now records why (`nearMiss`). Re-run in the live form, one root
+   and only "Apply" of 74 buttons, at both addresses. Extension 0.12.1.
+   The form page names no company and suffixes the title with its
+   requisition number; phase C's listing opt-in is what supplies both.

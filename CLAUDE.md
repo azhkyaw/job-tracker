@@ -685,8 +685,11 @@ The dated register behind each item, tasks 1-23 with their measurements, is
   pages; NOT yet run live through the extension — the popup's injection, a
   real ATS submit, and the opener link all wait on the next real external
   apply (reload the extension first; `.claude/rules/extension.md` says what
-  to read). Workday and SuccessFactors forms sit behind a candidate sign-in
-  and are unverified. Phase C (per-site opt-in for employer domains) is next.
+  to read). Workday's form sits behind a candidate sign-in and is
+  unverified. SuccessFactors' was read signed in after the first real apply
+  there was missed (worklog task 27, fixed in 0.12.1). A capture from that
+  form alone lacks the company and the JD, which only the listing has. Phase
+  C (per-site opt-in for employer domains) is next, and supplies both.
 - **Release blockers:** LICENSE (Apache-2.0 recommended), split the extension
   into its own repo, decide whether CLAUDE.md ships; `audit_names.py --history`
   is the pre-publish check. (task 3)
