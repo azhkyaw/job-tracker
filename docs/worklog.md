@@ -582,3 +582,18 @@ the key to each real case.
    checks in test_web. Nothing was filed on the author's behalf: the 15
    wait on /follow-ups for their clicks. Detail: `.claude/rules/web-ui.md`
    rule 9c.
+20. **A "saved" tag on an application that was sent** (24 Sep 2026).
+   Problem 5 of the audit, framed there as "should applying move origin
+   saved -> applied?" Measured first, and the record's history said
+   otherwise: the confirmation email (12:33) predates the capture (12:34),
+   so it was never saved. The job was APPLIED to, the extension missed the
+   capture, and the popup's only button is "Capture this job as
+   interested", so recording it through the extension meant filing it as
+   saved and marking it applied by hand. The list's tag claims "never
+   applied to" but tested `origin == 'saved'`; it now tests that too, and
+   no applied event. Invariant #9 is untouched (origin is still never
+   derived), and the author chose to correct this one record's
+   demonstrably false origin by hand, snapshot first
+   (`job-tracker-snapshots/2026-09-24-saved-origin.json`): 257 applied, 24
+   inbound, 0 saved. Not built, offered: a popup button to capture a job as
+   applied. Suites: all eight green; the tag had no test before.

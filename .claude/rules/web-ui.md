@@ -307,7 +307,11 @@ is a private artifact, linked from the memory file
 17. **What recruiters started is its own page** (24 Sep 2026): `/inbound`
     holds every `origin = 'inbound'` record in every status, `/` everything
     the user started (`applied`, and the odd `saved` capture, which now wears
-    a grey tag where the origin tabs used to separate it). The two partition
+    a grey tag where the origin tabs used to separate it — only while nothing
+    was sent: the tag keyed on origin alone until 24 Sep 2026, so a job
+    captured as interested and then applied to, confirmed and rejected still
+    read "saved". Origin is how a record STARTED; a tag that claims what
+    happened must test what happened). The two partition
     the table by ONE predicate in `web._list`, and `_list_path()` is the same
     rule read backwards for the delete redirects. **Membership is by origin,
     never status**: origin is immutable (invariant #9), so a row never

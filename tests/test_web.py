@@ -807,6 +807,36 @@ check("an employer-site apply is labelled employer site",
 unset_row = row_for(unset_app, "Unspecified Apply Role")
 check("an unrecorded apply is labelled NEITHER — unknown is not a no",
       "on-platform" not in unset_row and "employer site" not in unset_row, unset_row)
+
+print("list: the saved tag says nothing was sent, so it tests exactly that")
+# It tested the record's ORIGIN until 24 Sep 2026, and a job captured as
+# interested and then applied to, confirmed and rejected wore "saved" for a
+# month. Origin is how a record started; the tag claims what has happened.
+with db.connect() as conn, conn.transaction():
+    _saved_ids = []
+    for title, sent in (("Kept For Later", False), ("Applied After Saving", True)):
+        job = conn.execute("INSERT INTO jobs (user_id, company_norm, title_canonical) "
+                           "VALUES (%s, 'savedco', %s) RETURNING id", (user_id, title)).fetchone()["id"]
+        a_id = conn.execute("INSERT INTO applications (user_id, job_id, origin) "
+                            "VALUES (%s, %s, 'saved') RETURNING id", (user_id, job)).fetchone()["id"]
+        conn.execute("INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+                     "VALUES (%s, %s, 'interested', 'extension', now() - interval '3 days', '{}')",
+                     (user_id, a_id))
+        if sent:
+            conn.execute("INSERT INTO events (user_id, application_id, type, source, occurred_at, "
+                         "payload) VALUES (%s, %s, 'applied', 'manual', now() - interval '2 days', '{}')",
+                         (user_id, a_id))
+        _saved_ids.append((a_id, job))
+r = client.get("/")
+check("a saved capture with nothing sent wears the tag",
+      '<span class="tag">saved</span>' in row_for(_saved_ids[0][0], "Kept For Later"))
+check("once an application is sent, it does not",
+      '<span class="tag">saved</span>' not in row_for(_saved_ids[1][0], "Applied After Saving"))
+with db.connect() as conn, conn.transaction():
+    for a_id, job in _saved_ids:     # out of the way of every later count
+        conn.execute("DELETE FROM events WHERE application_id = %s", (a_id,))
+        conn.execute("DELETE FROM applications WHERE id = %s", (a_id,))
+        conn.execute("DELETE FROM jobs WHERE id = %s", (job,))
 check("the flag is grey, not a new hue (UI rule 1 reserves chroma for the wait)",
       # A .tag is grey by construction — it takes no --c token at all, unlike
       # a .badge, which is the status word and may.

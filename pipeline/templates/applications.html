@@ -201,8 +201,12 @@
         {#- Captured but never applied to. Grey like the tags below: a fact
             about the submission (there wasn't one), not about any wait. The
             `inbound` tag that stood here left with the page split — every
-            row on /inbound is one, and no row on / can be. #}
-        {%- if r.origin == 'saved' %}<span class="tag">saved</span>{% endif %}
+            row on /inbound is one, and no row on / can be.
+            Tested on the fact it claims — no applied event — and not on
+            origin alone, which records how the record STARTED and never
+            changes (invariant #9): until 24 Sep 2026 a job saved and then
+            applied to, confirmed and rejected still read "saved". #}
+        {%- if r.origin == 'saved' and r.applied_at is none %}<span class="tag">saved</span>{% endif %}
         {# How you applied, from the applied event's payload. Three states and
            they stay three: `is sameas true/false`, never truthiness, because
            NULL means "never recorded" and rendering that as "on-platform"

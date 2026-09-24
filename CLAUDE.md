@@ -117,7 +117,7 @@ that can be Read directly at any time:
   `prompts/**`: thinking/effort measurements, model versioning, the outage story
 - `.claude/rules/database.md` — `migrations/**`, `db.py`, scripts: the
   four-places rule, CHECK names, gapped precedence, Neon pooler, view ordering
-- `docs/worklog.md` — the dated task register (tasks 1-19 with their
+- `docs/worklog.md` — the dated task register (tasks 1-20 with their
   measurements); what is still open is summarised under "Open work" below
 
 A rule file is tracked text, so the real-names rule (Commands) applies to it,
@@ -616,7 +616,7 @@ Detail lives with each family's rule file; this is the index.
 
 ## Open work (as of 24 Sep 2026)
 
-The dated register behind each item, tasks 1-19 with their measurements, is
+The dated register behind each item, tasks 1-20 with their measurements, is
 `docs/worklog.md`; read the matching entry before acting on one.
 
 - **Follow-up drafting** on an age-capped queue: cap `/follow-ups` near 21
