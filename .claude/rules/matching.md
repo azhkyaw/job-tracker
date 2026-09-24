@@ -154,6 +154,20 @@ invariants that govern this code (#3, #4, #9) are still in CLAUDE.md.
   the matcher was not changed for it — if a second ATS mail does the same,
   the general fix is to strip a trailing `(…id…)` before rule 1's equality,
   not to add a sender to a list.
+- **LinkedIn's confirmation email can name a job by a title its posting does
+  not show** (24 Sep 2026 email audit). Of 236 confirmations, two stated a
+  title unlike the record they were filed on — "AI Fullstack Engineer" for
+  a record reading "Fullstack Software Engineer", "Senior AI/ML Engineer"
+  for "Data Scientist – Platform AI Squad" — each within a minute of its
+  capture, which reads exactly like the stale-pane capture bug
+  (`.claude/rules/extension.md`). It was not: each stored job id's own page
+  said "Application submitted" (one also "Application viewed", matching a
+  viewed email already on the record), and one posting was marked
+  "Reposted". So the email's title is LinkedIn's name for the requisition,
+  not proof of what was captured. The fact that settles which job an
+  application is for is the job page's application status for the stored
+  id; check it before editing a record on a title mismatch. The
+  company-in-subject check had no such false positive (227 of 227).
 - `emails.match_score` stores the best candidate score even for `pending`
   rows — that's the tuning dataset. **`NULL` means something different and
   more specific: ZERO candidates were found, not a low-confidence miss.** That

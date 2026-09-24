@@ -619,3 +619,27 @@ the key to each real case.
    (it fills the JD, queues extraction and adds no event to an applied
    record). Snapshots for every repair in `job-tracker-snapshots/`. Suites:
    all eight green, 6 new checks.
+22. **Every email since 16 Jul 2026, reconciled** (24 Sep 2026). Asked to
+   make sure nothing was missed and everything was filed right. Read-only
+   first: the mailbox's headers through the app's own IMAP provider
+   (All Mail, Spam and Trash selected read-only, `BODY.PEEK` headers — no
+   bodies, nothing marked read) against the `emails` table. 1,055 messages
+   since 16 Jul; every one up to 01:45 that day was stored, none stored had
+   vanished; the only 11 missing had arrived since, because sync had not
+   run — `sync` + `work --once` filed them. Spam held one marketing mail.
+   LinkedIn's "your application was sent" mail only starts reaching this
+   mailbox on 23 Jul, so the 20 on-platform applications of 16-22 Jul never
+   had one to file. Filing: every email processed, every filed email's
+   events on exactly its own application; the platform subject templates
+   ("sent to X", "viewed by X", "Thanks for applying to X") agreed with the
+   filed record on 227 of 227; no event before its application; nothing
+   about an application wrongly set aside (every portal mail — account
+   verifications, "complete your application" — belongs to a recorded
+   application or to one never submitted). One misfile, the known 23 Sep
+   follow-up, re-filed through `refile_email` (snapshot first). Two title
+   mismatches looked like the stale-pane capture bug and were NOT: each
+   job's own page read "Application submitted" for the stored job id —
+   `.claude/rules/matching.md` has the lesson. The author's calls: a 16 Jul
+   acknowledgement hand-linked to a differently named record is right as
+   filed; two confirmations the margin held back (one studio's repeated
+   title) and a sent reply wait in triage for them.
