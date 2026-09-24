@@ -21,6 +21,8 @@ question_norm itself.
 from __future__ import annotations
 
 import re
+import unicodedata
+from collections import defaultdict
 
 # Caps applied here, at the boundary, rather than rejecting the capture: an
 # over-long answer is a formatting surprise, not a reason to lose the whole
@@ -31,7 +33,14 @@ MAX_QUESTION = 300
 MAX_ANSWER = 4000
 MAX_ITEMS = 60
 
-_NOISE = re.compile(r"[^a-z0-9]+")
+# A run of # or + glued to the end of a WORD is part of a name — C#, F#, C++,
+# Notepad++, CompTIA A+ — and is the only thing telling C# from C++ from C.
+# Spelled rather than kept so the key's alphabet stays letters, digits and
+# spaces (the extension joins its store key with '#'), and so "C#" and a form
+# that writes "C Sharp" key alike. Only after a letter: in "5+ years" or
+# "# of years" the symbol is a quantity marker and stays a separator, as before.
+_NAME_SYMBOLS = re.compile(r"[#+]+")
+_SPOKEN = {"#": " sharp ", "+": " plus "}
 # Trailing required-markers the platforms append to the visible label; they're
 # chrome, not part of the question, and they come and go between layouts.
 _REQUIRED = re.compile(r"\s*(\*|\(required\)|required)\s*$", re.I)
@@ -110,6 +119,13 @@ def resume_file(items) -> str | None:
     return found[:MAX_QUESTION] if found else None
 
 
+def _spell(m: re.Match) -> str:
+    at = m.start()
+    if at and unicodedata.category(m.string[at - 1]).startswith("L"):
+        return "".join(_SPOKEN[c] for c in m.group())
+    return m.group()
+
+
 def norm_question(q: str) -> str:
     """Grouping key for 'the same question, asked again'.
 
@@ -117,8 +133,27 @@ def norm_question(q: str) -> str:
     form and the next ("Years of experience with Python?" vs "Years of
     experience with Python*"), while the question is plainly the same one.
     Strip all of it and keep the words.
+
+    "The words" are letters, combining marks and digits in ANY script, by
+    Unicode category, after NFKC folds full-width and compatibility forms onto
+    their plain ones. Until 24 Sep 2026 the key kept `[a-z0-9]` and nothing
+    else, which is two bugs of one kind — it threw away characters that carry
+    the meaning. "…experience with C#?" and "…with C++?" both keyed as "…with
+    c", so /answers showed one question answered "10" and "1" (they were asked
+    on the SAME form, and stored as if it had asked one question twice); and a
+    question asked in Chinese about C keyed as the bare "c", every
+    non-ASCII character gone. Measured over the 888 stored answers that day:
+    6 keys change — those — one group splits, none merge.
+
+    `extension/shared/answers.js:normKey` mirrors this (minus the
+    required-marker strip) and `tests/question_norms.json` holds both to the
+    same cases: a key that is coarser there than here lets one wizard step's
+    answer overwrite another's before the capture is ever sent.
     """
-    return _NOISE.sub(" ", _REQUIRED.sub("", q or "").lower()).strip()
+    s = _REQUIRED.sub("", unicodedata.normalize("NFKC", q or "")).lower()
+    s = _NAME_SYMBOLS.sub(_spell, s)
+    return " ".join("".join(c if unicodedata.category(c)[0] in "LMN" else " "
+                            for c in s).split())
 
 
 def clean(items) -> list[dict]:
@@ -192,6 +227,57 @@ def store(conn, user_id, application_id, posting_id, items) -> int:
             "WHERE application_id = %s AND question_norm = %s AND occurrence >= %s",
             (application_id, norm, n))
     return len(rows)
+
+
+def renorm(conn, apply: bool = False) -> list[dict]:
+    """Re-derive every stored `question_norm` from its question text, for when
+    norm_question() changes. Returns the rows whose key or occurrence moves;
+    writes them only when `apply`.
+
+    The key is derived data and this module is the only thing allowed to derive
+    it (never SQL — see the module docstring), so a rule change leaves every
+    stored row keyed by the OLD rule and nothing else can re-key them: /answers
+    keeps grouping by the stale key, and store()'s upsert and merge_jobs'
+    duplicate check both miss the new one. The first change, 24 Sep 2026, split
+    one group ("C#" from "C++") and re-keyed one Chinese question.
+
+    Occurrence is renumbered only in the groups a moved row left or joined —
+    in form order (ordinal, then the old occurrence), which is what clean()
+    assigns — so a repeater the change did not touch keeps its numbering. The
+    write is two-phase through negative occurrences, so no intermediate state
+    can trip UNIQUE (application_id, question_norm, occurrence). Admin
+    connection: every user's rows, like the worker."""
+    rows = conn.execute(
+        "SELECT id, application_id, question, question_norm, occurrence, ordinal "
+        "FROM application_answers").fetchall()
+    new = {r["id"]: norm_question(r["question"])[:MAX_QUESTION] for r in rows}
+    moved = [r for r in rows if new[r["id"]] != r["question_norm"]]
+    touched = ({(r["application_id"], r["question_norm"]) for r in moved}
+               | {(r["application_id"], new[r["id"]]) for r in moved})
+    groups: dict[tuple, list] = defaultdict(list)
+    for r in rows:
+        if (r["application_id"], new[r["id"]]) in touched:
+            groups[(r["application_id"], new[r["id"]])].append(r)
+    plan = []
+    for members in groups.values():
+        members.sort(key=lambda r: (r["ordinal"] is None, r["ordinal"] or 0,
+                                    r["occurrence"], str(r["id"])))
+        for occurrence, r in enumerate(members):
+            if new[r["id"]] != r["question_norm"] or occurrence != r["occurrence"]:
+                plan.append({"id": r["id"], "application_id": r["application_id"],
+                             "question": r["question"],
+                             "old_norm": r["question_norm"], "new_norm": new[r["id"]],
+                             "old_occurrence": r["occurrence"], "new_occurrence": occurrence})
+    if apply and plan:
+        with conn.transaction():
+            for p in plan:
+                conn.execute(
+                    "UPDATE application_answers SET question_norm = %s, occurrence = %s "
+                    "WHERE id = %s", (p["new_norm"], -1 - p["new_occurrence"], p["id"]))
+            conn.execute(
+                "UPDATE application_answers SET occurrence = -1 - occurrence "
+                "WHERE id = ANY(%s)", ([p["id"] for p in plan],))
+    return plan
 
 
 # One row per distinct question the user has ever been asked, newest answer

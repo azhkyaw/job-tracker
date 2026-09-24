@@ -543,3 +543,22 @@ the key to each real case.
    199 annotated, 0 skipped, 0 left in the future. Detail and numbers:
    `.claude/rules/matching.md`. The other machine keeps the old rule until
    it pulls.
+18. **C# and C++ are two questions** (24 Sep 2026). Problem 3 of the same
+   day's data audit: the answer key kept `[a-z0-9]` only, on the server and
+   in the extension alike, so both keyed as "…with c". Measured the
+   candidate rule over all 888 stored answers before writing it: 6 keys
+   change, 1 group splits, none merge — and the sixth was a second case of
+   the same defect nobody had listed, a question in Chinese keyed as the
+   bare `c`. So the rule became general (any script's letters, marks and
+   digits, NFKC, a letter-glued `#`/`+` spelled) rather than a `#`/`+`
+   exception. Validated the new extension test against the old key first:
+   with the two questions on different wizard steps, the old key LOSES the
+   first answer before capture — a worse bug than the one reported, which
+   the real form escaped by asking both on one step. Built `answers.renorm()`
+   and `cli renorm-answers` for the stored rows, since the key may only be
+   derived in Python and every future change to it strands rows the same
+   way; dry-run, snapshot (`job-tracker-snapshots/2026-09-24-answer-keys.json`),
+   applied: 6 re-keyed, a second run finds 0, 888 rows, no occurrence gaps.
+   Suites: all eight green; `tests/question_norms.json` is read by both the
+   Python and the Node suite. Extension 0.10.1 — reload it and refresh open
+   tabs. Detail: `.claude/rules/extension.md`.

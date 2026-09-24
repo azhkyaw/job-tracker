@@ -91,7 +91,17 @@
     stats = null;
   }
 
-  const normKey = (q) => q.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  // pipeline/answers.py:norm_question, character for character (it also strips
+  // a trailing required-marker; this key being FINER than the server's is
+  // harmless). Letters, marks and digits in any script are kept, and a # or +
+  // run glued to a letter is spelled, so C# / C++ / C stay three questions.
+  // Coarser is NOT harmless: until 24 Sep 2026 this kept [a-z0-9] only, and a
+  // "C#" question on one wizard step and a "C++" one on the next shared the
+  // key "…with c#0" — the later sweep overwrote the earlier answer before the
+  // capture was sent. tests/question_norms.json holds both sides to one list.
+  const normKey = (q) => q.normalize("NFKC").toLowerCase()
+    .replace(/(?<=\p{L})[#+]+/gu, (run) => run.replace(/#/g, " sharp ").replace(/\+/g, " plus "))
+    .replace(/[^\p{L}\p{M}\p{N}]+/gu, " ").trim();
 
   // occurrence is the field's index among same-labelled fields; see note 4.
   // Keyed rather than appended so a re-sweep of the SAME step overwrites in
@@ -592,6 +602,8 @@
    * clears — the next application starts empty rather than inheriting this
    * one's answers. */
   window.__trackerAnswers = {
+    // Exposed for tests/test_extension.js's parity check against the server.
+    normKey,
     // What the sweep saw on its way here, for the popup's diagnostic list.
     // Read before take() clears the store, or not at all.
     diagnostics() {

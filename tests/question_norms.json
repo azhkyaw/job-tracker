@@ -1,0 +1,22 @@
+{
+  "about": "One list, two implementations: pipeline/answers.py:norm_question (tests/test_captures.py) and extension/shared/answers.js:normKey (tests/test_extension.js) must both map each question to its key. No case carries a trailing required-marker, which only the server strips. Added 24 Sep 2026, when the C#/C++ merge showed the two could only drift apart silently.",
+  "cases": [
+    ["How many years of work experience do you have with C#?", "how many years of work experience do you have with c sharp"],
+    ["How many years of work experience do you have with C++?", "how many years of work experience do you have with c plus plus"],
+    ["How many years of work experience do you have with C?", "how many years of work experience do you have with c"],
+    ["Years of experience with C Sharp", "years of experience with c sharp"],
+    ["Years of experience with c#", "years of experience with c sharp"],
+    ["How many years of work experience do you have with C#/C++ programming?", "how many years of work experience do you have with c sharp c plus plus programming"],
+    ["Hands-on experience using Java, .NET Core (C#), or TypeScript?", "hands on experience using java net core c sharp or typescript"],
+    ["Years of experience with Node.js", "years of experience with node js"],
+    ["Do you have 5+ years of Python?", "do you have 5 years of python"],
+    ["Are you CompTIA A+ certified?", "are you comptia a plus certified"],
+    ["# of years managing a team", "of years managing a team"],
+    ["您有多少年的C 语言使用经验？", "您有多少年的c 语言使用经验"],
+    ["Ｃ＃ experience (years)", "c sharp experience years"],
+    ["Café–bar experience", "café bar experience"],
+    ["Do you speak हिन्दी?", "do you speak हिन्दी"],
+    ["snake_case_name", "snake case name"],
+    ["What is your notice period?", "what is your notice period"]
+  ]
+}

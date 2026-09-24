@@ -84,7 +84,9 @@ it: the resume picker is PROMOTED to `applications.resume_file` (migration
 - `pipeline/email_classifier.py` — `norm_company()` (invariant #4) and the
   per-stage model constants `CLASSIFY_MODEL` / `EXTRACT_MODEL` (invariant #5)
 - `pipeline/answers.py` — screening-answer normalisation and the ONLY write to
-  `application_answers` (invariant #11)
+  `application_answers` (invariant #11); `renorm()` re-keys stored rows when
+  `norm_question` changes, which `extension/shared/answers.js:normKey`
+  mirrors (`tests/question_norms.json` holds the two together)
 - `pipeline/salary.py` — parses the platform's displayed pay string (migration 011)
 - `pipeline/covers.py` — cover letters; `load_profile()` reads `users.resume_profile`
 - `pipeline/joburl.py` — paste-a-link job-id derivation for manual entry; mirrors
@@ -115,7 +117,7 @@ that can be Read directly at any time:
   `prompts/**`: thinking/effort measurements, model versioning, the outage story
 - `.claude/rules/database.md` — `migrations/**`, `db.py`, scripts: the
   four-places rule, CHECK names, gapped precedence, Neon pooler, view ordering
-- `docs/worklog.md` — the dated task register (tasks 1-17 with their
+- `docs/worklog.md` — the dated task register (tasks 1-18 with their
   measurements); what is still open is summarised under "Open work" below
 
 A rule file is tracked text, so the real-names rule (Commands) applies to it,
@@ -158,6 +160,8 @@ work" below stays a list of what is open, not a history of what was done.
   `backfill -m 12 [--email x]`, `sync` (the 15-min cron entry, exits non-zero
   if any account failed)
 - Backlog: `uv run python -m pipeline.cli scan` (enqueue JD extraction/embeddings)
+- Answer keys: `uv run python -m pipeline.cli renorm-answers [--apply]` after any
+  change to `norm_question` (dry run by default; `.claude/rules/extension.md`)
 - Account bootstrap/recovery: `uv run python -m pipeline.cli passwd <email>`
 - Requires Postgres running: `sudo service postgresql start` (WSL doesn't autostart)
 - **Native Windows (no WSL):** see `docs/windows-dev.md` — Docker Postgres
@@ -612,7 +616,7 @@ Detail lives with each family's rule file; this is the index.
 
 ## Open work (as of 24 Sep 2026)
 
-The dated register behind each item, tasks 1-17 with their measurements, is
+The dated register behind each item, tasks 1-18 with their measurements, is
 `docs/worklog.md`; read the matching entry before acting on one.
 
 - **Follow-up drafting** on an age-capped queue: cap `/follow-ups` near 21

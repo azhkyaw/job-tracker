@@ -277,6 +277,19 @@ check("occurrence counts per question, not across the form",
           {"question": "City", "answer": "JKT"}, {"question": "Industry", "answer": "Fin"},
           {"question": "City", "answer": "KL"}])] == [0, 0, 1, 1, 2])
 
+# 24 Sep 2026: the key kept [a-z0-9] only, so C# and C++ keyed alike and a
+# question in Chinese keyed as its one Latin letter. The same list is checked
+# against the extension's normKey in tests/test_extension.js.
+import json as _json                                                  # noqa: E402
+_NORMS = _json.loads((Path(__file__).resolve().parent / "question_norms.json")
+                     .read_text(encoding="utf-8"))["cases"]
+for q, want in _NORMS:
+    # ascii(), not repr(): the list holds CJK and Devanagari, and a Windows
+    # console's cp1252 cannot print them (CLAUDE.md gotcha).
+    check(f"norm {ascii(q)}", norm_question(q) == want, ascii(norm_question(q)))
+check("C#, C++ and C are three questions",
+      len({norm_question(f"Years with {x}?") for x in ("C#", "C++", "C")}) == 3)
+
 # Migration 014's resume promotion, on both Easy Apply layouts. The classic
 # modal labelled the picker's radios "Deselect resume <file>"; the rebuilt one
 # (Aug 2026, measured live 2 Sep) names each card by its bare filename under a
@@ -423,6 +436,56 @@ with db.connect() as conn:
           == [("Enterprise SaaS", 0), ("Fintech", 1)], rows)
     check("no trace of the dropped entry",
           not any(r_["answer"] == "Kuala Lumpur" for r_ in rows), rows)
+
+print("C# and C++ on one form are two questions, and renorm re-keys old rows")
+# The real shape (a 3 Aug 2026 form): C++ asked just before C#, stored under one
+# key as occurrence 0 and 1 — a repeater that never was — beside a genuine
+# two-entry repeater the re-key must leave alone.
+LANGS = [{"question": "How many years of work experience do you have with C++?",
+          "answer": "1", "type": "number"},
+         {"question": "How many years of work experience do you have with C#?",
+          "answer": "10", "type": "number"},
+         {"question": "City", "answer": "Singapore", "type": "text"},
+         {"question": "City", "answer": "Jakarta", "type": "text"}]
+r_cs = post({"platform": "linkedin", "platform_job_id": "LI-langs-1",
+             "company": "Fourth Coffee", "title": "Software Engineer",
+             "trigger": "apply", "answers": LANGS})
+cs_app = r_cs.json()["application_id"]
+_by_lang = lambda rs: {r_["answer"]: (r_["question_norm"], r_["occurrence"]) for r_ in rs}  # noqa: E731
+with db.connect() as conn:
+    rows = conn.execute("SELECT question_norm, occurrence, answer FROM application_answers "
+                        "WHERE application_id = %s::uuid", (cs_app,)).fetchall()
+    got = _by_lang(rows)
+    check("each language keeps its own question, both at occurrence 0",
+          got["1"] == ("how many years of work experience do you have with c plus plus", 0)
+          and got["10"] == ("how many years of work experience do you have with c sharp", 0), got)
+    # Put the two back as the old rule stored them, then let renorm undo it.
+    conn.execute("UPDATE application_answers SET question_norm = "
+                 "'how many years of work experience do you have with c', "
+                 "occurrence = CASE answer WHEN '1' THEN 0 ELSE 1 END "
+                 "WHERE application_id = %s::uuid AND answer IN ('1', '10')", (cs_app,))
+from pipeline import answers as _answers                              # noqa: E402
+with db.connect() as conn:
+    plan = _answers.renorm(conn)
+    _stem = "how many years of work experience do you have with "
+    check("dry run plans exactly the two stale rows",
+          sorted((p["old_occurrence"], p["new_norm"], p["new_occurrence"]) for p in plan)
+          == [(0, _stem + "c plus plus", 0), (1, _stem + "c sharp", 0)], plan)
+    check("...and writes nothing", conn.execute(
+        "SELECT count(*) AS n FROM application_answers WHERE application_id = %s::uuid "
+        "AND question_norm LIKE '%%with c'", (cs_app,)).fetchone()["n"] == 2)
+with db.connect() as conn:
+    _answers.renorm(conn, apply=True)
+with db.connect() as conn:
+    rows = conn.execute("SELECT question_norm, occurrence, answer FROM application_answers "
+                        "WHERE application_id = %s::uuid", (cs_app,)).fetchall()
+    check("applied: C++ and C# re-keyed apart, C# renumbered to 0",
+          _by_lang(rows)["1"][1] == 0 and _by_lang(rows)["10"] ==
+          ("how many years of work experience do you have with c sharp", 0), rows)
+    check("the untouched repeater keeps its numbering",
+          sorted((r_["answer"], r_["occurrence"]) for r_ in rows
+                 if r_["question_norm"] == "city") == [("Jakarta", 1), ("Singapore", 0)], rows)
+    check("a second run finds nothing to do", _answers.renorm(conn) == [])
 
 print("a capture with no form answers is unchanged")
 r7 = post({"platform": "indeed", "platform_job_id": "IN-qa-none",

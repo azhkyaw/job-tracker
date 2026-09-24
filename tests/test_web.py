@@ -1861,6 +1861,9 @@ check("analytics counts the buckets in the same fixed order, each linking to its
       and tbl.index("after a round") < tbl.index("visa") < tbl.index("without a round"), tbl)
 
 print("form answers: detail page + answer bank")
+# The real key function, never a copy of it: a hand-rolled key here is a row
+# `answers.renorm()` would find stale.
+from pipeline.answers import norm_question                           # noqa: E402
 with db.connect() as conn, conn.transaction():
     other_app = conn.execute(
         "SELECT a.id FROM applications a WHERE a.id <> %s LIMIT 1",
@@ -1877,8 +1880,7 @@ with db.connect() as conn, conn.transaction():
             "INSERT INTO application_answers (user_id, application_id, question, "
             "question_norm, answer, field_type, ordinal) VALUES (%s, %s, %s, %s, %s, "
             "'radio', 1)",
-            (user_id, app_id, extra[0],
-             extra[0].lower().replace("?", "").replace(" ", " "), extra[1]))
+            (user_id, app_id, extra[0], norm_question(extra[0]), extra[1]))
 
 r = client.get(f"/applications/{northwind_app}")
 check("detail page shows the form Q&A", r.status_code == 200

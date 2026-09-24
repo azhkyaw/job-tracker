@@ -148,6 +148,8 @@ python -m pipeline.cli serve            # web UI at http://127.0.0.1:8000
 */15 * * * *  cd ~/job-tracker && python -m pipeline.cli sync
 # plus one long-running worker:  python -m pipeline.cli work
 # after adding keys or backlog:  python -m pipeline.cli scan
+# after pulling a change to how screening questions are keyed:
+#                                python -m pipeline.cli renorm-answers [--apply]
 ```
 
 `sync` iterates every connected account, reports each one's provider kind

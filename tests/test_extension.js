@@ -432,11 +432,30 @@ function node(tag, attrs = {}, kids = []) {
  * adapter that hands that root back as the apply form. Returns take()'s
  * output: what the sweep would send with the capture. */
 function sweepOf(root) {
+  return sweepStepsOf([root]);
+}
+
+/* A WIZARD: each root is one step. Every step but the last is swept by a
+ * click (the capture-phase listener, as a "Next" press would), then the root
+ * is swapped for the next step's and take() sweeps the final one — so what
+ * earlier steps left in the store is exactly what survives to the capture. */
+function sweepStepsOf(steps) {
+  const sandbox = loadAnswers(steps[0]);
+  for (let i = 1; i < steps.length; i++) {
+    for (const fn of sandbox._listeners.click || []) fn({});
+    sandbox._setRoot(steps[i]);
+  }
+  return sandbox.window.__trackerAnswers.take();
+}
+
+function loadAnswers(first) {
+  let root = first;
+  const listeners = {};
   const body = node("body", {}, [root]);
   const doc = {
     nodeType: 9,
     body,
-    addEventListener() {},
+    addEventListener(type, fn) { (listeners[type] = listeners[type] || []).push(fn); },
     querySelector: (s) => body.querySelector(s),
     querySelectorAll: (s) => body.querySelectorAll(s),
     getElementById: (id) => body.querySelectorAll("*").find((n) => n.getAttribute("id") === id) || null,
@@ -458,7 +477,14 @@ function sweepOf(root) {
   sandbox.window.top = sandbox.window;
   vm.createContext(sandbox);
   vm.runInContext(ANSWERS_SRC, sandbox);
-  return sandbox.window.__trackerAnswers.take();
+  sandbox._listeners = listeners;
+  sandbox._setRoot = (next) => {
+    body.childNodes = [next];
+    next.parentElement = body;
+    stamp(next);
+    root = next;
+  };
+  return sandbox;
 }
 
 console.log("\nanswers.js sweep: the rebuilt Easy Apply's control shapes (measured live 2 Sep 2026)");
@@ -582,6 +608,33 @@ console.log("\nanswers.js sweep: the rebuilt Easy Apply's control shapes (measur
   ]);
   check("wrapper aria-label as the option: question falls back to the block before the group",
         sweepOf(proper), [{ question: "Do you have a valid work pass?", answer: "Yes", type: "radio" }]);
+}
+
+console.log("\nanswers.js normKey: one rule with pipeline/answers.py:norm_question");
+{
+  // The same list tests/test_captures.py holds the server to. Until 24 Sep 2026
+  // both kept [a-z0-9] only: "C#" and "C++" keyed alike, and a question in
+  // Chinese keyed as its one Latin letter.
+  const { cases } = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "question_norms.json"), "utf8"));
+  const { normKey } = loadAnswers(node("div")).window.__trackerAnswers;
+  for (const [q, want] of cases) check(`normKey ${JSON.stringify(q)}`, normKey(q), want);
+}
+{
+  // Why the extension's key matters although the server re-derives its own:
+  // the store is keyed norm#occurrence, and the occurrence counter restarts on
+  // every sweep. With C++ on one wizard step and C# on the next, the old key
+  // gave both "…with c#0", and the second step's sweep overwrote the first's
+  // answer before the capture was ever sent.
+  const ask = (q, id, v) => node("div", {}, [
+    node("label", { for: id }, [q]),
+    node("input", { type: "number", id, value: v }),
+  ]);
+  check("C++ on one step and C# on the next both reach the capture",
+        sweepStepsOf([ask("How many years of work experience do you have with C++?", "cpp", "1"),
+                      ask("How many years of work experience do you have with C#?", "cs", "10")]),
+        [{ question: "How many years of work experience do you have with C++?", answer: "1", type: "number" },
+         { question: "How many years of work experience do you have with C#?", answer: "10", type: "number" }]);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

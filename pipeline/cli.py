@@ -10,6 +10,9 @@
   sync               incremental pull — this is the 15-minute cron entry
   scan               enqueue JD extraction/embedding for the backlog\n  work [--once]      run the queue worker (loop, or drain-and-exit)\n  serve              start the web UI (default http://127.0.0.1:8000)
   status             quick counts for a terminal sanity check
+  renorm-answers [--apply]
+                     re-key stored screening answers after norm_question()
+                     changes (dry run unless --apply)
 """
 
 from __future__ import annotations
@@ -186,6 +189,22 @@ def cmd_status(_args) -> None:
             print(f"  last failure: {q['reason']}")
 
 
+def cmd_renorm_answers(args) -> None:
+    import sys
+    from . import answers
+    # Questions come in any script, and a Windows console's cp1252 raises on
+    # them mid-report; replace what it cannot show rather than die.
+    sys.stdout.reconfigure(errors="replace")
+    with db.connect() as conn:
+        plan = answers.renorm(conn, apply=args.apply)
+    for p in plan:
+        print(f"  {str(p['application_id'])[:8]}  {p['question'][:70]!r}\n"
+              f"      {p['old_norm']!r} #{p['old_occurrence']}\n"
+              f"   -> {p['new_norm']!r} #{p['new_occurrence']}")
+    print(f"{len(plan)} answer row(s) "
+          + ("re-keyed" if args.apply else "to re-key (dry run; --apply writes)"))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="tracker")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -213,6 +232,9 @@ def main() -> None:
     p.add_argument("--port", type=int, default=8000)
     p.set_defaults(fn=cmd_serve)
     sub.add_parser("status").set_defaults(fn=cmd_status)
+    p = sub.add_parser("renorm-answers")
+    p.add_argument("--apply", action="store_true", help="write the re-keyed rows")
+    p.set_defaults(fn=cmd_renorm_answers)
     args = parser.parse_args()
     args.fn(args)
 

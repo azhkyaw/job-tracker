@@ -430,6 +430,36 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   after any extension edit, check this before anything else** — and remember
   that a stale tab shows `Extension context invalidated` in its console, which
   is the cheapest positive confirmation available.
+- **The question key threw away the characters that carried the meaning**
+  (24 Sep 2026, found by that day's data audit). `norm_question` and the
+  extension's `normKey` both kept `[a-z0-9]`, so "…experience with C#?" and
+  "…with C++?" keyed alike — asked on ONE real form (3 Aug), stored as
+  occurrence 0 and 1 of one key, i.e. a repeater that never was, and shown on
+  `/answers` as one question answered "1" and "10" — and a question asked in
+  Chinese keyed as the bare `c`. The rule now, identical on both sides: NFKC,
+  lowercase, a `#`/`+` run glued to a LETTER spelled (`c sharp`,
+  `c plus plus`; so "C Sharp" keys with "C#", while "5+ years" and "# of
+  years" are unchanged), then letters, combining marks and digits of any
+  script kept by Unicode category. Measured before it was written: of 888
+  stored answers, 6 keys change, 1 group splits, none merge. Spelled, not
+  kept, so the key's alphabet stays one the `norm#occurrence` store key and
+  any future URL can carry. **Two things the obvious fix would have missed.**
+  The extension's key is NOT cosmetic although the server re-derives its own:
+  the occurrence counter restarts every sweep, so two questions sharing a key
+  on DIFFERENT wizard steps collide at `…#0` and the later step's answer
+  overwrites the earlier one before the capture is sent — reproduced in
+  `tests/test_extension.js` (the old key keeps only the C# answer); the real
+  form had both on one step, which is why nothing was lost that time. And a
+  key rule change strands every stored row under the old key, which nothing
+  but Python may recompute, so `answers.renorm()` / `cli renorm-answers`
+  re-derives them — renumbering occurrence only in groups a row left or
+  joined, two-phase through negative values so UNIQUE never trips — and is
+  what any future change to the rule runs next. Applied to the dev DB the same
+  day (snapshot `job-tracker-snapshots/2026-09-24-answer-keys.json`). The two
+  implementations are held together by `tests/question_norms.json`, read by
+  both `test_captures.py` and `test_extension.js`; add a case there, not to
+  either suite alone. Extension 0.10.1. `tests/test_web.py` had a third,
+  hand-rolled copy of the rule in a fixture — now `norm_question` itself.
 - **`trim()` does not remove invisible characters, and platforms ship them
   inside button labels.** JobStreet's submit button reads
   `"⁠Submit application"` — a WORD JOINER glued to the front. It renders
@@ -767,7 +797,8 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   promoted card rather than the applied job, with no `stale_pane` recorded —
   that means the results card for `currentJobId` was not in the rendered list
   (scrolled off, or a different page), which the cross-check cannot reach.
-  Verify 0.10.0 is live (`chrome://extensions`) and the tab was opened after the
+  Verify 0.10.0 or later is live (`chrome://extensions`; 0.10.1 since 24 Sep
+  2026 adds only the `normKey` change) and the tab was opened after the
   reload before trusting any result.
 - **`ats` is never detected on a LinkedIn EXTERNAL apply whose control is a
   `<button>`** (verified: `.jobs-apply-button` is a BUTTON with no href on that
