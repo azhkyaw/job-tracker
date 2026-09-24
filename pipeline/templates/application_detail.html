@@ -45,6 +45,11 @@
     <li><span class="when">{{ e.occurred_at | dtt }}</span>
       <span class="what">
         <b{% if et in ('viewed', 'engaged', 'interview_invite', 'offer', 'rejected') %} style="--c:var(--{{ et }})"{% endif %}>{{ EVENT_LABELS.get(e.type, e.type) }}</b>
+        {#- The day the email named, when it is still ahead of the day it
+            arrived — the interview an invitation is for. The event itself
+            stays on the arrival day (matcher._event_time). #}
+        {%- set ahead = e | stated_ahead %}
+        {%- if ahead %}<small>for {{ ahead }}</small>{% endif %}
         {%- if 'external' in e.payload %}
         <small>{% if e.payload['external'] %}on the employer's website{% else %}on-platform (Easy Apply){% endif %}</small>
         {%- endif %}

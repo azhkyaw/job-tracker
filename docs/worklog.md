@@ -522,3 +522,24 @@ the key to each real case.
    employer's application, a hand-link slip made in triage three links in
    22 seconds; the repair kept the human's match and corrected only the
    event, so re-filing it from the detail page moves it cleanly.
+17. **An event happens when its email arrives** (24 Sep 2026). The open
+   `_event_time` bug of 2 Sep, picked up as problem 2 of the same day's data
+   audit. Measured first, read-only: 14 of 445 received-mail events sat off
+   their email's arrival, not the audit's 8 (that count took only offsets
+   over 3 days) — 10 invites 1-21 days ahead (3 events in the future, all on
+   one live interview thread), a rejection a month back on the apply day it
+   quoted, and 3
+   notes, two of them a misread "Applied on 29 Jul" (as 2 Jul, confirmed
+   against both bodies). No reading of a stated date survives all of them,
+   since nothing says which event it is FOR, so it went into the payload
+   (`stated_date`) and every event onto arrival. Replayed the matcher first,
+   because the same timestamp is its date signal: 2 of 14 decisions moved,
+   one each way, neither wrong. The page shows a stated date only when it is
+   ahead of arrival ("for 14 Oct 2026" on a live interview thread), which
+   the two misread digests would otherwise have contradicted. Suites: all
+   eight green; `test_integration` path 2 had pinned the old rule and now
+   pins the new one. Repair, dry-run first and snapshotted
+   (`job-tracker-snapshots/2026-09-24-stated-dates.json`): 14 events moved,
+   199 annotated, 0 skipped, 0 left in the future. Detail and numbers:
+   `.claude/rules/matching.md`. The other machine keeps the old rule until
+   it pulls.

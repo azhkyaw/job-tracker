@@ -7,7 +7,8 @@ and event writes. Covers the paths that matter:
   2. create      — confirmation from an unseen company creates job/application/posting/events
   3. pending     — non-confirmation with no candidate lands in triage, writes nothing
   3c. recruiter_outreach — never auto-matches (even same-company) or auto-creates
-  4. backoff     — a failing job retries with attempts+1 and a future run_after
+  3h. a date the email states rides in the payload; the event stays on arrival
+  4. backoff    — a failing job retries with attempts+1 and a future run_after
 
 Run:  TRACKER_DATABASE_URL=postgresql:///tracker python3 tests/test_integration.py
 """
@@ -40,6 +41,7 @@ FAKE_CLASSIFY = {
     "rebrand-confirmation": Classification(True, "confirmation", 0.93, "stub"),
     "tagline-confirmation": Classification(True, "confirmation", 0.93, "stub"),
     "stranger-invite": Classification(True, "interview_invite", 0.93, "stub"),
+    "alpine-invite": Classification(True, "interview_invite", 0.93, "stub"),
     # Mail the user SENT (emails.sent_by_user) — path 3g.
     "sent-reply": Classification(True, "sent_reply", 0.9, "stub"),
     "sent-follow-up": Classification(True, "sent_follow_up", 0.9, "stub"),
@@ -56,9 +58,13 @@ def _fake_extraction(**kw):
 
 
 FAKE_EXTRACT = {
+    # The rejection quotes the day the application went in — the seeded
+    # applied event's day. A real one did (7 Sep 2026: "...on 04/08/2026"),
+    # and while a stated date moved the event, it filed a month back on the
+    # apply day and sorted BEFORE the applied event it answers.
     "northwind-rejection": _fake_extraction(company="Northwind Labs Inc",
                                        role_title="Senior AI Engineer",
-                                       platform="linkedin"),
+                                       platform="linkedin", event_date="2026-07-10"),
     "acme-confirmation": _fake_extraction(company="Acme Pte. Ltd.",
                                           role_title="AI Platform Engineer",
                                           platform="ats", ats="greenhouse",
@@ -107,6 +113,12 @@ FAKE_EXTRACT = {
     "tagline-confirmation": _fake_extraction(company="Harbourline Consulting Group",
                                              role_title="Staff Platform Engineer",
                                              platform="linkedin"),
+    # An invitation naming the interview day, two weeks after it arrives —
+    # path 3h. The shape of ten real invites that filed on the interview day
+    # (24 Sep 2026), two of them in the future.
+    "alpine-invite": _fake_extraction(company="Alpine Ski House",
+                                      role_title="Platform Engineer",
+                                      platform="linkedin", event_date="2026-08-04"),
 }
 # The user's own messages in a thread about the seeded Proseware application.
 # The extractor reads the counterpart correctly off the quoted thread (verified
@@ -200,9 +212,16 @@ with db.connect() as conn:
     check("matched to seeded application", str(s1["matched_application_id"]) == str(app["id"]), s1)
     check("score above threshold", s1["match_score"] and s1["match_score"] >= 0.75, s1)
     ev = conn.execute(
-        "SELECT type, source_email_id FROM events WHERE application_id = %s "
+        "SELECT type, source_email_id, occurred_at, payload FROM events WHERE application_id = %s "
         "AND type = 'rejected'", (app["id"],)).fetchone()
     check("rejected event appended with provenance", ev and str(ev["source_email_id"]) == str(e1), ev)
+    check("...dated when it arrived, not the apply day it quotes", ev["occurred_at"] == NOW, ev)
+    check("...which it keeps as the stated date", ev["payload"].get("stated_date") == "2026-07-10", ev)
+    applied_at = conn.execute(
+        "SELECT occurred_at FROM events WHERE application_id = %s AND type = 'applied'",
+        (app["id"],)).fetchone()["occurred_at"]
+    check("...so it sorts AFTER the applied event it answers", ev["occurred_at"] > applied_at,
+          (ev["occurred_at"], applied_at))
     st = conn.execute("SELECT status FROM application_status WHERE application_id = %s",
                       (app["id"],)).fetchone()
     check("derived status is rejected", st["status"] == "rejected", st)
@@ -224,10 +243,18 @@ with db.connect() as conn:
     evs = {r["type"] for r in conn.execute(
         "SELECT type FROM events WHERE application_id = %s", (new_app["id"],)).fetchall()}
     check("applied + confirmation events written", {"applied", "confirmation"} <= evs, evs)
-    ev_date = conn.execute(
-        "SELECT occurred_at FROM events WHERE application_id = %s AND type = 'applied'",
-        (new_app["id"],)).fetchone()
-    check("stated event_date used, not received_at", ev_date["occurred_at"].day == 15, ev_date)
+    # Until 24 Sep 2026 this asserted the opposite: the stated date (15 Jul)
+    # won over arrival, for the fabricated start and the email's own event.
+    created = {r["type"]: r for r in conn.execute(
+        "SELECT type, occurred_at, payload FROM events WHERE application_id = %s",
+        (new_app["id"],)).fetchall()}
+    check("created record's events are dated when the email arrived, not the date it states",
+          created["applied"]["occurred_at"] == NOW and created["confirmation"]["occurred_at"] == NOW,
+          created)
+    check("the email's own event keeps the stated date",
+          created["confirmation"]["payload"].get("stated_date") == "2026-07-15", created)
+    check("...and the fabricated start does not claim it",
+          "stated_date" not in created["applied"]["payload"], created)
     contact = conn.execute(
         "SELECT name FROM contacts WHERE user_id = %s AND name = 'Jo Tan'", (user_id,)).fetchone()
     check("recruiter contact captured", contact is not None)
@@ -420,6 +447,9 @@ with db.connect() as conn:
           ev10["type"] == "note", ev10)
     check("...dated when it was SENT, not the interview day quoted in the thread",
           ev10["occurred_at"] == NOW, ev10)
+    check("...which it keeps as the stated date", conn.execute(
+        "SELECT payload FROM events WHERE source_email_id = %s", (e10,)
+    ).fetchone()["payload"].get("stated_date") == "2026-08-14")
     check("...and moves no status", pw_status() == "applied", pw_status())
 
     check("before following up, the application waits in the reminders queue",
@@ -479,6 +509,40 @@ with db.connect() as conn:
         conn.execute("ROLLBACK TO SAVEPOINT sent_type")
         check(f"{stored!r} is accepted by emails_classification_check", accepted)
     conn.commit()
+
+    print("path 3h: a date the email states is kept, never the event's time")
+    # 24 Sep 2026: ten received invites filed on the interview day they named,
+    # 1-21 days after they arrived — two in the future, where they stretched
+    # the trace axis past "today" and read as the thread's latest news.
+    as_job = conn.execute(
+        "INSERT INTO jobs (user_id, company_norm, title_canonical) "
+        "VALUES (%s, 'alpine ski house', 'Platform Engineer') RETURNING id", (user_id,)).fetchone()
+    conn.execute(
+        "INSERT INTO postings (user_id, job_id, platform, platform_job_id, captured_via) "
+        "VALUES (%s, %s, 'linkedin', 'LI-alpine-1', 'extension')", (user_id, as_job["id"]))
+    as_app = conn.execute(
+        "INSERT INTO applications (user_id, job_id) VALUES (%s, %s) RETURNING id",
+        (user_id, as_job["id"])).fetchone()
+    conn.execute(
+        "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+        "VALUES (%s, %s, 'applied', 'extension', %s, %s)",
+        (user_id, as_app["id"], NOW.replace(day=14), Json({})))
+    conn.commit()
+    e16 = seed_email(conn, user_id, "alpine-invite", sender="talent@alpineskihouse.example")
+    conn.commit()
+    drain(conn)
+    s16 = email_state(conn, e16)
+    check("the invitation auto-matches its application",
+          s16["triage_state"] == "auto_matched"
+          and str(s16["matched_application_id"]) == str(as_app["id"]), s16)
+    ev16 = conn.execute(
+        "SELECT occurred_at, payload FROM events WHERE source_email_id = %s", (e16,)).fetchone()
+    check("...dated when it arrived, not the interview day it names", ev16["occurred_at"] == NOW, ev16)
+    check("...which it keeps as the stated date",
+          ev16["payload"].get("stated_date") == "2026-08-04", ev16)
+    check("...so nothing on the timeline sits after the latest mail", conn.execute(
+        "SELECT max(occurred_at) AS m FROM events WHERE application_id = %s",
+        (as_app["id"],)).fetchone()["m"] == NOW)
 
     print("path 4: failure backoff")
     db.enqueue(conn, user_id, "classify_email",

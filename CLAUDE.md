@@ -115,7 +115,7 @@ that can be Read directly at any time:
   `prompts/**`: thinking/effort measurements, model versioning, the outage story
 - `.claude/rules/database.md` — `migrations/**`, `db.py`, scripts: the
   four-places rule, CHECK names, gapped precedence, Neon pooler, view ordering
-- `docs/worklog.md` — the dated task register (tasks 1-16 with their
+- `docs/worklog.md` — the dated task register (tasks 1-17 with their
   measurements); what is still open is summarised under "Open work" below
 
 A rule file is tracked text, so the real-names rule (Commands) applies to it,
@@ -612,22 +612,9 @@ Detail lives with each family's rule file; this is the index.
 
 ## Open work (as of 24 Sep 2026)
 
-The dated register behind each item, tasks 1-16 with their measurements, is
+The dated register behind each item, tasks 1-17 with their measurements, is
 `docs/worklog.md`; read the matching entry before acting on one.
 
-- **Bug, unfixed (2 Sep 2026):** `matcher._event_time` applies a stated
-  `event_date` to interview invites, so the event lands on the INTERVIEW day
-  rather than the day the invite arrived (inflates `avg_days_to_resp`,
-  stretches the trace axis past today). Mail the user SENT is exempt since
-  24 Sep (task 16); on received mail, 8 events sit more than 3 days off their
-  email's arrival that day — 5 invites pushed forward (2 into the future), 1
-  rejection and 2 notes pulled BACK. **The fix shape recorded here before was
-  wrong for rejections**: a 7 Sep rejection quotes the date the application
-  was submitted and so filed on the 4 Aug apply day, before the `applied`
-  event; and a LinkedIn digest's "Applied on 29 Jul" was extracted as 2 Jul,
-  before the search began. The general rule: an event happens when its email
-  arrives, and any stated date belongs in the payload. Detail:
-  `.claude/rules/matching.md`.
 - **Follow-up drafting** on an age-capped queue: cap `/follow-ups` near 21
   days (150 qualify on 24 Sep, 17 of them inside the cap), then build the
   draft next to the button. Four `follow_up_sent` are on record: one filed

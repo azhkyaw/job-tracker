@@ -246,25 +246,35 @@ def find_match(conn, user_id, extraction: Extraction, occurred_at: datetime) -> 
 
 # --------------------------------------------------------------------------- writes
 
-def _event_time(extraction: Extraction, email_row) -> datetime:
-    """§8: the email's stated event date wins over the received date — but
-    stated dates never carry a time, so borrow received_at's time-of-day
-    rather than defaulting to midnight, which otherwise collapses same-day
-    events to identical timestamps and loses their ordering.
+def _event_time(email_row) -> datetime:
+    """When an email's event happened: when the email arrived — or, for mail
+    the user sent, when they sent it; `received_at` holds either. Always.
 
-    Never for mail the user SENT: what they did happened when they sent it.
-    The extractor still finds a date in their message — usually the interview
-    day the thread is arranging, quoted under the reply — and applying it
-    filed a reply confirming a slot three weeks in the FUTURE (24 Sep 2026).
-    Indexed, not .get(): a caller that selected emails without the column
-    would otherwise treat every sent message as received, silently."""
-    received_at = email_row["received_at"]
-    if email_row["sent_by_user"]:
-        return received_at
-    if extraction.event_date:
-        stated = datetime.strptime(extraction.event_date, "%Y-%m-%d").date()
-        return datetime.combine(stated, received_at.timetz())
-    return received_at
+    A date the email STATES goes in the event's payload as `stated_date`
+    (_append_event), never into its time. Until 24 Sep 2026 a stated date won
+    (design doc §8), and the extractor's `event_date` is "a date FOR THE EVENT
+    it describes" (email_extract_v1 rule 4) — which for an interview invite is
+    the INTERVIEW day, for a rejection may be the day the application was
+    submitted, and for a LinkedIn "new activity" digest was a misread
+    "Applied on 29 Jul" (as 2 Jul). Measured on the real DB that day: 14 of
+    445 received-mail events sat off their email's arrival — ten invites
+    pushed 1-21 days ahead (two into the future, which stretches the trace
+    axis past "today" and inflates avg_days_to_resp), a rejection filed a
+    month back on the apply day, where it sorted BEFORE its own applied event,
+    and three notes, two of them before the search began. Mail the user sent
+    had been exempted hours earlier for the same reason (a reply confirming a
+    slot, filed three weeks in the future). No reading of the date survives
+    every case, because nothing says which event the date is FOR; arrival is
+    the one fact the email always carries.
+
+    This is also find_match's date signal, scored against the application's
+    applied_at. Replayed over the 14 emails the change could move: 2
+    decisions changed, one each way and neither wrong — a hand-linked
+    interview invite (dated 20 days ahead) would now auto-match its own
+    application, and a rejection quoting its submission date would now wait
+    in triage (0.735 against the 0.75 bar) instead of matching on that date:
+    it is scored like every other rejection that arrives a month late."""
+    return email_row["received_at"]
 
 
 def _event_type(classification: str, extraction: Extraction) -> tuple[str, dict]:
@@ -278,6 +288,11 @@ def _event_type(classification: str, extraction: Extraction) -> tuple[str, dict]
 def _append_event(conn, user_id, application_id, email_row, classification,
                   extraction: Extraction) -> None:
     etype, payload = _event_type(classification, extraction)
+    if extraction.event_date:
+        # What the email said, kept beside the event rather than moving it
+        # (_event_time) — the detail page shows it when it is still ahead of
+        # the email's arrival: the interview an invitation is for.
+        payload["stated_date"] = extraction.event_date
     if etype == "applied" and conn.execute(
             "SELECT 1 FROM events WHERE application_id = %s AND type = 'applied'",
             (application_id,)).fetchone():
@@ -295,7 +310,7 @@ def _append_event(conn, user_id, application_id, email_row, classification,
         VALUES (%s, %s, %s, 'email', %s, %s, %s)
         """,
         (user_id, application_id, etype,
-         _event_time(extraction, email_row), email_row["id"], Json(payload)),
+         _event_time(email_row), email_row["id"], Json(payload)),
     )
     if extraction.recruiter and extraction.recruiter.get("name"):
         conn.execute(
@@ -336,7 +351,7 @@ def _create_application(conn, user_id, email_row, extraction: Extraction,
     company_norm = norm_company(extraction.company or "")
     title = extraction.role_title or "unknown role"
     platform = extraction.platform if extraction.platform in ("linkedin", "jobstreet", "indeed") else "other"
-    occurred_at = _event_time(extraction, email_row)
+    occurred_at = _event_time(email_row)
 
     job = conn.execute(
         "INSERT INTO jobs (user_id, company_norm, title_canonical) VALUES (%s, %s, %s) RETURNING id",
@@ -378,7 +393,7 @@ def _create_application(conn, user_id, email_row, extraction: Extraction,
 
 def dispatch(conn, user_id, email_row, classification: str, extraction: Extraction) -> MatchResult:
     """Route one extracted email; updates the emails row with the outcome."""
-    occurred_at = _event_time(extraction, email_row)
+    occurred_at = _event_time(email_row)
 
     if classification == "recruiter_outreach":
         # By definition "a role the user did NOT apply to" (see the classify

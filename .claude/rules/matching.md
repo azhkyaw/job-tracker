@@ -193,12 +193,12 @@ invariants that govern this code (#3, #4, #9) are still in CLAUDE.md.
   classifications: an application to `applied`, a follow-up to
   `follow_up_sent` (which is what takes a record off `/follow-ups`), a reply
   to a note (no status moves), a withdrawal to `withdrawn`. Three rules sit
-  beside it. `_event_time` returns the SEND time for sent mail, whatever
+  beside it. `_event_time` returned the SEND time for sent mail, whatever
   `event_date` the extractor found — in the user's own message that date is
-  the other side's event (the interview being arranged), never theirs; it
-  reads `email_row["sent_by_user"]` by index, so a caller that selected
-  emails without the column fails loudly instead of treating every sent
-  message as received. `_append_event` turns an `applied` into a note when
+  the other side's event (the interview being arranged), never theirs. (Hours
+  later the same rule was extended to ALL mail — the stated-date bullet at
+  the end — so the function no longer reads `sent_by_user` at all.)
+  `_append_event` turns an `applied` into a note when
   the record already has one: a resume emailed for a role already applied
   to on the platform is part of that application, and two `applied` events
   on one record read as two starts. And `_CREATES` lets the user's own
@@ -216,13 +216,48 @@ invariants that govern this code (#3, #4, #9) are still in CLAUDE.md.
   UTC displays as the previous day for non-UTC users, and local midnight sits
   on the date boundary so it shifts if the user later changes timezone. The
   two ingest paths differ by what they legitimately know: an email HAS a real
-  instant, so `matcher._event_time` borrows `received_at`'s time-of-day; a
-  typed form date does not, so `ingest.local_date_to_utc` anchors it at local
-  noon (`ingest.DEFAULT_TIME_OF_DAY`) rather than inventing the submission
-  time — fabricated precision the user can't see or correct.
-- **A stated event date is right for a confirmation and wrong for an
-  interview invite, and `matcher._event_time` applies it to both** (found
-  2 Sep 2026, NOT yet fixed). `email_extract_v1` rule 4 defines `event_date`
+  instant, and since 24 Sep 2026 `matcher._event_time` simply uses it (until
+  then it put a stated date on `received_at`'s time-of-day — the next
+  bullet); a typed form date does not, so `ingest.local_date_to_utc` anchors
+  it at local noon (`ingest.DEFAULT_TIME_OF_DAY`) rather than inventing the
+  submission time — fabricated precision the user can't see or correct.
+- **An event happens when its email arrives; a date the email STATES rides
+  in the payload** (fixed 24 Sep 2026, worklog task 17 — the history of how
+  the rule was found follows). `_event_time(email_row)` is `received_at` and
+  nothing else, for every classification and both directions; the extractor's
+  `event_date` goes into the email's OWN event as `payload.stated_date`
+  (`_append_event`), never into the start `_create_application` fabricates
+  beside it. The detail page shows it as "for 14 Oct 2026" only when it falls
+  AFTER the day the event is filed on (`web._stated_ahead`): forward, a
+  stated date is what the email looks forward to — the interview, the slot a
+  cancellation freed, a test deadline; at or before arrival it is either
+  history the timeline already draws or the extractor's misreading, and both
+  real digests below would have printed a date their emails never said.
+  **The date is also `find_match`'s date signal**, so the change was replayed
+  before it shipped: of the 14 emails it could move, 2 decisions changed, one
+  each way and neither wrong — a hand-linked invite (stated 20 days ahead)
+  now auto-matches its own application, and the rejection quoting its
+  submission date now scores 0.735 against the 0.75 bar and would wait in
+  triage, i.e. it is scored like every other rejection that arrives a month
+  after the apply. Repair, dry-run first and snapshotted
+  (`job-tracker-snapshots/2026-09-24-stated-dates.json`, outside the repo):
+  14 events moved back to arrival — 10 invites, the rejection, 3 notes; 0
+  left in the future (was 3) and 0 email events off their email's arrival —
+  and 199 correctly dated ones gained `stated_date`, so every event from an
+  email that stated a date carries it, exactly as new mail does. UPDATE in
+  place, guarded on each row's old values, rather than refile's delete and
+  re-insert, which would drop a `reason` a human had set on a rejection.
+  The OTHER machine keeps the old rule until it pulls — the shared DB cannot
+  tell it apart — so new invites filed there still land on the interview
+  day. `email_extract_v1`'s "the caller falls back to the received timestamp
+  when this is null" is now only half the story; it is deliberately not
+  re-versioned (invariant #5), since what it asks the model to extract is
+  unchanged. Tests: `test_integration` path 1 (a rejection quoting the apply
+  day sorts after it), path 2 (asserted the OPPOSITE until this change), 3g,
+  and 3h (a future-dated invite); `test_web` the display rule both ways.
+  **The history.** A stated event date is right for a confirmation and wrong
+  for an interview invite, and `matcher._event_time` applied it to both (found
+  2 Sep 2026). `email_extract_v1` rule 4 defines `event_date`
   to include "an interview scheduled for a specific date", so an invite's
   timeline event lands on the INTERVIEW day rather than the day the invite
   arrived: 4 of 37 invite events sit 1-14 days after their own email (mean 8),

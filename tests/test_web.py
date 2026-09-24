@@ -95,6 +95,18 @@ check("textarea has its own themed rule",
 r = client.get(f"/applications/{northwind_app}")
 check("detail renders timeline", r.status_code == 200 and "rejected" in r.text, r.status_code)
 check("404 on bad id", client.get("/applications/not-a-uuid").status_code == 404)
+# A date an email states shows on its line only when it is AHEAD of the day
+# the email arrived (web._stated_ahead). Both emails are test_integration's:
+# Northwind's rejection quotes the apply day, Alpine's invite names the
+# interview day two weeks on.
+check("a rejection does not repeat the apply day it quotes",
+      "<small>for 10 Jul 2026</small>" not in r.text)
+with db.connect() as conn:
+    alpine_app = conn.execute(
+        "SELECT a.id FROM applications a JOIN jobs j ON j.id = a.job_id "
+        "WHERE j.company_norm = 'alpine ski house'").fetchone()["id"]
+check("an invitation shows the interview day it names",
+      "<small>for 4 Aug 2026</small>" in client.get(f"/applications/{alpine_app}").text)
 
 print("detail actions")
 r = client.post(f"/applications/{northwind_app}/events",

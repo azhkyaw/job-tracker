@@ -19,7 +19,7 @@ no framework — this is a single-user ops tool that must stay maintainable.
 from __future__ import annotations
 
 from dataclasses import replace as _replace
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -121,6 +121,32 @@ def _day(context, v):
 
 
 @pass_context
+def _stated_ahead(context, e):
+    """The date an email named for its event (`payload.stated_date`, filed by
+    matcher._append_event), as prose — but only when it falls AFTER the day
+    the event is filed on, in the viewer's zone; else None.
+
+    Ahead of arrival, a stated date is something the email looks forward to:
+    the interview an invitation is for, the slot a cancellation freed. On or
+    before it, the date is history the timeline already draws (a rejection
+    quoting the day you applied) or the extractor's misreading — both real
+    "new activity" digests of 24 Sep 2026 said "Applied on 29 Jul" and were
+    extracted as 2 Jul, so printing every stated date would have put a
+    sentence on the page that the email never said."""
+    stated = (e["payload"] or {}).get("stated_date")
+    if not stated:
+        return None
+    tz = getattr(context["request"].state, "tz", None) or ZoneInfo("UTC")
+    try:
+        d = date.fromisoformat(stated)
+    except ValueError:
+        return None
+    if d <= e["occurred_at"].astimezone(tz).date():
+        return None
+    return d.strftime("%d %b %Y").lstrip("0")
+
+
+@pass_context
 def _asof(context):
     """The header's date. Every trace on every page is measured against
     "today", and the register is a record AS OF a day — so the day is named
@@ -165,6 +191,7 @@ SOURCE_LABELS = {
 templates.env.filters["dt"] = _dt
 templates.env.filters["dtt"] = _dtt
 templates.env.filters["day"] = _day
+templates.env.filters["stated_ahead"] = _stated_ahead
 templates.env.globals["theme"] = _theme
 templates.env.globals["asof"] = _asof
 templates.env.globals["queue_alert"] = _queue_alert

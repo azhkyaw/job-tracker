@@ -120,7 +120,8 @@ class Extraction:
     role_title: str | None
     platform: str               # one of PLATFORMS
     ats: str | None
-    event_date: str | None      # YYYY-MM-DD, or None -> caller uses received_at
+    event_date: str | None      # YYYY-MM-DD the email states; kept in the event's
+                                 # payload, never its time (matcher._event_time)
     status_detail: str | None
     recruiter: dict | None      # {"name": ..., "email": ...} or None
     notes: str | None
