@@ -19,6 +19,12 @@ from zoneinfo import ZoneInfo
 from . import config, db, salary
 from .email_classifier import norm_company
 
+# What a job is called when its source named no company or no title. Named so
+# the readers that must not treat two of them as the same employer or the same
+# role (analytics.reapplications) can say so without a copy of the string.
+UNKNOWN_COMPANY = "unknown company"
+UNKNOWN_TITLE = "unknown role"
+
 # Prefer attaching to an email_only record for the same company/role (the
 # Gmail backfill created it; this capture enriches it) over creating a
 # duplicate job. Matches only when EVERY posting on the job is email_only —
@@ -168,8 +174,8 @@ def upsert_record(conn, user_id, *, platform, captured_via, platform_job_id=None
             job = conn.execute(
                 "INSERT INTO jobs (user_id, company_norm, title_canonical) "
                 "VALUES (%s, %s, %s) RETURNING id",
-                (user_id, company_norm or "unknown company",
-                 title or "unknown role")).fetchone()
+                (user_id, company_norm or UNKNOWN_COMPANY,
+                 title or UNKNOWN_TITLE)).fetchone()
             created = True
         else:
             enriched = True

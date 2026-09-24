@@ -18,9 +18,11 @@ tailoring pay off" is currently unmeasured, not answered."""
 
 from __future__ import annotations
 
+import re
 from datetime import timedelta
 
 from . import config
+from .ingest import UNKNOWN_COMPANY, UNKNOWN_TITLE
 
 _RESPONSE_TYPES = "('viewed','engaged','interview_invite','rejected','offer')"
 
@@ -351,6 +353,81 @@ def reminders(conn, user_id):
         {_REMINDER_WHERE}
         ORDER BY applied_at
     """, {"user_id": user_id, "days": config.REMINDER_DAYS}).fetchall()
+
+
+_WORDS = re.compile(r"\w+")
+
+
+def _jd_overlap(a: str | None, b: str | None) -> float | None:
+    """Word-set Jaccard of two job descriptions; None when either is missing."""
+    wa, wb = set(_WORDS.findall((a or "").lower())), set(_WORDS.findall((b or "").lower()))
+    return len(wa & wb) / len(wa | wb) if wa and wb else None
+
+
+def reapplications(conn, user_id) -> dict:
+    """For each application in the follow-up queue, the LATER application that
+    looks like the same role applied to again: {old_id: {id, applied_at,
+    title_canonical}}. A suggestion only — /follow-ups shows it beside the row
+    and nothing is stored until the user confirms it (web.mark_reapplied),
+    because the rule can be wrong and a wrong close would hide a real wait.
+
+    Why it exists (24 Sep 2026 audit): 15 of 150 queue rows were an older
+    record of a role reposted under a new job id and applied to again. The
+    employer answers the newer one, so the older waits forever — in the queue,
+    in the amber heat, in every "no reply" count. Merging the two is wrong
+    (two submissions, each with its own answers and resume; invariant #3 has no
+    inverse for a wrong merge), so the older one is CLOSED instead.
+
+    The rule: same company, title alike to config.REAPPLIED_TITLE_MIN, applied
+    later, and — when both have one — job descriptions overlapping at least
+    config.REAPPLIED_JD_MIN, which is what tells a repost from a different role
+    under the same title (see the constants for the measurement). The EARLIEST
+    such later application is named, so a role applied to three times chains
+    1 -> 2 -> 3 rather than pointing both older ones at the newest. The
+    unknown-company and unknown-role placeholders never match: two records that
+    share one know nothing about each other."""
+    rows = conn.execute(f"""
+        WITH q AS (
+            SELECT a.id, a.job_id, j.company_norm, j.title_canonical,
+                   (SELECT min(occurred_at) FROM events e
+                     WHERE e.application_id = a.id AND e.type = 'applied') AS applied_at
+            FROM applications a
+            JOIN jobs j ON j.id = a.job_id
+            {_REMINDER_WHERE}
+              AND j.company_norm <> %(unknown_company)s
+              AND j.title_canonical <> %(unknown_title)s
+        )
+        SELECT q.id AS old_id, n.id, n.applied_at, n.title_canonical,
+               (SELECT string_agg(p.jd_text, ' ') FROM postings p
+                 WHERE p.job_id = q.job_id) AS old_jd,
+               (SELECT string_agg(p.jd_text, ' ') FROM postings p
+                 WHERE p.job_id = n.job_id) AS new_jd
+        FROM q
+        JOIN LATERAL (
+            SELECT a2.id, a2.job_id, j2.title_canonical,
+                   (SELECT min(occurred_at) FROM events e
+                     WHERE e.application_id = a2.id AND e.type = 'applied') AS applied_at
+            FROM applications a2
+            JOIN jobs j2 ON j2.id = a2.job_id
+            WHERE a2.user_id = %(user_id)s AND a2.id <> q.id
+              AND j2.company_norm = q.company_norm
+              AND similarity(lower(j2.title_canonical), lower(q.title_canonical))
+                  >= %(title_min)s
+        ) n ON n.applied_at > q.applied_at
+        ORDER BY q.id, n.applied_at
+    """, {"user_id": user_id, "days": config.REMINDER_DAYS,
+          "unknown_company": UNKNOWN_COMPANY, "unknown_title": UNKNOWN_TITLE,
+          "title_min": config.REAPPLIED_TITLE_MIN}).fetchall()
+    out: dict = {}
+    for r in rows:
+        if r["old_id"] in out:
+            continue
+        overlap = _jd_overlap(r["old_jd"], r["new_jd"])
+        if overlap is not None and overlap < config.REAPPLIED_JD_MIN:
+            continue          # a different role under the same title
+        out[r["old_id"]] = {"id": r["id"], "applied_at": r["applied_at"],
+                            "title_canonical": r["title_canonical"]}
+    return out
 
 
 def reminder_count(conn, user_id) -> int:

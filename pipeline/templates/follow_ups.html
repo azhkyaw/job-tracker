@@ -17,6 +17,11 @@
 <p class="lede"><b>{{ reminders | length }}</b> applied more than <b>{{ reminder_days }}</b> days ago
   with no reply and nothing sent, oldest first. Marking one as followed up records it
   on the thread and clears it from here.</p>
+{% if again_n %}
+<p class="lede"><b>{{ again_n }}</b> of them look like an earlier application to a role
+  you applied to again. The reply will come to the later one, so each is marked
+  below; if it really is the same role, close the old one here.</p>
+{% endif %}
 <div class="card fu">
   {% for r in reminders %}
   <div class="fu-row" style="--heat:{{ r.heat }}%">
@@ -25,6 +30,16 @@
       <span class="ro">{{ r.title_canonical }}</span>
     </a>
     <span class="fu-d">{{ r.days_waiting }}d</span>
+    {#- The rule only suggests (analytics.reapplications). The words name the
+        later application, with a link, so you can check before you click. #}
+    {%- if r.again %}
+    <p class="fu-again">You applied again on <a href="/applications/{{ r.again.id }}">{{ r.again.applied_at | day }}</a></p>
+    <form method="post" action="/applications/{{ r.id }}/reapplied" class="fu-again-do">
+      <input type="hidden" name="later_id" value="{{ r.again.id }}">
+      <input type="hidden" name="redirect_to" value="/follow-ups">
+      <button class="small" title="Close this one: the thread moved to the later application">Same role, close</button>
+    </form>
+    {%- endif %}
     <form method="post" action="/applications/{{ r.id }}/events">
       <input type="hidden" name="type" value="follow_up_sent">
       {# Back to this page, not the application's own — clearing one of fifteen

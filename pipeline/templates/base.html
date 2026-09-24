@@ -236,7 +236,10 @@ a.tl:hover{background:color-mix(in srgb,var(--ink) 3.5%,var(--mix))}
 
 /* The follow-up queue (its own page since 21 Aug 2026). The wait is the
    reason a row is here, so it wears the same graded amber as the register. */
-.fu-row{display:grid;grid-template-columns:minmax(0,1fr) 3.6rem max-content;
+/* The last column's floor fits the widest button a row can carry ("Same
+   role, close"), so rows with and without it keep one width and the day
+   counts stay a straight column — it is max-content per ROW otherwise. */
+.fu-row{display:grid;grid-template-columns:minmax(0,1fr) 3.6rem minmax(6.6rem,max-content);
         align-items:center;gap:0 1rem;padding:.5rem 1rem;
         border-bottom:1px solid var(--line);--heat:0%}
 .fu-row:last-child{border-bottom:0}
@@ -249,6 +252,14 @@ a.tl:hover{background:color-mix(in srgb,var(--ink) 3.5%,var(--mix))}
       font-variant-numeric:tabular-nums;
       color:color-mix(in oklab,var(--age) var(--heat),var(--muted))}
 .fu form{margin:0}
+/* A row that looks like an earlier application to a role applied to again
+   (analytics.reapplications): a second line under the name saying so, and its
+   own close button under "Followed up". Placed explicitly so the three
+   auto-placed cells of the first line stay where every other row has them. */
+.fu-again{grid-column:1;grid-row:2;margin:.1rem 0 0;font-family:var(--sans);
+          font-size:.78rem;color:var(--muted)}
+.fu-again a{color:var(--ink)}
+.fu-again-do{grid-column:3;grid-row:2;margin-top:.2rem}
 
 /* --------------------------------------------------------------- the strip
    Segment width IS the count. No numerals inside the bar — they'd have to

@@ -1559,6 +1559,113 @@ r = client.post(f"/applications/{stale_app}/events",
 check("an unknown redirect falls back to the detail page, never followed",
       r.headers["location"] == f"/applications/{stale_app}", r.headers.get("location"))
 
+print("follow-ups: an earlier application to a role applied to again")
+# 24 Sep 2026: 15 of 150 queue rows were an older record of a role reposted and
+# applied to again. The rule suggests (analytics.reapplications); the user
+# confirms (mark_reapplied). Shapes from that day's measurement.
+REPOST_JD = "We build payments rails. You will own the ledger service in Go and Postgres."
+
+
+def _seed_app(conn, company, title, days_ago, jd=None):
+    job = conn.execute(
+        "INSERT INTO jobs (user_id, company_norm, title_canonical) VALUES (%s, %s, %s) "
+        "RETURNING id", (user_id, company, title)).fetchone()["id"]
+    if jd is not None:
+        conn.execute("INSERT INTO postings (user_id, job_id, platform, captured_via, jd_text) "
+                     "VALUES (%s, %s, 'linkedin', 'extension', %s)", (user_id, job, jd))
+    app_id = conn.execute("INSERT INTO applications (user_id, job_id) VALUES (%s, %s) "
+                          "RETURNING id", (user_id, job)).fetchone()["id"]
+    conn.execute("INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+                 "VALUES (%s, %s, 'applied', 'manual', now() - make_interval(days => %s), '{}')",
+                 (user_id, app_id, days_ago))
+    return app_id
+
+
+with db.connect() as conn, conn.transaction():
+    # One role applied to three times: each older one names the NEXT, a chain.
+    rp_1 = _seed_app(conn, "repostco", "Ledger Engineer", 40, REPOST_JD)
+    rp_2 = _seed_app(conn, "repostco", "Ledger Engineer", 20, REPOST_JD)
+    rp_3 = _seed_app(conn, "repostco", "Ledger Engineer", 5, REPOST_JD)
+    # Same company, byte-identical title, a DIFFERENT job description: two
+    # roles (the real case was answered separately on each).
+    tw_1 = _seed_app(conn, "twinroles", "Staff Software Engineer", 40,
+                     "Robotics perception team, C++ and CUDA on embedded boards.")
+    _seed_app(conn, "twinroles", "Staff Software Engineer", 5,
+              "Billing platform, Kotlin services and a Kafka event pipeline.")
+    # Two roles at a studio whose titles share a suffix (similarity ~0.7).
+    st_1 = _seed_app(conn, "studioco", "Agentic AI Engineer (Studio Portfolio Company)", 40)
+    _seed_app(conn, "studioco", "Senior AI Engineer (Studio Portfolio Company)", 5)
+    # Two records that know neither title: the placeholder never matches.
+    from pipeline.ingest import UNKNOWN_TITLE
+    uk_1 = _seed_app(conn, "blankco", UNKNOWN_TITLE, 40)
+    _seed_app(conn, "blankco", UNKNOWN_TITLE, 5)
+    applied_2 = conn.execute("SELECT occurred_at FROM events WHERE application_id = %s "
+                             "AND type = 'applied'", (rp_2,)).fetchone()["occurred_at"]
+
+with db.connect() as conn:
+    again = analytics.reapplications(conn, user_id)
+check("the oldest names the NEXT application, not the newest",
+      again.get(rp_1, {}).get("id") == rp_2, again.get(rp_1))
+check("the middle one names the newest", again.get(rp_2, {}).get("id") == rp_3, again.get(rp_2))
+check("same title, different job description: not suggested", tw_1 not in again)
+check("titles alike only by a shared suffix: not suggested", st_1 not in again)
+check("the unknown-role placeholder never matches", uk_1 not in again)
+
+r = client.get("/follow-ups")
+row = r.text.split(f'href="/applications/{rp_1}"')[1].split('class="fu-row"')[0]
+check("the queue marks the row, naming the later application with a link",
+      "You applied again on" in row and f'href="/applications/{rp_2}"' in row
+      and f'value="{rp_2}"' in row, row[:400])
+check("the lede counts the suggestions", "look like an earlier application" in r.text)
+tw_row = r.text.split(f'href="/applications/{tw_1}"')[1].split('class="fu-row"')[0]
+check("the two-roles row carries no suggestion", "You applied again" not in tw_row)
+
+r = client.post(f"/applications/{rp_1}/reapplied",
+                data={"later_id": str(rp_2), "redirect_to": "/follow-ups"})
+check("confirming returns to the queue", r.status_code == 303
+      and r.headers["location"] == "/follow-ups", r.headers.get("location"))
+with db.connect() as conn:
+    ev = conn.execute("SELECT id, type, source, occurred_at, payload FROM events "
+                      "WHERE application_id = %s AND type = 'withdrawn'", (rp_1,)).fetchone()
+    check("filed as a manual withdrawal linked to the later application",
+          ev and ev["source"] == "manual" and ev["payload"] == {"superseded_by": str(rp_2)}, ev)
+    check("dated when the later application went in — the day this wait ended",
+          ev["occurred_at"] == applied_2, (ev["occurred_at"], applied_2))
+    check("the record reads withdrawn", conn.execute(
+        "SELECT status FROM application_status WHERE application_id = %s",
+        (rp_1,)).fetchone()["status"] == "withdrawn")
+check("it leaves the queue", f'href="/applications/{rp_1}"' not in client.get("/follow-ups").text)
+r = client.get(f"/applications/{rp_1}")
+check("its timeline says you applied again, not that you withdrew, with the link",
+      "You applied again" in r.text and "You withdrew" not in r.text
+      and f'href="/applications/{rp_2}">see the later application' in r.text, r.status_code)
+
+r = client.post(f"/applications/{rp_2}/reapplied", data={"later_id": str(rp_1)})
+check("an EARLIER application is refused as the later one",
+      r.status_code == 303 and "event_error" in r.headers["location"], r.headers.get("location"))
+r = client.post(f"/applications/{rp_1}/reapplied", data={"later_id": str(rp_3)})
+check("an application already closed is refused",
+      r.status_code == 303 and "event_error" in r.headers["location"], r.headers.get("location"))
+check("a later id that isn't an application is a 404",
+      client.post(f"/applications/{rp_2}/reapplied", data={"later_id": "nope"}).status_code == 404)
+with db.connect() as conn:
+    check("...and none of the refusals wrote anything", conn.execute(
+        "SELECT count(*) AS n FROM events WHERE application_id IN (%s, %s) "
+        "AND type = 'withdrawn'", (rp_1, rp_2)).fetchone()["n"] == 1)
+
+# Editing the close keeps its link — the form rebuilds the payload from fields.
+client.post(f"/applications/{rp_1}/events/{ev['id']}/edit",
+            data={"type": "withdrawn", "note": "reposted in Aug",
+                  "occurred_on": applied_2.date().isoformat()})
+with db.connect() as conn:
+    p = conn.execute("SELECT payload FROM events WHERE id = %s", (ev["id"],)).fetchone()["payload"]
+    check("an edited close keeps superseded_by beside the new note",
+          p == {"note": "reposted in Aug", "superseded_by": str(rp_2)}, p)
+# Undo is deleting the event: the row comes back to the queue.
+client.post(f"/applications/{rp_1}/events/{ev['id']}/delete")
+check("deleting the close puts the row back in the queue",
+      f'href="/applications/{rp_1}"' in client.get("/follow-ups").text)
+
 print("news that arrives off the ingest paths: manual status events")
 # A recruiter rings, or messages on WhatsApp, and the status genuinely changed
 # with nothing for the system to parse. Before this the only honest option was a

@@ -562,3 +562,23 @@ the key to each real case.
    Suites: all eight green; `tests/question_norms.json` is read by both the
    Python and the Node suite. Extension 0.10.1 — reload it and refresh open
    tabs. Detail: `.claude/rules/extension.md`.
+19. **An earlier application to a role applied to again** (24 Sep 2026).
+   Problem 4 of the same day's audit, parked as the author's decision.
+   Re-measured first: 15 of the 150 follow-up rows, not the audit's 12.
+   Measuring also overturned the audit's guess that one studio's repeated
+   ads (Adventure Works, `.claude/rules/matching.md`) were distinct roles —
+   their job descriptions are word-for-word identical — and separated the
+   one pair known to be two roles (applied 5 Aug and 17 Sep: identical
+   title, 36% word overlap, each answered on its own). Put three options to
+   the author: rule suggests and you confirm, fully automatic, or by hand.
+   They chose the first and left the studio's four undecided. Built:
+   `analytics.reapplications`, the row's second line and "Same role, close"
+   button on /follow-ups, `web.mark_reapplied` (a `withdrawn` with
+   `payload.superseded_by`, worded "You applied again"), and
+   `ingest.UNKNOWN_COMPANY`/`UNKNOWN_TITLE` so the placeholders never
+   match. On the dev DB the real function flags the same 15, one role's
+   three attempts (17 Jul, 5 Aug, 23 Sep) chaining 1 -> 2 -> 3; the live page was measured, not just
+   rendered, which caught the column jog. Suites: all eight green, 20 new
+   checks in test_web. Nothing was filed on the author's behalf: the 15
+   wait on /follow-ups for their clicks. Detail: `.claude/rules/web-ui.md`
+   rule 9c.

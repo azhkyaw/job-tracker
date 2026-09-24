@@ -180,6 +180,16 @@ EVENT_LABELS = {
     "interested":         "Saved",
 }
 
+
+def _event_label(e) -> str:
+    """What one event is called on a page: EVENT_LABELS, except a withdrawal
+    filed because you applied to the same role again (mark_reapplied) — you
+    did not withdraw anything, the thread moved, and the words say so."""
+    if e["type"] == "withdrawn" and (e["payload"] or {}).get("superseded_by"):
+        return "You applied again"
+    return EVENT_LABELS.get(e["type"], e["type"])
+
+
 # How an event or a posting got here, as a phrase that completes a sentence.
 SOURCE_LABELS = {
     "email":      "by email",
@@ -192,6 +202,7 @@ templates.env.filters["dt"] = _dt
 templates.env.filters["dtt"] = _dtt
 templates.env.filters["day"] = _day
 templates.env.filters["stated_ahead"] = _stated_ahead
+templates.env.filters["event_label"] = _event_label
 templates.env.globals["theme"] = _theme
 templates.env.globals["asof"] = _asof
 templates.env.globals["queue_alert"] = _queue_alert
@@ -1660,6 +1671,10 @@ def edit_event(
                 _give_back_origin(conn, a, e["payload"])
             elif is_approach and not was_approach:
                 _take_origin(conn, a, payload)
+            # Same reason for a close by re-application (mark_reapplied): a
+            # withdrawal that stays one keeps its link to the later record.
+            if type == e["type"] == "withdrawn" and "superseded_by" in e["payload"]:
+                payload["superseded_by"] = e["payload"]["superseded_by"]
             conn.execute(
                 "UPDATE events SET type = %s, occurred_at = %s, payload = %s WHERE id = %s",
                 (type, occurred_at, Json(payload), e["id"]))
@@ -1678,6 +1693,48 @@ def delete_event(request: Request, app_id: str, event_id: str):
             _give_back_origin(conn, a, e["payload"])
         conn.execute("DELETE FROM events WHERE id = %s", (e["id"],))
     return RedirectResponse(f"/applications/{app_id}", status_code=303)
+
+
+@app.post("/applications/{app_id}/reapplied")
+def mark_reapplied(request: Request, app_id: str, later_id: str = Form(""),
+                   redirect_to: str = Form("")):
+    """Close an application because you applied to the same role again, later
+    — the confirm half of /follow-ups' suggestion (analytics.reapplications).
+
+    Files `withdrawn`, dated when the later application went in, with
+    `payload.superseded_by` naming it: the thread moved there, so this one's
+    wait ended that day. A qualifier on an existing type, not a new status —
+    the same costing web-ui rule 12 made for a visa reason on `rejected`
+    (a new type needs a CHECK entry, a precedence slot, a trace role, both
+    response lists, a funnel segment and a palette token). `withdrawn` already
+    leaves the queue, ends the trace and counts as no reply, which is all
+    three things a superseded record needs. The page words it "You applied
+    again" rather than "You withdrew".
+
+    The rule only suggests; this is the human saying it is so, which is why
+    the route checks the facts that make it possible (a later application,
+    yours, not this one, this one not already closed) and not the rule
+    itself. Undo is deleting the event from the timeline."""
+    from psycopg.types.json import Json
+    user = _login_user(request)
+    with db.connect_scoped(user["id"]) as conn, conn.transaction():
+        a = _get_application(conn, app_id)
+        later = _get_application(conn, later_id)
+        first = ("SELECT min(occurred_at) AS t FROM events "
+                 "WHERE application_id = %s AND type = 'applied'")
+        a_at = conn.execute(first, (a["id"],)).fetchone()["t"]
+        later_at = conn.execute(first, (later["id"],)).fetchone()["t"]
+        if later["id"] == a["id"] or a_at is None or later_at is None or later_at <= a_at:
+            return _event_error(app_id, "That application wasn't sent after this one.")
+        if conn.execute("SELECT 1 FROM events WHERE application_id = %s AND type = 'withdrawn'",
+                        (a["id"],)).fetchone():
+            return _event_error(app_id, "This application is already closed as withdrawn.")
+        conn.execute(
+            "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+            "VALUES (%s, %s, 'withdrawn', 'manual', %s, %s)",
+            (a["user_id"], a["id"], later_at, Json({"superseded_by": str(later["id"])})))
+    dest = redirect_to if redirect_to in ("/", "/follow-ups") else f"/applications/{app_id}"
+    return RedirectResponse(dest, status_code=303)
 
 
 @app.post("/applications/{app_id}/events/{event_id}/reason")
@@ -2415,13 +2472,20 @@ def follow_ups_page(request: Request):
     user = _login_user(request)
     with db.connect_scoped(user["id"]) as conn:
         reminders = analytics.reminders(conn, user["id"])
+        # A row that looks like an earlier application to a role you applied
+        # to again carries that later application, and a second button to
+        # close it as such (mark_reapplied). Beside the row, not in a band of
+        # its own: a suggestion you decline needs no dismissal to remember —
+        # the row is in the queue either way.
+        again = analytics.reapplications(conn, user["id"])
         # The same amber as the list's rail, off the same function, so a row
         # that reads 41 days here is the same colour it is on the register.
         for r in reminders:
             r["heat"] = trace.heat(r["days_waiting"], config.REMINDER_DAYS)
+            r["again"] = again.get(r["id"])
         return templates.TemplateResponse(
             request=request, name="follow_ups.html",
-            context={"reminders": reminders,
+            context={"reminders": reminders, "again_n": len(again),
                      "reminder_days": config.REMINDER_DAYS,
                      "pending": _pending_count(conn),
                      "follow_ups": analytics.reminder_count(conn, user["id"])})

@@ -212,6 +212,21 @@ DEDUP_AUTO_TITLE = 0.5
 
 REMINDER_DAYS = int(os.environ.get("TRACKER_REMINDER_DAYS", "10"))
 
+# When a follow-up row looks like an EARLIER application to a role applied to
+# again (analytics.reapplications) — a suggestion on /follow-ups, filed only
+# when the user confirms it. Same company, a title at least this alike
+# (pg_trgm), and job descriptions that don't disagree: when both records have
+# one, their word sets must overlap at least REAPPLIED_JD_MIN (Jaccard).
+# Measured 24 Sep 2026 over every same-company pair of the author's 277
+# applications: titles fell at 1.00 or at 0.71 and below, nothing between
+# (0.71 is two DIFFERENT roles at one studio), so 0.9 sits in an empty gap.
+# The JD guard is what refuses the one pair known to be two roles — same
+# company, byte-identical title, both answered separately — at 0.36, while
+# every re-application measured 0.96 or more. The title does most of the work,
+# as it does everywhere company agreement is involved (invariant #3).
+REAPPLIED_TITLE_MIN = 0.9
+REAPPLIED_JD_MIN = 0.5
+
 # --- Phase 4 -----------------------------------------------------------------
 
 # Signing/encryption root for sessions and stored Gmail credentials. REQUIRED

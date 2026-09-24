@@ -19,6 +19,7 @@ from datetime import datetime
 
 from . import config
 from .email_classifier import Extraction, norm_company
+from .ingest import UNKNOWN_TITLE
 
 # Classification type -> event type. status_update refines via status_detail.
 EVENT_TYPE = {
@@ -349,7 +350,7 @@ def _create_application(conn, user_id, email_row, extraction: Extraction,
     leads get no applied event and derive status 'interested' instead of lying
     about having applied."""
     company_norm = norm_company(extraction.company or "")
-    title = extraction.role_title or "unknown role"
+    title = extraction.role_title or UNKNOWN_TITLE
     platform = extraction.platform if extraction.platform in ("linkedin", "jobstreet", "indeed") else "other"
     occurred_at = _event_time(email_row)
 

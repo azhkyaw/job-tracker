@@ -44,7 +44,10 @@
     {%- set et = {'recruiter_outreach': 'viewed'}.get(e.type, e.type) %}
     <li><span class="when">{{ e.occurred_at | dtt }}</span>
       <span class="what">
-        <b{% if et in ('viewed', 'engaged', 'interview_invite', 'offer', 'rejected') %} style="--c:var(--{{ et }})"{% endif %}>{{ EVENT_LABELS.get(e.type, e.type) }}</b>
+        <b{% if et in ('viewed', 'engaged', 'interview_invite', 'offer', 'rejected') %} style="--c:var(--{{ et }})"{% endif %}>{{ e | event_label }}</b>
+        {%- if e.payload.get('superseded_by') %}
+        <small><a href="/applications/{{ e.payload['superseded_by'] }}">see the later application</a></small>
+        {%- endif %}
         {#- The day the email named, when it is still ahead of the day it
             arrived — the interview an invitation is for. The event itself
             stays on the arrival day (matcher._event_time). #}

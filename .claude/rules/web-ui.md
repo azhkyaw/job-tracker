@@ -155,6 +155,34 @@ is a private artifact, linked from the memory file
    exactly the longest titles, silently and only where the column is tightest.
    Measured after the fix — 199 rows, 0 badges clipped, and still 0 with the
    name column forced to 560px where 182 titles truncate.
+9c. **A role applied to again closes its older record — suggested by a rule,
+   filed by a human** (24 Sep 2026). 15 of 150 queue rows were an older
+   application to a role reposted under a new job id and applied to again;
+   the employer answers the newer one, so the older waited forever in the
+   queue, the heat and every no-reply count. `analytics.reapplications`
+   proposes (same company, title alike to `config.REAPPLIED_TITLE_MIN`,
+   applied later, job descriptions that don't disagree — the constants carry
+   the measurement), naming the EARLIEST later application so three attempts
+   chain. The row itself carries the suggestion — a second line "You applied
+   again on <date>" linking the later record, and a "Same role, close" button
+   under "Followed up" — rather than a band of its own: a declined suggestion
+   then needs no dismissal state, because the row is in the queue either
+   way. `web.mark_reapplied` files `withdrawn` dated at the later
+   application's submission with `payload.superseded_by`: a qualifier on an
+   existing type, rule 12's costing again, and `withdrawn` already leaves the
+   queue, ends the trace and counts as no reply. `web._event_label` words it
+   "You applied again" on the timeline (rule 15), the edit route carries the
+   link across a re-save like `origin_was`, and deleting the event is the
+   undo. Chosen by the author over a fully derived rule because a wrong
+   automatic close hides a real wait silently — the same preference invariant
+   #3 states for merges; merging the two records was never an option (two
+   submissions, and no inverse). The queue's last column has a floor
+   (`minmax(6.6rem,max-content)`), since it sized per ROW and the wider
+   button shifted that row's day count 9px out of line with the rest —
+   measured with `getBoundingClientRect`, not seen. The author's call on
+   the day: Adventure Works' four rows (the studio of `.claude/rules/matching.md`'s
+   boilerplate-suffix bullet) stay undecided — identical JDs, so either
+   reposts or one template for several portfolio companies.
 10. **The name column takes the free space; the trace is capped** (`.tl`
    grid). Verified against 47 real applications: applied in one burst, so
    every trace is the same line at the same length while agency company/role

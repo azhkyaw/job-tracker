@@ -117,7 +117,7 @@ that can be Read directly at any time:
   `prompts/**`: thinking/effort measurements, model versioning, the outage story
 - `.claude/rules/database.md` — `migrations/**`, `db.py`, scripts: the
   four-places rule, CHECK names, gapped precedence, Neon pooler, view ordering
-- `docs/worklog.md` — the dated task register (tasks 1-18 with their
+- `docs/worklog.md` — the dated task register (tasks 1-19 with their
   measurements); what is still open is summarised under "Open work" below
 
 A rule file is tracked text, so the real-names rule (Commands) applies to it,
@@ -616,12 +616,14 @@ Detail lives with each family's rule file; this is the index.
 
 ## Open work (as of 24 Sep 2026)
 
-The dated register behind each item, tasks 1-18 with their measurements, is
+The dated register behind each item, tasks 1-19 with their measurements, is
 `docs/worklog.md`; read the matching entry before acting on one.
 
 - **Follow-up drafting** on an age-capped queue: cap `/follow-ups` near 21
   days (150 qualify on 24 Sep, 17 of them inside the cap), then build the
-  draft next to the button. Four `follow_up_sent` are on record: one filed
+  draft next to the button. 15 of the 150 are marked on the page as an
+  earlier application to a role applied to again (task 19) and leave the
+  queue as the author confirms them. Four `follow_up_sent` are on record: one filed
   by hand, three recovered from follow-ups the user EMAILED, which since
   migration 016 file themselves (task 16). (worklog task 4)
 - **Extension, next real Easy Apply:** verify 0.9.0 is live and the tab was
