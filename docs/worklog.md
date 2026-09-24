@@ -643,3 +643,15 @@ the key to each real case.
    acknowledgement hand-linked to a differently named record is right as
    filed; two confirmations the margin held back (one studio's repeated
    title) and a sent reply wait in triage for them.
+   **The set-aside mail was first checked by SUBJECT only, and the author
+   asked whether it had been checked at all** — rightly: the 7 Aug 2026
+   pre-filter miss (`.claude/rules/mail-ingest.md`) was a rejection whose
+   giveaway sat in the body, one line below the subject. So every ignored email since
+   16 Jul (570) was read by BODY — 155 from the DB, 415 read back from the
+   mailbox read-only, since `not_job_related` bodies are purged under
+   `INGEST_ALL` and the mailbox is the only place left to audit them. No
+   rejection, receipt or "viewed" language in any; 377 were the three alert
+   streams, the rest marketing, recruiter connection invites, portal
+   verification/OTP mail and personal mail, and every portal mail belongs to
+   a recorded application or to one started and never submitted. Lesson:
+   an audit of what was set aside has to read what the classifier read.
