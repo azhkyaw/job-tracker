@@ -487,6 +487,59 @@ with db.connect() as conn:
                  if r_["question_norm"] == "city") == [("Jakarta", 1), ("Singapore", 0)], rows)
     check("a second run finds nothing to do", _answers.renorm(conn) == [])
 
+print("sensitive answers are withheld, their questions kept")
+# 24 Sep 2026: 5 stored answers were equal-opportunity questions (gender twice,
+# race/ethnicity, veteran status, disability), and Singapore employer forms ask
+# for NRIC and date of birth. The same list is checked against the extension's
+# isSensitive in tests/test_extension.js.
+_SENS = _json.loads((Path(__file__).resolve().parent / "sensitive_questions.json")
+                    .read_text(encoding="utf-8"))["cases"]
+for q, want in _SENS:
+    check(f"sensitive {ascii(q)} -> {want}", _answers.is_sensitive(q) is want)
+check("clean withholds the value and keeps the question",
+      [(r["question"], r["answer"]) for r in clean([
+          {"question": "Gender*", "answer": "Female", "type": "select"},
+          {"question": "NRIC/FIN No.", "answer": "S0000000X", "type": "text"},
+          {"question": "Nationality", "answer": "Examplestan", "type": "select"},
+          {"question": "Date of Birth", "answer": "   ", "type": "text"}])]
+      == [("Gender*", _answers.REDACTED), ("NRIC/FIN No.", _answers.REDACTED),
+          ("Nationality", "Examplestan")])
+r_sens = post({"platform": "linkedin", "platform_job_id": "LI-sens-1",
+               "company": "Proseware", "title": "Platform Engineer", "trigger": "apply",
+               "answers": [{"question": "Race/Ethnicity", "answer": "Asian", "type": "select"},
+                           {"question": "Notice period", "answer": "1 month", "type": "text"}]})
+sens_app = r_sens.json()["application_id"]
+with db.connect() as conn:
+    got = {r_["question"]: r_["answer"] for r_ in conn.execute(
+        "SELECT question, answer FROM application_answers WHERE application_id = %s::uuid",
+        (sens_app,)).fetchall()}
+    check("a capture that sends the raw value still stores it withheld",
+          got == {"Race/Ethnicity": _answers.REDACTED, "Notice period": "1 month"}, got)
+    # A row stored before the rule existed, written past clean() the way the
+    # old code wrote it — what redact_stored() is for.
+    conn.execute(
+        "INSERT INTO application_answers (user_id, application_id, question, "
+        "question_norm, answer, field_type, ordinal, occurrence) "
+        "SELECT user_id, id, 'Veteran status', 'veteran status', 'I am not a veteran', "
+        "'select', 9, 0 FROM applications WHERE id = %s::uuid", (sens_app,))
+with db.connect() as conn:
+    plan = _answers.redact_stored(conn)
+    check("dry run finds exactly the pre-rule row, and reports no value",
+          [(p["question"], set(p)) for p in plan]
+          == [("Veteran status", {"id", "application_id", "question"})], plan)
+    check("...and writes nothing", conn.execute(
+        "SELECT answer FROM application_answers WHERE application_id = %s::uuid "
+        "AND question = 'Veteran status'", (sens_app,)).fetchone()["answer"]
+        == "I am not a veteran")
+with db.connect() as conn:
+    _answers.redact_stored(conn, apply=True)
+with db.connect() as conn:
+    check("applied: the value is gone", conn.execute(
+        "SELECT answer FROM application_answers WHERE application_id = %s::uuid "
+        "AND question = 'Veteran status'", (sens_app,)).fetchone()["answer"]
+        == _answers.REDACTED)
+    check("a second run finds nothing to do", _answers.redact_stored(conn) == [])
+
 print("a capture with no form answers is unchanged")
 r7 = post({"platform": "indeed", "platform_job_id": "IN-qa-none",
            "company": "Quiet Co", "title": "Data Engineer", "trigger": "apply"})

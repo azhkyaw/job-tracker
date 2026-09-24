@@ -672,3 +672,20 @@ the key to each real case.
    The no-shared-word class stays in triage by the author's choice. Also
    linked that employer's referral email onto the application it led to (triage
    route, snapshot first). Detail: `.claude/rules/matching.md`.
+24. **Screening answers that should never be stored** (24 Sep 2026). Found
+   while planning career-site capture (task 25): 5 stored answers were
+   equal-opportunity questions (gender twice, race/ethnicity, veteran
+   status, disability) from ordinary Easy Apply forms, and Singapore
+   employer forms ask for NRIC and date of birth. The author chose to keep
+   the question and withhold the value. `answers.is_sensitive()` and the
+   extension's `isSensitive` apply one rule, whole words of the normalised
+   question: identity numbers, date of birth or age, race, religion, marital
+   status, gender, veteran status, disability — not nationality or work
+   authorisation, which the visa analysis reads. The answer becomes
+   `(withheld)` in the extension at `record()`, so the value never reaches
+   the tab's `sessionStorage`, and again in `clean()`.
+   `tests/sensitive_questions.json` holds the two to one list, and the
+   extension's sweep test goes red against the old code with the raw value
+   in the store AND in `sessionStorage`. `cli redact-answers [--apply]`
+   withholds rows stored before the rule (the dry run prints questions,
+   never values; no undo). Extension 0.10.2.

@@ -13,6 +13,10 @@
   renorm-answers [--apply]
                      re-key stored screening answers after norm_question()
                      changes (dry run unless --apply)
+  redact-answers [--apply]
+                     withhold stored answers that answers.is_sensitive() now
+                     covers (NRIC, date of birth, race, …); dry run unless
+                     --apply, and there is no undo
 """
 
 from __future__ import annotations
@@ -205,6 +209,20 @@ def cmd_renorm_answers(args) -> None:
           + ("re-keyed" if args.apply else "to re-key (dry run; --apply writes)"))
 
 
+def cmd_redact_answers(args) -> None:
+    import sys
+    from . import answers
+    sys.stdout.reconfigure(errors="replace")      # same reason as renorm-answers
+    with db.connect() as conn:
+        plan = answers.redact_stored(conn, apply=args.apply)
+    # The question only, never the value: a report that printed what it is
+    # about to destroy would copy it into a terminal's scrollback instead.
+    for p in plan:
+        print(f"  {str(p['application_id'])[:8]}  {p['question'][:70]!r}")
+    print(f"{len(plan)} answer row(s) "
+          + ("withheld" if args.apply else "to withhold (dry run; --apply writes)"))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="tracker")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -235,6 +253,9 @@ def main() -> None:
     p = sub.add_parser("renorm-answers")
     p.add_argument("--apply", action="store_true", help="write the re-keyed rows")
     p.set_defaults(fn=cmd_renorm_answers)
+    p = sub.add_parser("redact-answers")
+    p.add_argument("--apply", action="store_true", help="overwrite the values (no undo)")
+    p.set_defaults(fn=cmd_redact_answers)
     args = parser.parse_args()
     args.fn(args)
 

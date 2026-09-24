@@ -103,6 +103,28 @@
     .replace(/(?<=\p{L})[#+]+/gu, (run) => run.replace(/#/g, " sharp ").replace(/\+/g, " plus "))
     .replace(/[^\p{L}\p{M}\p{N}]+/gu, " ").trim();
 
+  // pipeline/answers.py:_SENSITIVE_RE, word for word: questions whose ANSWER
+  // is identity or protected-characteristic data (an ID number, date of birth,
+  // race, religion, gender, disability …). The question is kept and the value
+  // replaced HERE, so it never leaves the browser — not even into this tab's
+  // sessionStorage. The server withholds the same answers again as a second
+  // line; tests/sensitive_questions.json holds both to one list. Whole words of
+  // the key, so "languages" holds no "age"; nationality and work authorisation
+  // are deliberately absent, since the visa analysis reads them.
+  const REDACTED = "(withheld)";
+  const SENSITIVE = new RegExp(
+    "(?:^| )(?:nric|fin|passport|mykad" +
+    "|national (?:id|identity|identification|registration)" +
+    "|identification (?:no|number)|ic (?:no|number)" +
+    "|date of birth|dob|birth ?date|birthday|year of birth|age" +
+    "|race|ethnic\\w*|religio\\w*|marital|gender|sex|sexual|veteran" +
+    "|disabilit\\w*|disabled)(?= |$)");
+  const isSensitive = (norm) => SENSITIVE.test(norm);
+  // What the store holds for an answer — the one place a value is decided, so
+  // record() and onEdit's "did the sweep already see this?" test agree.
+  const stored = (norm, answer) =>
+    isSensitive(norm) ? REDACTED : String(answer).slice(0, MAX_ANSWER);
+
   // occurrence is the field's index among same-labelled fields; see note 4.
   // Keyed rather than appended so a re-sweep of the SAME step overwrites in
   // place — the click listener fires many times per step, and the store has to
@@ -115,7 +137,7 @@
     const prev = items[k];
     items[k] = {
       question: question.slice(0, 300),
-      answer: String(answer).slice(0, MAX_ANSWER),
+      answer: stored(norm, answer),
       type,
       i: prev ? prev.i : seq++,
     };
@@ -582,8 +604,11 @@
       // later keystrokes correct the same entry instead of piling up.
       trySweep();
       const norm = normKey(question);
+      // Compare what the store WOULD hold: a withheld answer never equals the
+      // live value, and comparing raw would claim a second slot for it.
+      const want = stored(norm, answer);
       for (const k of Object.keys(items)) {
-        if (k.startsWith(`${norm}#`) && items[k].answer === answer) return;
+        if (k.startsWith(`${norm}#`) && items[k].answer === want) return;
       }
       let k = editKey.get(el);
       if (!k) {
@@ -602,8 +627,9 @@
    * clears — the next application starts empty rather than inheriting this
    * one's answers. */
   window.__trackerAnswers = {
-    // Exposed for tests/test_extension.js's parity check against the server.
+    // Exposed for tests/test_extension.js's parity checks against the server.
     normKey,
+    isSensitive,
     // What the sweep saw on its way here, for the popup's diagnostic list.
     // Read before take() clears the store, or not at all.
     diagnostics() {

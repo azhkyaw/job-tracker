@@ -77,6 +77,35 @@ _CONTROL_NORM_RES = (
     re.compile(r"^follow .+ to stay up to date\b"),
 )
 
+# Questions whose ANSWER is identity or protected-characteristic data: an
+# identity number, date of birth or age, race, religion, marital status,
+# gender, veteran status, disability. The question is still a question — "this
+# employer asked for my NRIC" is a fact /answers can usefully show across
+# employers — but the value never helps and is the worst thing a leaked
+# tracker could hold. So the answer is replaced by REDACTED and the row kept.
+# Singapore employer forms ask most of these, and US ones ask the equal-
+# opportunity set; 5 of the answers stored by 24 Sep 2026 were the latter,
+# from ordinary Easy Apply forms.
+#
+# Whole words of the normalised key, so "languages" holds no "age" and
+# "finance" no "fin". Nationality and work authorisation are deliberately NOT
+# here: the visa analysis reads them. extension/shared/answers.js withholds the
+# same answers before they leave the browser; this is the second line, and
+# tests/sensitive_questions.json holds the two to one list.
+REDACTED = "(withheld)"
+_SENSITIVE_RE = re.compile(
+    r"(?:^| )(?:nric|fin|passport|mykad"
+    r"|national (?:id|identity|identification|registration)"
+    r"|identification (?:no|number)|ic (?:no|number)"
+    r"|date of birth|dob|birth ?date|birthday|year of birth|age"
+    r"|race|ethnic\w*|religio\w*|marital|gender|sex|sexual|veteran"
+    r"|disabilit\w*|disabled)(?= |$)")
+
+
+def is_sensitive(question: str) -> bool:
+    """Whether this question's answer is withheld — see _SENSITIVE_RE."""
+    return bool(_SENSITIVE_RE.search(norm_question(question)))
+
 
 def _is_resume_pick(question: str, answer: str | None, field_type: str | None) -> bool:
     """Either layout's resume picker — see _RESUME_RE and _RESUME_HEAD."""
@@ -177,6 +206,10 @@ def clean(items) -> list[dict]:
         # same list by resume_file() and stored as a column instead.
         if _control_kind(question, answer, raw.get("type")):
             continue
+        # After the empty check on purpose: a question left blank records
+        # nothing, and a withheld one records that it was asked.
+        if is_sensitive(question):
+            answer = REDACTED
         norm = norm[:MAX_QUESTION]
         occurrence = seen.get(norm, 0)
         seen[norm] = occurrence + 1
@@ -277,6 +310,25 @@ def renorm(conn, apply: bool = False) -> list[dict]:
             conn.execute(
                 "UPDATE application_answers SET occurrence = -1 - occurrence "
                 "WHERE id = ANY(%s)", ([p["id"] for p in plan],))
+    return plan
+
+
+def redact_stored(conn, apply: bool = False) -> list[dict]:
+    """Withhold stored answers that is_sensitive() now covers — rows written
+    before the rule existed, or before a pattern was added to it. Returns the
+    rows that would change (question and application only, never the value);
+    writes only when `apply`. Admin connection, every user's rows, like
+    renorm(). There is no undo: the point is that the value stops existing."""
+    rows = conn.execute(
+        "SELECT id, application_id, question FROM application_answers "
+        "WHERE answer <> %s", (REDACTED,)).fetchall()
+    plan = [{"id": r["id"], "application_id": r["application_id"],
+             "question": r["question"]}
+            for r in rows if is_sensitive(r["question"])]
+    if apply and plan:
+        with conn.transaction():
+            conn.execute("UPDATE application_answers SET answer = %s WHERE id = ANY(%s)",
+                         (REDACTED, [p["id"] for p in plan]))
     return plan
 
 

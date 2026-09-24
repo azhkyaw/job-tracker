@@ -451,6 +451,7 @@ function sweepStepsOf(steps) {
 function loadAnswers(first) {
   let root = first;
   const listeners = {};
+  const writes = [];        // every value handed to sessionStorage, in order
   const body = node("body", {}, [root]);
   const doc = {
     nodeType: 9,
@@ -466,7 +467,7 @@ function loadAnswers(first) {
     console,
     setTimeout: () => 0,
     CSS: { escape: (s) => s },
-    sessionStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+    sessionStorage: { getItem: () => null, setItem(k, v) { writes.push(v); }, removeItem() {} },
     document: doc,
     location: { href: "https://www.linkedin.com/jobs/view/1/" },
   };
@@ -478,6 +479,7 @@ function loadAnswers(first) {
   vm.createContext(sandbox);
   vm.runInContext(ANSWERS_SRC, sandbox);
   sandbox._listeners = listeners;
+  sandbox._writes = writes;
   sandbox._setRoot = (next) => {
     body.childNodes = [next];
     next.parentElement = body;
@@ -635,6 +637,41 @@ console.log("\nanswers.js normKey: one rule with pipeline/answers.py:norm_questi
                       ask("How many years of work experience do you have with C#?", "cs", "10")]),
         [{ question: "How many years of work experience do you have with C++?", answer: "1", type: "number" },
          { question: "How many years of work experience do you have with C#?", answer: "10", type: "number" }]);
+}
+
+console.log("\nanswers.js isSensitive: one list with pipeline/answers.py:is_sensitive");
+{
+  // The same list tests/test_captures.py holds the server to. The extension
+  // decides on the KEY, the server on the question — so the case runs through
+  // normKey first, exactly as record() does.
+  const { cases } = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "sensitive_questions.json"), "utf8"));
+  const { normKey, isSensitive } = loadAnswers(node("div")).window.__trackerAnswers;
+  for (const [q, want] of cases) check(`isSensitive ${JSON.stringify(q)}`, isSensitive(normKey(q)), want);
+}
+{
+  // A sensitive answer is withheld at record(), before it reaches the store —
+  // so it never reaches this tab's sessionStorage either, which is where a
+  // wizard's earlier steps wait. Two steps, so the first is saved there.
+  const gender = node("div", {}, [
+    node("label", { for: "g" }, ["Gender*"]),
+    node("select", { id: "g" }, [node("option", { selected: true }, ["Female"])]),
+  ]);
+  const python = node("div", {}, [
+    node("label", { for: "y" }, ["How many years of experience do you have with Python?"]),
+    node("input", { type: "number", id: "y", value: "8" }),
+  ]);
+  const sandbox = loadAnswers(gender);
+  for (const fn of sandbox._listeners.click || []) fn({});
+  sandbox._setRoot(python);
+  check("sensitive answer withheld, question kept, the rest untouched",
+        sandbox.window.__trackerAnswers.take(), [
+          { question: "Gender*", answer: "(withheld)", type: "select" },
+          { question: "How many years of experience do you have with Python?",
+            answer: "8", type: "number" }]);
+  check("the real value was never written to sessionStorage",
+        sandbox._writes.length > 0 && sandbox._writes.every((w) => !w.includes("Female")),
+        true);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

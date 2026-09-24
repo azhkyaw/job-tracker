@@ -10,9 +10,16 @@ On an in-page apply form (LinkedIn Easy Apply today) it also reads the
 questions that form asks and the answers you gave, so your own tracker can
 show what you told that employer. Two consequences worth stating plainly:
 
-- These are the values in the form's own fields, whatever they are — if a
-  step asks for your phone number or work-authorisation status, that is what
-  gets read and stored. It goes to your tracker and nowhere else.
+- These are the values in the form's own fields — if a step asks for your
+  phone number or work-authorisation status, that is what gets read and
+  stored. It goes to your tracker and nowhere else.
+- **Except identity and protected-characteristic answers, which are
+  withheld in the browser.** For a question about an identity number (NRIC,
+  FIN, passport, national ID), date of birth or age, race or ethnicity,
+  religion, marital status, gender or sex, veteran status or disability, the
+  extension keeps the question and replaces your answer with "(withheld)"
+  before it is stored anywhere, including the tab's own working copy. The
+  server withholds the same answers again if one ever arrives.
 - Fields are read at the moment you submit (and as you fill each step, since
   the form discards earlier steps). Nothing is read from forms you never
   submit beyond that in-tab working copy, which is discarded after the

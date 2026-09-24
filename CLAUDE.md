@@ -49,6 +49,12 @@ it: the resume picker is PROMOTED to `applications.resume_file` (migration
 "Follow <employer>" are dropped. Match anchored patterns against
 `question_norm`, never loose prefixes — a bare `follow` prefix also swallows
 "Do you follow industry news to stay up to date?".
+**Some answers are withheld, not stored** (24 Sep 2026): an identity number,
+date of birth or age, race, religion, marital status, gender, veteran status
+or disability keeps its QUESTION and gets the answer `(withheld)` —
+`answers.is_sensitive()`, mirrored by `extension/shared/answers.js` so the
+value never leaves the browser, both held to `tests/sensitive_questions.json`.
+Nationality and work authorisation stay recorded: the visa analysis reads them.
 
 ## Key files
 
@@ -166,7 +172,9 @@ work" below stays a list of what is open, not a history of what was done.
   if any account failed)
 - Backlog: `uv run python -m pipeline.cli scan` (enqueue JD extraction/embeddings)
 - Answer keys: `uv run python -m pipeline.cli renorm-answers [--apply]` after any
-  change to `norm_question` (dry run by default; `.claude/rules/extension.md`)
+  change to `norm_question` (dry run by default; `.claude/rules/extension.md`);
+  `redact-answers [--apply]` after any change to `is_sensitive` (dry run by
+  default, prints questions never values, and `--apply` has no undo)
 - Account bootstrap/recovery: `uv run python -m pipeline.cli passwd <email>`
 - Requires Postgres running: `sudo service postgresql start` (WSL doesn't autostart)
 - **Native Windows (no WSL):** see `docs/windows-dev.md` — Docker Postgres
@@ -664,9 +672,9 @@ The dated register behind each item, tasks 1-23 with their measurements, is
 - **Employer career sites** (`docs/career-sites.md`): analysis only. 51
   LinkedIn "Apply on company website" applications carry 0 screening
   answers, and an application made directly on an employer's site exists
-  only as its mail. Four decisions are the author's before phase A (its
-  §14): static ATS hosts vs per-site opt-in, id namespacing vs a new
-  platform value, redacting NRIC/DOB/race answers, write at submit.
+  only as its mail. Its four decisions were taken 24 Sep 2026, all as
+  recommended (its §14): static ATS hosts plus per-site opt-in, namespaced
+  ids, withheld sensitive answers (built), write at submit. Phase A is next.
 - **Release blockers:** LICENSE (Apache-2.0 recommended), split the extension
   into its own repo, decide whether CLAUDE.md ships; `audit_names.py --history`
   is the pre-publish check. (task 3)

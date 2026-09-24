@@ -1,8 +1,9 @@
 # Employer Career Sites — Analysis and Plan
 
 **Author:** AZ
-**Status:** Proposed. This is analysis only and nothing is built; four decisions
-are still open (§14).
+**Status:** Accepted; being built. The four decisions in §14 were taken on
+24 Sep 2026, all as recommended. The redaction in §11 is built; the rest of
+phase A (§12) is in progress.
 **Date:** 24 September 2026
 **Scope:** What it takes for the extension to capture a job, and the
 application made for it, on an employer's own career site or its applicant
@@ -42,7 +43,8 @@ Two findings constrain the design:
   job that already has a real one, so the two need an explicit link. Loosening
   that heuristic is the wrong fix (invariant #3; §10).
 - **Singapore employer forms ask for NRIC, date of birth and race.** The
-  answer sweep would store all three today (§11).
+  answer sweep stored such values until 24 Sep 2026, when withholding them
+  was built ahead of everything else (§11).
 
 ## 2. The case that prompted this
 
@@ -424,17 +426,26 @@ explicit "attach to this job" parameter (§10), never a similarity match.
 
 - **`shared/answers.js` already skips password and file inputs**
   (`answers.js`, the type check in its control walk).
-- **Nothing filters sensitive fields.** Singapore employer forms,
-  SuccessFactors ones especially, ask for NRIC/FIN, date of birth, race,
-  religion and marital status. US forms ask equal-opportunity questions
-  (gender, ethnicity, veteran status, disability). The sweep would store
-  every value in `application_answers`.
-- **Recommended handling:**
-  - Keep the question and replace the value with a redaction marker, IN THE
-    EXTENSION, so the value never leaves the browser.
+- **Nothing filtered sensitive fields, and it had already cost something.**
+  Singapore employer forms, SuccessFactors ones especially, ask for NRIC/FIN,
+  date of birth, race, religion and marital status. US forms ask
+  equal-opportunity questions (gender, ethnicity, veteran status,
+  disability). Measured the day this doc was written: 5 of the stored
+  answers were equal-opportunity ones, from ordinary Easy Apply forms. So
+  this was built first, ahead of phase A, rather than with phase B.
+- **Built (24 Sep 2026, decision 3):**
+  - The question is kept and the value replaced by `(withheld)`, IN THE
+    EXTENSION (`shared/answers.js`, at `record()`), so the value never leaves
+    the browser, not even into the tab's `sessionStorage`.
   - "This employer asked for my NRIC" is a fact `/answers` can usefully show
     across employers. The number itself never helps.
-  - `answers.py:_control_kind()` is the server-side second line.
+  - `answers.is_sensitive()` withholds the same answers again on the server,
+    inside `clean()`. `tests/sensitive_questions.json` holds the two sides to
+    one list.
+  - Nationality and work authorisation are deliberately not withheld: the
+    visa analysis reads them.
+  - `cli redact-answers [--apply]` withholds rows stored before the rule, or
+    before a pattern was added to it. It has no undo, by design.
 - **`answerFormRoot()` must exclude the ATS's own sign-in and sign-up
   forms.** The sweep would otherwise file a username as an answer.
 - **Vendor widgets need wrapper-aware reading** (Workday's button-driven
@@ -492,18 +503,20 @@ This closes the 0-of-51 answer gap and fixes the applied time.
 | JSON-LD not yet present when read | Low | Read at the click. Vendor readers and title fallbacks, with the source recorded |
 | Permission creep or a store listing that reads as surveillance | Medium for a release | Opt-in per site, and a `PRIVACY.md` rewrite. No `<all_urls>` |
 
-## 14. Decisions open
+## 14. Decisions
+
+All four were taken by the author on 24 Sep 2026, each as recommended.
 
 1. **Automatic hooks:** a static list of ATS hosts in the manifest, or opt-in
-   per site for everything? Recommended: the static list for the hosts where
-   forms live, opt-in for vanity domains.
+   per site for everything? **Decided: the static list for the hosts where
+   forms live, opt-in for vanity domains.**
 2. **Id identity:** namespace under `other`, or add a new platform value?
-   Recommended: namespace first. It needs no migration and is reversible.
-   Revisit when analytics wants a split.
+   **Decided: namespace.** It needs no migration and is reversible. Revisit
+   when analytics wants a split.
 3. **Sensitive fields:** redact the value in the extension and keep the
-   question? Recommended: yes.
-4. **When to write:** at submit, or on a confirmation page? Recommended: at
-   submit (§6).
+   question? **Decided: yes. Built (§11).**
+4. **When to write:** at submit, or on a confirmation page? **Decided: at
+   submit (§6).**
 
 ## 15. Not verified
 
