@@ -39,10 +39,7 @@
   <form method="post" action="/triage/{{ e.id }}">
     <input type="hidden" name="lane" value="{{ lane }}">
     <select name="application_id" aria-label="Application to file this under">
-      <option value="">Pick an application</option>
-      {% for o in options %}
-      <option value="{{ o.id }}">{{ o.company_display }}, {{ o.title_canonical }}</option>
-      {% endfor %}
+      {% include "_application_options.html" %}
     </select>
     <button class="primary" name="action" value="link">File under this one</button>
     <span class="quiet sm">or start a new record for</span>

@@ -335,6 +335,43 @@ with db.connect() as conn:
 print("triage: link")
 r = client.get("/triage")
 check("pending email listed", "Your application was viewed" in r.text)
+
+print("triage: the link dropdown dates each record (25 Sep 2026)")
+# A role reposted and applied to again leaves two records with one company and
+# one title, identical in the dropdown until each carries its date. Noon UTC,
+# so the local date is the same in any timezone the test user might have.
+with db.connect() as conn, conn.transaction():
+    twin_jobs = []
+    for n, applied in (("1", "2026-07-03 12:00+00"), ("2", "2026-08-14 12:00+00")):
+        job = conn.execute(
+            "INSERT INTO jobs (user_id, company_norm, title_canonical) "
+            "VALUES (%s, 'contoso markets', 'Platform Engineer') RETURNING id",
+            (user_id,)).fetchone()["id"]
+        conn.execute(
+            "INSERT INTO postings (user_id, job_id, platform, platform_job_id, company_raw, "
+            "title, captured_via) VALUES (%s, %s, 'linkedin', %s, 'Contoso Markets', "
+            "'Platform Engineer', 'extension')", (user_id, job, f"LI-twin-{n}"))
+        twin = conn.execute(
+            "INSERT INTO applications (user_id, job_id) VALUES (%s, %s) RETURNING id",
+            (user_id, job)).fetchone()["id"]
+        conn.execute(
+            "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+            "VALUES (%s, %s, 'applied', 'extension', %s, '{}')", (user_id, twin, applied))
+        twin_jobs.append(job)
+# Every pending email carries its own copy of the dropdown; read the first.
+first_select = client.get("/triage").text.split("<select", 1)[1].split("</select>", 1)[0]
+twins = re.findall(r'<option value="[^"]+">(Contoso Markets, Platform Engineer[^<]*)</option>',
+                   first_select)
+check("same-titled records are told apart by their applied dates, newest first",
+      twins == ["Contoso Markets, Platform Engineer (applied 14 Aug 2026)",
+                "Contoso Markets, Platform Engineer (applied 3 Jul 2026)"], twins)
+with db.connect() as conn, conn.transaction():
+    conn.execute("DELETE FROM events WHERE application_id IN "
+                 "(SELECT id FROM applications WHERE job_id = ANY(%s))", (twin_jobs,))
+    conn.execute("DELETE FROM applications WHERE job_id = ANY(%s)", (twin_jobs,))
+    conn.execute("DELETE FROM postings WHERE job_id = ANY(%s)", (twin_jobs,))
+    conn.execute("DELETE FROM jobs WHERE id = ANY(%s)", (twin_jobs,))
+
 r = client.post(f"/triage/{linkme}", data={"action": "link", "application_id": str(northwind_app)})
 check("link redirects", r.status_code == 303, r.status_code)
 with db.connect() as conn:
@@ -462,6 +499,13 @@ check("lead does not change applied count", summary_after["applied"] == summary_
 check("lead does not change response rate",
       summary_after["response_rate"] == summary_before["response_rate"],
       (summary_before, summary_after))
+# The re-file dropdown on its detail page shares triage's options. A lead has
+# no applied event to date it by, so it is dated by the approach instead.
+lead_opt = re.search(rf'<option value="{lead_app_id}">([^<]*)</option>',
+                     client.get(f"/applications/{lead_app_id}").text)
+check("a lead's option is dated by the approach, not left undated",
+      lead_opt is not None and lead_opt.group(1).startswith("Beacon Search, ")
+      and "(approached " in lead_opt.group(1), lead_opt and lead_opt.group(1))
 
 print("inbound: its own page, split from the record by origin (24 Sep 2026)")
 # Membership is by origin, never status: / shows what the user started,

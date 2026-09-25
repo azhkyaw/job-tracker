@@ -1,0 +1,14 @@
+{#- The options of every link-to-application dropdown: triage's "File under
+    this one" and the detail page's "Re-file this email". One list for both,
+    as web._application_options is one query for both. Included, not an
+    imported macro, so the `day` filter still sees the request (its timezone).
+    The date is what tells apart two records with the same company and title:
+    the submission, else how the record started — the recruiter's approach
+    for a lead, which has no applied event by design (invariant #9). -#}
+<option value="">Pick an application</option>
+{% for o in options %}
+<option value="{{ o.id }}">{{ o.company_display }}, {{ o.title_canonical }}
+  {%- if o.applied_at %} (applied {{ o.applied_at | day }})
+  {%- elif o.started_at %} ({{ 'approached' if o.origin == 'inbound' else 'saved' if o.origin == 'saved' else 'since' }} {{ o.started_at | day }})
+  {%- endif %}</option>
+{% endfor %}

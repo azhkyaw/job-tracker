@@ -1992,18 +1992,31 @@ def delete_application(request: Request, app_id: str):
 
 def _application_options(conn, user_id) -> list[dict]:
     """Every application for this user, for a link-to-application dropdown
-    (triage's 'link' action and the emails table's 're-file' action)."""
+    (triage's 'link' action and the emails table's 're-file' action).
+
+    Carries each record's dates because company and title alone do not
+    identify one: a role reposted and applied to again, or an agency's
+    repeated title, gives two records that read identically (13 such pairs
+    and groups, 30 records, on 25 Sep 2026). `applied_at` / `started_at` are
+    the list query's own two expressions — the submission, else the first
+    event on record, which for an inbound lead is the approach (invariant
+    #9) — and within a group the newest comes first, as on the list."""
     return conn.execute(
         """
-        SELECT a.id, j.title_canonical,
+        SELECT a.id, a.origin, j.title_canonical,
                COALESCE(
                  (SELECT p.company_raw FROM postings p
                    WHERE p.job_id = a.job_id AND p.company_raw IS NOT NULL
                    ORDER BY p.captured_at DESC LIMIT 1),
-                 j.company_norm) AS company_display
+                 j.company_norm) AS company_display,
+               (SELECT min(occurred_at) FROM events e
+                 WHERE e.application_id = a.id AND e.type = 'applied') AS applied_at,
+               (SELECT COALESCE(min(occurred_at) FILTER (WHERE e.type = 'applied'),
+                                min(occurred_at))
+                  FROM events e WHERE e.application_id = a.id)         AS started_at
         FROM applications a JOIN jobs j ON j.id = a.job_id
         WHERE a.user_id = %s
-        ORDER BY j.company_norm, j.title_canonical
+        ORDER BY j.company_norm, j.title_canonical, started_at DESC NULLS LAST, a.id
         """, (user_id,)).fetchall()
 
 

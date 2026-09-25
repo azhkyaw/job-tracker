@@ -271,10 +271,7 @@
           <form method="post" action="/emails/{{ m.id }}/refile">
             <input type="hidden" name="redirect_to" value="/applications/{{ a.id }}">
             <select name="application_id" aria-label="Re-file to a different application" style="max-width:16rem">
-              <option value="">Pick an application</option>
-              {% for o in options %}
-              <option value="{{ o.id }}">{{ o.company_display }}, {{ o.title_canonical }}</option>
-              {% endfor %}
+              {% include "_application_options.html" %}
             </select>
             <button class="small" name="action" value="link">Move it</button>
             <button class="small" name="action" value="pending">Send to triage</button>
