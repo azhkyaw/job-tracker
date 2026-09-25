@@ -27,7 +27,7 @@
       {% for t in axis.ticks %}<span class="t{% if loop.first %} first{% endif %}" style="--x:{{ t.x }}">{{ t.label }}</span>{% endfor %}
       <span class="t last">today</span>
     </div>
-    {%- set live = a.tail and a.tail.role != 'applied' and not a.tail.aging %}
+    {%- set live = a.live %}
     <div class="trace" style="--week:{{ axis.week }};--heat:{{ a.heat }}%">
       {%- if a.tail %}<span class="tail{% if live %} live{% endif %}"
         style="--a:{{ a.tail.a }};--b:{{ a.tail.b }}"></span>{% endif -%}

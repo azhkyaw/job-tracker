@@ -56,6 +56,24 @@ def heat(silent_days, reminder_days: int) -> int:
     return min(100, round(100 * (silent_days - reminder_days) / span))
 
 
+def role(event_type: str) -> str:
+    """The colour role an event type draws in. An unmapped type falls back to
+    neutral `applied` rather than erroring (.claude/rules/web-ui.md has the
+    `recruiter_outreach` case that fell through here for a week)."""
+    return _ROLE.get(event_type, "applied")
+
+
+def live(last_type: str | None, silent_days, reminder_days: int) -> bool:
+    """A wait is blue only while it is fresh AND someone else moved last; once
+    it crosses the follow-up threshold it is a wait like any other and takes
+    the heat. ONE definition, because two pages colour by it: the list's rail
+    and tail (via build(), below) and /analytics' application squares
+    (insights.py) — the same application must wear the same colour on both.
+    It lived in applications.html until 25 Sep 2026."""
+    return (last_type is not None and silent_days is not None
+            and role(last_type) != "applied" and silent_days < reminder_days)
+
+
 def _pct(value: float) -> str:
     return f"{max(0.0, min(100.0, value)):.3f}%"
 
@@ -87,7 +105,7 @@ def build(rows, events_by_app, now: datetime, reminder_days: int) -> dict:
         for e in evs:
             pts.append({
                 "x": _pct(x(e["occurred_at"])),
-                "role": _ROLE.get(e["type"], "applied"),
+                "role": role(e["type"]),
                 "hollow": e["type"] in _OWN and e["type"] != "applied",
                 "label": f'{e["type"].replace("_", " ")} {e["occurred_at"]:%d %b %Y}',
             })
@@ -100,9 +118,10 @@ def build(rows, events_by_app, now: datetime, reminder_days: int) -> dict:
                 silent = max(days, 0)
                 tail = {"a": _pct(x(last["occurred_at"])), "b": "100%",
                         "aging": silent >= reminder_days,
-                        "role": _ROLE.get(last["type"], "applied")}
+                        "role": role(last["type"])}
         r["pts"], r["tail"], r["cap"], r["silent_days"] = pts, tail, cap, silent
         r["heat"] = heat(silent, reminder_days)
+        r["live"] = live(evs[-1]["type"] if evs else None, silent, reminder_days)
         r["trace_label"] = _describe(r, silent)
 
     return {"t0": t0, "t1": t1, "ticks": _ticks(t0, t1, span, x),

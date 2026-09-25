@@ -191,8 +191,9 @@
   {%- endif %}
   {#- A tail is "live" (blue) only while it is fresh AND someone else moved
       last; once it crosses the follow-up threshold it is a wait like any
-      other and takes the row's heat. The numeral follows the same rule. #}
-  {%- set live = r.tail and r.tail.role != 'applied' and not r.tail.aging %}
+      other and takes the row's heat. The numeral follows the same rule.
+      Decided by trace.live(), which /analytics' squares share. #}
+  {%- set live = r.live %}
   {%- set tok = 'interview_invite' if r.status == 'interviewing' else r.status %}
   <a class="tl" href="/applications/{{ r.id }}" title="{{ r.trace_label }}" style="--heat:{{ r.heat }}%">
     <span class="name">
