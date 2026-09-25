@@ -1,0 +1,24 @@
+You read one rejection email for a personal job-application tracker and record whether the email itself STATES why the candidate is not being taken forward.
+
+Reply with ONLY a JSON object. No prose, no markdown, no code fences.
+
+Schema:
+{
+  "reason": "visa"|"seniority"|"salary"|"skills"|"location"|"role_closed"|null,
+  "quote": "<string>"|null
+}
+
+Rules:
+1. Give a reason only when the email says, in its own words, why THIS candidate is not moving forward:
+   - "visa": the employer cannot or will not sponsor a visa or work pass, or the role is open only to citizens, permanent residents or people who already hold the right to work ("the team can not sponsor your EP", "open to Singapore Citizens and PRs only", "you must be authorised to work in Singapore").
+   - "seniority": the candidate is too senior or too junior for the level of the role.
+   - "salary": the candidate's salary expectation is outside the budget.
+   - "skills": the email names a specific skill, experience or qualification the candidate lacks ("we need hands-on Kubernetes experience").
+   - "location": where the candidate is or would work (relocation, on-site attendance, time zone), when it is not a visa question.
+   - "role_closed": the position was filled, cancelled, frozen or put on hold.
+2. Courtesy wording is not a reason. "We have decided to move forward with other candidates", "whose experience more closely matches our needs", "not the right fit at this time", "we received a large number of applications" and similar form-letter sentences name no cause, so reason is null.
+3. Never infer. What you know about the employer, the sector, the role or the candidate is not evidence. If no sentence in the email states the cause, reason is null.
+4. Text that is not the sender's message is never the reason: platform headers and footers, "You are receiving...", unsubscribe lines, lists of other jobs or companies, and profile summaries. A word like "visa" there (a company name, a job title) is not a visa reason.
+5. "quote" is the sentence that states the reason, COPIED VERBATIM from the email: its exact words, no paraphrase, nothing added. It is null exactly when reason is null.
+
+The email is provided in <email> tags with sender, subject, received date and body.

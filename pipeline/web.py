@@ -32,8 +32,8 @@ from pydantic import BaseModel
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from . import (analytics, answers, auth, config, db, dedup, gmail_imap, gmail_oauth,
-               ingest, insights, jd_extraction, joburl, mailbox, matcher, trace)
+from . import (analytics, answers, auth, config, db, dedup, email_classifier, gmail_imap,
+               gmail_oauth, ingest, insights, jd_extraction, joburl, mailbox, matcher, trace)
 from .email_classifier import norm_company
 
 app = FastAPI(title="Job Tracker")
@@ -491,6 +491,7 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
                    -- Why it closed, off the rejected event's own payload — the
                    -- key the timeline writes, read here so the row can wear it.
                    rr.reason AS reject_reason,
+                   rr.reason_quote AS reject_quote,
                    -- What the JD says about who may be hired (jd_extract_v2),
                    -- off the same extraction /analytics compares on: a grey
                    -- tag on the role line, its own sentence as the title.
@@ -547,7 +548,8 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
             -- filter has to tell "rejected, no reason yet" (a row with a NULL
             -- reason) from "never rejected" (no row).
             LEFT JOIN LATERAL (
-              SELECT e.id, e.payload->>'reason' AS reason FROM events e
+              SELECT e.id, e.payload->>'reason' AS reason,
+                     e.payload->>'reason_quote' AS reason_quote FROM events e
                WHERE e.application_id = a.id AND e.type = 'rejected'
                ORDER BY (e.payload->>'reason') IS NOT NULL DESC,
                         e.occurred_at DESC, e.created_at DESC
@@ -767,6 +769,10 @@ _EVENT_REASONS = {
 # a key from _EVENT_REASONS or carries none.
 _REASON_UNRECORDED = "unrecorded"
 _REASON_FILTERS = {**_EVENT_REASONS, _REASON_UNRECORDED: "not recorded"}
+# What an email may state (email_classifier.rejection_reason) must be a reason
+# this vocabulary can show, filter and count — the same guard as the one on
+# _MANUAL_EVENTS above.
+assert set(email_classifier.STATED_REASONS) <= set(_EVENT_REASONS)
 
 
 def _reason_rows(rows) -> list[dict]:
@@ -1809,10 +1815,12 @@ def set_rejection_reason(request: Request, app_id: str, event_id: str,
 
     The edit route above refuses email-sourced events on principle: the type
     and the date are the email's own facts, and the matcher parsed them. The
-    reason is not the email's fact but the user's annotation of it — most
-    rejections arrive as a form letter and the reason comes later, by phone or
-    WhatsApp — so it gets its own door, one that writes ONLY `payload.reason`
-    and leaves the rest of the row alone. Before this (9 Sep 2026) the only
+    reason is usually not the email's fact but the user's annotation of it —
+    most rejections arrive as a form letter and the reason comes later, by
+    phone or WhatsApp — so it gets its own door, one that writes ONLY the
+    reason and leaves the rest of the row alone. When the email DOES state
+    it, the matcher has filled it already (`reason_source: email`, since
+    25 Sep 2026), and this door is how the user overrides it. Before this (9 Sep 2026) the only
     way to tag an emailed rejection was to file a duplicate manual one; 40 of
     the author's 51 rejections were emailed and none could carry a reason.
 
@@ -1836,15 +1844,24 @@ def set_rejection_reason(request: Request, app_id: str, event_id: str,
             row = None
         if row is None or row["type"] != "rejected":
             raise HTTPException(404, "rejected event not found")
+        # A reason the email stated (payload.reason_source = 'email', with its
+        # quote — matcher._append_event) is the employer's words until the
+        # user says otherwise: saving the SAME reason leaves it the email's,
+        # picking another or clearing makes it theirs and drops the quote,
+        # which would otherwise sit beside a reason it does not support.
         if reason:
             # ::jsonb — psycopg's Json adapter binds as `json`, and Postgres has
             # no `jsonb || json` operator (the INSERTs elsewhere get away with
             # it because assignment casts; concatenation does not).
-            conn.execute("UPDATE events SET payload = payload || %s::jsonb WHERE id = %s",
-                         (Json({"reason": reason}), row["id"]))
+            conn.execute(
+                """UPDATE events SET payload = CASE
+                       WHEN payload->>'reason' = %(r)s THEN payload
+                       ELSE (payload - 'reason_source' - 'reason_quote') || %(j)s::jsonb END
+                   WHERE id = %(id)s""",
+                {"r": reason, "j": Json({"reason": reason}), "id": row["id"]})
         else:
-            conn.execute("UPDATE events SET payload = payload - 'reason' WHERE id = %s",
-                         (row["id"],))
+            conn.execute("UPDATE events SET payload = payload - 'reason' - 'reason_source'"
+                         " - 'reason_quote' WHERE id = %s", (row["id"],))
     return RedirectResponse(f"/applications/{app_id}", status_code=303)
 
 

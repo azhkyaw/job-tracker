@@ -2015,6 +2015,55 @@ check("the select then reads not recorded again",
 client.post(f"/applications/{northwind_app}/events/{nw_rej['id']}/reason",
             data={"reason": "visa"})
 
+print("a reason the email stated: the email's until the user says otherwise")
+# matcher._append_event files it when email_classifier.rejection_reason finds
+# one (tests/test_integration.py path 3j); written directly here, as that
+# payload. Its own record, removed at the end: the sections below count
+# rejected applications by bucket.
+with db.connect() as conn:
+    st_job = conn.execute(
+        "INSERT INTO jobs (user_id, company_norm, title_canonical) "
+        "VALUES (%s, 'stated co', 'Platform Engineer') RETURNING id", (user_id,)).fetchone()["id"]
+    st_app = conn.execute("INSERT INTO applications (user_id, job_id) VALUES (%s, %s) RETURNING id",
+                          (user_id, st_job)).fetchone()["id"]
+    conn.execute("INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+                 "VALUES (%s, %s, 'applied', 'manual', now() - interval '20 days', '{}')",
+                 (user_id, st_app))
+    st_rej = conn.execute(
+        "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+        "VALUES (%s, %s, 'rejected', 'email', now() - interval '5 days', %s) RETURNING id",
+        (user_id, st_app, Json({"reason": "visa", "reason_source": "email",
+                                "reason_quote": "the team can not sponsor your EP"}))).fetchone()["id"]
+
+
+def st_payload():
+    with db.connect() as conn:
+        return conn.execute("SELECT payload FROM events WHERE id = %s", (st_rej,)).fetchone()["payload"]
+
+
+r = client.get(f"/applications/{st_app}")
+check("the timeline selects the email's reason and says it is the email's, in its words",
+      "selected>visa / sponsorship" in r.text
+      and "the email says <q>the team can not sponsor your EP</q>" in r.text, r.status_code)
+st_row = client.get("/").text.split(f'href="/applications/{st_app}"')[1].split("</a>")[0]
+check("the row's reason tag carries the email's sentence in its title",
+      ">visa</span>" in st_row and "The email: the team can not sponsor your EP" in st_row, st_row[-400:])
+client.post(f"/applications/{st_app}/events/{st_rej}/reason", data={"reason": "visa"})
+check("saving the same reason leaves it the email's, quote and all",
+      st_payload() == {"reason": "visa", "reason_source": "email",
+                       "reason_quote": "the team can not sponsor your EP"}, st_payload())
+client.post(f"/applications/{st_app}/events/{st_rej}/reason", data={"reason": "salary"})
+check("picking another makes it the user's: the source and the quote go",
+      st_payload() == {"reason": "salary"}, st_payload())
+check("...and the page stops quoting the email for it",
+      "the email says" not in client.get(f"/applications/{st_app}").text)
+client.post(f"/applications/{st_app}/events/{st_rej}/reason", data={"reason": ""})
+check("clearing drops all three keys", st_payload() == {}, st_payload())
+with db.connect() as conn:
+    conn.execute("DELETE FROM events WHERE application_id = %s", (st_app,))
+    conn.execute("DELETE FROM applications WHERE id = %s", (st_app,))
+    conn.execute("DELETE FROM jobs WHERE id = %s", (st_job,))
+
 print("how it ended: a derived partition beside why it closed")
 # The stage is on the timeline already, so this breakdown is complete without
 # tagging anything: one bucket per rejected application — visa first (the

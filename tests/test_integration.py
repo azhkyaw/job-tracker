@@ -159,6 +159,26 @@ email_classifier.classify_email = _fake_classify
 email_classifier.extract_email = lambda client, sender, subject, received, body, ctype: \
     FAKE_EXTRACT[subject]
 
+# Stage 3, the reason a rejection states (path 3j). Stubbed like the other two:
+# the worker calls it for every rejection, and an unstubbed call would reach
+# the real API with the dummy key and read as an outage. One rejection states
+# its reason, the shape of a recruiter's one-line reply (25 Sep 2026); the rest
+# are form letters.
+FAKE_REASON = {
+    "lamna-dp-rejection": {"reason": "visa", "quote": "the team can not sponsor your EP",
+                           "model": "stub", "prompt_version": "rejection_reason_v1"},
+}
+REASON_CALLS: list[str] = []
+
+
+def _fake_reason(client, sender, subject, received, body):
+    REASON_CALLS.append(subject)
+    return FAKE_REASON.get(subject) or {"reason": None, "quote": None, "model": "stub",
+                                        "prompt_version": "rejection_reason_v1"}
+
+
+email_classifier.rejection_reason = _fake_reason
+
 
 # ---------------------------------------------------------------- helpers
 
@@ -594,6 +614,27 @@ with db.connect() as conn:
           s17["triage_state"] == "auto_matched" and str(s17["matched_application_id"]) == dp, s17)
     check("...and a same-titled sibling lead no longer captures the live thread's mail (was: auto onto the lead)",
           str(s18["matched_application_id"]) == live and str(s18["matched_application_id"]) != lead, s18)
+
+    print("path 3j: the reason a rejection states")
+    ev17 = conn.execute("SELECT payload FROM events WHERE source_email_id = %s AND type = 'rejected'",
+                        (e17,)).fetchone()["payload"]
+    check("a stated reason files ON the rejected event, marked as the email's, with its sentence",
+          ev17.get("reason") == "visa" and ev17.get("reason_source") == "email"
+          and ev17.get("reason_quote") == "the team can not sponsor your EP", ev17)
+    check("a form letter files no reason (the tagging queue keeps it)",
+          "reason" not in ev["payload"] and "reason_source" not in ev["payload"], ev["payload"])
+    check("the stage ran on rejections and nothing else",
+          set(REASON_CALLS) == {"northwind-rejection", "mystery-rejection", "lamna-dp-rejection"},
+          REASON_CALLS)
+    ex3 = conn.execute("SELECT extraction FROM emails WHERE id = %s", (e3,)).fetchone()["extraction"]
+    check("a rejection waiting in triage keeps the stage's answer in its extraction, so a human "
+          "resolving it later files the same thing (matcher.extraction_from_raw)",
+          ex3.get("rejection_reason", {}).get("prompt_version") == "rejection_reason_v1"
+          and matcher.extraction_from_raw(ex3).rejection_reason == ex3["rejection_reason"], ex3)
+    rr17 = matcher.extraction_from_raw(
+        conn.execute("SELECT extraction FROM emails WHERE id = %s", (e17,)).fetchone()["extraction"])
+    check("...and the rebuilt extraction carries a stated reason too",
+          rr17.rejection_reason and rr17.rejection_reason["reason"] == "visa", rr17.rejection_reason)
 
     print("path 4: failure backoff")
     db.enqueue(conn, user_id, "classify_email",

@@ -10,6 +10,8 @@ paths:
   - "tests/test_llm.py"
   - "scripts/replay_classify.py"
   - "scripts/replay_jd.py"
+  - "scripts/replay_reasons.py"
+  - "pipeline/quotes.py"
   - "docs/vllm-lab.md"
 ---
 
@@ -38,6 +40,19 @@ JDs were re-extracted under v2 by the author's decision, because the list's
 visa tag needs v2's vocabulary. The v2 rows sit beside the v1 rows, which
 remain, and `scripts/replay_jd.py` is the tool (batch mode, then `--apply`
 of the reviewed decisions).
+
+`REASON_MODEL` (stage 3, `rejection_reason_v1`, 25 Sep 2026) started on
+`claude-sonnet-5` and stayed there: Haiku had gamed the JD stage's verbatim
+check, and this check has the same shape. `scripts/replay_reasons.py` ran it
+twice over the 46 stored rejection emails for $0.25 (Haiku was not measured,
+the author's choice): identical answers on all 46, 5 stated reasons all
+correct on reading, none missed among the 41 form letters, and the two
+already tagged by hand matched. The backfill wrote the answer onto every one
+of the 46 emails (`extraction.rejection_reason`, so a re-run skips them and a
+reason the user later clears stays cleared) and a reason onto the 3 rejected
+events that had none. Snapshot and run file:
+`job-tracker-snapshots/2026-09-25-rejection-reasons.json` and
+`2026-09-25-reason-runs.jsonl`.
 
 ## Why the resume profile is a column (moved from CLAUDE.md, 25 Sep 2026)
 
@@ -197,6 +212,15 @@ page rather than a file.
 
   A second unquoted answer downgrades the signal instead of failing the job,
   so one field cannot throw away the technology list beside it.
+- **A free-text field the model fills has no reader, so what it knows there
+  is lost** (25 Sep 2026). `email_extract_v1`'s `notes` held "Team cannot
+  sponsor EP (Employment Pass)." for a rejection that filed with no reason;
+  the user had to ask why. Before accepting a stage's output, ask which of
+  its fields any code reads. A fact that should drive behaviour needs its
+  own structured field with a closed vocabulary, and here a verbatim quote,
+  so code can act on it and a person can check it. It became stage 3
+  (`rejection_reason_v1`), a separate prompt rather than two fields added
+  to extraction, so the other job emails' extraction stayed byte-identical.
 - **A replay can spend the account dry** (25 Sep 2026). A full Sonnet replay
   of 264 JDs ran out of credit after 226, mid-run. The live queue was not
   touched (the outage classifier held it, as designed), and

@@ -4,11 +4,11 @@ prompt version recorded on every row."""
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 
 from . import config, llm
 from .email_classifier import _call_json, _load_prompt
+from .quotes import quoted_in
 
 PROMPT_VERSION = "jd_extract_v2"
 WORK_MODES = {"onsite", "hybrid", "remote"}
@@ -69,31 +69,8 @@ def visa_group_sql(col: str) -> str:
 # is restricted to citizens" for four agency and exchange listings whose text
 # says nothing of the kind — the model's knowledge, not the JD. A note the JD
 # does not contain now fails validation and the repair retry is told why.
+# The check itself is pipeline/quotes.py, shared with the rejection-reason stage.
 VERBATIM_NOTES = {"jd_extract_v2"}
-_SPACE = re.compile(r"\s+")
-_PIECES = re.compile(r"\s*(?:\.\.\.|…|\[\.\.\.\])\s*")
-
-
-def _flat(text: str) -> str:
-    """Case, whitespace and typographic quotes folded, for a quote check."""
-    t = (text or "").lower().replace("\u2019", "'").replace("\u2018", "'")
-    t = t.replace("\u201c", '"').replace("\u201d", '"')
-    return _SPACE.sub(" ", t).strip()
-
-
-def quoted_in(notes: str, jd_text: str) -> bool:
-    """Whether every piece of `notes` (split at an ellipsis) appears in the JD,
-    ignoring case, ALL whitespace, surrounding quotes and a trailing full stop.
-    Whitespace goes entirely, not just runs of it: some captured JDs carry
-    stray spaces inside words ("Singapor e", "nee dsYou", measured 25 Sep
-    2026), and a model quoting that sentence correctly writes "Singapore".
-    The quote is right and the capture is wrong, so the check must pass it —
-    on the eval it was failing a correct `in_country` on every Sonnet run."""
-    jd = _SPACE.sub("", _flat(jd_text))
-    pieces = [_SPACE.sub("", _flat(x).strip(' "\'').rstrip("."))
-              for x in _PIECES.split(notes or "")]
-    pieces = [x for x in pieces if x]
-    return bool(pieces) and all(x in jd for x in pieces)
 
 
 @dataclass

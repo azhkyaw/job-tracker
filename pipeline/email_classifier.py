@@ -28,7 +28,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
-from . import config, llm
+from . import config, llm, quotes
 
 PROMPT_DIR = Path(__file__).resolve().parent.parent / "prompts"
 CLASSIFY_PROMPT_VERSION = "email_classify_v1"
@@ -41,6 +41,19 @@ CLASSIFY_PROMPT_VERSION = "email_classify_v1"
 # by a label, never by the model.
 CLASSIFY_SENT_PROMPT_VERSION = "email_classify_sent_v1"
 EXTRACT_PROMPT_VERSION = "email_extract_v1"
+# Why a rejection closed the thread, when the email itself SAYS so — its own
+# stage and prompt rather than two more fields in email_extract_v1, for the
+# sent-mail prompt's reason above: extraction runs on every job email, and a
+# v2 would change the input of all of them (and `platform`, which the screen
+# buckets read) to serve the one type that can state a reason. This runs on
+# `rejection` mail only and leaves the extraction byte-identical.
+REASON_PROMPT_VERSION = "rejection_reason_v1"
+# What an email may STATE as a reason: web._EVENT_REASONS without `other` (too
+# vague to quote) and `unstated`. A form letter giving no cause is NOT filled
+# as `unstated`: the real reason often arrives later, by phone, and "no reason
+# given" is the user's answer to record, not the absence of a sentence.
+# web.py asserts this is a subset of its vocabulary at import.
+STATED_REASONS = ("visa", "seniority", "salary", "skills", "location", "role_closed")
 
 # Classification moved to Sonnet 5 on 4 Aug 2026; extraction stays on Haiku.
 #
@@ -78,6 +91,18 @@ EXTRACT_PROMPT_VERSION = "email_extract_v1"
 CLASSIFY_MODEL = os.environ.get("TRACKER_CLASSIFY_MODEL") or config.LLM_MODEL or "claude-sonnet-5"
 EXTRACT_MODEL = (os.environ.get("TRACKER_EXTRACT_MODEL") or config.LLM_MODEL
                  or "claude-haiku-4-5-20251001")
+# The rejection-reason stage runs on Sonnet 5: Haiku, told not to infer, had
+# quoted irrelevant real sentences to satisfy the JD stage's verbatim check
+# (.claude/rules/llm.md), and this check has the same shape. Replayed on the
+# 46 stored rejection emails, two trials (scripts/replay_reasons.py, 25 Sep
+# 2026, $0.25): identical answers on every email, 5 reasons stated — visa x3,
+# a filled role, a LinkedIn letter naming the failed screening question
+# (skills) — all correct on reading, and no stated reason missed among the 41
+# form letters. A job-digest footer naming the company "Visa" gave none. At
+# roughly one rejection a day the cost is noise; Haiku was not measured (the
+# author's choice).
+REASON_MODEL = (os.environ.get("TRACKER_REASON_MODEL") or config.LLM_MODEL
+                or "claude-sonnet-5")
 
 STAGE1_BODY_CHARS = 4_000
 STAGE2_BODY_CHARS = 12_000
@@ -128,6 +153,11 @@ class Extraction:
     raw: dict = field(repr=False, default_factory=dict)
     model: str = EXTRACT_MODEL
     prompt_version: str = EXTRACT_PROMPT_VERSION
+    # rejection_reason()'s answer for a `rejection`, else None. Not from the
+    # extraction prompt: the worker adds it, and stores it in raw under the
+    # same key so the triage and refile paths (matcher.extraction_from_raw)
+    # carry it too.
+    rejection_reason: dict | None = None
 
 
 # --------------------------------------------------------------------------- helpers
@@ -331,6 +361,78 @@ def extract_email(
         notes=data.get("notes"),
         raw=data,
     )
+
+
+def _reason_check(text: str) -> Callable[[dict], None]:
+    """The stage's validator, holding the quote to the email the model read
+    (quotes.quoted_in, the JD stage's check). An unquoted reason goes back
+    once through _call_json's repair retry with the rule; a second is an
+    answer, not an error — no quote, no reason — so the rejection still files,
+    just without one. The same shape as jd_extraction._quote_check."""
+    asked = {"repair": False}
+
+    def validate(d: dict) -> None:
+        reason, quote = d.get("reason"), d.get("quote")
+        if reason is not None and reason not in STATED_REASONS:
+            raise ValueError(f"reason must be one of {list(STATED_REASONS)} or null")
+        if quote is not None and not isinstance(quote, str):
+            raise ValueError("quote must be a string or null")
+        if reason is None:
+            d["quote"] = None
+            return
+        if quote and quotes.quoted_in(quote, text):
+            return
+        if not asked["repair"]:
+            asked["repair"] = True
+            raise ValueError(
+                "quote must be the sentence that states the reason, copied verbatim "
+                "from the email; if no sentence states it, reason must be null")
+        d["reason"], d["quote"] = None, None
+    return validate
+
+
+def rejection_reason(
+    client: llm.Client,
+    sender: str,
+    subject: str,
+    received_at: datetime,
+    body: str,
+    model: str = REASON_MODEL,
+) -> dict:
+    """Stage 3, `rejection` mail only: the reason the email itself STATES, with
+    the sentence that states it — {"reason", "quote", "model",
+    "prompt_version"}, `reason` None when the email names no cause.
+
+    Found 25 Sep 2026: two recruiters' InMail replies said "the team can not
+    sponsor your EP" and "a specific mandatory requirement for candidates who
+    are Singapore Permanent Residents or Citizens", the extractor had written
+    both into its free-text `notes`, and nothing read them — the rejection
+    filed with no reason, waiting to be tagged by hand. The matcher files a
+    stated reason on the rejected event (matcher._append_event), marked as
+    the email's, and the why-select still overrides it.
+
+    A reply that stays invalid after the repair retry is not the rejection's
+    problem: it returns no reason and the event files as before. Only a
+    ValueError is caught — an outage (network, credit) still propagates, so
+    the worker pauses instead of filing a rejection that later needs a
+    reason it could have had. `model` is a parameter for the replay
+    (scripts/replay_reasons.py); the worker never passes it."""
+    text = f"{subject or ''}\n{(body or '')[:STAGE2_BODY_CHARS]}"
+    answer = {"model": model, "prompt_version": REASON_PROMPT_VERSION}
+    try:
+        data = _call_json(
+            client,
+            model=model,
+            system=_load_prompt(REASON_PROMPT_VERSION),
+            user_content=_email_block(sender, subject, received_at, body, STAGE2_BODY_CHARS),
+            validate=_reason_check(text),
+            # classify's ceiling, for classify's reason: on Sonnet 5 an omitted
+            # `thinking` is adaptive thinking at `high`, which max_tokens caps too.
+            max_tokens=1500,
+        )
+    except ValueError as err:
+        return {"reason": None, "quote": None, **answer, "error": str(err)[:200]}
+    return {"reason": data.get("reason"), "quote": data.get("quote"), **answer}
 
 
 # --------------------------------------------------------------------------- normalization

@@ -20,6 +20,7 @@ way `sync` does when a mailbox fails, so a cron run cannot fail quietly.
 
 from __future__ import annotations
 
+import dataclasses
 import functools
 import json
 import sys
@@ -104,6 +105,16 @@ def handle_extract_email(conn, job: dict) -> None:
         _client(), email["sender"], email["subject"] or "",
         email["received_at"], email["body_text"] or "", email["classification"],
     )
+    if email["classification"] == "rejection":
+        # Stage 3: the reason, when the email states one. Stored inside the
+        # extraction so a rejection resolved later from triage, or re-filed,
+        # carries it too (matcher.extraction_from_raw); a copy, since a test
+        # double may hand the same Extraction out twice.
+        rr = email_classifier.rejection_reason(
+            _client(), email["sender"], email["subject"] or "",
+            email["received_at"], email["body_text"] or "",
+        )
+        x = dataclasses.replace(x, raw={**x.raw, "rejection_reason": rr}, rejection_reason=rr)
     conn.execute(
         "UPDATE emails SET extraction = %s WHERE id = %s",
         (Json(x.raw), email["id"]),

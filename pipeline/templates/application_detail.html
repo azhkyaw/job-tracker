@@ -80,6 +80,12 @@
           </select>
           <button>Save</button>
         </form>
+        {#- A reason the email stated (matcher._append_event) says so, in the
+            email's words, until the user picks another (set_rejection_reason
+            drops the quote then). #}
+        {%- if e.payload.get('reason_source') == 'email' and e.payload.get('reason_quote') %}
+        <small>the email says <q>{{ e.payload['reason_quote'] }}</q></small>
+        {%- endif %}
         {%- endif %}
       </span></li>
     {% endfor %}

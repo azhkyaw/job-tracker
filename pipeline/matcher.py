@@ -216,6 +216,7 @@ def extraction_from_raw(raw: dict | None) -> Extraction:
         platform=raw.get("platform", "unknown"), ats=raw.get("ats"),
         event_date=raw.get("event_date"), status_detail=raw.get("status_detail"),
         recruiter=raw.get("recruiter"), notes=raw.get("notes"), raw=raw,
+        rejection_reason=raw.get("rejection_reason"),
     )
 
 
@@ -317,6 +318,14 @@ def _append_event(conn, user_id, application_id, email_row, classification,
         # (_event_time) — the detail page shows it when it is still ahead of
         # the email's arrival: the interview an invitation is for.
         payload["stated_date"] = extraction.event_date
+    rr = extraction.rejection_reason
+    if etype == "rejected" and rr and rr.get("reason"):
+        # The reason the employer's own email states (rejection_reason_v1,
+        # quoted verbatim or dropped), beside the email's other facts.
+        # `reason_source` says whose reading it is: the page shows the quote,
+        # and set_rejection_reason drops both when the user picks otherwise.
+        payload.update(reason=rr["reason"], reason_source="email",
+                       reason_quote=rr["quote"])
     if etype == "applied" and conn.execute(
             "SELECT 1 FROM events WHERE application_id = %s AND type = 'applied'",
             (application_id,)).fetchone():

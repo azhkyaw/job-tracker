@@ -282,6 +282,26 @@ is a private artifact, linked from the memory file
     rejections were recruiters who approached first and then dropped the
     thread — a different fact about the market than "my applications get
     rejected for visa". Counts only: nothing here is a rate.
+    **A reason the email STATES is filed from the email** (25 Sep 2026).
+    Two recruiters' InMail replies said "the team can not sponsor your EP"
+    and "a specific mandatory requirement for candidates who are Singapore
+    Permanent Residents or Citizens"; the extractor had written both into its
+    free-text `notes`, which nothing reads, so both rejections waited
+    untagged. `email_classifier.rejection_reason` (its own prompt, run on
+    `rejection` mail only) now returns the reason with the sentence that
+    states it, held to the email by the JD stage's verbatim check, and
+    `matcher._append_event` files it as `reason` plus `reason_source: email`
+    and `reason_quote`. The page says whose reading it is: the timeline
+    shows "the email says “…”" under the why-select, and the row's reason tag
+    carries the sentence in its title (9d's rule: say where a claim comes
+    from). The why-select still wins: saving the same reason leaves it the
+    email's, another reason or a clear makes it the user's and drops the
+    quote, which would otherwise sit beside a reason it does not support. A
+    form letter gives none, and is NOT filled as `unstated`: the real reason
+    often arrives later by phone, and "no reason given" is the user's answer.
+    Replayed over the 46 stored rejection emails: 5 stated a reason (visa
+    ×3, a filled role, a LinkedIn letter naming the failed screening
+    question), and the two already tagged by hand agreed with it exactly.
 13. **How it ended is a derived partition, shown at rest; why it closed is a
     recorded one, shown on demand** (23 Sep 2026). Asked for a glance at the
     55 rejections as three kinds — after at least one round, on visa, or by a
@@ -325,7 +345,8 @@ is a private artifact, linked from the memory file
     forms without a visa question. The screens take precedence over a
     recorded reason: they are the MECHANISM, and the reason is the user's
     reading of it. A screened application tagged `visa` stays a screen, and
-    `visa` counts only what a person said. `sponsorship` states what the form
+    `visa` counts only what a person said — the user, or since 25 Sep 2026
+    the employer's own email when it states the reason (rule 12). `sponsorship` states what the form
     learned, not a proven cause, since a form can carry several must-haves;
     the tooltip says exactly that. Unlike the three original buckets, these
     DO wear a row tag (grey, beside the reason, never instead of it): a

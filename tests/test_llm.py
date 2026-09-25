@@ -406,4 +406,66 @@ check("a v1 replay keeps v1's rules (a paraphrase passes) and sends no effort",
       x.visa_signal == "sponsors" and "effort" not in cl.calls[0]
       and x.prompt_version == "jd_extract_v1")
 
+# ---------------------------------------------------------------- rejection reason
+# Stage 3 (25 Sep 2026): two real recruiter replies stated the reason, the
+# extractor wrote it into `notes`, and the rejection filed with none. The shape
+# of both, placeholder names.
+print("rejection reason: stated, quoted verbatim, or none")
+from pipeline import quotes                                      # noqa: E402
+
+REJ_SUBJECT = "Message replied: Senior Engineer Opportunity"
+REJ_BODY = ("Unfortunately the team can not sponsor your EP... InMail: You have a new message "
+            "Jane Recruiter Managing Consultant @ Northwind Talent Reply Unfortunately the team "
+            "can not sponsor your EP This email was intended for you. You are receiving "
+            "LinkedIn notification emails. Top jobs looking for your skills: Engineer, Visa.")
+
+
+def reason_reply(reason, quote):
+    return json.dumps({"reason": reason, "quote": quote})
+
+
+def stage(cl):
+    return email_classifier.rejection_reason(cl, "hit-reply@linkedin.com", REJ_SUBJECT, _WHEN, REJ_BODY)
+
+
+cl = ScriptedClient(reason_reply("visa", "Unfortunately the team can not sponsor your EP"))
+r = stage(cl)
+check("a stated reason with its verbatim sentence is kept, in one call, on the stage's model and prompt",
+      r["reason"] == "visa" and r["quote"] == "Unfortunately the team can not sponsor your EP"
+      and len(cl.calls) == 1 and cl.calls[0]["model"] == email_classifier.REASON_MODEL
+      and cl.calls[0]["max_tokens"] == 1500
+      and cl.calls[0]["system"] == _prompt("rejection_reason_v1")
+      and r["prompt_version"] == "rejection_reason_v1" and "error" not in r, (r, len(cl.calls)))
+
+invented = reason_reply("visa", "We do not sponsor foreign candidates.")
+cl = ScriptedClient(invented, invented)
+r = stage(cl)
+check("no quote, no reason: an invented sentence goes back once, then the answer is none, not an error",
+      len(cl.calls) == 2 and "verbatim" in cl.calls[1]["messages"][-1]["content"]
+      and r["reason"] is None and r["quote"] is None and "error" not in r, (len(cl.calls), r))
+cl = ScriptedClient(invented, reason_reply("visa", "the team can not sponsor your EP"))
+check("a repair that quotes the email is kept", stage(cl)["reason"] == "visa" and len(cl.calls) == 2)
+
+cl = ScriptedClient(reason_reply(None, "Unfortunately the team can not sponsor your EP"))
+r = stage(cl)
+check("no reason carries no quote", r["reason"] is None and r["quote"] is None and len(cl.calls) == 1)
+
+cl = ScriptedClient(reason_reply("unstated", None), reason_reply("unstated", None))
+r = stage(cl)
+check("the page's `unstated` and `other` are not reasons an email can state: refused, and after "
+      "the repair the rejection still gets an answer (none) rather than an exception",
+      r["reason"] is None and "error" in r and len(cl.calls) == 2, r)
+cl = ScriptedClient("not json", "still not json")
+r = stage(cl)
+check("an unparseable reply twice is the same: no reason, recorded as an error",
+      r["reason"] is None and r.get("error"), r)
+check("the quote may come from the subject line, which the model also read",
+      stage(ScriptedClient(reason_reply("role_closed", "Senior Engineer Opportunity"))
+            )["reason"] == "role_closed")
+check("the shared check is the JD stage's check (one definition)",
+      jd_extraction.quoted_in is quotes.quoted_in)
+check("every stated reason is a manual-event reason key (web asserts the same at import)",
+      set(email_classifier.STATED_REASONS)
+      == {"visa", "seniority", "salary", "skills", "location", "role_closed"})
+
 print("\nALL LLM PATHS PASS")

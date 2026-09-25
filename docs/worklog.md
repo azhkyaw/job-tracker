@@ -921,3 +921,48 @@ the key to each real case.
    without restarting, followed by Chrome serving the page from cache, made
    the fixed note look broken twice. Fetch with `cache: 'no-store'` before
    believing a screenshot after a server restart.
+35. **The reason a rejection email states is filed from the email** (25 Sep
+   2026). The author asked why two rejected recruiter threads did not read
+   as visa. Both recruiters' LinkedIn replies said so outright ("the team
+   can not sponsor your EP"; "a specific mandatory requirement for
+   candidates who are Singapore Permanent Residents or Citizens"), and the
+   extractor had written both into `notes`, a free-text field nothing
+   reads. The reason was only ever set by hand, by design (invariant #2,
+   9 Sep). Neither the screen buckets (LinkedIn's 72-hour timer on a form)
+   nor the JD's tag could reach an inbound thread with no form and no JD.
+   Of the 46 emailed rejections, 3 stated a visa reason, all recruiter
+   replies; one had been tagged by hand on 5 Aug, and these were the other
+   two. A keyword rule would have been wrong: a fourth "visa" hit was a
+   company of that name in a job-digest footer.
+   Offered three options, the author chose to read the reason from the email:
+   - Stage 3, `email_classifier.rejection_reason` (prompt
+     `rejection_reason_v1`), runs on `rejection` mail only. It returns a
+     reason from `STATED_REASONS` (the page's vocabulary without `other`
+     and `unstated`) with the sentence that states it, checked verbatim by
+     `pipeline/quotes.py`, the JD stage's check moved to a shared module.
+     A failed quote gets one repair, then the answer is none, not an
+     error, so the rejection still files. It is a separate prompt rather
+     than extraction v2 because extraction runs on every job email, and
+     the screen buckets read its `platform`.
+   - The worker stores the answer inside the extraction, so the triage and
+     refile paths carry it (`matcher.extraction_from_raw`).
+     `_append_event` files it on the rejected event with
+     `reason_source: email` and `reason_quote`.
+   - The timeline says "the email says “…”", and the row's tag title
+     quotes it. The why-select overrides: the same reason keeps it the
+     email's, another or a clear makes it the user's and drops the quote.
+   Replayed with Sonnet 5, two trials, $0.25 (the author declined the
+   Haiku comparison). It gave identical answers on all 46 emails, and 5
+   stated reasons (visa x3, a filled role, a LinkedIn letter naming the
+   failed screening question), all correct on reading. None was missed
+   among the 41 form letters, and the footer "visa" was ignored. The two
+   rejections already tagged by hand agreed exactly. Backfilled on the
+   author's word, snapshot first: the answer onto all 46 emails and a
+   reason onto the 3 events that had none. Every inbound rejection now
+   carries a reason. On `/`, 39 of 57 rejections still have none: 21
+   screens, 2 after a round, and 16 without a round, the ones worth
+   tagging.
+   Found on the way: a memory written earlier the same day said
+   `analytics.py`'s two response-type lists had been unified. They have
+   not: `_REMINDER_WHERE` keeps its own list, as `.claude/rules/web-ui.md`
+   says. The memory was corrected.

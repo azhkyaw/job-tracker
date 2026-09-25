@@ -70,7 +70,7 @@ and design records; the code and `migrations/` win where they disagree.
   uv-managed Python, the Neon dev DB.
 - `docs/monetization.md` — superseded, retained for its Gmail
   restricted-scope compliance analysis.
-- `docs/worklog.md` — the dated task register (tasks 1-34 with their
+- `docs/worklog.md` — the dated task register (tasks 1-35 with their
   measurements); what is still open is summarised under "Open work" below.
 
 **Path-scoped rules.** Dated case history that only matters when touching
@@ -165,7 +165,12 @@ An invariant keeps its RULE here and its case history in the rule file.
 - `pipeline/worker.py` — the job queue: claim, savepoint, backoff, dead-letter
   and `_outage()` (invariant #7; the billing-outage case is in `.claude/rules/llm.md`)
 - `pipeline/email_classifier.py` — `norm_company()` (invariant #4) and the
-  per-stage model constants `CLASSIFY_MODEL` / `EXTRACT_MODEL` (invariant #5)
+  per-stage model constants `CLASSIFY_MODEL` / `EXTRACT_MODEL` /
+  `REASON_MODEL` (invariant #5). Stage 3, `rejection_reason()` (25 Sep 2026),
+  runs on `rejection` mail only: the reason the email STATES, with the
+  sentence that states it (`pipeline/quotes.py`, the JD stage's check), or
+  none. Its own prompt, so the extraction stays byte-identical;
+  `scripts/replay_reasons.py` grades and backfills it
 - `pipeline/jd_extraction.py` — the JD extractor (`extract` / `store`), on
   prompt `jd_extract_v2` since 25 Sep 2026 (`docs/jd-extraction-models.md`).
   `VISA_SIGNALS_BY_VERSION` keeps each version's vocabulary, since v1 rows
@@ -335,7 +340,11 @@ An invariant keeps its RULE here and its case history in the rule file.
    detail page's timeline form (`web.py:_MANUAL_EVENTS`, backdated, with
    `payload.reason` / `payload.channel` in JSONB — no columns). **A `reason`
    goes on ANY `rejected` event, whatever its source**, and a visa
-   non-proceed is a REASON on `rejected`, never a status of its own.
+   non-proceed is a REASON on `rejected`, never a status of its own. When
+   the rejection email itself STATES the reason, the pipeline files it
+   (`email_classifier.rejection_reason`, quoted verbatim or none, marked
+   `payload.reason_source = 'email'` with its quote); otherwise the reason is
+   the user's annotation, and the why-select overrides either.
    **`engaged`** (a person reaching out, no next step yet) ranks strictly
    between `viewed` — `matcher.py`'s passive, auto-detected signal only —
    and `interview_invite`, in gapped precedence values. **A visa rejection
@@ -683,7 +692,7 @@ Detail lives with each family's rule file; this is the index.
 
 ## Open work (as of 25 Sep 2026)
 
-The dated register behind each item, tasks 1-34 with their measurements, is
+The dated register behind each item, tasks 1-35 with their measurements, is
 `docs/worklog.md`; read the matching entry before acting on one.
 
 - **Follow-up drafting** on an age-capped queue: cap `/follow-ups` near 21
@@ -732,10 +741,13 @@ The dated register behind each item, tasks 1-34 with their measurements, is
   of 192 where it says nothing. The finding that matters is elsewhere: only
   4 of the 12 LinkedIn sponsorship screens had a JD saying so, so the form's
   question predicts that knockout and the JD mostly does not. Still open:
-  41 of 56 rejected applications carry no reason (25 Sep), but 21 of those
+  39 of 57 rejected applications carry no reason (25 Sep), but 21 of those
   are LinkedIn's automatic screens (`how=sponsorship_screen` /
   `form_screen`, task 32). The timeline explains them and no person gave a
-  reason. The ones worth tagging are `how=no_round&reason=unrecorded` (18).
+  reason. The ones worth tagging are `how=no_round&reason=unrecorded` (16).
+  Every inbound rejection now has one: two recruiter replies that stated a
+  visa reason were filled from the email, beside a third tagged by hand
+  in August (task 35).
   All three kinds of evidence meet on `/analytics`' "Visa, at a glance"
   (task 34), each cell opening its rows on the list. Two JD label calls wait
   on the author, both left at the rubric's default
