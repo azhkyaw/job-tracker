@@ -729,9 +729,10 @@ The dated register behind each item, tasks 1-23 with their measurements, is
   25 Sep ("What the job description said about visas"): answered 3 of 13
   where it says it sponsors, 6 of 21 where it wants locals only, 35 of 178
   where it says nothing — no difference the intervals can see. Still open:
-  40 of 54 rejected applications wait to be tagged at
-  `/?reason=unrecorded` (24 Sep; task 12's `how=no_round&reason=unrecorded`
-  is the bulk of that queue).
+  41 of 56 rejected applications carry no reason (25 Sep), but 21 of those
+  are LinkedIn's automatic screens (`how=sponsorship_screen` /
+  `form_screen`, task 32). The timeline explains them and no person gave a
+  reason. The ones worth tagging are `how=no_round&reason=unrecorded` (18).
 - **Two emails from the sent-mail repair wait on the author** (task 16): the
   two resume emails recovered from `not_job_related` sit in triage (neither
   names a company, so the matcher could not place them). The misfiled 23 Sep

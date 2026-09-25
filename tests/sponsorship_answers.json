@@ -1,0 +1,30 @@
+{
+  "_comment": "answers.declares_sponsorship and its SQL twin, held to the same cases. Every real work-authorisation wording on record on 25 Sep 2026 (question_norm as stored), then the traps. `needs` is whether the answer told the employer you need sponsorship. test_insights runs the Python rule over this file, test_web the SQL one.",
+  "cases": [
+    {"q": "will you now or in the future require sponsorship for employment visa status", "a": "Yes", "needs": true},
+    {"q": "do you need a work visa sponsorship for the location of the role that you are applying for", "a": "Yes", "needs": true},
+    {"q": "do you require an ep visa to work in singapore", "a": "Yes", "needs": true},
+    {"q": "do you require any visa sponsorship for your next role", "a": "Yes", "needs": true},
+    {"q": "do you require sponsorship to work in singapore e g an ep or work visa", "a": "Yes", "needs": true},
+    {"q": "are you legally authorized to work in singapore", "a": "No", "needs": true},
+    {"q": "are you authorized to work in the job s location", "a": "No", "needs": true},
+    {"q": "are you able to work legally without sponsorship in either singapore or the united states", "a": "No", "needs": true},
+    {"q": "what is your level of right to work in singapore", "a": "I don’t have the right to work in Singapore [no work Visa in Singapore]", "needs": true},
+    {"q": "which of the following statements best describes your right to work in singapore", "a": "I require sponsorship to work for a new employer in Singapore", "needs": true},
+
+    {"q": "will you now or in the future require sponsorship for employment visa status", "a": "No", "needs": false},
+    {"q": "are you legally authorized to work in singapore", "a": "Yes", "needs": false},
+    {"q": "are you currently authorized to work in singapore without requiring now or in the future any visa sponsorship or employment pass sponsorship", "a": "Yes", "needs": false},
+    {"q": "are you currently authorized to work in singapore without requiring now or in the future any visa sponsorship or employment pass sponsorship", "a": "No", "needs": true},
+    {"q": "are you legally authorized to work in singapore", "a": "Yes, I do not require sponsorship", "needs": false},
+    {"q": "are you legally authorized to work in singapore", "a": "Not sure", "needs": false},
+
+    {"q": "will you now or in the future require sponsorship for employment visa status", "a": "Will you now or in the future require sponsorship for employment visa status?", "needs": false},
+    {"q": "are you legally authorized to work in singapore", "a": "Are you legally authorized to work in Singapore?", "needs": false},
+    {"q": "are you willing and able to work full time in an in person work environment", "a": "No", "needs": false},
+    {"q": "are you an sgpr citizen", "a": "No", "needs": false},
+    {"q": "do you require any accommodation during the interview process", "a": "Yes", "needs": false},
+    {"q": "how many years of work experience do you have with python programming language", "a": "6", "needs": false},
+    {"q": "phone country code", "a": "Yes", "needs": false}
+  ]
+}

@@ -271,6 +271,33 @@ is a private artifact, linked from the memory file
     rule 12's "two definitions" trap again. `/analytics` gets the sibling
     table, with the channel columns that answer the question as asked. Not a
     row badge: the trace already draws the rounds.
+    **Screens, since 25 Sep 2026: five buckets.** The author asked for a tag
+    on rejections that "look like visa", then that they stay apart from the
+    ones a person said were visa. The record could tell them apart.
+    LinkedIn's must-have auto-rejection sends its letter three days after the
+    application (Recruiter Help a412523). 21 of the 27 LinkedIn letters on
+    the author's own applications arrived 72.01-72.02 hours after the
+    submission, the next nearest at 69.7 hours and the rest at 114 or later.
+    So `analytics.screen_sql` reads a screen off the timer (71-73 hours, from
+    ANY rejected event that is a LinkedIn letter). It names it `sponsorship`
+    when the form had recorded that you need sponsorship
+    (`answers.declares_sponsorship`, one rule in Python and SQL, held to
+    `tests/sponsorship_answers.json`), else `form`. On the day: 12
+    sponsorship screens and 9 form screens, and "without a round" fell from
+    42 to 22. A form that declared the need was rejected 36% of the time
+    (12 of 33), every one of them by that timer, against 13% (12 of 89) on
+    forms without a visa question. The screens take precedence over a
+    recorded reason: they are the MECHANISM, and the reason is the user's
+    reading of it. A screened application tagged `visa` stays a screen, and
+    `visa` counts only what a person said. `sponsorship` states what the form
+    learned, not a proven cause, since a form can carry several must-haves;
+    the tooltip says exactly that. Unlike the three original buckets, these
+    DO wear a row tag (grey, beside the reason, never instead of it): a
+    screen is not on the trace, which draws only a rejection at day three.
+    The rail's status line wraps to hold it (`.tl .rail .s`), because
+    "sponsorship screen" beside "rejected" is wider than the 7rem rail, the
+    clipping rule 9b measured. It cannot see other hiring systems'
+    knockouts (no fixed timer), nor an employer who chose "notify promptly".
 14. **The wait has a temperature** (23 Sep 2026). Amber was binary — a tail
     either crossed `REMINDER_DAYS` or it did not — and on 277 real rows that
     put 150 in one flat amber: a highlighted list, not a scale. `trace.heat()`

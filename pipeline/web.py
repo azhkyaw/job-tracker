@@ -477,6 +477,9 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
                    -- Why it closed, off the rejected event's own payload — the
                    -- key the timeline writes, read here so the row can wear it.
                    rr.reason AS reject_reason,
+                   -- LinkedIn's automatic rejection, if that is how it closed:
+                   -- the row wears it beside (never instead of) the reason.
+                   CASE WHEN s.status = 'rejected' THEN {_SCREEN} END AS screen,
                    (SELECT min(occurred_at) FROM events e
                      WHERE e.application_id = a.id AND e.type = 'applied') AS applied_at,
                    -- The date the thread started, from whichever side started
@@ -782,11 +785,15 @@ def _end_rows(rows) -> list[dict]:
 
 # The list's `how` WHERE, off the same closing event (`rr`) the row badge and
 # the reason filter read, and the same bucket expression the chips are counted
-# by — formatted from one function so the two cannot drift.
+# by — formatted from one function so the two cannot drift. The screen
+# (LinkedIn's automatic rejection, analytics.screen_sql) is one expression too,
+# selected for the row's tag and read by the bucket.
+_SCREEN = analytics.screen_sql("a.id")
 _HOW_CASE = analytics.rejected_how_sql(
     "rr.reason",
     f"EXISTS (SELECT 1 FROM events x WHERE x.application_id = a.id "
-    f"AND x.type IN {analytics.ROUND_TYPES})")
+    f"AND x.type IN {analytics.ROUND_TYPES})",
+    _SCREEN)
 
 # How the news arrived, for the events the tracker cannot see for itself.
 _EVENT_CHANNELS = {

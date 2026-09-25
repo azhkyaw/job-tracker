@@ -370,3 +370,57 @@ JOIN jobs j         ON j.id = a.job_id
 WHERE aa.question_norm = ANY(%s)
 ORDER BY aa.question_norm, aa.captured_at DESC, aa.occurrence
 """
+
+
+# ---------------------------------------------------------------------------
+# Did this answer tell the employer you need visa sponsorship? (25 Sep 2026)
+#
+# Read by /analytics and the list's "how it ended" to name LinkedIn's
+# automatic rejection of a form that declared it (analytics.screen_sql): of
+# 33 settled applications whose form said so, 12 were rejected, every one by
+# LinkedIn's must-have auto-rejection 72 hours after applying. One rule over
+# two question shapes, checked in this order:
+#
+#   authorisation  "are you legally authorized to work in singapore",
+#                  "right to work", "able to work legally": a NO declares the
+#                  need, and so does a chosen statement saying it ("I require
+#                  sponsorship ...", "I don't have the right to work ...").
+#                  A YES never does, whatever follows it. Matched on LEGAL
+#                  wording only: "willing and able to work full time in an in
+#                  person work environment" is not about a visa.
+#   requirement    "do you require / will you require / do you need ...
+#                  sponsorship / visa / an ep": a YES declares it.
+#
+# Authorisation is tested first because its wording can contain the other's
+# ("authorized to work ... without requiring ... any visa sponsorship"). An
+# answer that is the question's own text (a capture artefact) matches
+# neither. The patterns use only what Python's `re` and Postgres' regex agree
+# on, so the SQL below and the function are one rule, held together over every
+# real wording by tests/sponsorship_answers.json.
+SPONSOR_AUTH_Q = (r"authori[sz]ed to work|right to work|able to work legally"
+                  r"|(legally|lawfully) (able|eligible|entitled|permitted|allowed) to work")
+SPONSOR_NEED_Q = (r"(^| )(require|requires|required|need|needs)( [a-z ]*)? "
+                  r"(sponsorship|sponsor|visa|ep)( |$)")
+_YES_A = r"^\s*yes"
+_NO_A = r"^\s*no([^a-z]|$)"
+_NEED_A = r"(require|need)s? (visa |work )?(sponsorship|a sponsor)|(don.?t|do not) have the right"
+
+
+def declares_sponsorship(question_norm: str, answer: str | None) -> bool:
+    """True when this answer told the employer you need sponsorship."""
+    q, a = question_norm or "", answer or ""
+    if re.search(SPONSOR_AUTH_Q, q):
+        return (not re.search(_YES_A, a, re.I)
+                and bool(re.search(_NO_A, a, re.I) or re.search(_NEED_A, a, re.I)))
+    return bool(re.search(SPONSOR_NEED_Q, q) and re.search(_YES_A, a, re.I))
+
+
+def declares_sponsorship_sql(q: str, a: str) -> str:
+    """The same rule as a SQL boolean over a question column and an answer
+    column. The patterns hold no quote or percent sign, so they inline safely
+    into a query that also takes psycopg parameters."""
+    for p in (SPONSOR_AUTH_Q, SPONSOR_NEED_Q, _YES_A, _NO_A, _NEED_A):
+        assert "'" not in p and "%" not in p
+    return (f"(({q} ~ '{SPONSOR_AUTH_Q}' AND {a} !~* '{_YES_A}' "
+            f"AND ({a} ~* '{_NO_A}' OR {a} ~* '{_NEED_A}')) "
+            f"OR ({q} !~ '{SPONSOR_AUTH_Q}' AND {q} ~ '{SPONSOR_NEED_Q}' AND {a} ~* '{_YES_A}'))")

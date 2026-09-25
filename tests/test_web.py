@@ -16,7 +16,7 @@ the why-chips + `reason` filter, and the analytics table.
 import os
 import re
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-dummy-key")
@@ -2037,9 +2037,90 @@ with db.connect() as conn, conn.transaction():
         "       (%s, %s, 'rejected', 'manual', now() - interval '5 days', "
         "        '{\"reason\": \"role_closed\"}')",
         (user_id, rt_app, user_id, rt_app, user_id, rt_app))
+
+print("how it ended: LinkedIn's automatic rejection is a screen, not a visa reason")
+# Two applications LinkedIn rejected on its 72-hour must-have timer (25 Sep
+# 2026, analytics.screen_sql): one whose form recorded that you need
+# sponsorship, one whose form did not ask. The sponsored one is then TAGGED
+# visa by hand — it must stay a screen, since the author asked for a form
+# filter and a person's "visa" to stay apart. A third letter, a day later than
+# the timer, is an ordinary rejection.
+def _screened(conn, name, hours, answer=None):
+    job = conn.execute(
+        "INSERT INTO jobs (user_id, company_norm, title_canonical) "
+        "VALUES (%s, %s, 'Backend Engineer') RETURNING id", (user_id, name)).fetchone()["id"]
+    app_ = conn.execute(
+        "INSERT INTO applications (user_id, job_id) VALUES (%s, %s) RETURNING id",
+        (user_id, job)).fetchone()["id"]
+    sent_at = datetime(2026, 8, 3, 1, 12, tzinfo=timezone.utc)
+    mail = conn.execute(
+        """INSERT INTO emails (user_id, gmail_message_id, sender, subject, received_at,
+                               classification, extraction, triage_state, matched_application_id)
+           VALUES (%s, %s, 'jobs-noreply@linkedin.com', 'Your application to Backend Engineer',
+                   %s, 'rejection', %s, 'auto_matched', %s) RETURNING id""",
+        (user_id, f"gm-screen-{name}", sent_at + timedelta(hours=hours),
+         Json({"platform": "linkedin"}), app_)).fetchone()["id"]
+    conn.execute(
+        "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+        "VALUES (%s, %s, 'applied', 'extension', %s, '{\"external\": false}')",
+        (user_id, app_, sent_at))
+    rej = conn.execute(
+        "INSERT INTO events (user_id, application_id, type, source, occurred_at, source_email_id) "
+        "VALUES (%s, %s, 'rejected', 'email', %s, %s) RETURNING id",
+        (user_id, app_, sent_at + timedelta(hours=hours), mail)).fetchone()["id"]
+    if answer:
+        conn.execute(
+            "INSERT INTO application_answers (user_id, application_id, question, question_norm, answer) "
+            "VALUES (%s, %s, %s, %s, %s)",
+            (user_id, app_, answer[0], answer[0].lower().rstrip("?"), answer[1]))
+    return app_, rej
+
+
+with db.connect() as conn, conn.transaction():
+    sp_app, sp_rej = _screened(conn, "screened sponsor co", 72.01,
+                               ("Will you now or in the future require sponsorship for employment visa status", "Yes"))
+    fs_app, _ = _screened(conn, "screened form co", 72.02,
+                          ("How many years of work experience do you have with Python", "3"))
+    late_app, _ = _screened(conn, "late letter co", 96,
+                            ("Will you now or in the future require sponsorship for employment visa status", "Yes"))
+r = client.post(f"/applications/{sp_app}/events/{sp_rej}/reason", data={"reason": "visa"})
+check("the sponsored screen is tagged visa by hand", r.status_code == 303, r.status_code)
+r = client.get("/?how=sponsorship_screen")
+check("a sponsorship screen: LinkedIn's timer on a form that recorded the need — "
+      "and it stays one after a visa tag",
+      "screened sponsor co" in r.text and "screened form co" not in r.text
+      and "late letter co" not in r.text, r.status_code)
+r = client.get("/?how=form_screen")
+check("a form screen: the same timer, no sponsorship on record",
+      "screened form co" in r.text and "screened sponsor co" not in r.text, r.status_code)
+r = client.get("/?how=visa")
+check("so visa counts only what a person said, never a screen",
+      "screened sponsor co" not in r.text, r.status_code)
+r = client.get("/?how=no_round")
+check("a letter a day off the timer is an ordinary rejection",
+      "late letter co" in r.text and "screened form co" not in r.text, r.status_code)
+r = client.get("/?status=rejected&q=screened")
+check("each screened row wears its screen, beside (not instead of) the reason",
+      ">sponsorship screen</span>" in r.text and ">form screen</span>" in r.text
+      and ">visa</span>" in r.text, r.status_code)
+
+print("how it ended: the sponsorship rule is one rule in Python and SQL")
+import json as _json                                                   # noqa: E402
+from pipeline import answers as _answers                               # noqa: E402
+_cases = _json.load(open(Path(__file__).parent / "sponsorship_answers.json",
+                         encoding="utf-8"))["cases"]
+with db.connect() as conn:
+    _got = conn.execute(
+        "SELECT " + _answers.declares_sponsorship_sql("v.q", "v.a") + " AS needs "
+        "FROM unnest(%s::text[], %s::text[]) WITH ORDINALITY AS v(q, a, i) ORDER BY v.i",
+        ([c["q"] for c in _cases], [c["a"] for c in _cases])).fetchall()
+_bad = [(c["q"][:50], c["a"][:20]) for c, g in zip(_cases, _got) if g["needs"] != c["needs"]]
+check(f"the SQL agrees with every case in sponsorship_answers.json ({len(_cases)})",
+      len(_got) == len(_cases) and not _bad, _bad)
+
 r = client.get("/")
 legend = r.text.split('class="legend"')[1].split("</span>")[0]
-check("the legend's rejected entry carries the three buckets at rest, each a filter",
+check("the legend's rejected entry carries every bucket at rest, each a filter",
       all(f"how={k}" in legend for k in web._HOW_FILTERS)
       and "after a round" in legend and "without a round" in legend, legend)
 check("a chip says what closed them — the hand-filed one here",
@@ -2089,7 +2170,9 @@ tbl = r.text.split("How it ended")[1].split("</table>")[0]
 check("analytics counts the buckets in the same fixed order, each linking to its rows",
       'href="/?status=rejected&amp;how=after_round">after a round</a>' in tbl
       and 'href="/?status=rejected&amp;how=no_round">without a round</a>' in tbl
-      and tbl.index("after a round") < tbl.index("visa") < tbl.index("without a round"), tbl)
+      and 'href="/?status=rejected&amp;how=sponsorship_screen">sponsorship screen</a>' in tbl
+      and tbl.index("after a round") < tbl.index(">visa<") < tbl.index("sponsorship screen")
+      < tbl.index("form screen") < tbl.index("without a round"), tbl)
 
 print("analytics: the drawn page agrees with the SQL the list counts by")
 # /analytics is insights.report() over one fetch (25 Sep 2026); the list's

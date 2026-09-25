@@ -238,6 +238,13 @@
             stays a word on a row; the title carries the full wording. #}
         {%- if r.status == 'rejected' and r.reject_reason %}<span class="tag"
               title="rejected, {{ event_reasons.get(r.reject_reason, r.reject_reason) }}">{{ r.reject_reason | replace('_', ' ') }}</span>{% endif %}
+        {#- How it closed, when the record itself says: LinkedIn's automatic
+            rejection of a failed must-have question (analytics.screen_sql).
+            Beside the reason, never instead of it — one is what the timeline
+            proves, the other what you recorded, and the author asked for a
+            screen and a person's "visa" to stay apart. Grey, like the reason. #}
+        {%- if r.screen %}<span class="tag"
+              title="LinkedIn rejected this automatically, 72 hours after you applied: it failed a must-have screening question{% if r.screen == 'sponsorship' %}, and the form recorded that you need sponsorship{% endif %}">{{ r.screen }} screen</span>{% endif %}
       </span>
     </span>
   </a>

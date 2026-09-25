@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import re
 
-from . import config
+from . import answers, config
 from .ingest import UNKNOWN_COMPANY, UNKNOWN_TITLE
 
 
@@ -148,17 +148,27 @@ def rejection_reasons(conn, user_id, inbound: bool | None = None):
 # How a rejection ENDED, as one partition of every rejected application (23 Sep
 # 2026). The stage an application reached is already on its timeline, so
 # unlike the reason chips this breakdown is complete on day one, with nothing
-# to tag. Three buckets, in precedence order:
+# to tag. Five buckets, in precedence order:
 #
-#   visa         the closing event carries the visa reason — a market fact
-#                worth its own slice whatever the stage (5 of the author's
-#                first 6 were recruiters who approached and then dropped the
-#                thread; no round was ever involved)
-#   after_round  a human round happened: an interview invite, a call or a
-#                message (`engaged`), or an offer
-#   no_round     the rest — a form letter, or a hand-filed close with no round
-#                (43 of the author's 55 on the day this shipped, 29 of them
-#                LinkedIn's letter and 11 an ATS's)
+#   sponsorship_screen  LinkedIn rejected it automatically (screen_sql, below)
+#                       and the form had recorded that you need sponsorship
+#   form_screen         the same automatic rejection, on a form that did not
+#                       ask, or did not record, that you need sponsorship
+#   visa                the closing event carries the visa reason — a person
+#                       said so; a market fact worth its own slice whatever
+#                       the stage (5 of the author's first 6 were recruiters
+#                       who approached and then dropped the thread)
+#   after_round         a human round happened: an interview invite, a call
+#                       or a message (`engaged`), or an offer
+#   no_round            the rest — a form letter, or a hand-filed close with no
+#                       round (43 of the author's 55 on 23 Sep, 29 of them
+#                       LinkedIn's letter and 11 an ATS's)
+#
+# The screens come first (25 Sep 2026) because they are the MECHANISM, read
+# off the record, and the recorded reason is the user's reading of it: a
+# screened application later tagged `visa` stays a screen, so "a form filter
+# closed it" and "a person told you it was visa" are never one number. That
+# is the point of the split — the author asked for them apart.
 #
 # Precedence matters because the facts overlap (a visa close can follow a
 # round); one bucket per application is what lets the chips sum to the funnel's
@@ -173,24 +183,65 @@ ROUND_TYPES = _sql_list(ROUND_EVENTS)
 # has the reasoning). Here, beside the bucket rule, so every page reads one
 # vocabulary; web.py's `_HOW_FILTERS` is this dict.
 HOW_LABELS = {
-    "after_round": "after a round",
-    "visa":        "visa",
-    "no_round":    "without a round",
+    "after_round":        "after a round",
+    "visa":               "visa",
+    "sponsorship_screen": "sponsorship screen",
+    "form_screen":        "form screen",
+    "no_round":           "without a round",
 }
 
+# LinkedIn's automatic rejection, recognised by its timer. An employer can
+# mark a screening question a must-have and have LinkedIn reject whoever
+# fails it: "Auto-archived applicants will receive the rejection message
+# three days after they apply to your job posting" (LinkedIn Recruiter Help,
+# answer a412523). Measured 25 Sep 2026 on the 27 LinkedIn letters answering
+# the author's own applications: 21 arrived 72.01-72.02 hours after the
+# submission, the nearest other at 69.7 hours, then 114 and later. A window of
+# 71-73 hours admits the timer and nothing else. It cannot see other hiring
+# systems' knockouts (no fixed timer), nor an employer who turned on "notify
+# promptly", and it rests on LinkedIn keeping the three days.
+SCREEN_HOURS = (71, 73)
 
-def rejected_how_sql(reason: str, had_round: str) -> str:
-    """The bucket, as a SQL expression over a reason column and a boolean
-    had-a-round expression — the caller supplies both so the list query and
-    the count query can each name their own sources."""
-    return (f"CASE WHEN {reason} = 'visa' THEN 'visa' "
+
+def screen_sql(app: str) -> str:
+    """'sponsorship' | 'form' | NULL: whether LinkedIn auto-rejected the
+    application whose id is the SQL expression `app`, and whether its form
+    had recorded that you need sponsorship (answers.declares_sponsorship).
+    Read from ANY rejected event, not the closing one the reason comes from:
+    a hand-filed copy of the same rejection must not hide the letter's
+    timing. Which must-have failed is not on record — a form can ask several
+    — so `sponsorship` states what the form learned, not a proven cause."""
+    lo, hi = SCREEN_HOURS
+    declared = answers.declares_sponsorship_sql("sq.question_norm", "sq.answer")
+    return f"""(CASE WHEN EXISTS (
+        SELECT 1 FROM events sr JOIN emails se ON se.id = sr.source_email_id
+         WHERE sr.application_id = {app} AND sr.type = 'rejected'
+           AND sr.source = 'email' AND se.extraction->>'platform' = 'linkedin'
+           AND sr.occurred_at - (SELECT min(sa.occurred_at) FROM events sa
+                                  WHERE sa.application_id = {app} AND sa.type = 'applied')
+               BETWEEN interval '{lo} hours' AND interval '{hi} hours')
+      THEN CASE WHEN EXISTS (SELECT 1 FROM application_answers sq
+                              WHERE sq.application_id = {app} AND {declared})
+                THEN 'sponsorship' ELSE 'form' END END)"""
+
+
+def rejected_how_sql(reason: str, had_round: str, screen: str) -> str:
+    """The bucket, as a SQL expression over a reason column, a boolean
+    had-a-round expression and a screen_sql() expression — the caller supplies
+    all three so the list query and the count query name their own sources."""
+    return (f"CASE WHEN {screen} = 'sponsorship' THEN 'sponsorship_screen' "
+            f"WHEN {screen} = 'form' THEN 'form_screen' "
+            f"WHEN {reason} = 'visa' THEN 'visa' "
             f"WHEN {had_round} THEN 'after_round' ELSE 'no_round' END")
 
 
-def rejected_how(reason: str | None, had_round: bool) -> str:
+def rejected_how(reason: str | None, had_round: bool, screen: str | None = None) -> str:
     """The same bucket in Python, for insights.py's flow — written beside the
     SQL so the two are read (and changed) together; tests/test_web.py holds
-    the page's counts equal to rejection_ends()."""
+    the page's counts equal to rejection_ends(). `screen` is screen_sql()'s
+    value, which facts() fetches."""
+    if screen in ("sponsorship", "form"):
+        return f"{screen}_screen"
     if reason == "visa":
         return "visa"
     return "after_round" if had_round else "no_round"
@@ -218,7 +269,7 @@ def rejection_ends(conn, user_id, inbound: bool | None = None):
             ORDER BY e.application_id, (e.payload->>'reason') IS NOT NULL DESC,
                      e.occurred_at DESC, e.created_at DESC
         ), ended AS (
-            SELECT {rejected_how_sql('c.reason', had_round)} AS how,
+            SELECT {rejected_how_sql('c.reason', had_round, screen_sql('c.application_id'))} AS how,
                    a.origin, c.source, em.extraction->>'platform' AS platform
             FROM closed c
             JOIN applications a ON a.id = c.application_id
@@ -387,7 +438,8 @@ def facts(conn, user_id) -> tuple[list[dict], list[dict]]:
     its job description said (visa, work mode, technologies: the newest
     extraction of the posting applied through, else of any posting of the
     job), what the user sent (resume, screening fields answered) — plus the
-    derived status, from the same view the list reads.
+    derived status, from the same view the list reads, and `screen`
+    (screen_sql) for a rejected one.
 
     Event columns are the facts the timing needs and the two a rejection's
     breakdown reads: `reason` (the closing event is chosen in insights.py by
@@ -404,6 +456,7 @@ def facts(conn, user_id) -> tuple[list[dict], list[dict]]:
                EXISTS (SELECT 1 FROM postings pj WHERE pj.job_id = a.job_id
                         AND (pj.salary_min IS NOT NULL OR pj.salary_raw IS NOT NULL)) AS has_salary,
                x.visa_signal, x.work_mode, COALESCE(x.tech, '{}')           AS tech,
+               CASE WHEN s.status = 'rejected' THEN @SCREEN@ END            AS screen,
                (x.posting_id IS NOT NULL)                                    AS extracted,
                (SELECT count(*) FROM application_answers aa
                  WHERE aa.application_id = a.id)                             AS n_answers
@@ -426,7 +479,7 @@ def facts(conn, user_id) -> tuple[list[dict], list[dict]]:
             LIMIT 1
         ) x ON true
         WHERE a.user_id = %(user_id)s
-    """, {"user_id": user_id}).fetchall()
+    """.replace("@SCREEN@", screen_sql("a.id")), {"user_id": user_id}).fetchall()
     events = conn.execute("""
         SELECT e.application_id, e.type, e.source, e.occurred_at, e.created_at,
                CASE WHEN e.type = 'applied'

@@ -225,7 +225,12 @@ a.tl:hover{background:color-mix(in srgb,var(--ink) 3.5%,var(--mix))}
              color:color-mix(in oklab,var(--age) var(--heat),var(--muted))}
 .tl .rail .d.live{color:var(--accent)}
 .tl .rail .d.dash{color:var(--line)}
-.tl .rail .s{display:flex;gap:.35rem;align-items:baseline;margin-top:.12rem}
+/* Wraps, right-aligned: the rail is 7rem and a closed row can carry the
+   status word, a reason AND a screen ("sponsorship screen" alone is wider
+   than what is left beside "rejected") — a tag that does not fit drops to
+   the next line instead of being clipped by the row (rule 9b's failure). */
+.tl .rail .s{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:.15rem .35rem;
+             align-items:baseline;margin-top:.12rem}
 .tl-head{padding-top:.55rem;padding-bottom:.35rem;
          font-family:var(--sans);font-size:.76rem;font-weight:500;color:var(--muted)}
 .tl-head .lab.right{text-align:right}

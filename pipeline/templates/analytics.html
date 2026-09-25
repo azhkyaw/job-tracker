@@ -269,7 +269,11 @@
 <h2 id="ended">How it ended</h2>
 {% if lg %}
 <p class="hint">Days from applying to the rejection, one dot per rejected application you sent,
-  by what closed it. Dots that land together stack, so a pile is a pile.</p>
+  by what closed it. Dots that land together stack, so a pile is a pile.
+  {%- if lg.screened %} The pile at three days is LinkedIn's automatic rejection of a failed
+  must-have screening question — <b>{{ lg.screened }}</b> of your rejections never reached a
+  person{% if lg.screened_sponsorship %}, <b>{{ lg.screened_sponsorship }}</b> of them on a form that
+  recorded you need sponsorship{% endif %}.{% endif %}</p>
 <div class="card pad lags">
   {% for row in lg.rows %}
   <div class="lag">
@@ -298,8 +302,10 @@
       <td class="num">{{ e.by_hand or "—" }}</td></tr>
   {% endfor %}</tbody>
 </table></div>
-<p class="hint">A round is an interview invitation, a call or message, or an offer.
-  A visa close counts as visa whatever its stage.</p>
+<p class="hint">A screen is LinkedIn's automatic rejection, 72 hours after you applied, of
+  a form that failed a must-have question; it is read off the timeline and stays a screen whatever
+  reason you record. Visa is a reason a person gave, whatever the stage. A round is an interview
+  invitation, a call or message, or an offer.</p>
 </div>
 {% endif %}
 

@@ -149,6 +149,29 @@ check("the how-bucket is analytics.rejected_how's",
       analytics.rejected_how(None, True) == "after_round"
       and analytics.rejected_how(None, False) == "no_round"
       and analytics.rejected_how("visa", True) == "visa")
+check("a screen is the mechanism and wins over any reason recorded on it",
+      analytics.rejected_how("visa", False, "sponsorship") == "sponsorship_screen"
+      and analytics.rejected_how(None, False, "form") == "form_screen"
+      and analytics.rejected_how("visa", False, None) == "visa")
+check("every bucket rejected_how can return has a label, in the chips' fixed order",
+      {analytics.rejected_how(r, h, sc) for r in (None, "visa") for h in (True, False)
+       for sc in (None, "form", "sponsorship")} == set(analytics.HOW_LABELS)
+      and list(analytics.HOW_LABELS)[-1] == "no_round")
+screened = app(status="rejected", screen="sponsorship")
+fs_ = {f["id"]: f for f in facts_of([screened], [
+    ev(screened, "applied", ago(30), source="extension"),
+    ev(screened, "rejected", ago(27), mail_platform="linkedin", reason="visa")])}
+check("facts carry the fetched screen into the bucket",
+      fs_[screened["id"]]["how"] == "sponsorship_screen")
+
+print("sponsorship: what an answer told the employer")
+import json                                                   # noqa: E402
+from pipeline import answers                                  # noqa: E402
+_cases = json.load(open(Path(__file__).parent / "sponsorship_answers.json",
+                        encoding="utf-8"))["cases"]
+for c in _cases:
+    check(f"{c['q'][:48]!r} -> {c['a'][:24]!r}: {c['needs']}",
+          answers.declares_sponsorship(c["q"], c["a"]) is c["needs"])
 
 print("facts: the colour of a square is the colour of its row on the list")
 fresh_reply = app(status="viewed")
@@ -382,6 +405,13 @@ check("closers split the way rejection_ends' columns do",
       rows["linkedin"]["n"] == 3 and rows["by_hand"]["n"] == 1 and "other_email" not in rows)
 check("dots on the same day stack", [d["level"] for d in rows["linkedin"]["dots"]] == [0, 1, 2]
       and rows["linkedin"]["stack"] == 3)
+check("no screen fetched, none counted", lg["screened"] == 0)
+scr = [app(status="rejected", screen=s_) for s_ in ("sponsorship", "form", "sponsorship")]
+scr_ev = [e for a in scr for e in (ev(a, "applied", ago(30), source="extension"),
+                                   ev(a, "rejected", ago(27), mail_platform="linkedin"))]
+lg2 = insights.rejection_lags(facts_of(scr, scr_ev))
+check("the lags count the screens among your rejections",
+      lg2["screened"] == 3 and lg2["screened_sponsorship"] == 2, (lg2["screened"], lg2["screened_sponsorship"]))
 
 # ------------------------------------------------------------------ rhythm
 

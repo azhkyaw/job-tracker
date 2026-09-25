@@ -837,3 +837,33 @@ the key to each real case.
    change: `trace.live()` is the one rule for a blue wait. It was
    duplicated in two templates, and the page's squares need the same colour
    as the list rows.
+32. **A rejection LinkedIn made by itself is a screen, not a visa reason**
+   (25 Sep 2026). The author asked for a "likely visa" mark on rejections
+   whose form or job description mentioned sponsorship, then asked that it
+   stay apart from rejections a person said were visa. Measured first:
+   - A form that recorded "you need sponsorship" was rejected 36% of the
+     time (12 of 33 settled). A form with no visa question: 13% (12 of 89).
+     The intervals do not overlap.
+   - All 12 were LinkedIn letters. LinkedIn documents the mechanism: a
+     failed must-have screening question is auto-archived, and "Auto-archived
+     applicants will receive the rejection message three days after they
+     apply" (Recruiter Help a412523). 21 of the 27 LinkedIn letters answering
+     the author's own applications arrived 72.01-72.02 hours after the
+     submission; the next nearest was 69.7 hours, then 114 and later.
+   - The job description is weak evidence and was left out: rejected 29%
+     where it wants locals only (21), 18% where it says nothing.
+   So "How it ended" gained two derived buckets and needs no tagging:
+   `sponsorship_screen` (12, the timer plus a declared need) and
+   `form_screen` (9, the timer alone). They take precedence over a recorded
+   reason, so a screened application tagged `visa` stays a screen, and
+   `visa` (8) counts only what a person said. "Without a round" fell from
+   42 to 22, so the tagging queue is now the rejections a person or a
+   system actually decided. `sponsorship` states what the form learned,
+   not a proven cause: some of those forms also asked must-have-style
+   experience questions answered low. The declared need is one rule in
+   Python and SQL (`answers.declares_sponsorship`), held to every real
+   wording in `tests/sponsorship_answers.json`. Authorisation questions are
+   matched first and on legal wording only, since "willing and able to work
+   full time" is not a visa question. Rows wear the screen as a grey tag
+   beside the reason, and the rail's status line now wraps: "sponsorship
+   screen" beside "rejected" did not fit in 7rem and was being clipped.

@@ -199,7 +199,8 @@ def build_facts(apps, events, now: datetime, reminder_days: int) -> list[dict]:
                  if rej else None)
         f["close"] = close
         f["reason"] = close["reason"] if close else None
-        f["how"] = analytics.rejected_how(f["reason"], rnd is not None) if close else None
+        f["how"] = (analytics.rejected_how(f["reason"], rnd is not None, a.get("screen"))
+                    if close else None)
         ended = first(CLOSED)
         f["ended_at"] = ended["occurred_at"] if ended else None
         f["superseded"] = any(e["type"] == "withdrawn" and e["superseded"] for e in evs)
@@ -779,7 +780,10 @@ def rejection_lags(facts) -> dict | None:
                     "median": quantile([p[0] for p in pts], .5),
                     "stack": max(levels.values()), "dots": dots})
     ticks = [{"x": f"{100 * t / x_max:.2f}%", "label": str(t)} for t in range(0, x_max + 1, 7)]
-    return {"rows": out, "x_max": x_max, "ticks": ticks}
+    screened = Counter(f.get("screen") for f in facts
+                       if f["sent"] and f["state"] == "rejected" and f.get("screen"))
+    return {"rows": out, "x_max": x_max, "ticks": ticks,
+            "screened": sum(screened.values()), "screened_sponsorship": screened["sponsorship"]}
 
 
 # -------------------------------------------------------------------- rhythm
