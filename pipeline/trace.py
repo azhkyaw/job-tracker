@@ -171,8 +171,10 @@ def _ticks(t0: datetime, t1: datetime, span: float, x) -> list[dict]:
 
 def _month_ticks(t0: datetime, t1: datetime, x) -> list[dict]:
     """The start date, then the first of each month that falls comfortably
-    inside the axis — not within 6% of the start label, not past 90% where
-    the "today" label lives."""
+    inside the axis — not within 12% of the start label, not past 90% where
+    the "today" label lives. It was 6% until 25 Sep 2026: a filtered list
+    (`?visa=`) spanning 27 Jul to today put "Aug" at 7.1%, printed over
+    "27 Jul", whose label takes about 12% of the list's capped trace column."""
     out = [{"x": _pct(0.0), "label": f"{t0:%d %b}".lstrip("0")}]
     year, month = t0.year, t0.month
     while True:
@@ -183,6 +185,6 @@ def _month_ticks(t0: datetime, t1: datetime, x) -> list[dict]:
         if cur > t1:
             break
         pos = x(cur)
-        if 6 <= pos < 90:
+        if 12 <= pos < 90:
             out.append({"x": _pct(pos), "label": f"{cur:%b}"})
     return out

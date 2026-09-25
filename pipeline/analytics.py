@@ -30,6 +30,7 @@ from __future__ import annotations
 import re
 
 from . import answers, config
+from .jd_extraction import visa_group_sql as jd_visa_group_sql
 from .ingest import UNKNOWN_COMPANY, UNKNOWN_TITLE
 
 
@@ -472,6 +473,8 @@ def facts(conn, user_id) -> tuple[list[dict], list[dict]]:
                         AND (pj.salary_min IS NOT NULL OR pj.salary_raw IS NOT NULL)) AS has_salary,
                x.visa_signal, x.work_mode, COALESCE(x.tech, '{}')           AS tech,
                CASE WHEN s.status = 'rejected' THEN @SCREEN@ END            AS screen,
+               @FORM_VISA@                                                  AS form_visa,
+               @VISA_GROUP@                                                 AS visa_group,
                (x.posting_id IS NOT NULL)                                    AS extracted,
                (SELECT count(*) FROM application_answers aa
                  WHERE aa.application_id = a.id)                             AS n_answers
@@ -486,7 +489,9 @@ def facts(conn, user_id) -> tuple[list[dict], list[dict]]:
         ) pc ON true
         @LATEST_EXTRACTION@
         WHERE a.user_id = %(user_id)s
-    """.replace("@SCREEN@", screen_sql("a.id")).replace("@LATEST_EXTRACTION@", LATEST_EXTRACTION),
+    """.replace("@SCREEN@", screen_sql("a.id")).replace("@LATEST_EXTRACTION@", LATEST_EXTRACTION)
+       .replace("@FORM_VISA@", answers.form_visa_sql("a.id"))
+       .replace("@VISA_GROUP@", jd_visa_group_sql("x.visa_signal")),
         {"user_id": user_id}).fetchall()
     events = conn.execute("""
         SELECT e.application_id, e.type, e.source, e.occurred_at, e.created_at,

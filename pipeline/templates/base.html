@@ -295,6 +295,10 @@ a.tl:hover{background:color-mix(in srgb,var(--ink) 3.5%,var(--mix))}
 .legend i{display:inline-block;width:.5rem;height:.5rem;border-radius:1px;
           background:var(--c);margin-right:.38rem;vertical-align:-.02em}
 .legend.why{margin-top:-1.1rem}
+/* The list's visa filter, named in words above the search (the cells of
+   /analytics' "Visa, at a glance" link here). Grey: a filter, not a state. */
+.filter-note{font-family:var(--sans);font-size:.84rem;color:var(--muted);margin:-.6rem 0 .8rem}
+.filter-note a{color:var(--ink);margin-left:.4rem}
 
 /* ------------------------------------------------------------------ charts
    Every chart on the analytics page is single-series, so there is no
@@ -372,6 +376,22 @@ a.u:hover,a.u:focus-visible{outline:1.5px solid var(--ink);outline-offset:1px}
 .ukey span{display:inline-flex;align-items:center;gap:3px}
 .ukey span .u:last-of-type{margin-right:.3rem}
 .ukey b{font-weight:500;color:var(--ink)}
+
+/* Visa, at a glance: form answer (rows) x what the JD says (columns), each
+   cell its applications as the squares above. The big "says nothing" column
+   takes the free width; its two neighbours hold a handful each. */
+.vm{display:grid;gap:0}
+.vm-row{display:grid;grid-template-columns:minmax(9rem,14rem) minmax(0,1fr) minmax(0,1fr) minmax(0,2.6fr);
+        gap:0 1rem;padding:.55rem 0;border-bottom:1px solid var(--line);align-items:start}
+.vm-row:last-child{border-bottom:0}
+.vm-head{padding-top:0;font-family:var(--sans);font-size:.78rem;color:var(--muted)}
+.vm-head b,.vm-rh b{font-weight:500;color:var(--ink);margin-left:.25em;font-variant-numeric:tabular-nums}
+.vm-rh{font-size:.9rem;line-height:1.3}
+.vm-rh b{font-family:var(--sans);font-size:.82rem}
+.vm-cell{display:flex;gap:.5rem;align-items:flex-start;min-width:0}
+.vm-n{flex:none;min-width:1.6rem;font-family:var(--sans);font-size:.84rem;font-weight:500;
+      font-variant-numeric:tabular-nums;line-height:1}
+.vm-cell .quiet{font-family:var(--sans);font-size:.84rem}
 
 /* The flow. Marks in a stretched SVG, words in HTML at the same heights —
    charts.py has why. Wider than a phone on purpose; the card scrolls. */
@@ -612,6 +632,10 @@ pre.text{white-space:pre-wrap;font:inherit;margin:.5rem 0 0;max-width:70ch}
   .thread form.why{margin-left:0}
   .list li{grid-template-columns:1fr}
   .forest{columns:1}
+  .vm-row{grid-template-columns:minmax(0,1fr);gap:.35rem}
+  .vm-head{display:none}
+  .vm-cell::before{content:attr(data-col);font-family:var(--sans);font-size:.72rem;color:var(--muted);
+                   flex:none;width:6.5rem}
   .emps{grid-template-columns:minmax(0,1fr)}
   .emps .erow:nth-child(even){border-left:0}
   .emps .erow:nth-last-child(2){border-bottom:1px solid var(--line)}

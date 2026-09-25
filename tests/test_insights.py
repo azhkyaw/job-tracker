@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from pipeline import analytics, charts, insights, trace   # noqa: E402
+from pipeline import analytics, answers, charts, insights, jd_extraction, trace   # noqa: E402
 from pipeline.ingest import UNKNOWN_COMPANY               # noqa: E402
 
 
@@ -202,6 +202,13 @@ check("trace.build sets the same `live` the template now reads",
 row = {"id": "x"}
 trace.build([row], {"x": [{"type": "viewed", "occurred_at": ago(2)}]}, NOW, 10)
 check("... and it is live for a fresh reply", row["live"] is True)
+axis = trace.build([{"id": "y"}], {"y": [{"type": "applied",
+                                          "occurred_at": datetime(2026, 7, 27, 4, 0, tzinfo=timezone.utc)}]},
+                   NOW, 10)
+first_month = [float(t["x"].rstrip("%")) for t in axis["ticks"][1:]]
+check("no month label crowds the start label: 27 Jul to 25 Sep drops 'Aug' at 7%",
+      [t["label"] for t in axis["ticks"]][:2] == ["27 Jul", "Sep"] and all(x >= 12 for x in first_month),
+      axis["ticks"])
 
 # ----------------------------------------------------------------- timing
 
@@ -428,6 +435,26 @@ check("days after today are blank, not zero",
 check("the first column names its month", cal["weeks"][0]["month"] == "Sep")
 h = insights.hours(facts_of([cal_a], cal_ev), SGT)
 check("hours are the viewer's", h["mine"]["bars"][1]["n"] == 1 and h["theirs"]["bars"][10]["n"] == 1)
+
+# ------------------------------------------------------------ visa matrix
+
+print("visa, at a glance")
+vm_apps = [app(form_visa="needs", visa_group="restricts"), app(form_visa="needs", visa_group="nothing"),
+           app(form_visa="no_form"), app(origin="inbound", form_visa="needs", visa_group="restricts")]
+vm_ev = [ev(a, "applied" if a["origin"] != "inbound" else "recruiter_outreach", ago(20), source="extension")
+         for a in vm_apps]
+vm = insights.visa_matrix(facts_of(vm_apps, vm_ev))
+grid = {(c["form"], c["visa"]): c["n"] for r in vm["rows"] for c in r["cells"]}
+check("rows are the form's buckets and columns the JD's, in their fixed order",
+      [r["key"] for r in vm["rows"]] == list(answers.FORM_VISA)
+      and [c["key"] for c in vm["cols"]] == list(jd_extraction.VISA_GROUPS))
+check("every record the user started is in exactly one cell; recruiters' are not",
+      vm["n"] == 3 and sum(grid.values()) == 3 and grid[("needs", "restricts")] == 1
+      and grid[("no_form", "nothing")] == 1, grid)
+check("a record with no fetched buckets counts as no form, JD silent",
+      grid[("no_form", "nothing")] == 1)
+check("column totals add up", sum(c["n"] for c in vm["cols"]) == 3)
+check("nobody started, no matrix", insights.visa_matrix(facts_of(vm_apps[3:], vm_ev[3:])) is None)
 
 # ---------------------------------------------------------------- report
 

@@ -2236,6 +2236,36 @@ r = client.post(f"/extractions/{nw_x}/verify",
                 data={"application_id": str(northwind_app), "visa_signal": "telepathy_only"})
 check("an unknown signal is refused", r.status_code == 400, r.status_code)
 
+print("visa, at a glance: every cell opens exactly its rows")
+# /analytics' matrix (form answer x what the JD says) and the list's
+# visa/form filters are formatted from the same SQL; loop EVERY cell, so a
+# new bucket is covered by this test the day it is added.
+r = client.get("/analytics")
+cells = re.findall(r'<a class="vm-n" href="/\?visa=(\w+)&amp;form=(\w+)"[^>]*>(\d+)</a>', r.text)
+check("the matrix renders with cells to open", r.status_code == 200 and len(cells) >= 3, cells)
+for visa, form, n in cells:
+    rows_ = client.get(f"/?visa={visa}&form={form}").text.count('<a class="tl" href="/applications/')
+    check(f"cell form={form} visa={visa}: {n} counted, {rows_} shown", int(n) == rows_, (n, rows_))
+with db.connect() as conn:
+    mine = conn.execute("SELECT count(*) AS n FROM applications WHERE origin <> 'inbound'").fetchone()["n"]
+check("the cells account for every record on /", sum(int(n) for *_, n in cells) == mine,
+      (sum(int(n) for *_, n in cells), mine))
+r = client.get("/?visa=restricts&form=needs")
+check("a filtered list names its filter in words, with a way out",
+      "the JD restricts who may apply and the form recorded you need sponsorship" in r.text
+      and "Show every visa case" in r.text, r.status_code)
+check("and the page keeps it: the search re-submits it, a status link carries it",
+      'name="visa" value="restricts"' in r.text and 'name="form" value="needs"' in r.text
+      and re.search(r'href="/\?status=\w+&amp;visa=restricts&amp;form=needs"', r.text) is not None,
+      r.status_code)
+r = client.get("/?q=screened+sponsor")
+check("a form that recorded the need wears it, quoting the question and the answer",
+      re.search(r'title="The form asked “Will you now or in the future require sponsorship for '
+                r'employment visa status” and you answered “Yes”">form: needs sponsorship</span>',
+                r.text) is not None, r.status_code)
+r = client.get("/?visa=everything&form=psychic")
+check("unknown visa/form values are ignored, not an error", r.status_code == 200
+      and 'class="filter-note"' not in r.text, r.status_code)
 
 print("form answers: detail page + answer bank")
 # The real key function, never a copy of it: a hand-rolled key here is a row

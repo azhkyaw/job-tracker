@@ -202,6 +202,26 @@ is a private artifact, linked from the memory file
    extractor behind it is measured in `docs/jd-extraction-models.md`, where
    Haiku put an unsupported restriction on 10 of 107 answers, which is why
    it moved to Sonnet 5.
+   **The form's answer wears a second tag, and both are a bird's-eye grid**
+   (the same day). `form: needs sponsorship` / `form: asked about visas`
+   come from `answers.FORM_VISA`, one bucket per application off
+   `answers.form_visa_sql`. The tag's title quotes the question and the
+   answer (`form_visa_evidence_sql`). The two other buckets, no visa question
+   and no form captured, wear no tag. `/analytics`' "Visa, at a glance"
+   crosses the form bucket (rows) with the JD's group (columns,
+   `jd_extraction.VISA_GROUPS`: restricts / sponsors / nothing). Each cell
+   holds its applications as the page's status squares, and each count opens
+   `/?visa=<group>&form=<bucket>`: two list filters formatted from the SAME
+   SQL the cells are counted by (`web._VISA_GROUP`, `_FORM_VISA`, read by
+   `analytics.facts`). So a cell's number is the number of rows it shows,
+   and `tests/test_web.py` loops every cell to hold that. Unlike
+   `reason`/`how` the two filters belong to no status, so `list_url()`
+   carries them on every link by default (it reads `visa_filter`/`form_filter`
+   from the render context), and only the "Show every visa case" and
+   empty-state links pass `''` to drop them. A filtered list names its filter
+   in words above the search (`.filter-note`). On the day, 42 of 278 forms
+   recorded the need and 19 JDs restricted; the cell where both hold had 9
+   applications, 5 of them rejected.
 10. **The name column takes the free space; the trace is capped** (`.tl`
    grid). Verified against 47 real applications: applied in one burst, so
    every trace is the same line at the same length while agency company/role
@@ -344,6 +364,8 @@ is a private artifact, linked from the memory file
     that stays lowercase, because the row's status word, the legend and the
     filter must read as the same word.
 16. **Axis labels are month starts on a long search, weeks on a short one**
+    (a month mark keeps 12% clear of the start label since 25 Sep 2026, when a
+    filtered list spanning 27 Jul to today printed "Aug" over "27 Jul" at 7%)
     (23 Sep 2026, `trace._ticks`). At the list's capped trace width, weekly
     labels thinned by two measured 1px apart on 12 weeks of real data ("2 Jul"
     against "16 Jul", "10 Sep" against "today"). Eight weeks and up the axis

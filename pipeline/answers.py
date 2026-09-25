@@ -424,3 +424,49 @@ def declares_sponsorship_sql(q: str, a: str) -> str:
     return (f"(({q} ~ '{SPONSOR_AUTH_Q}' AND {a} !~* '{_YES_A}' "
             f"AND ({a} ~* '{_NO_A}' OR {a} ~* '{_NEED_A}')) "
             f"OR ({q} !~ '{SPONSOR_AUTH_Q}' AND {q} ~ '{SPONSOR_NEED_Q}' AND {a} ~* '{_YES_A}'))")
+
+
+# What the apply form recorded about sponsorship, one bucket per application
+# (25 Sep 2026): the rows of /analytics' "Visa, at a glance" and the list's
+# `form` filter, from ONE SQL expression, so a cell's count is the number of
+# rows its link shows. In precedence order:
+#   needs      an answer declared that you need sponsorship (declares_sponsorship)
+#   asked      the form asked (an authorisation or sponsorship question) and no
+#              answer declared the need — a "no need", or an unreadable capture
+#   no_visa_q  a form was captured and asked nothing about visas
+#   no_form    no form was captured (an employer site, manual entry, mail)
+# Each key maps to its row label on /analytics and its tag on a list row; the
+# last two wear no tag, since silence is not a finding.
+FORM_VISA = {
+    "needs":     ("The form recorded you need sponsorship", "form: needs sponsorship"),
+    "asked":     ("The form asked; you didn't say you need it", "form: asked about visas"),
+    "no_visa_q": ("The form asked nothing about visas", None),
+    "no_form":   ("No form was captured", None),
+}
+
+
+def _visa_question_sql(q: str) -> str:
+    return f"({q} ~ '{SPONSOR_AUTH_Q}' OR {q} ~ '{SPONSOR_NEED_Q}')"
+
+
+def form_visa_sql(app: str) -> str:
+    """The FORM_VISA bucket of the application whose id is the SQL `app`."""
+    declared = declares_sponsorship_sql("fv.question_norm", "fv.answer")
+    asked = _visa_question_sql("fv.question_norm")
+    return (f"(CASE WHEN EXISTS (SELECT 1 FROM application_answers fv "
+            f"WHERE fv.application_id = {app} AND {declared}) THEN 'needs' "
+            f"WHEN EXISTS (SELECT 1 FROM application_answers fv "
+            f"WHERE fv.application_id = {app} AND {asked}) THEN 'asked' "
+            f"WHEN EXISTS (SELECT 1 FROM application_answers fv "
+            f"WHERE fv.application_id = {app}) THEN 'no_visa_q' "
+            f"ELSE 'no_form' END)")
+
+
+def form_visa_evidence_sql(app: str) -> str:
+    """A lateral join (`fq`) to the answer a row's form tag rests on — the one
+    that declared the need, else the first visa question asked — so the tag's
+    title can quote the question and what was said."""
+    declared = declares_sponsorship_sql("fe.question_norm", "fe.answer")
+    return (f"LEFT JOIN LATERAL (SELECT fe.question, fe.answer FROM application_answers fe "
+            f"WHERE fe.application_id = {app} AND {_visa_question_sql('fe.question_norm')} "
+            f"ORDER BY {declared} DESC, fe.ordinal NULLS LAST, fe.occurrence LIMIT 1) fq ON true")

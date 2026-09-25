@@ -899,3 +899,25 @@ the key to each real case.
    Of the 12 rejections LinkedIn's sponsorship screen closed, only 4 had a JD
    that said `no_sponsorship`. The knockout lives in the form's question,
    not in the JD.
+34. **A bird's-eye view of visa evidence** (25 Sep 2026). Asked for status,
+   the JD's visa hint and the form's answer in one view, and offered three
+   homes (a matrix on `/analytics`, tags and filters on the list, or both,
+   linked), the author chose both, linked. The data shaped it: of 278
+   records the user started, 42 forms recorded the need for sponsorship, 19
+   JDs restricted who may apply, and 9 had both, 5 of those rejected. 205
+   had neither kind of evidence. The design:
+   - A form bucket per application (`answers.FORM_VISA`: needs, asked,
+     no visa question, no form) and a JD group (`jd_extraction.VISA_GROUPS`:
+     restricts, sponsors, nothing), each ONE SQL expression.
+   - "Visa, at a glance" on `/analytics`: rows are form buckets, columns
+     JD groups, cells hold the status squares.
+   - `?visa=` / `?form=` on the list, formatted from those same expressions,
+     so all 11 non-empty cells matched their rows on real data (tested
+     over every cell).
+   - A second grey tag on the row quoting the form's question and answer.
+   Found on the way: `trace._month_ticks` let a month label sit 7% into the
+   axis, over the start label, on a filtered list's short span. It now keeps
+   12% clear. And a Windows `uvicorn --reload` that logged "Reloading..."
+   without restarting, followed by Chrome serving the page from cache, made
+   the fixed note look broken twice. Fetch with `cache: 'no-store'` before
+   believing a screenshot after a server restart.

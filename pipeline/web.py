@@ -386,7 +386,7 @@ def _list_path(a: dict) -> str:
 @app.get("/")
 def applications(request: Request, deleted: str | None = None,
                  q: str = "", sort: str = _DEFAULT_SORT, status: str = "",
-                 reason: str = "", how: str = ""):
+                 reason: str = "", how: str = "", visa: str = "", form: str = ""):
     """The record: what the user sent, newest submission first — every
     `applied` record and the odd `saved` capture, which is theirs too.
 
@@ -405,13 +405,13 @@ def applications(request: Request, deleted: str | None = None,
     own needs neither, and the list stops opening with someone else's to-do
     list above the first trace. UI rule 9 still holds — the queue is work and
     still gets real rows and a one-click action, just not on this page."""
-    return _list(request, "applications", deleted, q, sort, status, reason, how)
+    return _list(request, "applications", deleted, q, sort, status, reason, how, visa, form)
 
 
 @app.get("/inbound")
 def inbound(request: Request, deleted: str | None = None,
             q: str = "", sort: str = _DEFAULT_SORT, status: str = "",
-            reason: str = "", how: str = ""):
+            reason: str = "", how: str = "", visa: str = "", form: str = ""):
     """What recruiters started: every `origin = 'inbound'` record in every
     status, newest approach first (24 Sep 2026). Same query, template, funnel
     and filters as `/`; only the membership differs, and it is decided by
@@ -424,11 +424,11 @@ def inbound(request: Request, deleted: str | None = None,
     The nav pill counts exactly those (`analytics.lead_count`), the way the
     triage pill counts what is waiting to be filed: things awaiting the user,
     not a wait on anyone else, so it is not amber."""
-    return _list(request, "inbound", deleted, q, sort, status, reason, how)
+    return _list(request, "inbound", deleted, q, sort, status, reason, how, visa, form)
 
 
 def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
-          status: str, reason: str, how: str):
+          status: str, reason: str, how: str, visa: str = "", form: str = ""):
     """The one list builder behind `/` and `/inbound`. `page` decides which
     half of `applications` the query sees (by origin — `_list_path` is the
     same rule read the other way, for redirects) and which words the
@@ -455,7 +455,16 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
     entry at rest (the breakdown is the glance the reason chips cannot give
     while most rejections are untagged) and are filters like every other
     legend entry. It folds into `status` the same way `reason` does, and the
-    two combine: `how=no_round&reason=unrecorded` is the tagging queue's bulk."""
+    two combine: `how=no_round&reason=unrecorded` is the tagging queue's bulk.
+
+    `visa` and `form` (25 Sep 2026) are what the JD says about who may be
+    hired (`jd_extraction.VISA_GROUPS`) and what the apply form recorded about
+    sponsorship (`answers.FORM_VISA`) — the columns and rows of /analytics'
+    "Visa, at a glance", whose every cell links here with both set. They are
+    formatted from the SAME SQL expressions the matrix is counted by
+    (`_VISA_GROUP`, `_FORM_VISA`), so a cell's number is the number of rows it
+    shows. Unlike `reason`/`how` they belong to no status, so every link on
+    the page carries them until they are cleared."""
     user = _login_user(request)
     is_inbound = page == "inbound"
     sort = sort if sort in _SORTS else _DEFAULT_SORT
@@ -463,6 +472,8 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
     status = status if status in FUNNEL_ORDER else ""
     reason = reason if reason in _REASON_FILTERS else ""
     how = how if how in _HOW_FILTERS else ""
+    visa = visa if visa in jd_extraction.VISA_GROUPS else ""
+    form = form if form in answers.FORM_VISA else ""
     if reason or how:
         status = "rejected"
     with db.connect_scoped(user["id"]) as conn:
@@ -484,6 +495,10 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
                    -- off the same extraction /analytics compares on: a grey
                    -- tag on the role line, its own sentence as the title.
                    x.visa_signal, x.visa_notes,
+                   -- What the form recorded about sponsorship, and the answer
+                   -- that says so, for the row's second visa tag.
+                   {_FORM_VISA} AS form_visa, fq.question AS form_question,
+                   fq.answer AS form_answer,
                    -- LinkedIn's automatic rejection, if that is how it closed:
                    -- the row wears it beside (never instead of) the reason.
                    CASE WHEN s.status = 'rejected' THEN {_SCREEN} END AS screen,
@@ -539,6 +554,7 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
                LIMIT 1
             ) rr ON true
             {analytics.LATEST_EXTRACTION}
+            {answers.form_visa_evidence_sql("a.id")}
             WHERE a.user_id = %(user_id)s
               -- The page boundary: /inbound is what recruiters started, /
               -- is everything else. One predicate, so the two pages partition
@@ -555,11 +571,13 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
               -- rr.id guards the CASE: with no rejected event rr.reason is NULL
               -- and the expression would read 'no_round' for a live thread.
               AND (%(how)s::text = '' OR (rr.id IS NOT NULL AND {_HOW_CASE} = %(how)s))
+              AND (%(visa)s::text = '' OR {_VISA_GROUP} = %(visa)s)
+              AND (%(formv)s::text = '' OR {_FORM_VISA} = %(formv)s)
             ORDER BY {_SORTS[sort]}
             """, {"user_id": user_id, "inbound": is_inbound, "status": status,
                   "reason": reason if reason in _EVENT_REASONS else "",
                   "unrecorded": reason == _REASON_UNRECORDED,
-                  "how": how,
+                  "how": how, "visa": visa, "formv": form,
                   "q": q, "like": f"%{q}%"}).fetchall()
         for r in rows:
             # Flagged before _display() rewrites the status into a human label:
@@ -638,6 +656,12 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
             # legend's rejected entry as the at-rest glance, over the same
             # page the funnel counts.
             "ends": _end_rows(analytics.rejection_ends(conn, user_id, is_inbound)),
+            # Named apart from `form`/`visa`, which read like generic template
+            # words; the macro defaults to carrying them on every link.
+            "visa_filter": visa,
+            "form_filter": form,
+            "visa_groups": jd_extraction.VISA_GROUPS,
+            "form_visa": answers.FORM_VISA,
         })
 
 
@@ -797,6 +821,10 @@ def _end_rows(rows) -> list[dict]:
 # (LinkedIn's automatic rejection, analytics.screen_sql) is one expression too,
 # selected for the row's tag and read by the bucket.
 _SCREEN = analytics.screen_sql("a.id")
+# The list's `visa` and `form` filters, the same expressions /analytics'
+# "Visa, at a glance" is counted by (analytics.facts).
+_VISA_GROUP = jd_extraction.visa_group_sql("x.visa_signal")
+_FORM_VISA = answers.form_visa_sql("a.id")
 _HOW_CASE = analytics.rejected_how_sql(
     "rr.reason",
     f"EXISTS (SELECT 1 FROM events x WHERE x.application_id = a.id "

@@ -62,6 +62,7 @@
 
 <nav class="toc" aria-label="Sections">
   <a href="#weeks">Week by week</a>
+  {% if r.visa %}<a href="#visa">Visa</a>{% endif %}
   <a href="#stand">Where they stand</a>
   {% if t %}<a href="#timing">How long answers take</a>{% endif %}
   <a href="#answered">What gets answered</a>
@@ -108,6 +109,39 @@
     {% if co.tones.offer %}<span><i class="u t-offer"></i>offer</span>{% endif %}
     {% if co.tones.withdrawn %}<span><i class="u t-withdrawn"></i>withdrawn</span>{% endif %}
     <span><i class="u t-wait r" style="--heat:0%"></i>reached a round</span>
+  </div>
+</div>
+{% endif %}
+
+{# ------------------------------------------------------- visa, at a glance #}
+{% set vm = r.visa %}
+{% if vm %}
+<h2 id="visa">Visa, at a glance</h2>
+<p class="hint">Every application you started, placed by what its apply form recorded about
+  sponsorship (rows) and what its job description says about who may be hired (columns), each
+  square in the colour of its wait as above. A count opens the list filtered to exactly those
+  applications. A restriction is any of citizens or PRs only, no sponsorship, in-country only or
+  locals preferred.</p>
+<div class="card pad vm-card">
+  <div class="vm" role="table" aria-label="Applications by form answer and job description">
+    <div class="vm-row vm-head" role="row">
+      <span role="columnheader"></span>
+      {% for c in vm.cols %}<span class="vm-col" role="columnheader">{{ c.label }} <b>{{ c.n }}</b></span>{% endfor %}
+    </div>
+    {% for row in vm.rows %}
+    <div class="vm-row" role="row">
+      <span class="vm-rh" role="rowheader">{{ row.label }} <b>{{ row.n }}</b></span>
+      {% for cell in row.cells %}
+      <span class="vm-cell" role="cell" data-col="{{ vm.cols[loop.index0].label }}">
+        {% if cell.n %}
+        <a class="vm-n" href="/?visa={{ cell.visa }}&amp;form={{ cell.form }}"
+           title="{{ cell.n }} application{{ '' if cell.n == 1 else 's' }}{% if cell.rejected %}, {{ cell.rejected }} rejected{% endif %}: open them">{{ cell.n }}</a>
+        <span class="units">{{ squares(cell.units) }}</span>
+        {% else %}<span class="quiet">—</span>{% endif %}
+      </span>
+      {% endfor %}
+    </div>
+    {% endfor %}
   </div>
 </div>
 {% endif %}

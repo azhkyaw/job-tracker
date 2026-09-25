@@ -44,6 +44,25 @@ VISA_LABELS = {
     "local_only":       "local only",
 }
 
+# The JD's signal coarsened for a glance: the columns of /analytics' "Visa, at
+# a glance" and the list's `visa` filter (25 Sep 2026). Restrictive signals of
+# either prompt version group together; no extraction counts as saying nothing.
+# Each key: (column head on /analytics, the sentence the list's filter note uses).
+VISA_GROUPS = {
+    "restricts": ("JD restricts", "The JD restricts who may apply"),
+    "sponsors":  ("JD offers sponsorship", "The JD offers sponsorship"),
+    "nothing":   ("JD says nothing", "The JD says nothing"),
+}
+_RESTRICTS = ("citizens_pr_only", "no_sponsorship", "in_country", "locals_preferred", "local_only")
+
+
+def visa_group_sql(col: str) -> str:
+    """The VISA_GROUPS key for a visa_signal column — one expression for the
+    list's filter and the matrix's counts."""
+    restricts = ",".join(f"'{s}'" for s in _RESTRICTS)
+    return (f"(CASE WHEN {col} IN ({restricts}) THEN 'restricts' "
+            f"WHEN {col} = 'sponsors' THEN 'sponsors' ELSE 'nothing' END)")
+
 # Versions whose visa_notes must be a verbatim quote of the JD, checked here
 # rather than trusted: "no quote, no signal". Told in words not to infer, v2's
 # first replay (25 Sep 2026) still wrote "government employment in Singapore

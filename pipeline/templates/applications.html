@@ -19,14 +19,21 @@
    links (which change status) drop them on purpose, and the search and sort
    keep them. The macro reads `page` straight from the render context — a
    macro defined in the template that calls it can (verified 24 Sep 2026;
-   only an imported one can't), so the path it builds is the page it is on. #}
-{% macro list_url(status='', q='', sort='', reason='', how='') -%}
+   only an imported one can't), so the path it builds is the page it is on.
+   `visa` and `form` (25 Sep 2026) belong to no status, so every link carries
+   the page's own unless it passes '' — which only the links that clear them
+   do. #}
+{% macro list_url(status='', q='', sort='', reason='', how='', visa=none, form=none) -%}
+{%- set vf = visa_filter if visa is none else visa -%}
+{%- set ff = form_filter if form is none else form -%}
 {%- set parts = [] -%}
 {%- if q %}{% set _ = parts.append('q=' + (q | urlencode)) %}{% endif -%}
 {%- if sort and sort != DEFAULT_SORT %}{% set _ = parts.append('sort=' + sort) %}{% endif -%}
 {%- if status %}{% set _ = parts.append('status=' + status) %}{% endif -%}
 {%- if reason %}{% set _ = parts.append('reason=' + reason) %}{% endif -%}
 {%- if how %}{% set _ = parts.append('how=' + how) %}{% endif -%}
+{%- if vf %}{% set _ = parts.append('visa=' + vf) %}{% endif -%}
+{%- if ff %}{% set _ = parts.append('form=' + ff) %}{% endif -%}
 {{ '/inbound' if page == 'inbound' else '/' }}{{ '?' + (parts | join('&')) if parts else '' }}
 {%- endmacro %}
 
@@ -117,10 +124,22 @@
 {% endif %}
 {% endif %}
 
+{# The visa filter, when one is set: what it narrows to, in the words of
+   /analytics' "Visa, at a glance" whose cells link here, and one way out. #}
+{% if visa_filter or form_filter %}
+<p class="filter-note">Only applications where
+  {%- if visa_filter %} {{ (visa_groups[visa_filter][1][:1] | lower) ~ visa_groups[visa_filter][1][1:] }}{% endif %}
+  {%- if visa_filter and form_filter %} and{% endif %}
+  {%- if form_filter %} {{ (form_visa[form_filter][0][:1] | lower) ~ form_visa[form_filter][0][1:] }}{% endif %}.
+  <a href="{{ list_url(status=status, q=q, sort=sort, reason=reason, how=how, visa='', form='') }}">Show every visa case</a></p>
+{% endif %}
+
 <form class="bar" method="get" action="{{ '/inbound' if page == 'inbound' else '/' }}">
   {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
   {% if reason %}<input type="hidden" name="reason" value="{{ reason }}">{% endif %}
   {% if how %}<input type="hidden" name="how" value="{{ how }}">{% endif %}
+  {% if visa_filter %}<input type="hidden" name="visa" value="{{ visa_filter }}">{% endif %}
+  {% if form_filter %}<input type="hidden" name="form" value="{{ form_filter }}">{% endif %}
   <span class="grow"><input type="search" name="q" value="{{ q }}"
         placeholder="Search company or role" aria-label="Search company or role"
         style="width:100%"></span>
@@ -222,7 +241,12 @@
             it). Grey like the other property tags: a fact about the posting,
             not about the wait. The JD's own sentence is the title. #}
         {%- if r.visa_signal and r.visa_signal != 'unclear' %}<span class="tag"
-              title="The job description: {{ r.visa_notes or VISA_LABELS.get(r.visa_signal, r.visa_signal) }}">{{ VISA_LABELS.get(r.visa_signal, r.visa_signal | replace('_', ' ')) }}</span>{% endif %}</span>
+              title="The job description: {{ r.visa_notes or VISA_LABELS.get(r.visa_signal, r.visa_signal) }}">{{ VISA_LABELS.get(r.visa_signal, r.visa_signal | replace('_', ' ')) }}</span>{% endif %}
+        {#- What the apply form recorded about sponsorship (answers.FORM_VISA),
+            only when it asked: the question and what was answered are the
+            title, the same evidence-in-the-tooltip rule as the JD's tag. #}
+        {%- if form_visa[r.form_visa][1] %}<span class="tag"
+              title="The form asked “{{ r.form_question }}” and you answered “{{ r.form_answer }}”">{{ form_visa[r.form_visa][1] }}</span>{% endif %}</span>
     </span>
     <span class="trace" style="--week:{{ axis.week }}">
       {%- if r.tail %}<span class="tail{% if live %} live{% endif %}"
@@ -258,7 +282,10 @@
 </div>
 {% elif q %}
 <p class="empty">Nothing matches “{{ q }}”.
-  <a href="{{ list_url() }}">Clear the search</a> to see every {{ noun }}.</p>
+  <a href="{{ list_url(visa='', form='') }}">Clear the search</a> to see every {{ noun }}.</p>
+{% elif visa_filter or form_filter %}
+<p class="empty">No {{ noun }} in this visa case.
+  <a href="{{ list_url(status=status, sort=sort, visa='', form='') }}">See every {{ noun }}</a>.</p>
 {% elif page == 'inbound' %}
 <p class="empty">No approaches yet. A recruiter's email lands in
 <a href="/triage?lane=inbound">triage's inbound lane</a> first; “Track as lead” files it here.</p>

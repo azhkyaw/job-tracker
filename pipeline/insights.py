@@ -35,7 +35,7 @@ import re
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 
-from . import analytics, charts, jd_extraction, trace
+from . import analytics, answers, charts, jd_extraction, trace
 from .ingest import UNKNOWN_COMPANY
 
 RESPONSE = frozenset(analytics.RESPONSE_TYPES)
@@ -659,6 +659,39 @@ def cohorts(facts, now: datetime, tz) -> dict:
             "tones": Counter(f["tone"] for f in facts if f["start"])}
 
 
+# ------------------------------------------------------------- visa matrix
+
+def visa_matrix(facts) -> dict | None:
+    """Every record the user started, placed by two pieces of visa evidence:
+    what the apply form recorded (rows, answers.FORM_VISA) and what the JD
+    says (columns, jd_extraction.VISA_GROUPS), each cell holding its records
+    as the page's squares — coloured by the state of their wait, so the grid
+    reads status, JD and form at once. Both keys are fetched by
+    analytics.facts from the SQL the list's `visa`/`form` filters use, which
+    is what lets a cell link to exactly its rows on `/` (the population is
+    that page's: every record not started by a recruiter)."""
+    mine = [f for f in facts if not f["inbound"]]
+    if not mine:
+        return None
+    cells = defaultdict(list)
+    for f in mine:
+        cells[(f.get("form_visa") or "no_form", f.get("visa_group") or "nothing")].append(f)
+    cols = [{"key": k, "label": head} for k, (head, _) in jd_extraction.VISA_GROUPS.items()]
+    rows = []
+    for fk, (label, _) in answers.FORM_VISA.items():
+        row_cells = []
+        for c in cols:
+            fs = sorted(cells[(fk, c["key"])], key=_unit_key)
+            row_cells.append({"visa": c["key"], "form": fk, "n": len(fs),
+                              "rejected": sum(1 for f in fs if f["state"] == "rejected"),
+                              "units": [unit(f) for f in fs]})
+        rows.append({"key": fk, "label": label, "cells": row_cells,
+                     "n": sum(c["n"] for c in row_cells)})
+    return {"rows": rows, "cols": [{**c, "n": sum(r["cells"][i]["n"] for r in rows)}
+                                   for i, c in enumerate(cols)],
+            "n": len(mine)}
+
+
 # ---------------------------------------------------------------------- flow
 
 FLOW_ORDER = ("applied", "viewed", "engaged", "interview_invite", "offer",
@@ -889,6 +922,7 @@ def report(apps, events, now: datetime, tz, reminder_days: int,
         "empty": False,
         "head": headline(facts, now),
         "cohorts": cohorts(facts, now, tz),
+        "visa": visa_matrix(facts),
         "flow": flow(facts, window, status_word, how_words or analytics.HOW_LABELS),
         "timing": timing(facts),
         "compare": compare(facts, now, tz),
