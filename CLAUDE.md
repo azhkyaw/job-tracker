@@ -1,39 +1,8 @@
 # Job Application Tracker
 
 Personal job-application tracker for LinkedIn / JobStreet / Indeed. All four
-phases built (Jul 2026) and test-driven. Design rationale, as of Jul 2026:
-`docs/design.md` — read it before any structural change, and read its header
-first: the reasoning holds, but its schema and endpoint inventories have gone
-stale (schema truth is `migrations/`, route truth is `pipeline/web.py`).
-Direction: **open-source release**, not SaaS — `docs/open-source.md` (LinkedIn
-extension-fingerprinting risk, the 7-day OAuth token trap, release checklist).
-Feature priorities with the market research behind them: `docs/features.md`.
-How mail gets in — Gmail IMAP + app password is the default ingest path
-(shipped 28 Jul 2026), OAuth the alternative for Workspace/Advanced Protection
-accounts: `docs/email-ingest.md`. WHICH mail gets in is a separate switch:
-`config.INGEST_ALL` (env `TRACKER_INGEST_ALL`, and in `.env.example` since
-2 Sep 2026 — invariant #10) takes everything, and is on for this author's
-job-only mailbox. `docs/monetization.md` is
-superseded but retained for its Gmail restricted-scope compliance analysis.
-Installing the extension on a second device (an existing account, not a
-fresh signup) — including the single-token-per-account gotcha regenerating
-it silently breaks other devices with: `docs/extension-install.md`.
-Capturing on employer career sites and their ATS forms, beyond the three
-platforms — the measured gap, an 18-vendor survey of how job pages expose a
-job, and the plan, in `docs/career-sites.md` (phases A-C built 24 Sep 2026).
-Which Claude model and effort run the JD extractor, measured on a
-hand-labelled gold set: `docs/jd-extraction-models.md` (25 Sep 2026).
-Open-weight models on an OpenAI-compatible server (vLLM first) go through
-`pipeline/llm.py` (Key files); the hands-on lab that verifies it against a
-real server on GCP, stage by stage with results recorded, is
-`docs/vllm-lab.md` (started 8 Sep 2026; `scripts/gcp/vllm-vm.sh` is the VM,
-`scripts/replay_classify.py` diffs any model against the ~700 classified
-emails that keep a body, read-only). The lab lives in GCP project `vllm-lab-2609`,
-and **the author provisions it by hand to learn** — assist by explaining
-and verifying, never by running `gcloud` create/link/delete for them. As of
-8 Sep it is blocked before its first VM: the billing account refuses a
-fourth linked project and L4 quota is 0 everywhere; both are theirs to
-clear.
+phases built (Jul 2026) and test-driven. Direction: **open-source release**,
+not SaaS (`docs/open-source.md`).
 
 A fourth thing the extension captures as of 28 Jul 2026: the **screening
 questions an apply form asks and the answers given** (`application_answers`,
@@ -56,6 +25,90 @@ or disability keeps its QUESTION and gets the answer `(withheld)` —
 `answers.is_sensitive()`, mirrored by `extension/shared/answers.js` so the
 value never leaves the browser, both held to `tests/sensitive_questions.json`.
 Nationality and work authorisation stay recorded: the visa analysis reads them.
+
+## Docs map
+
+Read the matching doc before working in its area. They are dated research
+and design records; the code and `migrations/` win where they disagree.
+
+- `docs/design.md` — before any structural change: the design rationale as
+  of Jul 2026. Read its header first: the reasoning holds, but its schema
+  and endpoint inventories have gone stale (schema truth is `migrations/`,
+  route truth is `pipeline/web.py`).
+- `docs/open-source.md` — the release direction: LinkedIn
+  extension-fingerprinting risk, the 7-day OAuth token trap, the release
+  checklist and the history-rewrite lessons (its §11).
+- `docs/features.md` — feature priorities, with the market research behind
+  them.
+- `docs/email-ingest.md` — how mail gets in: Gmail IMAP + app password is
+  the default path (shipped 28 Jul 2026), OAuth the alternative for
+  Workspace/Advanced Protection accounts. WHICH mail gets in is a separate
+  switch: `config.INGEST_ALL` (env `TRACKER_INGEST_ALL`, and in
+  `.env.example` since 2 Sep 2026 — invariant #10) takes everything, and is
+  on for this author's job-only mailbox.
+- `docs/extension-install.md` — installing the extension on a second device
+  (an existing account, not a fresh signup), including the
+  single-token-per-account gotcha: regenerating the token silently breaks
+  the other devices.
+- `docs/career-sites.md` — capturing on employer career sites and their ATS
+  forms, beyond the three platforms: the measured gap, an 18-vendor survey
+  of how job pages expose a job, and the plan (phases A-C built 24 Sep 2026).
+- `docs/jd-extraction-models.md` — which Claude model and effort run the JD
+  extractor, measured on a hand-labelled gold set (25 Sep 2026).
+- `docs/vllm-lab.md` — open-weight models on an OpenAI-compatible server
+  (vLLM first) go through `pipeline/llm.py` (Key files); this is the
+  hands-on lab that verifies it against a real server on GCP, stage by
+  stage with results recorded (started 8 Sep 2026; `scripts/gcp/vllm-vm.sh`
+  is the VM, `scripts/replay_classify.py` diffs any model against the ~700
+  classified emails that keep a body, read-only). The lab lives in GCP
+  project `vllm-lab-2609`, and **the author provisions it by hand to
+  learn** — assist by explaining and verifying, never by running `gcloud`
+  create/link/delete for them. As of 8 Sep it is blocked before its first
+  VM: the billing account refuses a fourth linked project and L4 quota is 0
+  everywhere; both are theirs to clear.
+- `docs/windows-dev.md` — native Windows: Docker Postgres for the suites,
+  uv-managed Python, the Neon dev DB.
+- `docs/monetization.md` — superseded, retained for its Gmail
+  restricted-scope compliance analysis.
+- `docs/worklog.md` — the dated task register (tasks 1-34 with their
+  measurements); what is still open is summarised under "Open work" below.
+
+**Path-scoped rules.** Dated case history that only matters when touching
+one part of the tree lives VERBATIM in `.claude/rules/` (split out of this
+file on 9 Sep 2026, when it held 2,124 lines). Claude Code loads a rule on
+the first READ of a matching file, not at launch — so when a task is about
+one of these families and no file has been opened yet, Read the rule. Any
+of them can be Read directly at any time.
+
+- `.claude/rules/extension.md` — `extension/**`: every capture, frame,
+  shadow-DOM, `<dialog>`, popover, MV3 and label gotcha; the blind-capture
+  repair and LevelDB-reading procedures; the extension's untested surfaces
+- `.claude/rules/mail-ingest.md` — `gmail_*.py`, `mailbox.py`: IMAP, Gmail
+  ordering, the OAuth 7-day trap, the pre-filter and `filter_query`
+  gotchas, what the provider dict's `sent` and `id` are
+- `.claude/rules/matching.md` — `matcher.py`, `dedup.py`, `ingest.py`: the
+  `COMPANY_TRGM_MIN` rescue, the margin, boilerplate suffixes, event dates,
+  `refile_email` in practice
+- `.claude/rules/web-ui.md` — `web.py`, `templates/**`, `trace.py`,
+  `analytics.py`, `insights.py`, `charts.py`: the UI design system (rules
+  1-18), every Jinja, CSS, FastAPI and ORDER BY gotcha, and invariant #2 in
+  detail
+- `.claude/rules/llm.md` — `llm.py`, `email_classifier.py`,
+  `jd_extraction.py`, `covers.py`, `worker.py`, `prompts/**`:
+  thinking/effort measurements, the model history, the outage story, why
+  the resume profile is a column
+- `.claude/rules/database.md` — `migrations/**`, `db.py`, scripts: the
+  four-places rule, CHECK names, gapped precedence, Neon pooler, view ordering
+
+A rule file is tracked text, so the real-names rule (Commands) applies to it,
+and `audit_names.py` covers it once it is `git add`ed.
+
+**Where new material goes.** A gotcha about one family goes in that family's
+rule file, next to its relatives; only one that has nothing to do with any
+single part of the tree (a shell, git, Windows or tooling trap) belongs in
+this file's Gotchas. Dated task narrative goes to `docs/worklog.md`; "Open
+work" below stays a list of what is open, not a history of what was done.
+An invariant keeps its RULE here and its case history in the rule file.
 
 ## Key files
 
@@ -142,45 +195,13 @@ Nationality and work authorisation stay recorded: the visa analysis reads them.
 - `migrations/` — append-only numbered schema files (invariant #8)
 - `tests/` — eight Python suites + `test_extension.js` (Node, no DB), see Commands
 
-## Where the rest of this file went (9 Sep 2026)
-
-This file held 2,124 lines, most of it dated case history that only matters
-when touching one part of the tree. That history now lives, VERBATIM, in
-path-scoped rules that Claude Code loads when it reads a matching file, and
-that can be Read directly at any time:
-
-- `.claude/rules/extension.md` — `extension/**`: every capture, frame,
-  shadow-DOM, `<dialog>`, popover, MV3 and label gotcha; the blind-capture
-  repair and LevelDB-reading procedures; the extension's untested surfaces
-- `.claude/rules/mail-ingest.md` — `gmail_*.py`, `mailbox.py`: IMAP, Gmail
-  ordering, the OAuth 7-day trap, the pre-filter and `filter_query` gotchas
-- `.claude/rules/matching.md` — `matcher.py`, `dedup.py`, `ingest.py`: the
-  `COMPANY_TRGM_MIN` rescue, the margin, boilerplate suffixes, event dates
-- `.claude/rules/web-ui.md` — `web.py`, `templates/**`, `trace.py`,
-  `analytics.py`, `insights.py`, `charts.py`: the UI design system (rules
-  1-18) plus every Jinja, CSS, FastAPI and ORDER BY gotcha
-- `.claude/rules/llm.md` — `llm.py`, `email_classifier.py`, `worker.py`,
-  `prompts/**`: thinking/effort measurements, model versioning, the outage story
-- `.claude/rules/database.md` — `migrations/**`, `db.py`, scripts: the
-  four-places rule, CHECK names, gapped precedence, Neon pooler, view ordering
-- `docs/worklog.md` — the dated task register (tasks 1-23 with their
-  measurements); what is still open is summarised under "Open work" below
-
-A rule file is tracked text, so the real-names rule (Commands) applies to it,
-and `audit_names.py` covers it once it is `git add`ed. A path-scoped rule
-arrives on the first matching file READ, not at launch — so when a task is
-about one of those families and no file has been opened yet, Read the rule.
-
-**Where new material goes.** A gotcha about one family goes in that family's
-rule file, next to its relatives; only one that has nothing to do with any
-single part of the tree (a shell, git, Windows or tooling trap) belongs in
-this file's Gotchas. Dated task narrative goes to `docs/worklog.md`; "Open
-work" below stays a list of what is open, not a history of what was done.
-
 ## Commands
 
-- **Run ALL tests: `./scripts/test.sh`** — creates a throwaway `tracker_test`
-  DB, applies all migrations, runs `test_extension.js` then the seven Python
+- **Run ALL tests.** On native Windows (both machines), from the Bash tool:
+  `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/test.ps1`,
+  then grep its output for `^== ` (not via the PowerShell tool: Gotchas);
+  on Linux/WSL, `./scripts/test.sh`. Either creates a throwaway `tracker_test`
+  DB, applies all migrations, runs `test_extension.js` then the eight Python
   suites in the required order
   (`test_email_ingest` before `test_phase4`, which must stay last). Run after
   every change; suites stub every LLM/embedding call and fake the IMAP socket
@@ -214,7 +235,8 @@ work" below stays a list of what is open, not a history of what was done.
   `redact-answers [--apply]` after any change to `is_sensitive` (dry run by
   default, prints questions never values, and `--apply` has no undo)
 - Account bootstrap/recovery: `uv run python -m pipeline.cli passwd <email>`
-- Requires Postgres running: `sudo service postgresql start` (WSL doesn't autostart)
+- Linux/WSL only: Postgres must be running (`sudo service postgresql start`;
+  WSL doesn't autostart). Native Windows runs the suites on Docker, next bullet.
 - **Native Windows (no WSL):** see `docs/windows-dev.md` — Docker Postgres
   (`docker compose up -d`, port 55432) + uv-managed Python;
   `scripts/dev-setup.ps1` once, `scripts/test.ps1` to run suites.
@@ -259,24 +281,13 @@ work" below stays a list of what is open, not a history of what was done.
   with the same placeholders, so its case histories now read `Coho`,
   `Wingtip Talent Group`, `Tailspin Consulting` and so on — the dates are
   the real key to a case; the record itself is in the database.
-  Three things the 2 Sep rewrite taught, for the next one. Verify a rewrite by
-  the TIP'S TREE HASH: the tip is already scrubbed, so a correct rule set is a
-  no-op on it, and any change is either a name the scrub missed or a rule that
-  is too broad — it caught three misses, one of them an employer's mail domain
-  the database cannot know. Names WRAP across lines (`Morgan` ending one line,
-  `McKinley` starting the next — five such in history), which single-line
-  rules and single-line sweeps both miss, so scan for the wrapped form and add
-  fragment rules. And the scrub tooling's own docstrings, comments and commit
-  messages are tracked text too: both put a name back during the very session
-  that removed them. `git filter-repo` also drops the `origin` remote — re-add
-  it before the force-push, and re-clone the other machine afterwards.
-  **A third blind spot, found twice on 24 Sep 2026: the SHORT form.** A strong
-  hit is a full stored name; the one word a case is spoken of by (a company's
-  first word, where the database stores two) is only a weak token hit, buried
-  among ~1,600 weak lines — so a worklog entry about records the session just
-  worked on reads clean to the audit and carries three real names. Before
+  **Its third blind spot is the SHORT form** (a company's first word, where
+  the database stores two, is only a weak hit among ~1,600 lines): before
   committing, grep the diff's ADDED lines for the short names of the records
   the session touched: `git diff -U0 | grep '^+' | grep -iE 'name1|name2'`.
+  Lessons for the next history rewrite (verify by the tip's tree hash, names
+  that wrap across lines, the scrub tooling's own text, `filter-repo`
+  dropping `origin`): `docs/open-source.md` §11.
 - **Dev DB shell:** the dev DB is Neon now (`docs/windows-dev.md` → Managed
   Postgres), reached via `TRACKER_DATABASE_URL` in `.env` same as the app.
   Local Docker Postgres is only `scripts/test.ps1`'s throwaway DB —
@@ -319,34 +330,17 @@ work" below stays a list of what is open, not a history of what was done.
    founding constraint (ToS + account-safety), not a preference.
 2. **Status is an append-only event log** (`events`, real-world `occurred_at`).
    Current status is DERIVED via the `application_status` view. Never add a
-   mutable status column; backfill inserts out of order safely.
-   Not every reply arrives on one of the three ingest paths — a recruiter
-   rings, or messages on WhatsApp — so the detail page's timeline form files
-   any of `web.py:_MANUAL_EVENTS` by hand, with `occurred_on` backdating it
-   (`ingest.local_date_to_utc`, local noon) and `payload.reason` /
-   `payload.channel` recording why it ended and where it came from
-   (`_EVENT_REASONS` / `_EVENT_CHANNELS`; JSONB, no columns — the home
-   `docs/features.md` §7 always intended). **A `reason` goes on ANY
-   `rejected` event, whatever its source** (9 Sep 2026,
-   `web.py:set_rejection_reason`): an emailed rejection's type and date are
-   the email's facts and stay read-only, the reason is the user's annotation
-   of it — 40 of 51 real rejections came by email and none could carry one.
-   The list wears it in grey and filters on it (`?reason=`, with
-   `unrecorded` as the tagging queue) and `/analytics` counts it. A visa
-   non-proceed is a REASON on `rejected`, not a status of its own, by
-   design — `.claude/rules/web-ui.md` rule 12 has the costing.
-   `_MANUAL_EVENTS` is a superset of
-   `_OUTCOME_TYPES` by assertion, so the timeline form and `/applications/new`
-   can't offer different outcomes. **`engaged`** (added 31 Jul 2026) is the
-   status-driving type for an employer/recruiter reaching out directly (call,
-   WhatsApp, follow-up questions) with no concrete next step yet — distinct
-   from `viewed`, which `matcher.py` reserves for the passive, auto-detected
-   "your application was viewed" email signal. `application_status`'s
-   precedence ranks it strictly between the two (`viewed` < `engaged` <
-   `interview_invite`), using gapped values (multiples of 10) so a future
-   insertion doesn't force another renumbering. **A visa rejection does NOT auto-set
-   `extractions.visa_signal`** — that stays a deliberate second click on the
-   detail page's own select, scoped to that posting (decided 28 Jul 2026).
+   mutable status column; backfill inserts out of order safely. Replies no
+   ingest path reaches (a call, a WhatsApp message) are filed by hand on the
+   detail page's timeline form (`web.py:_MANUAL_EVENTS`, backdated, with
+   `payload.reason` / `payload.channel` in JSONB — no columns). **A `reason`
+   goes on ANY `rejected` event, whatever its source**, and a visa
+   non-proceed is a REASON on `rejected`, never a status of its own.
+   **`engaged`** (a person reaching out, no next step yet) ranks strictly
+   between `viewed` — `matcher.py`'s passive, auto-detected signal only —
+   and `interview_invite`, in gapped precedence values. **A visa rejection
+   does NOT auto-set `extractions.visa_signal`.** The full text, with the
+   why of each rule: `.claude/rules/web-ui.md` → "Invariant #2 in detail".
 3. **postings ≠ jobs ≠ applications.** One application per (user, job). Dedup
    merges at the job level; `pipeline/dedup.py:merge_jobs` is the ONLY place
    records combine (moves events/artifacts/answers/emails/contacts before
@@ -380,22 +374,12 @@ work" below stays a list of what is open, not a history of what was done.
    completely empty. Never reach for `merge_jobs` here — it moves *all* of a
    job's history, which would import the misfiled email's events as
    spurious duplicates (e.g. a second `applied` event) on the target
-   application. Used in anger on three at once (Contoso, Fabrikam, Litware,
-   4 Aug 2026), where the email hadn't been *misfiled* so much as it had
-   created its own record after the `COMPANY_TRGM_MIN` gate hid the real one —
-   same remedy, since that record contained nothing but the email's own events
-   and `_job_is_empty` therefore cleared it. 98 → 95 applications. Used a fourth
-   time the same way (Wingtip Talent Group, 4 Aug 2026, 96 → 95) after the gate
-   hid the real record from LinkedIn's own confirmation — same shape, same
-   remedy. When a duplicate has an extension-captured twin, keep the EXTENSION
+   application. When a duplicate has an extension-captured twin, keep the EXTENSION
    record: it carries the `platform_job_id`, the JD and the answers, while the
-   email-made one has none of them.
-   **Driving `refile_email` without the UI:** it is a route, not a library
-   function, so reach it through the real code path rather than hand-writing the
-   UPDATEs — `starlette.testclient.TestClient(web.app, cookies={'session': sid})`
-   with `sid` from `auth.create_session(conn, user_id)` runs the actual route
-   against the dev DB. Snapshot the affected rows to JSON first; the route
-   deletes events and may delete an application.
+   email-made one has none of them. Its four real uses (4 Aug 2026)
+   and how to drive it without the UI (the real route through `TestClient`,
+   snapshot first — it deletes events): `.claude/rules/matching.md` →
+   "`refile_email` in practice".
 4. **`norm_company()`** in `pipeline/email_classifier.py` is the single source
    of truth for `company_norm`. Never reimplement it in SQL. It strips SEA
    corporate forms including Indonesian PT/CV *prefixes*.
@@ -407,20 +391,12 @@ work" below stays a list of what is open, not a history of what was done.
    exactly as `prompt_version` does, so a model swap stays attributable and
    selectively re-runnable. Treat it like a prompt version: change the default,
    say why in a comment next to the constant, and leave existing rows on the
-   old model rather than mass re-running. `CLASSIFY_MODEL` moved to
-   `claude-sonnet-5` on 4 Aug 2026 (Haiku was reproducibly misclassifying ATS
-   account-activation mail as `confirmation` — see the constant's comment for
-   the measurement); `EXTRACT_MODEL` stays on Haiku, since every extraction
-   inspected has been correct. `JD_MODEL` moved to `claude-sonnet-5` at
-   `effort: medium` on 25 Sep 2026 with prompt `jd_extract_v2`, measured on a
-   hand-labelled gold set (`docs/jd-extraction-models.md`: Haiku gave 10 false
-   visa signals, Sonnet none). The one deliberate exception to "leave existing
-   rows": all 264 stored JDs were re-extracted under v2 by the author's
-   decision, because the list's visa tag needs v2's vocabulary. The v2 rows
-   sit beside the v1 rows, which remain, and `scripts/replay_jd.py` is the
-   tool (batch mode, then `--apply` of the reviewed decisions). A model change is NOT a substitute
-   for a prompt fix where the prompt is genuinely underspecified: a stronger
-   model infers the intended answer, a rule states it for every model.
+   old model rather than mass re-running. Which stage runs which model, why
+   each swap happened, and the one deliberate mass re-run (every JD under
+   `jd_extract_v2`, 25 Sep 2026): `.claude/rules/llm.md` → "Model history".
+   A model change is NOT a substitute for a prompt fix where the prompt is
+   genuinely underspecified: a stronger model infers the intended answer, a
+   rule states it for every model.
 6. **Tenancy:** request routes resolve the session on an admin connection,
    then run data queries via `db.connect_scoped(user_id)` (SET ROLE
    tracker_app + `app.user_id` GUC → Postgres RLS). `users`/`sessions` are
@@ -460,12 +436,9 @@ work" below stays a list of what is open, not a history of what was done.
     filtering, body storage, enqueueing, query building, and cursor
     persistence for every provider. A provider (`gmail_imap.ImapProvider`,
     `gmail_sync.GmailApiProvider`) only connects, searches, and returns the
-    normalised `{id, sender, subject, body_text, received_at, sent}` dict —
-    `sent` is Gmail's own SENT system label, since All Mail holds both
-    directions and everything downstream branches on it (migration 016); `id` is
-    `gmail_message_id` as lowercase hex, identical on both paths since
-    IMAP's `X-GM-MSGID` (decimal) and the API's message id (hex) are the same
-    64-bit value. Never copy `is_candidate` / `store_message` / a query
+    normalised `{id, sender, subject, body_text, received_at, sent}` dict
+    (what `sent` and `id` are, and why: `.claude/rules/mail-ingest.md`).
+    Never copy `is_candidate` / `store_message` / a query
     builder into a provider — that is exactly how two ingest paths silently
     diverge, the same class of bug invariant #3 guards against elsewhere.
     **`config.INGEST_ALL` (env `TRACKER_INGEST_ALL`, default False) bypasses
@@ -504,11 +477,11 @@ never print a rate below `analytics.MIN_RATE_N`; words on a page come from
 Newsreader carries words and IBM Plex Sans Condensed carries numbers, labels
 and controls, and nothing is monospace but real code; the app has no JS, ever.
 
-## Gotchas learned the hard way in the original build
+## Gotchas (cross-cutting)
 
 Cross-cutting ones only. The family-specific ones (extension, mail, matching,
-web/UI, LLM, database) moved VERBATIM into `.claude/rules/` — see "Where the
-rest of this file went" above.
+web/UI, LLM, database) moved VERBATIM into `.claude/rules/` — see Docs map →
+"Path-scoped rules" above.
 
 - psycopg server-side binding cannot type a bare `%s IS NULL` — cast it
   (`%s::text IS NULL`). This bit us once in the matcher.
@@ -563,9 +536,9 @@ rest of this file went" above.
   inside `$(...)` in the Bash tool, `$'\r'` expands to an EMPTY string, so
   the same pattern matches every line. The same session saw both: one check
   said every staged file carried CRs, the next said none did, and neither
-  was true. Count bytes in Python instead: `blob.count(b"\r")` over `git
-  cat-file blob <commit>:<path>`. Run it against a CRLF control file too,
-  to prove the check can see one.
+  was true. Count bytes in Python instead, `blob.count(b"\r")` over
+  `git cat-file blob <commit>:<path>`, and run it against a CRLF control
+  file too, to prove the check can see one.
 - **`set -e` does not stop a chain inside Claude Code's Bash tool.** The
   harness wraps the command in a context where bash ignores `-e` (the same
   rule that disables it inside `&&`/`||` lists), so a failing `uv run python
@@ -645,7 +618,8 @@ rest of this file went" above.
 
 ## Environment
 
-Python 3.12 · Postgres 15+ with `pgvector` + `pg_trgm` · `pip install -r requirements.txt`
+Python 3.12 · Postgres 15+ with `pgvector` + `pg_trgm` ·
+`uv pip install -r requirements.txt` (Commands → `uv run`)
 
 Env vars: `ANTHROPIC_API_KEY` · `TRACKER_SECRET_KEY` (set ONCE, keep forever —
 losing it orphans encrypted Gmail creds; since IMAP shipped this key can also
@@ -678,18 +652,10 @@ secret or a genuinely per-machine path.
 (since 21 Aug 2026). `covers.load_profile()` takes the column's value as an
 argument and raises `covers.ProfileMissing` naming **Settings -> Resume
 profile** when it is empty; `config.RESUME_PROFILE` / `TRACKER_RESUME_PROFILE`
-and the `profile.md` file fallback are gone. That fallback was wrong twice
-over. It was a **release blocker**: the file was the only route the error
-message and the README ever named, while the column — the one with a UI — was
-mentioned nowhere, so a self-hoster from a clean checkout hit `resume profile
-not found at profile.md` with no way to learn what actually feeds the
-generator (this author hit it too, on a real cover-letter job). And it was a
-**tenancy hole**: one file, no `user_id`, so a second account that had not
-filled in Settings would silently be handed the FIRST account's profile and
-have their letter written from someone else's career — every other per-user
-secret here is scoped by RLS (invariant #6), and a path on disk cannot be.
-`tests/test_phase3.py` seeds the column in `_bootstrap_session()` and asserts
-the missing-profile error names the page rather than a file.
+and the `profile.md` file fallback are gone. Never bring the file back: it
+was a release blocker and a tenancy hole (one file, no `user_id`). The
+story, and the test that pins it: `.claude/rules/llm.md` → "Why the resume
+profile is a column".
 
 `TRACKER_*`/`ANTHROPIC_API_KEY`/etc. auto-load from a gitignored `.env` at
 repo root (`pipeline/config.py`, `override=False` — real shell vars still
@@ -727,32 +693,21 @@ The dated register behind each item, tasks 1-34 with their measurements, is
   queue as the author confirms them. Four `follow_up_sent` are on record: one filed
   by hand, three recovered from follow-ups the user EMAILED, which since
   migration 016 file themselves (task 16). (worklog task 4)
-- **Extension, next real Easy Apply:** verify 0.10.1 is live on BOTH machines
-  and the tab was opened after the reload; read `doc_source` and the sweep
+- **Extension, next real Easy Apply:** verify the current build (0.15.0 on
+  25 Sep) is live on BOTH machines and the tab was opened after the
+  reload; read `doc_source` and the sweep
   line. JobStreet still owes one clean submit with the race fix and salary
   capture together. (tasks 5, 18)
-- **Employer career sites** (`docs/career-sites.md`): analysis only. 51
-  LinkedIn "Apply on company website" applications carry 0 screening
-  answers, and an application made directly on an employer's site exists
-  only as its mail. Its four decisions were taken 24 Sep 2026, all as
-  recommended (its §14). Built the same day: withheld sensitive answers,
-  phase A (the popup captures ANY job page) and phase B (a submit on an ATS
-  form is captured with its answers and completes the job board record that
-  opened the tab; extension 0.12.0). Verified by in-page evaluation on real
-  pages; NOT yet run live through the extension — the popup's injection, a
-  real ATS submit, and the opener link all wait on the next real external
-  apply (reload the extension first; `.claude/rules/extension.md` says what
-  to read). Workday's form sits behind a candidate sign-in and is
-  unverified. SuccessFactors' was read signed in after the first real apply
-  there was missed (worklog task 27, fixed in 0.12.1). A capture from that
-  form alone lacks the company and the JD, which only the listing has, so
-  phase C (0.13.0, task 28) lets the user enable an employer's own domain
-  from the popup. Its listings remember their job per tab, and the ATS
-  submit in that tab is filed onto it. Not yet run live: enabling a site,
-  then a real apply. A live SuccessFactors submit WAS captured (worklog
-  task 30), and without the site enabled it filed as "unknown company"; its
-  receipt now asks for the company (0.15.0). Open: an email-side rescue that
-  names a nameless record from its confirmation, to be replayed first.
+- **Employer career sites** (`docs/career-sites.md`; phases A-C built
+  24 Sep 2026, their history in worklog tasks 24-30). One live
+  SuccessFactors submit has been captured (task 30). Still NOT run live: the
+  popup's injection on a page with no adapter, the opener link to the job
+  board record, enabling an employer's site and then applying there, and
+  0.15.0's receipt asking for a missing company. All wait on the next real
+  external apply (reload the extension first; `.claude/rules/extension.md`
+  says what to read). Workday's form sits behind a candidate sign-in and is
+  unverified. Open: an email-side rescue that names a nameless record from
+  its confirmation, to be replayed first.
 - **Release blockers:** LICENSE (Apache-2.0 recommended), split the extension
   into its own repo, decide whether CLAUDE.md ships; `audit_names.py --history`
   is the pre-publish check. (task 3)

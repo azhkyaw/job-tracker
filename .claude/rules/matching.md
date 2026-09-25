@@ -14,6 +14,28 @@ matching file instead of in every session (it can also be Read directly).
 Dates are the key to each case; the record itself is in the database. The
 invariants that govern this code (#3, #4, #9) are still in CLAUDE.md.
 
+## `refile_email` in practice (moved from CLAUDE.md invariant #3, 25 Sep 2026)
+
+CLAUDE.md invariant #3 says what `web.py:refile_email` is for (one misfiled
+email; never `merge_jobs`). Its uses and the procedure, as they stood there:
+
+Used in anger on three at once (Contoso, Fabrikam, Litware, 4 Aug 2026),
+where the email hadn't been *misfiled* so much as it had created its own
+record after the `COMPANY_TRGM_MIN` gate hid the real one — same remedy,
+since that record contained nothing but the email's own events and
+`_job_is_empty` therefore cleared it. 98 → 95 applications. Used a fourth
+time the same way (Wingtip Talent Group, 4 Aug 2026, 96 → 95) after the gate
+hid the real record from LinkedIn's own confirmation — same shape, same
+remedy.
+
+**Driving `refile_email` without the UI:** it is a route, not a library
+function, so reach it through the real code path rather than hand-writing
+the UPDATEs —
+`starlette.testclient.TestClient(web.app, cookies={'session': sid})`
+with `sid` from `auth.create_session(conn, user_id)` runs the actual
+route against the dev DB. Snapshot the affected rows to JSON first; the
+route deletes events and may delete an application.
+
 ## Gotchas learned the hard way
 
 - Matching/dedup thresholds in `pipeline/config.py`

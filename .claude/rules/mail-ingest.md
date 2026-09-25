@@ -15,6 +15,17 @@ matching file instead of in every session (it can also be Read directly).
 Dates are the key to each case; the record itself is in the database. The
 orchestrator invariant (#10) is still in CLAUDE.md.
 
+## The provider dict's `sent` and `id` (moved from CLAUDE.md invariant #10, 25 Sep 2026)
+
+Every provider returns the normalised
+`{id, sender, subject, body_text, received_at, sent}` dict (invariant #10).
+
+`sent` is Gmail's own SENT system label, since All Mail holds both
+directions and everything downstream branches on it (migration 016); `id` is
+`gmail_message_id` as lowercase hex, identical on both paths since IMAP's
+`X-GM-MSGID` (decimal) and the API's message id (hex) are the same 64-bit
+value.
+
 ## Gotchas learned the hard way
 
 - **Gmail's `messages.list` returns newest-first, but ingest is order-sensitive.**

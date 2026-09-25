@@ -489,6 +489,37 @@ is a private artifact, linked from the memory file
       the narrow label column truncated both real resumes to the same
       visible text. Found by measuring `scrollWidth`, not by eye.
 
+## Invariant #2 in detail (moved from CLAUDE.md, 25 Sep 2026)
+
+CLAUDE.md keeps the rule; this is the rest of its text as it stood there.
+
+Not every reply arrives on one of the three ingest paths — a recruiter
+rings, or messages on WhatsApp — so the detail page's timeline form files
+any of `web.py:_MANUAL_EVENTS` by hand, with `occurred_on` backdating it
+(`ingest.local_date_to_utc`, local noon) and `payload.reason` /
+`payload.channel` recording why it ended and where it came from
+(`_EVENT_REASONS` / `_EVENT_CHANNELS`; JSONB, no columns — the home
+`docs/features.md` §7 always intended). **A `reason` goes on ANY `rejected`
+event, whatever its source** (9 Sep 2026, `web.py:set_rejection_reason`): an
+emailed rejection's type and date are the email's facts and stay read-only,
+the reason is the user's annotation of it — 40 of 51 real rejections came by
+email and none could carry one. The list wears it in grey and filters on it
+(`?reason=`, with `unrecorded` as the tagging queue) and `/analytics` counts
+it. A visa non-proceed is a REASON on `rejected`, not a status of its own,
+by design — `.claude/rules/web-ui.md` rule 12 has the costing.
+`_MANUAL_EVENTS` is a superset of `_OUTCOME_TYPES` by assertion, so the
+timeline form and `/applications/new` can't offer different outcomes.
+**`engaged`** (added 31 Jul 2026) is the status-driving type for an
+employer/recruiter reaching out directly (call, WhatsApp, follow-up
+questions) with no concrete next step yet — distinct from `viewed`, which
+`matcher.py` reserves for the passive, auto-detected "your application was
+viewed" email signal. `application_status`'s precedence ranks it strictly
+between the two (`viewed` < `engaged` < `interview_invite`), using gapped
+values (multiples of 10) so a future insertion doesn't force another
+renumbering. **A visa rejection does NOT auto-set
+`extractions.visa_signal`** — that stays a deliberate second click on the
+detail page's own select, scoped to that posting (decided 28 Jul 2026).
+
 ## Gotchas learned the hard way
 
 - **A top-level `{% set %}` in the PARENT template shadows the child's render

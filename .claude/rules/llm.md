@@ -20,6 +20,43 @@ matching file instead of in every session (it can also be Read directly).
 Dates are the key to each case; the record itself is in the database. The
 prompt/model versioning invariant (#5) and the worker invariant (#7) are still in CLAUDE.md.
 
+## Model history (moved from CLAUDE.md invariant #5, 25 Sep 2026)
+
+Which stage runs which model, and why each one moved. The discipline itself
+(change the default, say why next to the constant, leave existing rows)
+stays in CLAUDE.md invariant #5.
+
+`CLASSIFY_MODEL` moved to `claude-sonnet-5` on 4 Aug 2026 (Haiku was
+reproducibly misclassifying ATS account-activation mail as `confirmation` —
+see the constant's comment for the measurement); `EXTRACT_MODEL` stays on
+Haiku, since every extraction inspected has been correct. `JD_MODEL` moved
+to `claude-sonnet-5` at `effort: medium` on 25 Sep 2026 with prompt
+`jd_extract_v2`, measured on a hand-labelled gold set
+(`docs/jd-extraction-models.md`: Haiku gave 10 false visa signals, Sonnet
+none). The one deliberate exception to "leave existing rows": all 264 stored
+JDs were re-extracted under v2 by the author's decision, because the list's
+visa tag needs v2's vocabulary. The v2 rows sit beside the v1 rows, which
+remain, and `scripts/replay_jd.py` is the tool (batch mode, then `--apply`
+of the reviewed decisions).
+
+## Why the resume profile is a column (moved from CLAUDE.md, 25 Sep 2026)
+
+`covers.load_profile()` reads `users.resume_profile` only; the `profile.md`
+file fallback and `config.RESUME_PROFILE` are gone.
+
+That fallback was wrong twice over. It was a **release blocker**: the file
+was the only route the error message and the README ever named, while the
+column — the one with a UI — was mentioned nowhere, so a self-hoster from a
+clean checkout hit `resume profile not found at profile.md` with no way to
+learn what actually feeds the generator (this author hit it too, on a real
+cover-letter job). And it was a **tenancy hole**: one file, no `user_id`, so
+a second account that had not filled in Settings would silently be handed
+the FIRST account's profile and have their letter written from someone
+else's career — every other per-user secret here is scoped by RLS (invariant
+#6), and a path on disk cannot be. `tests/test_phase3.py` seeds the column
+in `_bootstrap_session()` and asserts the missing-profile error names the
+page rather than a file.
+
 ## Gotchas learned the hard way
 
 - **Omitting `thinking` means DIFFERENT things on Haiku and Sonnet 5, and this

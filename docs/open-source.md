@@ -410,6 +410,27 @@ Audit results, run 26 July 2026:
   closed by that first check. The pre-rewrite bundle is kept outside the
   repository and holds every real name: never publish or commit it. The
   other machine's clone must be re-cloned, not pulled.
+- **Lessons for the next rewrite, and a third blind spot** (carried over
+  from CLAUDE.md on 25 Sep 2026, as it stood there).
+  Three things the 2 Sep rewrite taught, for the next one. Verify a rewrite
+  by the TIP'S TREE HASH: the tip is already scrubbed, so a correct rule set
+  is a no-op on it, and any change is either a name the scrub missed or a
+  rule that is too broad — it caught three misses, one of them an employer's
+  mail domain the database cannot know. Names WRAP across lines (`Morgan`
+  ending one line, `McKinley` starting the next — five such in history),
+  which single-line rules and single-line sweeps both miss, so scan for the
+  wrapped form and add fragment rules. And the scrub tooling's own
+  docstrings, comments and commit messages are tracked text too: both put a
+  name back during the very session that removed them. `git filter-repo`
+  also drops the `origin` remote — re-add it before the force-push, and
+  re-clone the other machine afterwards. **A third blind spot, found twice
+  on 24 Sep 2026: the SHORT form.** A strong hit is a full stored name; the
+  one word a case is spoken of by (a company's first word, where the
+  database stores two) is only a weak token hit, buried among ~1,600 weak
+  lines — so a worklog entry about records the session just worked on reads
+  clean to the audit and carries three real names. Before committing, grep
+  the diff's ADDED lines for the short names of the records the session
+  touched: `git diff -U0 | grep '^+' | grep -iE 'name1|name2'`.
 
 Ordered work:
 
