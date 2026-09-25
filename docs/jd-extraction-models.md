@@ -238,8 +238,11 @@ Haiku.
 3. **Where the harness lives.** The sweep scripts (`jd_eval.py`,
    `jd_batch.py`) and `gold.json` were built in the session's scratch
    directory. `gold.json` names real postings by id, so it stays outside the
-   repository. If the sweep is to be re-run after a model change, the scripts
-   belong in `scripts/` beside `replay_jd.py`.
+   repository. Since the sync after the session they sit, with every run log
+   and the backfill's decisions, in the sibling directory
+   `job-tracker-snapshots/jd-eval-2026-09-25/`. Its README says how to re-run
+   them; `--report` reproduces §4's table offline. If the sweep becomes
+   routine, the scripts belong in `scripts/` beside `replay_jd.py`.
 
 ## 10. Applied, and what the backfill showed
 

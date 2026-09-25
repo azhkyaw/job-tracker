@@ -73,11 +73,18 @@ Nationality and work authorisation stay recorded: the visa analysis reads them.
 - `pipeline/analytics.py` — the counts the LIST pages show (summary,
   rejection reasons and endings, reminders), `reapplications` (the follow-up
   queue's "you applied again" suggestion; `web.mark_reapplied` files it), and
-  `facts()`, the one fetch `/analytics` is drawn from
+  `facts()`, the one fetch `/analytics` is drawn from. "How it ended"
+  (`rejected_how`) derives LinkedIn's automatic knockout from the timeline:
+  a LinkedIn letter inside `SCREEN_HOURS` of the submit is a
+  `sponsorship_screen` or `form_screen`, and a screen outranks any recorded
+  reason (25 Sep 2026). `LATEST_EXTRACTION` is the one lateral join to a
+  posting's newest JD extraction, shared with `web.py`
 - `pipeline/insights.py` — every number on `/analytics` (25 Sep 2026), pure
   like `trace.py`: the Kaplan-Meier reply curve (a waiting application is
   "not yet", never "never"), Wilson intervals, the reply window, forecast,
-  cohorts, employers, and `DIMENSIONS`, the comparison registry the pure
+  cohorts, employers, `visa_matrix` (the form's visa bucket × the JD's
+  visa group, each cell linking to the list rows it counts), and
+  `DIMENSIONS`, the comparison registry the pure
   suite loops. Two words kept apart everywhere: HEARD BACK (any response,
   the list's "reply") and ANSWERED (a rejection or a round — LinkedIn's
   "viewed" notice is not one, and counting it reversed a comparison)
@@ -106,10 +113,20 @@ Nationality and work authorisation stay recorded: the visa analysis reads them.
   and `_outage()` (invariant #7; the billing-outage case is in `.claude/rules/llm.md`)
 - `pipeline/email_classifier.py` — `norm_company()` (invariant #4) and the
   per-stage model constants `CLASSIFY_MODEL` / `EXTRACT_MODEL` (invariant #5)
+- `pipeline/jd_extraction.py` — the JD extractor (`extract` / `store`), on
+  prompt `jd_extract_v2` since 25 Sep 2026 (`docs/jd-extraction-models.md`).
+  `VISA_SIGNALS_BY_VERSION` keeps each version's vocabulary, since v1 rows
+  remain. v2 records only what the JD states, and `quoted_in` holds each
+  signal to a verbatim quote of the JD ("no quote, no signal": one repair
+  turn, then `unclear`). `VISA_GROUPS` / `visa_group_sql` fold the signals
+  into restricts / sponsors / nothing for the list filter and `/analytics`
 - `pipeline/answers.py` — screening-answer normalisation and the ONLY write to
   `application_answers` (invariant #11); `renorm()` re-keys stored rows when
   `norm_question` changes, which `extension/shared/answers.js:normKey`
-  mirrors (`tests/question_norms.json` holds the two together)
+  mirrors (`tests/question_norms.json` holds the two together).
+  `declares_sponsorship` is ONE rule in Python and SQL (its regexes run in
+  both dialects), held to `tests/sponsorship_answers.json`; `FORM_VISA` /
+  `form_visa_sql` bucket each application by what its form said about visas
 - `pipeline/salary.py` — parses the platform's displayed pay string (migration 011)
 - `pipeline/covers.py` — cover letters; `load_profile()` reads `users.resume_profile`
 - `pipeline/joburl.py` — paste-a-link job-id derivation for manual entry; mirrors
@@ -540,6 +557,15 @@ rest of this file went" above.
   (`b.replace(b"\r\n", b"\n")`) before `git add` is the fix. The scrub
   history's tree-hash trick has the same shape: verify the size of a change
   against what it should be, not just that it applied.
+  **Don't check for CR bytes with `grep` here; it gives the wrong answer both ways**
+  (25 Sep 2026, probed). Git for Windows' grep (GNU 3.0) strips CR before
+  matching unless given `-U`, so `grep -c $'\r'` reads 0 on a CRLF file. And
+  inside `$(...)` in the Bash tool, `$'\r'` expands to an EMPTY string, so
+  the same pattern matches every line. The same session saw both: one check
+  said every staged file carried CRs, the next said none did, and neither
+  was true. Count bytes in Python instead: `blob.count(b"\r")` over `git
+  cat-file blob <commit>:<path>`. Run it against a CRLF control file too,
+  to prove the check can see one.
 - **`set -e` does not stop a chain inside Claude Code's Bash tool.** The
   harness wraps the command in a context where bash ignores `-e` (the same
   rule that disables it inside `&&`/`||` lists), so a failing `uv run python
@@ -565,6 +591,14 @@ rest of this file went" above.
   Delete the JUNCTION before `git worktree remove`
   (`[IO.Directory]::Delete($j, $false)`): a recursive delete that follows it
   empties the real `.venv`.
+  **A hunk two issues both rewrote needs its own text at EVERY stage it
+  exists in** (25 Sep 2026, three commits). The builder there fell back to
+  HEAD's text for any stage missing from a hand-written hunk, so it built
+  commit B with commit A's edit to one CLAUDE.md paragraph reverted. It was
+  caught before the push: before the LAST commit, the diff that remains must
+  be that issue's lines only. Read its REMOVED lines; a file the last issue
+  never touched that still shows as modified is exactly this. Amend the
+  earlier commit while it is unpushed.
 - **Windows: `uvicorn --reload`'s process tree outlives a single `taskkill`.**
   The PID `netstat`/`Get-NetTCPConnection` reports often isn't the real
   root — cross-check via `Get-CimInstance Win32_Process -Filter
@@ -681,9 +715,9 @@ Detail lives with each family's rule file; this is the index.
   screen without Dark Reader in the way — neither the 28 Jul one nor the
   23 Sep redraw's, whose light theme is verified numerically only. (task 13)
 
-## Open work (as of 24 Sep 2026)
+## Open work (as of 25 Sep 2026)
 
-The dated register behind each item, tasks 1-23 with their measurements, is
+The dated register behind each item, tasks 1-34 with their measurements, is
 `docs/worklog.md`; read the matching entry before acting on one.
 
 - **Follow-up drafting** on an age-capped queue: cap `/follow-ups` near 21
@@ -733,8 +767,9 @@ The dated register behind each item, tasks 1-23 with their measurements, is
 - **Catch-up sweep** `backfill -d 21` under `INGEST_ALL`, deferred 7 Aug 2026
   (~200-400 classify calls, ~$2-3). (task 1)
 - **Dedup and extraction verification have never run on real data** (0
-  embeddings, 0 of 245 extractions verified on 24 Sep); exercise once or
-  label experimental before release. (task 6)
+  embeddings; 0 of 264 v2 extractions and 0 of 263 v1 verified on 25 Sep —
+  the v2 eval's 66 hand labels live outside the DB, see below); exercise
+  once or label experimental before release. (task 6)
 - **Visa signal vs outcome** (task 9) is joined on `/analytics` since
   25 Sep ("What the job description said about visas"), re-extracted the
   same day under `jd_extract_v2` on Sonnet 5 (task 33). Answered 4 of 9
@@ -746,6 +781,12 @@ The dated register behind each item, tasks 1-23 with their measurements, is
   are LinkedIn's automatic screens (`how=sponsorship_screen` /
   `form_screen`, task 32). The timeline explains them and no person gave a
   reason. The ones worth tagging are `how=no_round&reason=unrecorded` (18).
+  All three kinds of evidence meet on `/analytics`' "Visa, at a glance"
+  (task 34), each cell opening its rows on the list. Two JD label calls wait
+  on the author, both left at the rubric's default
+  (`docs/jd-extraction-models.md` §9). Its eval harness and gold labels sit
+  outside the repo in `job-tracker-snapshots/jd-eval-2026-09-25/`: re-run
+  them after any change to `jd_extract_*` or `JD_MODEL`.
 - **Two emails from the sent-mail repair wait on the author** (task 16): the
   two resume emails recovered from `not_job_related` sit in triage (neither
   names a company, so the matcher could not place them). The misfiled 23 Sep
