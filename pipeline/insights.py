@@ -35,7 +35,7 @@ import re
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 
-from . import analytics, charts, trace
+from . import analytics, charts, jd_extraction, trace
 from .ingest import UNKNOWN_COMPANY
 
 RESPONSE = frozenset(analytics.RESPONSE_TYPES)
@@ -405,8 +405,9 @@ AGE_BUCKETS = (("under a day", 1), ("1 to 6 days", 7), ("1 to 2 weeks", 21),
 FORM_BUCKETS = (("1 to 4 fields", 5), ("5 to 9 fields", 10), ("10 or more", math.inf))
 HOUR_BUCKETS = (("after midnight", 6), ("in the morning", 12),
                 ("in the afternoon", 18), ("in the evening", 24))
-VISA_WORDS = {"sponsors": "says it sponsors", "unclear": "says nothing",
-              "local_only": "wants locals only"}
+# The row words are the list's own tags (jd_extraction.VISA_LABELS), in its
+# order, most restrictive first, and `unclear` — a JD that says nothing — last.
+VISA_WORDS = {**jd_extraction.VISA_LABELS, "unclear": "says nothing"}
 MODE_WORDS = {"hybrid": "hybrid", "onsite": "on site", "remote": "remote"}
 PLATFORM_WORDS = {"linkedin": "LinkedIn", "jobstreet": "JobStreet", "indeed": "Indeed",
                   "other": "another site"}

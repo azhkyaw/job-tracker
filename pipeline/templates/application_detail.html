@@ -160,10 +160,10 @@
       <dt><label for="x-visa-{{ x.id }}">Visa</label></dt>
       <dd>
         <select name="visa_signal" id="x-visa-{{ x.id }}" aria-label="Visa signal" style="width:auto">
-          <option value="">{{ x.visa_signal }} (keep)</option>
-          <option value="sponsors">sponsors</option>
-          <option value="local_only">local_only</option>
-          <option value="unclear">unclear</option>
+          <option value="">{{ VISA_LABELS.get(x.visa_signal, 'says nothing' if x.visa_signal == 'unclear' else x.visa_signal) }} (keep)</option>
+          {%- for v in VISA_SIGNALS %}
+          <option value="{{ v }}">{{ VISA_LABELS.get(v, 'says nothing') }}</option>
+          {%- endfor %}
         </select>
         {% if x.visa_notes %}<span class="quiet">{{ x.visa_notes }}</span>{% endif %}
       </dd>

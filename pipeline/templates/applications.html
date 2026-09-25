@@ -216,7 +216,13 @@
            property of the submission, not of anyone's response to it. #}
         {%- if r.external is sameas true %}<span class="tag">employer site</span>
         {%- elif r.external is sameas false %}<span class="tag">on-platform</span>
-        {%- endif %}</span>
+        {%- endif %}
+        {#- What the JD says about who may be hired, when it says anything
+            (jd_extract_v2, which records only what the JD states and quotes
+            it). Grey like the other property tags: a fact about the posting,
+            not about the wait. The JD's own sentence is the title. #}
+        {%- if r.visa_signal and r.visa_signal != 'unclear' %}<span class="tag"
+              title="The job description: {{ r.visa_notes or VISA_LABELS.get(r.visa_signal, r.visa_signal) }}">{{ VISA_LABELS.get(r.visa_signal, r.visa_signal | replace('_', ' ')) }}</span>{% endif %}</span>
     </span>
     <span class="trace" style="--week:{{ axis.week }}">
       {%- if r.tail %}<span class="tail{% if live %} live{% endif %}"

@@ -164,15 +164,19 @@ def _call_json(
     user_content: str,
     validate: Callable[[dict], None],
     max_tokens: int,
+    effort: str | None = None,
 ) -> dict:
     """One model call with a single repair retry on parse/validation failure.
     `json=True` asks a backend that can constrain output for a JSON object
-    (the OpenAI-compatible one does; Anthropic's ignores it — see llm.py)."""
+    (the OpenAI-compatible one does; Anthropic's ignores it — see llm.py).
+    `effort` is forwarded only when a stage sets one, so every other stage's
+    call — and every test double's `complete` — is exactly what it was."""
     messages: list[dict[str, Any]] = [{"role": "user", "content": user_content}]
     last_err: Exception | None = None
+    kw = {"effort": effort} if effort else {}
     for attempt in range(2):
         text = client.complete(
-            model=model, system=system, messages=messages, max_tokens=max_tokens, json=True,
+            model=model, system=system, messages=messages, max_tokens=max_tokens, json=True, **kw,
         )
         try:
             data = json.loads(_strip_fences(text))

@@ -318,4 +318,92 @@ for word, stored in email_classifier.SENT_TYPES.items():
     check(f"extract_email accepts the stored sent type {stored!r}",
           stored in email_classifier.ALL_TYPES, email_classifier.ALL_TYPES)
 
+# ---------------------------------------------------------------- JD v2
+
+print("jd extraction v2: effort, the quote check, the vocabulary")
+import types                                                     # noqa: E402
+
+from pipeline import jd_extraction                               # noqa: E402
+
+
+class _Messages:
+    def __init__(self):
+        self.sent = []
+
+    def create(self, **kw):
+        self.sent.append(kw)
+        return types.SimpleNamespace(content=[types.SimpleNamespace(type="text", text="{}")])
+
+
+be = llm.AnthropicBackend.__new__(llm.AnthropicBackend)
+be._client = types.SimpleNamespace(messages=_Messages())
+be.complete(model="claude-sonnet-5", system="S", messages=USER, max_tokens=10)
+be.complete(model="claude-sonnet-5", system="S", messages=USER, max_tokens=10, effort="medium")
+check("no effort, no output_config: every other stage's request is unchanged",
+      "output_config" not in be._client.messages.sent[0], be._client.messages.sent[0])
+check("an effort becomes output_config.effort",
+      be._client.messages.sent[1].get("output_config") == {"effort": "medium"})
+
+cl = ScriptedClient('{"a": 1}')
+email_classifier._call_json(cl, model="m", system="s", user_content="u",
+                            validate=lambda d: None, max_tokens=5)
+check("_call_json sends no effort key unless a stage sets one (old test doubles keep working)",
+      "effort" not in cl.calls[0], cl.calls[0])
+
+JD = ("About us. Please note that employer sponsorship (work pass) is not available "
+      "for this position. Apply now.")
+
+
+def jd_reply(signal, notes):
+    return json.dumps({"languages": [], "technologies": ["Python"], "seniority": None,
+                       "salary_min": None, "salary_max": None, "currency": None,
+                       "work_mode": None, "visa_signal": signal, "visa_notes": notes})
+
+
+cl = ScriptedClient(jd_reply("no_sponsorship",
+                             "employer sponsorship (work pass) is not available for this position."))
+x = jd_extraction.extract(cl, JD, "Engineer")
+check("a verbatim quote passes in one call, on the configured model, effort and prompt",
+      x.visa_signal == "no_sponsorship" and len(cl.calls) == 1
+      and cl.calls[0]["model"] == config.JD_MODEL
+      and cl.calls[0].get("effort") == config.JD_EFFORT
+      and cl.calls[0]["max_tokens"] == config.JD_MAX_TOKENS
+      and x.prompt_version == "jd_extract_v2", (x, cl.calls[0].get("effort")))
+
+invented = jd_reply("citizens_pr_only", "Government employment is restricted to citizens.")
+cl = ScriptedClient(invented, invented)
+x = jd_extraction.extract(cl, JD, "Engineer")
+check("no quote, no signal: an invented sentence goes back once, then becomes unclear "
+      "and the rest of the extraction is kept",
+      len(cl.calls) == 2 and "verbatim" in cl.calls[1]["messages"][-1]["content"]
+      and x.visa_signal == "unclear" and x.visa_notes is None and x.technologies == ["Python"],
+      (len(cl.calls), x.visa_signal))
+cl = ScriptedClient(invented, jd_reply("no_sponsorship", "employer sponsorship (work pass) is not available"))
+x = jd_extraction.extract(cl, JD, "Engineer")
+check("a repair that quotes the JD is kept", x.visa_signal == "no_sponsorship" and len(cl.calls) == 2)
+
+check("quoted_in ignores whitespace inside words, a capture artefact ('Singapor e')",
+      jd_extraction.quoted_in("You MUST BE based in Singapore currently.",
+                              "travel on project nee dsYou MUST BE based in Singapor e currently."))
+check("... and an ellipsis, curly quotes and case",
+      jd_extraction.quoted_in("\u201cPlease NOTE that employer sponsorship \u2026 is not available\u201d", JD))
+check("... but not an invented sentence", not jd_extraction.quoted_in("sponsorship is available", JD))
+
+cl = ScriptedClient(jd_reply("local_only", "employer sponsorship (work pass) is not available"),
+                    jd_reply("local_only", "employer sponsorship (work pass) is not available"))
+try:
+    jd_extraction.extract(cl, JD, "Engineer")
+    refused = False
+except ValueError:
+    refused = True
+check("v2 validates its own vocabulary: v1's local_only is refused", refused)
+check("every v2 signal but unclear has a word for the page",
+      set(jd_extraction.VISA_SIGNALS) - {"unclear"} <= set(jd_extraction.VISA_LABELS))
+cl = ScriptedClient(jd_reply("sponsors", "relocation implied by the company's growth"))
+x = jd_extraction.extract(cl, JD, "Engineer", prompt_version="jd_extract_v1",
+                          model="claude-haiku-4-5-20251001", effort=None)
+check("a v1 replay keeps v1's rules (a paraphrase passes) and sends no effort",
+      x.visa_signal == "sponsors" and "effort" not in cl.calls[0]
+      and x.prompt_version == "jd_extract_v1")
+
 print("\nALL LLM PATHS PASS")

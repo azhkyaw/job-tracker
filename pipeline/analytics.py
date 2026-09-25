@@ -427,6 +427,21 @@ def lead_count(conn, user_id) -> int:
     """, (user_id,)).fetchone()["n"]
 
 
+# An application's JD extraction: the newest of the posting it was applied
+# through, else the newest of any posting of its job. ONE lateral join, used by
+# facts() below and the list query (web._list), so the row's visa tag and the
+# /analytics comparison read the same extraction. Joins as `x` over `a`.
+LATEST_EXTRACTION = """LEFT JOIN LATERAL (
+            SELECT x.posting_id, x.visa_signal, x.visa_notes, x.work_mode,
+                   x.languages || x.technologies AS tech
+            FROM extractions x JOIN postings p3 ON p3.id = x.posting_id
+            WHERE p3.job_id = a.job_id
+            ORDER BY (p3.id = a.applied_via_posting_id) DESC NULLS LAST,
+                     x.extracted_at DESC
+            LIMIT 1
+        ) x ON true"""
+
+
 def facts(conn, user_id) -> tuple[list[dict], list[dict]]:
     """Everything /analytics needs, in two queries: one row per application,
     and every event of every application oldest first. insights.py turns them
@@ -469,17 +484,10 @@ def facts(conn, user_id) -> tuple[list[dict], list[dict]]:
              WHERE p2.job_id = a.job_id AND p2.company_raw IS NOT NULL
              ORDER BY p2.captured_at DESC LIMIT 1
         ) pc ON true
-        LEFT JOIN LATERAL (
-            SELECT x.posting_id, x.visa_signal, x.work_mode,
-                   x.languages || x.technologies AS tech
-            FROM extractions x JOIN postings p3 ON p3.id = x.posting_id
-            WHERE p3.job_id = a.job_id
-            ORDER BY (p3.id = a.applied_via_posting_id) DESC NULLS LAST,
-                     x.extracted_at DESC
-            LIMIT 1
-        ) x ON true
+        @LATEST_EXTRACTION@
         WHERE a.user_id = %(user_id)s
-    """.replace("@SCREEN@", screen_sql("a.id")), {"user_id": user_id}).fetchall()
+    """.replace("@SCREEN@", screen_sql("a.id")).replace("@LATEST_EXTRACTION@", LATEST_EXTRACTION),
+        {"user_id": user_id}).fetchall()
     events = conn.execute("""
         SELECT e.application_id, e.type, e.source, e.occurred_at, e.created_at,
                CASE WHEN e.type = 'applied'

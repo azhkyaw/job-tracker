@@ -187,8 +187,24 @@ LLM_EXTRA_BODY = json.loads(os.environ.get("TRACKER_LLM_EXTRA_BODY") or "{}")
 
 # --- Phase 3 -----------------------------------------------------------------
 
-# JD extraction (small-to-mid model) and cover letters (larger; §9).
-JD_MODEL = os.environ.get("TRACKER_JD_MODEL") or LLM_MODEL or "claude-haiku-4-5-20251001"
+# JD extraction and cover letters (larger; §9).
+#
+# JD_MODEL moved from Haiku 4.5 to Sonnet 5 at effort `medium` on 25 Sep 2026
+# with prompt jd_extract_v2 (docs/jd-extraction-models.md). Measured on 54
+# hand-labelled postings: Haiku 88.8% with 10 false visa signals (restrictions
+# on postings that state none — it infers them from the sector, reproducibly);
+# Sonnet 98.1% with none at every effort level from thinking-off to high, and
+# `medium` the only level giving identical labels on both runs. Effort barely
+# moves cost here (~150 output tokens at medium; `high` doubled it for nothing),
+# so it is set for stability, not savings. The model name and the prompt
+# version are on every extraction row (invariant #5); v1 rows keep Haiku.
+# JD_EFFORT applies to Claude models that take `effort`; set it empty for one
+# that does not (Haiku 4.5 rejects it) or for a local model.
+JD_MODEL = os.environ.get("TRACKER_JD_MODEL") or LLM_MODEL or "claude-sonnet-5"
+JD_EFFORT = os.environ.get("TRACKER_JD_EFFORT", "medium") or None
+# On Sonnet 5 the cap covers adaptive thinking AND the answer; the largest
+# measured answer was a few hundred tokens, and an unreached cap is free.
+JD_MAX_TOKENS = 4000
 COVER_MODEL = os.environ.get("TRACKER_COVER_MODEL") or LLM_MODEL or "claude-sonnet-5"
 
 # The candidate profile that grounds cover letters (design doc §9) is NOT

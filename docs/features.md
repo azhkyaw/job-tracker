@@ -302,7 +302,11 @@ that was never filled:
   by nothing — both are ghost-job signals (§3.3).
 - `events.type` includes `follow_up_sent` and `interested`, both barely used.
 - `extractions.visa_signal` / `visa_notes` are extracted and displayed but
-  drive no logic (§3.4).
+  drive no logic (§3.4). **Partly filled 25 Sep 2026:** `jd_extract_v2` states
+  only what the JD says, in five kinds (citizens/PR only, no sponsorship,
+  in-country only, locals preferred, sponsors), quoted verbatim, and the list
+  wears it as a grey tag; `/analytics` compares answer rates by it
+  (`docs/jd-extraction-models.md`).
 
 Every Tier 1 feature except the demo dataset is activating something already
 designed, which is why the effort estimates are as low as they are.

@@ -55,13 +55,17 @@ class AnthropicBackend:
         self._client = anthropic.Anthropic()
 
     def complete(self, *, model: str, system: str, messages: list[dict],
-                 max_tokens: int, json: bool = False) -> str:
+                 max_tokens: int, json: bool = False, effort: str | None = None) -> str:
         # `json` is deliberately ignored: the Claude prompts already say
         # JSON-only and the repair retry handles the rest, and adding
         # output_config here would change the calls whose behaviour was
         # measured (see the max_tokens notes in the stages).
+        # `effort` is opt-in for the same reason: a stage that passes none
+        # sends exactly the request it always sent. The JD stage passes one
+        # (25 Sep 2026, docs/jd-extraction-models.md).
+        extra = {"output_config": {"effort": effort}} if effort else {}
         resp = self._client.messages.create(
-            model=model, max_tokens=max_tokens, system=system, messages=messages,
+            model=model, max_tokens=max_tokens, system=system, messages=messages, **extra,
         )
         return "".join(b.text for b in resp.content if b.type == "text")
 
@@ -83,7 +87,10 @@ class OpenAICompatible:
                                   timeout=timeout, transport=transport)
 
     def complete(self, *, model: str, system: str, messages: list[dict],
-                 max_tokens: int, json: bool = False) -> str:
+                 max_tokens: int, json: bool = False, effort: str | None = None) -> str:
+        # `effort` is Claude's control and is not sent here: servers disagree
+        # on what reasoning knobs they take, and TRACKER_LLM_EXTRA_BODY already
+        # passes whatever this one needs.
         body: dict = {
             "model": model,
             "messages": [{"role": "system", "content": system}, *messages],
@@ -163,9 +170,10 @@ class Client:
         return self._openai
 
     def complete(self, *, model: str, system: str, messages: list[dict],
-                 max_tokens: int, json: bool = False) -> str:
+                 max_tokens: int, json: bool = False, effort: str | None = None) -> str:
+        kw = {"effort": effort} if effort else {}
         return self.backend_for(model).complete(
-            model=model, system=system, messages=messages, max_tokens=max_tokens, json=json)
+            model=model, system=system, messages=messages, max_tokens=max_tokens, json=json, **kw)
 
 
 # --------------------------------------------------------------------------- outages

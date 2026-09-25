@@ -33,7 +33,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from . import (analytics, answers, auth, config, db, dedup, gmail_imap, gmail_oauth,
-               ingest, insights, joburl, mailbox, matcher, trace)
+               ingest, insights, jd_extraction, joburl, mailbox, matcher, trace)
 from .email_classifier import norm_company
 
 app = FastAPI(title="Job Tracker")
@@ -209,6 +209,9 @@ templates.env.globals["asof"] = _asof
 templates.env.globals["queue_alert"] = _queue_alert
 templates.env.globals["EVENT_LABELS"] = EVENT_LABELS
 templates.env.globals["SOURCE_LABELS"] = SOURCE_LABELS
+templates.env.globals["VISA_LABELS"] = jd_extraction.VISA_LABELS
+templates.env.globals["VISA_SIGNALS"] = [k for k in jd_extraction.VISA_LABELS
+                                         if k in jd_extraction.VISA_SIGNALS] + ["unclear"]
 
 
 class AuthRequired(Exception):
@@ -477,6 +480,10 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
                    -- Why it closed, off the rejected event's own payload — the
                    -- key the timeline writes, read here so the row can wear it.
                    rr.reason AS reject_reason,
+                   -- What the JD says about who may be hired (jd_extract_v2),
+                   -- off the same extraction /analytics compares on: a grey
+                   -- tag on the role line, its own sentence as the title.
+                   x.visa_signal, x.visa_notes,
                    -- LinkedIn's automatic rejection, if that is how it closed:
                    -- the row wears it beside (never instead of) the reason.
                    CASE WHEN s.status = 'rejected' THEN {_SCREEN} END AS screen,
@@ -531,6 +538,7 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
                         e.occurred_at DESC, e.created_at DESC
                LIMIT 1
             ) rr ON true
+            {analytics.LATEST_EXTRACTION}
             WHERE a.user_id = %(user_id)s
               -- The page boundary: /inbound is what recruiters started, /
               -- is everything else. One predicate, so the two pages partition
@@ -2462,7 +2470,7 @@ def verify_extraction(request: Request, extraction_id: str,
     def _csv(v: str) -> list[str] | None:
         items = [x.strip() for x in v.split(",") if x.strip()]
         return items or None
-    if visa_signal and visa_signal not in ("sponsors", "local_only", "unclear"):
+    if visa_signal and visa_signal not in jd_extraction.VISA_SIGNALS:
         raise HTTPException(400, "bad visa_signal")
     user = _login_user(request)
     with db.connect_scoped(user["id"]) as conn, conn.transaction():

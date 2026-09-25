@@ -21,6 +21,8 @@ it silently breaks other devices with: `docs/extension-install.md`.
 Capturing on employer career sites and their ATS forms, beyond the three
 platforms — the measured gap, an 18-vendor survey of how job pages expose a
 job, and the plan, in `docs/career-sites.md` (phases A-C built 24 Sep 2026).
+Which Claude model and effort run the JD extractor, measured on a
+hand-labelled gold set: `docs/jd-extraction-models.md` (25 Sep 2026).
 Open-weight models on an OpenAI-compatible server (vLLM first) go through
 `pipeline/llm.py` (Key files); the hands-on lab that verifies it against a
 real server on GCP, stage by stage with results recorded, is
@@ -84,7 +86,8 @@ Nationality and work authorisation stay recorded: the visa analysis reads them.
 - `pipeline/llm.py` — the ONE door to every model call (8 Sep 2026). Two
   backends behind `Client.complete()`: Anthropic (default; the request is
   byte-identical to what the stages sent before, so every measured
-  max_tokens/thinking note still holds) and OpenAI-compatible
+  max_tokens/thinking note still holds — `effort` is opt-in and only the JD
+  stage sets one, 25 Sep 2026) and OpenAI-compatible
   (`/v1/chat/completions` over the `httpx` already in requirements — vLLM,
   llama.cpp, Ollama, LM Studio). **Routing is by MODEL NAME, one rule**: a
   `claude-*` name is Anthropic's, anything else goes to
@@ -390,8 +393,15 @@ work" below stays a list of what is open, not a history of what was done.
    old model rather than mass re-running. `CLASSIFY_MODEL` moved to
    `claude-sonnet-5` on 4 Aug 2026 (Haiku was reproducibly misclassifying ATS
    account-activation mail as `confirmation` — see the constant's comment for
-   the measurement); `EXTRACT_MODEL` and `JD_MODEL` stay on Haiku, since every
-   extraction inspected has been correct. A model change is NOT a substitute
+   the measurement); `EXTRACT_MODEL` stays on Haiku, since every extraction
+   inspected has been correct. `JD_MODEL` moved to `claude-sonnet-5` at
+   `effort: medium` on 25 Sep 2026 with prompt `jd_extract_v2`, measured on a
+   hand-labelled gold set (`docs/jd-extraction-models.md`: Haiku gave 10 false
+   visa signals, Sonnet none). The one deliberate exception to "leave existing
+   rows": all 264 stored JDs were re-extracted under v2 by the author's
+   decision, because the list's visa tag needs v2's vocabulary. The v2 rows
+   sit beside the v1 rows, which remain, and `scripts/replay_jd.py` is the
+   tool (batch mode, then `--apply` of the reviewed decisions). A model change is NOT a substitute
    for a prompt fix where the prompt is genuinely underspecified: a stronger
    model infers the intended answer, a rule states it for every model.
 6. **Tenancy:** request routes resolve the session on an admin connection,
@@ -726,9 +736,12 @@ The dated register behind each item, tasks 1-23 with their measurements, is
   embeddings, 0 of 245 extractions verified on 24 Sep); exercise once or
   label experimental before release. (task 6)
 - **Visa signal vs outcome** (task 9) is joined on `/analytics` since
-  25 Sep ("What the job description said about visas"): answered 3 of 13
-  where it says it sponsors, 6 of 21 where it wants locals only, 35 of 178
-  where it says nothing — no difference the intervals can see. Still open:
+  25 Sep ("What the job description said about visas"), re-extracted the
+  same day under `jd_extract_v2` on Sonnet 5 (task 33). Answered 4 of 9
+  where the JD says no sponsorship, 1 of 5 where it says it sponsors, and 38
+  of 192 where it says nothing. The finding that matters is elsewhere: only
+  4 of the 12 LinkedIn sponsorship screens had a JD saying so, so the form's
+  question predicts that knockout and the JD mostly does not. Still open:
   41 of 56 rejected applications carry no reason (25 Sep), but 21 of those
   are LinkedIn's automatic screens (`how=sponsorship_screen` /
   `form_screen`, task 32). The timeline explains them and no person gave a

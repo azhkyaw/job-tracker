@@ -186,6 +186,22 @@ is a private artifact, linked from the memory file
    the day: Adventure Works' four rows (the studio of `.claude/rules/matching.md`'s
    boilerplate-suffix bullet) stay undecided — identical JDs, so either
    reposts or one template for several portfolio companies.
+9d. **What the JD says about who may be hired is a grey tag on the role line**
+   (25 Sep 2026). `citizens/PR only`, `no sponsorship`, `in-country only`,
+   `locals preferred`, `sponsors` (`jd_extraction.VISA_LABELS`, one
+   vocabulary for the row, the detail page's select and `/analytics`). The
+   tag's title is the JD's own sentence: `jd_extract_v2` must quote it
+   verbatim or the signal is `unclear`, and `unclear` wears no tag, because a
+   tag says something. Grey for rule 9b's reason: it is a fact about the
+   posting, not about anyone's response. It reads the application's newest
+   extraction through `analytics.LATEST_EXTRACTION`, the lateral join
+   `/analytics` compares on, so the row and the comparison cannot read
+   different extractions. `in-country only` is the author's distinction: the
+   candidate must already be in the country. A work pass may still be
+   sponsored for someone already there, which "no sponsorship" rules out. The
+   extractor behind it is measured in `docs/jd-extraction-models.md`, where
+   Haiku put an unsupported restriction on 10 of 107 answers, which is why
+   it moved to Sonnet 5.
 10. **The name column takes the free space; the trace is capped** (`.tl`
    grid). Verified against 47 real applications: applied in one burst, so
    every trace is the same line at the same length while agency company/role

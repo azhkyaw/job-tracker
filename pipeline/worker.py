@@ -134,17 +134,7 @@ def handle_extract_jd(conn, job: dict) -> None:
                     (posting["id"], job["created_at"])).fetchone():
         return
     x = jd_extraction.extract(_client(), posting["jd_text"], posting["title"])
-    conn.execute(
-        """
-        INSERT INTO extractions (user_id, posting_id, languages, technologies,
-                                 seniority, salary_min, salary_max, currency,
-                                 work_mode, visa_signal, visa_notes,
-                                 model, prompt_version)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """,
-        (job["user_id"], posting["id"], x.languages, x.technologies, x.seniority,
-         x.salary_min, x.salary_max, x.currency, x.work_mode, x.visa_signal,
-         x.visa_notes, x.model, x.prompt_version))
+    jd_extraction.store(conn, job["user_id"], posting["id"], x)
     if embeddings.available() and posting["jd_embedding"] is None:
         db.enqueue(conn, job["user_id"], "embed_jd", {"posting_id": str(posting["id"])})
 

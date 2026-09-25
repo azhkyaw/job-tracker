@@ -9,6 +9,7 @@ paths:
   - "prompts/**"
   - "tests/test_llm.py"
   - "scripts/replay_classify.py"
+  - "scripts/replay_jd.py"
   - "docs/vllm-lab.md"
 ---
 
@@ -24,7 +25,8 @@ prompt/model versioning invariant (#5) and the worker invariant (#7) are still i
 - **Omitting `thinking` means DIFFERENT things on Haiku and Sonnet 5, and this
   pipeline omits it everywhere.** All four Anthropic stages call
   `messages.create(model, max_tokens, system, messages)` and set no `thinking`,
-  no `output_config.effort`, no sampling params. On Haiku 4.5 that means no
+  no sampling params, and no `output_config.effort` — except the JD stage
+  since 25 Sep 2026 (`medium`, the bullet on effort below). On Haiku 4.5 that means no
   thinking at all. On Sonnet 5 it means **adaptive thinking is ON at the
   default `high` effort**, and `max_tokens` caps thinking PLUS response text
   together — so moving a stage to Sonnet silently changes what its existing
@@ -131,6 +133,40 @@ prompt/model versioning invariant (#5) and the worker invariant (#7) are still i
   uses the sent prompt, and `Classification.model` now records the model
   actually called (it defaulted to `CLASSIFY_MODEL` even under a replay's
   `model=`).
+- **The JD stage is the one stage that sends `effort`, and it is opt-in**
+  (25 Sep 2026). `llm.AnthropicBackend.complete` adds
+  `output_config: {effort}` only when a stage passes one, and
+  `email_classifier._call_json` forwards it only when set. Every other
+  stage's request stays byte-identical, and so does every test double whose
+  `complete()` never heard of effort. `config.JD_EFFORT` defaults to
+  `medium`. Set it empty for a model that takes no effort: Haiku 4.5 rejects
+  the parameter with a 400, and a local model ignores it. The measurement
+  behind Sonnet 5 at `medium` is in `docs/jd-extraction-models.md`. Effort
+  barely moved accuracy or cost there: about 150 output tokens at `medium`,
+  and `high` doubled that for nothing. `medium` was chosen for run-to-run
+  stability.
+- **A verbatim check is only as good as the text it checks against**
+  (25 Sep 2026). `jd_extract_v2` must quote the JD for any visa signal ("no
+  quote, no signal"), because Haiku, told not to infer, still wrote "government
+  employment is restricted to citizens" for listings that say nothing of the
+  kind. Two failure modes came out of the sweep:
+  - **Gaming.** Haiku then quoted a real sentence that does not support its
+    signal (an agency's mission statement). The check cannot see that; the
+    model change fixed it.
+  - **A correct quote failing.** Some captured JDs carry stray spaces inside
+    words ("Singapor e", "nee dsYou"), so a model that quoted correctly failed
+    the check, was repaired, and was downgraded to `unclear`, on every Sonnet
+    run of that posting. `jd_extraction.quoted_in` ignores ALL whitespace now.
+
+  A second unquoted answer downgrades the signal instead of failing the job,
+  so one field cannot throw away the technology list beside it.
+- **A replay can spend the account dry** (25 Sep 2026). A full Sonnet replay
+  of 264 JDs ran out of credit after 226, mid-run. The live queue was not
+  touched (the outage classifier held it, as designed), and
+  `scripts/replay_jd.py --skip` resumes a run without paying twice. For a
+  backfill or an eval, where nobody waits, use `--batch-submit` /
+  `--batch-collect`: half price, and repairs still run live through the
+  production `extract`.
 
 
 ## Known-untested surfaces (verify on first real contact)

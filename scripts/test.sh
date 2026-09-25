@@ -24,6 +24,7 @@ psql "$DB" -q -v ON_ERROR_STOP=1 \
   -f migrations/014_application_resume_file.sql \
   -f migrations/015_drop_application_focused.sql \
   -f migrations/016_email_sent_by_user.sql \
+  -f migrations/017_visa_signal_v2.sql \
   -c "INSERT INTO users (email) VALUES ('dev@test.local');" 2>/dev/null
 # Extension adapter tests: pure Node, no DB, ahead of the Python suites.
 # A missing node SKIPS rather than fails (the Python suites must stay runnable

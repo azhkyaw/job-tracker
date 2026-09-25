@@ -240,7 +240,7 @@ for i in range(60):
                              "Backend Engineer", "AI Engineer", ".NET Developer"][i % 5],
             resume_file=["resume-a.pdf", "resume-b.pdf"][i % 2],
             posted_label=labels[i % 5], reposted=bool(i % 3 == 0),
-            visa_signal=["sponsors", "unclear", "local_only"][i % 3],
+            visa_signal=["sponsors", "unclear", "no_sponsorship"][i % 3],
             work_mode=["hybrid", "onsite", "remote"][i % 3],
             ats=["workday", "greenhouse"][i % 2], platform="linkedin",
             tech=["Python", "LangChain" if i % 3 else "langchain"], extracted=True,

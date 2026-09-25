@@ -867,3 +867,35 @@ the key to each real case.
    full time" is not a visa question. Rows wear the screen as a grey tag
    beside the reason, and the rail's status line now wraps: "sponsorship
    screen" beside "rejected" did not fit in 7rem and was being clipped.
+33. **Which model runs the JD extractor under `jd_extract_v2`** (25 Sep 2026;
+   `docs/jd-extraction-models.md`). v2 splits v1's `local_only` into
+   citizens/PR only, no sponsorship, in-country (the author's distinction: a
+   pass may be sponsored for someone already here, just no hire from abroad)
+   and locals preferred, records only what the JD says, and checks
+   `visa_notes` against the JD verbatim ("no quote, no signal"). Replaying
+   it, Haiku kept inferring. The sweep ran on 54 hand-labelled postings
+   through the real `extract`, batched at half price, and cost about $1.95
+   against a $5 budget:
+   - Haiku 4.5: 88.8% correct, 10 false signals, all reproducible.
+   - Sonnet 5 at thinking-off, `low`, `medium` and `high`: 98.0-98.1%,
+     no false signals.
+   - Opus 5.5 `low`: 100% on one run, at twice Sonnet's cost.
+   Effort barely moves Sonnet here. It writes about 150 output tokens at
+   `medium`, and `high` doubles that with no gain. Recommended: Sonnet 5 at
+   `medium`, the only level with identical labels on both runs. The sweep
+   also found our own verbatim check failing a correct quote on a JD captured
+   with spaces inside words ("Singapor e"), on every Sonnet run;
+   `quoted_in` now ignores whitespace. The API credit ran out mid-way through
+   an earlier full replay (38 of 264 left undone), and the worker's outage
+   handling held the queue untouched as designed.
+   Applied the same day on the author's word:
+   - `JD_MODEL` is Sonnet 5 with `JD_EFFORT = "medium"`. `effort` is opt-in
+     in `llm.py`, so the other stages are unchanged.
+   - v2 is live, and migration 017 widened the CHECK constraint.
+   - All 264 JDs were backfilled through the Batch API for about $0.90, and
+     65 of the 66 gold labels agree.
+   - The list wears the signal as a grey tag, with the JD's own sentence as
+     its title (UI rule 9d).
+   Of the 12 rejections LinkedIn's sponsorship screen closed, only 4 had a JD
+   that said `no_sponsorship`. The knockout lives in the form's question,
+   not in the JD.

@@ -2208,6 +2208,35 @@ check("every square links its application and wears a tone",
 check("a band of the flow opens the list filtered to its rows",
       re.search(r'<a href="/(inbound)?\?status=[a-z_]+"><path class="band', r.text) is not None)
 
+print("what the JD says about visas: a grey tag on the row (jd_extract_v2)")
+with db.connect() as conn, conn.transaction():
+    nw_posting = conn.execute(
+        "SELECT p.id FROM postings p JOIN applications a ON a.job_id = p.job_id "
+        "WHERE a.id = %s ORDER BY p.captured_at DESC LIMIT 1", (northwind_app,)).fetchone()["id"]
+    nw_x = conn.execute(
+        "INSERT INTO extractions (user_id, posting_id, visa_signal, visa_notes, model, prompt_version) "
+        "VALUES (%s, %s, 'no_sponsorship', 'Employer sponsorship (work pass) is not available.', "
+        "'claude-sonnet-5', 'jd_extract_v2') RETURNING id", (user_id, nw_posting)).fetchone()["id"]
+r = client.get("/?q=northwind")
+check("the newest extraction's signal is a grey tag on the role line, its sentence the title",
+      re.search(r'<span class="tag"\s+title="The job description: Employer sponsorship \(work pass\) '
+                r'is not available\.">no sponsorship</span>', r.text) is not None, r.status_code)
+r = client.get(f"/applications/{northwind_app}")
+check("the detail page offers v2's vocabulary in its own words",
+      '<option value="in_country">in-country only</option>' in r.text
+      and '<option value="local_only">' not in r.text
+      and "no sponsorship (keep)" in r.text, r.status_code)
+r = client.post(f"/extractions/{nw_x}/verify",
+                data={"application_id": str(northwind_app), "visa_signal": "in_country"})
+with db.connect() as conn:
+    now_signal = conn.execute("SELECT visa_signal FROM extractions WHERE id = %s", (nw_x,)).fetchone()
+check("a v2 signal is accepted as a correction", r.status_code == 303
+      and now_signal["visa_signal"] == "in_country", (r.status_code, now_signal))
+r = client.post(f"/extractions/{nw_x}/verify",
+                data={"application_id": str(northwind_app), "visa_signal": "telepathy_only"})
+check("an unknown signal is refused", r.status_code == 400, r.status_code)
+
+
 print("form answers: detail page + answer bank")
 # The real key function, never a copy of it: a hand-rolled key here is a row
 # `answers.renorm()` would find stale.
