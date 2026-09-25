@@ -4,7 +4,10 @@ paths:
   - "pipeline/templates/**"
   - "pipeline/trace.py"
   - "pipeline/analytics.py"
+  - "pipeline/insights.py"
+  - "pipeline/charts.py"
   - "tests/test_web.py"
+  - "tests/test_insights.py"
   - "tests/test_phase3.py"
 ---
 
@@ -366,6 +369,61 @@ is a private artifact, linked from the memory file
     lead lane shipped, on "only a human creates a lead"; filing it is a
     human's statement, so the principle is kept and the exclusion is not.
 
+18. **`/analytics` is a report, read top to bottom** (25 Sep 2026). It has
+    the numbers, every application as a square by week, where every record
+    stands (a flow), how long answers take, what gets answered, employers
+    tried more than once, how it ended, rhythm, and what the page can see.
+    One fetch (`analytics.facts`) feeds `insights.report()`, which is pure
+    and tested without a database (`tests/test_insights.py`), and
+    `tests/test_web.py` holds its counts to the SQL the list's lede, funnel
+    and chips use. The two rejection tables stay SQL for that reason. The
+    rules that make it honest, each measured on the day:
+    - **Heard back ≠ answered.** Heard back is any response, the list's
+      "reply". Answered is a rejection or a round. LinkedIn's "viewed"
+      notice is heard back but NOT an answer: no other channel can send
+      one, and counting it reversed the on-platform vs employer-site
+      comparison (33%/29% one way, 19%/29% the other). Comparisons use
+      answered.
+    - **Nothing young is scored.** The reply curve is Kaplan-Meier, so a
+      waiting application counts as "not yet" for as long as it has existed.
+      A comparison counts only applications `SETTLED_DAYS` (14) old.
+    - **A rate carries its doubt.** Each row is a dot at the rate and a
+      line for its 95% Wilson interval, against ONE upright rule for the
+      whole. A row whose interval clears the rule is set in WEIGHT, not
+      colour (rule 11's "selected"). The page says beside the findings how
+      many would clear by chance: a twentieth of the rated rows. On the day
+      it was 3 of 59, and 3 did. Rule 7's `MIN_RATE_N` still withholds
+      thin rates.
+    - **A square is the list's colour.** `trace.live()` and `trace.heat()`
+      decide both the list rail and the page's squares. `live` moved out of
+      two templates into `trace.py` so there is one rule. `t-<tone>`
+      classes set ONE `--tc` that a square paints as background and a flow
+      band as fill.
+    - **A flow band links exactly its rows.** Source-to-status bands are
+      per origin, so each links `/?status=` or `/inbound?status=` and its
+      count is that list's. The status column equals `_funnel` over both
+      pages, and the rejection branches equal `rejection_ends`, both
+      tested. The waiting branch splits at the REPLY WINDOW. That is the
+      longest any application has waited to hear anything (34 days on the
+      day), a property of the record rather than a constant, and it sits
+      beside `FULL_HEAT_DAYS` as the measurement task 13 asked for.
+    - **The zone groups; it never measures.** Calendar days, weeks and hours
+      are the viewer's (about 110 of 229 extension submissions fall on a
+      different UTC day), and durations are UTC arithmetic, as the rule
+      above `_dt` says.
+    - **Marks stretch; words do not.** `charts.py` draws marks in an SVG
+      with `preserveAspectRatio="none"` (lines through `vector-effect:
+      non-scaling-stroke`) and puts every word in HTML at the same
+      percentages. Text inside a stretched SVG distorts, and text inside a
+      fixed-aspect one shrinks to nothing on a phone.
+    - **Every value is text somewhere.** No JS, so hover is a native
+      `title`. Every node, row and panel prints its number, and a tooltip
+      only adds the application's name.
+    - **Names that differ at the end are cut at the start**
+      (`insights.distinct_names`). Resumes are named after their owner, so
+      the narrow label column truncated both real resumes to the same
+      visible text. Found by measuring `scrollWidth`, not by eye.
+
 ## Gotchas learned the hard way
 
 - **A top-level `{% set %}` in the PARENT template shadows the child's render
@@ -484,7 +542,8 @@ is a private artifact, linked from the memory file
   `overflow-wrap:anywhere` on `.funnel .seg .l`; same pattern could bite any
   new flex-sized-by-count UI.
 - **`pipeline/analytics.py`'s response-type lists are two places, not one:**
-  `_RESPONSE_TYPES` (shared by `weekly()`) and `reminders()`'s separate
+  `RESPONSE_TYPES` (the tuple `_RESPONSE_TYPES` and insights.py are built
+  from; `weekly()` read it until 25 Sep 2026) and `reminders()`'s separate
   `NOT EXISTS` list. A new status-driving event type has to be added to
   BOTH or it silently won't clear an application from the Needs-follow-up
   queue — the exact bug the `engaged` type's own motivating use case would

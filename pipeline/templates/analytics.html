@@ -2,137 +2,387 @@
 {% block title %}analytics — tracker{% endblock %}
 {% block nav_analytics %}active{% endblock %}
 {% block content %}
+{#- The search, read back as a report (redrawn 25 Sep 2026). Everything drawn
+    comes from insights.report() — `r` — over one fetch; the two rejection
+    tables near the end come from the SQL the list's chips are counted by.
+    Colour keeps its one meaning (UI rule 1): an application's square wears
+    the colour its day count wears on the list, and everything else is grey. -#}
 <h1>How the search is going</h1>
 
-{% set stages = [
-  ("Applied",      summary.applied),
-  ("Replied",      summary.responded),
-  ("Interviewing", summary.interviews),
-  ("Offers",       summary.offers)] %}
-{% set top = summary.applied or 1 %}
+{% if r.empty %}
+<p class="empty">Nothing sent or received yet. This page fills in as the search moves.</p>
+{% else %}
+{% set h = r.head %}
+{% set t = r.timing %}
+{% set c = r.compare %}
 
-<div class="two">
-<div>
-<h2>Funnel</h2>
-<div class="card pad">
-  <div class="fbars">
-    {% for label, n in stages %}
-    <div class="fb" title="{{ n }} {{ label | lower }}">
-      <span class="lab">{{ label }}</span>
-      <span class="track"><span class="fill" style="--w:{{ (100.0 * n / top) | round(1) }}%"></span></span>
-      <span class="val">{{ n }}</span>
-    </div>
-    {% endfor %}
+<p class="lede">
+  In <b>{{ h.weeks }}</b> week{{ '' if h.weeks == 1 else 's' }} since {{ h.since | day }} you sent
+  <b>{{ h.sent }}</b> application{{ '' if h.sent == 1 else 's' }} and heard back on <b>{{ h.heard }}</b>.
+  {%- if t %} Half of those answers came within <b>{{ t.median | days_text }}</b> and nine in ten
+  within <b>{{ t.p90 | round(0, 'ceil') | int }}</b> days; none has come after <b>{{ t.window }}</b> days of silence.{% endif %}
+  {%- if h.per_round_sent and h.per_round_inbound %} One application in <b>{{ h.per_round_sent }}</b>
+  reached a round, against one recruiter's approach in <b>{{ h.per_round_inbound }}</b>.{% endif %}
+</p>
+
+<div class="stats">
+  <div class="stat">
+    <span class="k">Applications sent</span>
+    <span class="v">{{ h.sent }}</span>
+    <span class="s">about <b>{{ h.per_week }}</b> a week</span>
   </div>
-  <p class="hint" style="margin-top:.8rem">
-    {% if summary.response_rate is not none %}
-      <b>{{ summary.response_rate }}%</b> of applications get a reply{% if summary.avg_days_to_resp %},
-      after <b>{{ summary.avg_days_to_resp }}</b> days on average{% endif %}.
-    {% else %}Not enough applied history yet to compute a response rate.{% endif %}
-  </p>
-</div>
+  <div class="stat">
+    <span class="k">Heard back</span>
+    <span class="v">{% if h.heard_pct is not none %}{{ h.heard_pct }}%{% else %}—{% endif %}</span>
+    <span class="s"><b>{{ h.heard }}</b> of <b>{{ h.sent }}</b>{% if t %}, half within <b>{{ t.median | days_text }}</b>{% endif %}</span>
+  </div>
+  <div class="stat">
+    <span class="k">Reached a round</span>
+    <span class="v">{{ h.rounds_sent }}</span>
+    <span class="s">{% if h.per_round_sent %}one application in <b>{{ h.per_round_sent }}</b>{% else %}not yet{% endif %}</span>
+  </div>
+  <div class="stat">
+    <span class="k">Recruiters approached you</span>
+    <span class="v">{{ h.approaches }}</span>
+    <span class="s">{% if h.rounds_inbound %}<b>{{ h.rounds_inbound }}</b> reached a round, one in <b>{{ h.per_round_inbound }}</b>{% else %}none has reached a round{% endif %}</span>
+  </div>
+  {% if t %}
+  <div class="stat">
+    <span class="k">Still waiting</span>
+    <span class="v">{{ t.waiting }}</span>
+    <span class="s">about <b>{{ t.expect | round | int }}</b> more likely to hear back</span>
+  </div>
+  {% endif %}
+  <div class="stat">
+    <span class="k">Offers</span>
+    <span class="v">{{ h.offers }}</span>
+    <span class="s">{% if h.live %}<b>{{ h.live }}</b> thread{{ '' if h.live == 1 else 's' }} in a round now{% else %}no thread in a round now{% endif %}</span>
+  </div>
 </div>
 
-{% if weekly %}
-<div>
-<h2>Week by week</h2>
-<div class="card pad">
-  <div class="panel">
-    <p class="ptitle">Applications sent <span class="quiet">— peak {{ weekly[0].applied_peak }} in a week</span></p>
-    <div class="spark">
-      {% for w in weekly %}
-      <div class="col" title="week of {{ w.label }}: {{ w.applied }} sent">
-        {% if w.applied %}<span class="wk" style="--h:{{ w.applied_h }};--c:var(--ink)"></span>{% endif %}
-      </div>
-      {% endfor %}
-    </div>
+<nav class="toc" aria-label="Sections">
+  <a href="#weeks">Week by week</a>
+  <a href="#stand">Where they stand</a>
+  {% if t %}<a href="#timing">How long answers take</a>{% endif %}
+  <a href="#answered">What gets answered</a>
+  {% if r.employers.rows %}<a href="#employers">Employers</a>{% endif %}
+  {% if r.lags or by_end or by_reason %}<a href="#ended">Endings</a>{% endif %}
+  {% if r.calendar or r.hours %}<a href="#rhythm">Rhythm</a>{% endif %}
+  <a href="#seen">What this page can see</a>
+</nav>
+
+{# ------------------------------------------------------------ week by week #}
+{% set co = r.cohorts %}
+{% macro squares(units) -%}
+  {%- for u in units %}<a class="u t-{{ u.tone }}{{ ' r' if u.round }}" style="--heat:{{ u.heat }}%"
+    href="/applications/{{ u.id }}" title="{{ u.title }}"></a>{% endfor -%}
+{%- endmacro %}
+
+<h2 id="weeks">Every application, week by week</h2>
+<p class="hint">One square per application, in the week you sent it and in the colour its
+  day count wears on the list: grey while young, warming to amber as the silence runs past
+  <b>{{ r.reminder_days }}</b> days, blue while someone is engaged and it is fresh, rust once
+  rejected. A circle reached a round. Each square opens its application.</p>
+{% if co.rows or co.approaches %}
+<div class="card pad units-card">
+  <div class="urow uhead"><span class="wk">week of</span><span></span>
+    <span class="cnt"><span>sent</span><span class="quiet">heard</span></span></div>
+  {% for w in co.rows %}
+  <div class="urow">
+    <span class="wk">{{ w.label }}</span>
+    <span class="units">{{ squares(w.units) }}</span>
+    <span class="cnt"><span>{{ w.n }}</span><span class="quiet">{{ w.heard }}</span></span>
   </div>
-  <div class="panel">
-    <p class="ptitle">Replies received <span class="quiet">— peak {{ weekly[0].replied_peak }} in a week</span></p>
-    <div class="spark">
-      {% for w in weekly %}
-      <div class="col" title="week of {{ w.label }}: {{ w.replied }} replies">
-        {% if w.replied %}<span class="wk" style="--h:{{ w.replied_h }};--c:var(--accent)"></span>{% endif %}
-      </div>
-      {% endfor %}
-    </div>
+  {% endfor %}
+  {% if co.approaches %}
+  <div class="urow approaches">
+    <span class="wk">approached</span>
+    <span class="units">{{ squares(co.approaches) }}</span>
+    <span class="cnt"><span>{{ co.approaches | length }}</span><span class="quiet">{{ co.approach_rounds }} round{{ '' if co.approach_rounds == 1 else 's' }}</span></span>
   </div>
-  <div class="xaxis">
-    <span>{{ weekly[0].label }}</span>
-    {% if weekly | length > 1 %}<span>{{ weekly[-1].label }}</span>{% endif %}
+  {% endif %}
+  <div class="ukey">
+    <span><i class="u t-live"></i>someone engaged, fresh</span>
+    <span><i class="u t-wait" style="--heat:0%"></i><i class="u t-wait" style="--heat:50%"></i><i class="u t-wait" style="--heat:100%"></i>waiting, grey to amber by <b>{{ r.full_heat_days }}</b> days</span>
+    <span><i class="u t-rejected"></i>rejected</span>
+    {% if co.tones.offer %}<span><i class="u t-offer"></i>offer</span>{% endif %}
+    {% if co.tones.withdrawn %}<span><i class="u t-withdrawn"></i>withdrawn</span>{% endif %}
+    <span><i class="u t-wait r" style="--heat:0%"></i>reached a round</span>
   </div>
-  <p class="hint">Each panel is scaled to its own peak; the two measures are an
-    order of magnitude apart, so bar heights do not compare across panels.</p>
-</div>
 </div>
 {% endif %}
-</div>
 
-{% macro dim_table(title, rows, note=None) %}
-<h2>{{ title }}</h2>
-{% if rows %}
-<div class="card"><table>
-  <thead><tr><th></th><th class="num">Applied</th><th class="num">Replied</th><th class="num">Rate</th><th class="num">Interviews</th><th class="num">Avg days</th></tr></thead>
-  <tbody>{% for r in rows %}
-  <tr><td>{{ r.dim }}</td><td class="num">{{ r.applied }}</td>
-      <td class="num">{{ r.responded }}</td>
-      <td class="num">{% if r.response_rate is not none %}{{ r.response_rate }}%
-        {%- else %}<span class="quiet" title="fewer than {{ min_rate_n }} applications, too few to rate">—</span>{% endif %}</td>
-      <td class="num">{{ r.interviews }}</td>
-      <td class="num">{{ r.avg_days_to_resp or "—" }}</td></tr>
-  {% endfor %}</tbody>
-</table></div>
-{% if note %}<p class="hint">{{ note }}</p>{% endif %}
-{% else %}<p class="empty">No applied events yet. This fills in as the funnel moves.</p>{% endif %}
+{# --------------------------------------------------------- where they stand #}
+{% set f = r.flow %}
+{% if f %}
+<h2 id="stand">Where they stand</h2>
+<p class="hint">Every record, from who started it to where it is now: the list's own status
+  words, both pages together. A band opens the list filtered to exactly its rows.
+  {%- if r.window %} Waiting applications split at <b>{{ r.window }}</b> days — the longest anyone
+  has taken to answer you — and rejections by how they ended.{% endif %}</p>
+<div class="card pad flow-card">
+  <div class="flow" style="height:{{ f.h }}px">
+    <svg viewBox="0 0 {{ f.w }} {{ f.h }}" preserveAspectRatio="none" role="img"
+         aria-label="Flow from who started each record to its status">
+      {% for l in f.links %}
+      {% if l.href %}<a href="{{ l.href }}">{% endif %}<path class="band t-{{ l.tone }}" d="{{ l.d }}"><title>{{ l.title }}</title></path>{% if l.href %}</a>{% endif %}
+      {% endfor %}
+      {% for n in f.nodes %}<rect class="node t-{{ n.tone }}" x="{{ n.x }}" y="{{ '%.2f' | format(n.ry) }}" width="{{ f.node_w }}" height="{{ '%.2f' | format(n.rh) }}"><title>{{ n.value }} {{ n.label }}</title></rect>{% endfor %}
+    </svg>
+    {% for n in f.nodes %}<span class="fl c{{ n.col }}" style="top:{{ n.label_y }}px"><b>{{ n.value }}</b>{{ n.label }}</span>{% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{# ---------------------------------------------------- how long answers take #}
+{% macro curve_chart(cv, unit_label) %}
+<div class="curve">
+  <div class="yax"><span style="top:0">{{ cv.top }}%</span><span style="top:50%">{{ (cv.top / 2) | int }}%</span><span style="top:100%">0</span></div>
+  <div class="plot">
+    <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+      <path class="area" d="{{ cv.area }}"/><path class="line" d="{{ cv.line }}"/>
+    </svg>
+    {% for m in cv.marks %}<span class="mk{{ ' left' if m.name == 'window' }}" style="--x:{{ m.x }}">
+      <span>{% if m.name == 'median' %}half of replies by {{ m.t | days_text }}{% else %}longest wait, {{ m.t }} days{% endif %}</span></span>{% endfor %}
+  </div>
+  <div></div>
+  <div class="xt">{% for x in cv.xticks %}<span style="--x:{{ x.x }}">{{ x.label }}</span>{% endfor %}<span class="unit">{{ unit_label }}</span></div>
+</div>
 {% endmacro %}
 
-{{ dim_table("By platform", by_platform,
-   "A rate needs at least " ~ min_rate_n ~ " applications before it means anything; thinner rows show counts only.") }}
-{{ dim_table("By technology (top extracted)", by_technology) }}
-{# One resume is a row of totals, not a comparison, so this renders only once
-   the dimension actually splits. See analytics.by_resume. #}
-{% if by_resume | length > 1 %}
-{{ dim_table("By resume sent", by_resume) }}
+{% if t %}
+<h2 id="timing">How long answers take</h2>
+<p class="hint">Counted so that an application sent yesterday is “not yet”, not “never”: each
+  waiting application stays in the reckoning for as long as it has existed and then leaves it
+  (a Kaplan–Meier estimate over all <b>{{ t.n }}</b> you sent).</p>
+<div class="two timing">
+  <div class="card pad">
+    <p class="ptitle">Share that has heard back, by days since you applied</p>
+    {{ curve_chart(t.curve, "days since you applied") }}
+    <p class="hint">About <b>{{ (t.by[7] * 100) | round | int }}%</b> hear within a week and
+      <b>{{ (t.plateau * 100) | round | int }}%</b> ever do. The rest, on this record, never hear anything.</p>
+  </div>
+  <div class="card pad">
+    <p class="ptitle">Chance a silent application still hears back, by days of silence</p>
+    {{ curve_chart(t.still_curve, "days of silence so far") }}
+    <p class="hint">After a week of silence, <b>{{ (t.still[7] * 100) | round | int }}%</b> still heard back;
+      after two, <b>{{ (t.still[14] * 100) | round | int }}%</b>; after four,
+      <b>{{ (t.still[28] * 100) | round(1) }}%</b>.</p>
+  </div>
+</div>
+<div class="two timing-notes">
+  <div>
+    <p class="ptitle">What the first reply was</p>
+    <table class="compact">
+      <tbody>{% for k in t.kinds %}
+      <tr><td>{{ k.label }}</td><td class="num">{{ k.n }}</td>
+          <td class="num quiet">median {{ k.median | days_text }}</td></tr>
+      {% endfor %}</tbody>
+    </table>
+  </div>
+  <div>
+    <p class="ptitle">What the waiting ones should expect</p>
+    <p class="sm"><b>{{ t.waiting }}</b> of your applications have heard nothing yet.
+      Going by how your answers have arrived so far, about <b>{{ t.expect | round | int }}</b> of them
+      will still hear back{% if t.expect_week >= 0.5 %}, <b>{{ t.expect_week | round | int }}</b> of those within the
+      week{% endif %}.{% if t.waiting - t.inside %} <b>{{ t.waiting - t.inside }}</b> have waited longer than
+      anyone has ever taken to answer you, <b>{{ t.window }}</b> days.{% endif %}</p>
+    {% if t.window < r.full_heat_days %}
+    <p class="hint">The list's amber reaches full heat at <b>{{ r.full_heat_days }}</b> days of
+      silence; the longest anyone has taken to answer you is <b>{{ t.window }}</b>.</p>
+    {% endif %}
+  </div>
+</div>
 {% endif %}
 
-{# Why it closed. Not a dim_table: there is no rate to withhold, only counts,
+{# ----------------------------------------------------- what gets answered #}
+<h2 id="answered">What gets answered</h2>
+{% if c.n %}
+<p class="hint">Each row is the share of applications that got an answer — a rejection or a
+  round — with its 95% interval as a line; the upright rule is all <b>{{ c.n }}</b> together
+  (<b>{{ (c.base * 100) | round | int }}%</b>). Only applications at least <b>{{ c.settled_days }}</b>
+  days old count: younger ones have not had their chance. LinkedIn's “viewed” notice is not an
+  answer here, because no other channel can send one. Below <b>{{ min_rate_n }}</b> applications
+  a row shows counts only.</p>
+
+{% if c.findings %}
+<div class="findings">
+  <p class="ptitle">Where the whole interval clears the rule</p>
+  <ul>
+    {% for x in c.findings %}
+    <li><span class="quiet">{{ x.group }}:</span> {{ x.label }} —
+      <b class="num">{{ (x.rate * 100) | round | int }}%</b> answered
+      (<span class="num">{{ x.k }} of {{ x.n }}</span>), against <span class="num">{{ (c.base * 100) | round | int }}%</span>.</li>
+    {% endfor %}
+  </ul>
+  <p class="hint">With <b>{{ c.rated }}</b> rated rows, about <b>{{ c.chance }}</b> would clear the
+    rule by chance even if nothing mattered at all — read these as leads to watch, not verdicts.
+    A pattern that holds across neighbouring rows of one scale says more than any one row.</p>
+</div>
+{% endif %}
+
+<div class="forest" style="--base:{{ c.x_base }};--tick:{{ c.tick }}">
+  {% for g in c.groups %}
+  <section class="fg">
+    <h3>{{ g.title }}</h3>
+    {% if g.note %}<p class="fg-note">{{ g.note }}</p>{% endif %}
+    {% for row in g.rows %}
+    <div class="fr{{ ' out' if row.stands_out }}{{ ' thin' if row.thin }}">
+      <span class="fl" title="{{ row.full }}">{{ row.label }}</span>
+      <span class="fp">{% if not row.thin %}<i class="ci" style="--a:{{ row.x_lo }};--b:{{ row.x_hi }}"></i><i class="dot" style="--x:{{ row.x }}"
+        title="{{ (row.rate * 100) | round | int }}% answered; 95% interval {{ (row.lo * 100) | round | int }}–{{ (row.hi * 100) | round | int }}%"></i>{% endif %}</span>
+      <span class="fn">{{ row.k }}<span class="quiet">/{{ row.n }}</span></span>
+      <span class="fv">{% if row.rate is not none %}{{ (row.rate * 100) | round | int }}%{% else %}<span class="quiet" title="fewer than {{ min_rate_n }} applications, too few to rate">—</span>{% endif %}</span>
+    </div>
+    {% endfor %}
+    <div class="fr fax"><span></span><span class="fp">{% for x in c.ticks %}<span style="--x:{{ x.x }}">{{ x.label }}</span>{% endfor %}</span><span></span><span></span></div>
+  </section>
+  {% endfor %}
+</div>
+{% else %}
+<p class="empty">Nothing is {{ c.settled_days }} days old yet. Comparisons start once applications have had their chance to be answered.</p>
+{% endif %}
+
+{# ---------------------------------------------------------------- employers #}
+{% set em = r.employers %}
+{% if em.rows %}
+<h2 id="employers">Employers you applied to more than once</h2>
+<p class="hint"><b>{{ em.count }}</b> employer{{ '' if em.count == 1 else 's' }} of <b>{{ em.companies }}</b>
+  had more than one of your records, <b>{{ em.records }}</b> between them.
+  {% if em.silent %}<b>{{ em.silent }}</b> of those have never answered anything — <b>{{ em.silent_records }}</b>
+  records' worth of silence, which is the employer-side half of a ghost job.{% endif %}</p>
+<div class="card emps">
+  {% for e in em.rows %}
+  <div class="erow">
+    <a class="co" href="/?q={{ e.q | urlencode }}" title="{{ e.name }}">{{ e.name }}</a>
+    <span class="units">{{ squares(e.units) }}</span>
+    <span class="cnt"><span>{{ e.n }}</span><span class="quiet">{{ e.heard }} heard</span></span>
+  </div>
+  {% endfor %}
+</div>
+{% if em.more %}<p class="hint">And <b>{{ em.more }}</b> more with two or three records each.</p>{% endif %}
+{% endif %}
+
+{# ------------------------------------------------------------ how it ended #}
+{% set lg = r.lags %}
+{% if lg or by_end or by_reason %}
+<h2 id="ended">How it ended</h2>
+{% if lg %}
+<p class="hint">Days from applying to the rejection, one dot per rejected application you sent,
+  by what closed it. Dots that land together stack, so a pile is a pile.</p>
+<div class="card pad lags">
+  {% for row in lg.rows %}
+  <div class="lag">
+    <span class="lk">{{ row.label }}<small><span class="num">{{ row.n }}</span>, median {{ row.median | days_text }}</small></span>
+    <span class="pile" style="--stack:{{ row.stack }}">{% for d in row.dots %}<a href="/applications/{{ d.id }}" style="--x:{{ d.x }};--lv:{{ d.level }}" title="{{ d.title }}"></a>{% endfor %}</span>
+  </div>
+  {% endfor %}
+  <div class="lag lax"><span></span><span class="pile-ax">{% for x in lg.ticks %}<span style="--x:{{ x.x }}">{{ x.label }}</span>{% endfor %}<span class="unit">days after you applied</span></span></div>
+</div>
+{% endif %}
+
+<div class="two ends">
+{% if by_end %}
+<div>
+<p class="ptitle">Each rejection, by how far it got</p>
+<div class="card"><table>
+  <thead><tr><th></th><th class="num">Rejected</th><th class="num">Of which inbound</th>
+    <th class="num">LinkedIn’s letter</th><th class="num">Other email</th><th class="num">By hand</th></tr></thead>
+  <tbody>{% for e in by_end %}
+  {# Lowercase on purpose: the same word as the legend chip it filters like. #}
+  <tr><td><a href="/?status=rejected&amp;how={{ e.key }}">{{ e.label }}</a></td>
+      <td class="num">{{ e.n }}</td>
+      <td class="num">{{ e.inbound or "—" }}</td>
+      <td class="num">{{ e.linkedin or "—" }}</td>
+      <td class="num">{{ e.other_email or "—" }}</td>
+      <td class="num">{{ e.by_hand or "—" }}</td></tr>
+  {% endfor %}</tbody>
+</table></div>
+<p class="hint">A round is an interview invitation, a call or message, or an offer.
+  A visa close counts as visa whatever its stage.</p>
+</div>
+{% endif %}
+
+{# Why it closed. Not a comparison: there is no rate to withhold, only counts,
    and the row that matters most is the one with no answer yet — "not
    recorded" is the backlog, and it links straight to the rows to tag. #}
 {% if by_reason %}
-<h2>Why it closed</h2>
+<div>
+<p class="ptitle">Why it closed</p>
 <div class="card"><table>
   <thead><tr><th></th><th class="num">Rejected</th><th class="num">Of which inbound</th></tr></thead>
-  <tbody>{% for r in by_reason %}
-  <tr><td><a href="/?status=rejected&amp;reason={{ r.key }}">{{ r.label }}</a></td>
-      <td class="num">{{ r.n }}</td>
-      <td class="num">{{ r.inbound or "—" }}</td></tr>
+  <tbody>{% for x in by_reason %}
+  <tr><td><a href="/?status=rejected&amp;reason={{ x.key }}">{{ x.label }}</a></td>
+      <td class="num">{{ x.n }}</td>
+      <td class="num">{{ x.inbound or "—" }}</td></tr>
   {% endfor %}</tbody>
 </table></div>
 <p class="hint">Counted per application, from the reason on its rejected event.
   “No reason given” is an answer someone wrote down; “not recorded” is the
   backlog. Click it to tag them.</p>
+</div>
+{% endif %}
+</div>
 {% endif %}
 
-{# How it ended. The sibling of the table above, and unlike it complete without
-   tagging: the stage is on the timeline. One bucket per application — visa
-   first, then whether a human round ever happened — so the rows sum to the
-   rejected count. #}
-{% if by_end %}
-<h2>How it ended</h2>
-<div class="card"><table>
-  <thead><tr><th></th><th class="num">Rejected</th><th class="num">Of which inbound</th>
-    <th class="num">LinkedIn’s letter</th><th class="num">Other email</th><th class="num">By hand</th></tr></thead>
-  <tbody>{% for r in by_end %}
-  {# Lowercase on purpose: the same word as the legend chip it filters like. #}
-  <tr><td><a href="/?status=rejected&amp;how={{ r.key }}">{{ r.label }}</a></td>
-      <td class="num">{{ r.n }}</td>
-      <td class="num">{{ r.inbound or "—" }}</td>
-      <td class="num">{{ r.linkedin or "—" }}</td>
-      <td class="num">{{ r.other_email or "—" }}</td>
-      <td class="num">{{ r.by_hand or "—" }}</td></tr>
-  {% endfor %}</tbody>
-</table></div>
-<p class="hint">A round is an interview invitation, a call or message, or an offer.
-  A visa close counts as visa whatever its stage.</p>
+{# ---------------------------------------------------------------- rhythm #}
+{% set cal = r.calendar %}
+{% set hr = r.hours %}
+{% if cal or hr %}
+<h2 id="rhythm">Rhythm</h2>
+{% if cal %}
+<p class="hint">You sent applications on <b>{{ cal.active }}</b> of <b>{{ cal.span }}</b> days{% if cal.busiest %};
+  the busiest was {{ cal.busiest.date.strftime('%d %b').lstrip('0') }}, with <b>{{ cal.busiest.n }}</b>{% endif %}.
+  Each calendar is shaded to its own busiest day.</p>
+<div class="card pad cals">
+  {% for key, title, peak, tone in [("ls", "What you sent", cal.peak_sent, "ink"), ("ln", "What came back", cal.peak_news, "accent")] %}
+  <div class="calwrap">
+    <p class="ptitle">{{ title }} <span class="quiet">— busiest day {{ peak }}</span></p>
+    <div class="calgrid">
+      <div class="calm">{% for w in cal.weeks %}<span>{{ w.month or '' }}</span>{% endfor %}</div>
+      <div class="cald"><span>Mon</span><span></span><span>Wed</span><span></span><span>Fri</span><span></span><span>Sun</span></div>
+      <div class="cal" style="--c:var(--{{ tone }})">
+        {%- for w in cal.weeks %}{% for d in w.cells %}
+        {%- if d %}<i style="--l:{{ d[key] }}%" title="{{ d.label }}: {{ d.sent if key == 'ls' else d.news }} {{ 'sent' if key == 'ls' else 'from employers' }}"></i>
+        {%- else %}<i class="none"></i>{% endif %}
+        {%- endfor %}{% endfor -%}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% if hr %}
+<div class="two hours">
+  {% for key, title, tone in [("mine", "When you apply", "ink"), ("theirs", "When employers write", "accent")] %}
+  {% set b = hr[key] %}
+  <div class="panel">
+    <p class="ptitle">{{ title }} <span class="quiet">— by hour of your day, peak {{ b.peak }}</span></p>
+    <div class="spark">
+      {% for x in b.bars %}<div class="col" title="{{ '%02d' | format(x.h) }}:00: {{ x.n }}">{% if x.n %}<span class="wk" style="--h:{{ x.pct }};--c:var(--{{ tone }})"></span>{% endif %}</div>{% endfor %}
+    </div>
+    <div class="hax"><span style="--x:0%">midnight</span><span style="--x:25%">6</span><span style="--x:50%">noon</span><span style="--x:75%">18</span></div>
+    <p class="hint">{% if key == 'mine' %}<b>{{ b.n }}</b> submissions the extension timed.{% else %}<b>{{ b.n }}</b> employer emails.{% endif %}</p>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endif %}
+
+{# ------------------------------------------------------- what we can see #}
+<h2 id="seen">What this page can see</h2>
+<p class="hint">How many of your <b>{{ h.sent }}</b> applications carry each thing the page reads.
+  A comparison over a thin column is a smaller claim than it looks.</p>
+<div class="card pad">
+  <div class="fbars wide">
+    {% for x in r.coverage %}
+    <div class="fb" title="{{ x.k }} of {{ x.n }}">
+      <span class="lab">{{ x.label }}</span>
+      <span class="track"><span class="fill" style="--w:{{ x.pct }}"></span></span>
+      <span class="val">{{ x.k }} <span class="quiet">of {{ x.n }}</span></span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
 {% endif %}
 {% endblock %}

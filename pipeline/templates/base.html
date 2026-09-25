@@ -315,6 +315,183 @@ a.tl:hover{background:color-mix(in srgb,var(--ink) 3.5%,var(--mix))}
 .xaxis{display:flex;justify-content:space-between;margin:.3rem 0 0;
        font-family:var(--sans);font-size:.76rem;color:var(--muted)}
 
+/* ------------------------------------------------------------- the report
+   /analytics, redrawn 25 Sep 2026 (insights.py computes, charts.py lays out).
+   No new colour: every mark below is a status token or a mix of one, and a
+   `t-<tone>` class names which, through ONE custom property (--tc) that a
+   square paints as background and a flow band as fill — so a tone means the
+   same colour on every chart. `wait` is the list's own heat mix, `stale` its
+   full amber, `live` its blue (trace.live decides both pages). */
+.t-live,.t-viewed,.t-engaged,.t-interview_invite{--tc:var(--accent)}
+.t-offer{--tc:var(--offer)}
+.t-rejected{--tc:var(--rejected)}
+.t-withdrawn,.t-interested{--tc:var(--withdrawn)}
+.t-wait{--tc:color-mix(in oklab,var(--age) var(--heat,0%),var(--muted))}
+.t-stale{--tc:var(--age)}
+.t-ink,.t-applied{--tc:var(--ink)}
+main h2[id]{scroll-margin-top:1rem}
+.ptitle .quiet{font-weight:400}
+
+/* The search in numbers. Proportional figures on purpose: a standalone
+   numeral set tabular looks loose; tabular is for columns that align. */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(9.6rem,1fr));gap:1px;
+       background:var(--line);border:1px solid var(--line);border-radius:6px;overflow:hidden;
+       margin:0 0 1rem}
+.stat{background:var(--card);padding:.7rem 1rem .8rem;display:grid;align-content:start;gap:.12rem}
+.stat .k{font-family:var(--sans);font-size:.8rem;color:var(--muted)}
+.stat .v{font-family:var(--sans);font-size:2rem;font-weight:500;line-height:1.1;letter-spacing:-.01em}
+.stat .s{font-size:.86rem;color:var(--muted);line-height:1.35}
+.stat .s b{font-family:var(--sans);font-weight:500;color:var(--ink)}
+.toc{display:flex;flex-wrap:wrap;gap:.2rem 1.2rem;font-family:var(--sans);font-size:.84rem;margin:0 0 .4rem}
+.toc a{color:var(--muted);text-decoration:none}
+.toc a:hover{color:var(--ink)}
+.hint b,.sm b{font-family:var(--sans);font-weight:500}
+
+/* Every application, one square each. Fixed size, wrapping: a row's LENGTH
+   is its count while it fits, and its area always is. */
+.urow{display:grid;grid-template-columns:4.2rem minmax(0,1fr) 5.4rem;gap:0 .9rem;
+      align-items:center;padding:1.5px 0}
+.urow .wk{font-family:var(--sans);font-size:.76rem;color:var(--muted);text-align:right;
+          font-variant-numeric:tabular-nums;white-space:nowrap}
+.urow .cnt,.erow .cnt{display:grid;grid-template-columns:1fr 1fr;gap:.5rem;text-align:right;
+      font-family:var(--sans);font-size:.8rem;font-variant-numeric:tabular-nums;white-space:nowrap}
+.urow.uhead{padding-bottom:.35rem}
+.urow.uhead .wk,.urow.uhead .cnt{font-size:.72rem}
+.urow.approaches{margin-top:.55rem;padding-top:.55rem;border-top:1px solid var(--line)}
+.units{display:flex;flex-wrap:wrap;gap:2px;min-height:8px;min-width:0}
+.u{display:block;flex:none;width:8px;height:8px;border-radius:1.5px;background:var(--tc)}
+.u.r{border-radius:50%}
+a.u:hover,a.u:focus-visible{outline:1.5px solid var(--ink);outline-offset:1px}
+.ukey{display:flex;flex-wrap:wrap;gap:.3rem 1.3rem;margin:.9rem 0 0;font-family:var(--sans);
+      font-size:.78rem;color:var(--muted)}
+.ukey span{display:inline-flex;align-items:center;gap:3px}
+.ukey span .u:last-of-type{margin-right:.3rem}
+.ukey b{font-weight:500;color:var(--ink)}
+
+/* The flow. Marks in a stretched SVG, words in HTML at the same heights —
+   charts.py has why. Wider than a phone on purpose; the card scrolls. */
+.flow-card{overflow-x:auto}
+.flow{position:relative;min-width:40rem;margin:.3rem 0}
+.flow svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.flow .band{fill:var(--tc);opacity:.2;transition:opacity .12s}
+.flow a:hover .band{opacity:.42}
+.flow .node{fill:var(--tc)}
+.flow .fl{position:absolute;transform:translateY(-50%);font-family:var(--sans);font-size:.8rem;
+          color:var(--muted);white-space:nowrap;line-height:1}
+.flow .fl b{color:var(--ink);font-weight:500;font-variant-numeric:tabular-nums;margin-right:.35em}
+.flow .fl.c0{left:0;width:13.8%;text-align:right}
+.flow .fl.c1{left:53.6%}
+.flow .fl.c2{left:81.6%}
+
+/* A curve: y labels in a gutter, the plot, x ticks beneath. */
+.curve{display:grid;grid-template-columns:2.2rem minmax(0,1fr);gap:0 .4rem;margin:.6rem 0 .2rem}
+.curve .yax{position:relative;font-family:var(--sans);font-size:.72rem;color:var(--muted);
+            font-variant-numeric:tabular-nums}
+.curve .yax span{position:absolute;right:0;transform:translateY(-50%)}
+.curve .plot{position:relative;height:9rem;border-bottom:1px solid var(--line);
+             background:linear-gradient(to bottom,transparent calc(50% - .5px),
+               color-mix(in srgb,var(--line) 75%,transparent) calc(50% - .5px) calc(50% + .5px),
+               transparent calc(50% + .5px))}
+.curve svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.curve .line{fill:none;stroke:var(--ink);stroke-width:2;vector-effect:non-scaling-stroke;
+             stroke-linejoin:round;stroke-linecap:round}
+.curve .area{fill:var(--ink);opacity:.07}
+.curve .mk{position:absolute;top:0;bottom:0;left:var(--x);width:1px;
+           background:color-mix(in srgb,var(--ink) 35%,transparent)}
+.curve .mk span{position:absolute;top:0;left:.35rem;font-family:var(--sans);font-size:.72rem;
+                color:var(--muted);white-space:nowrap}
+.curve .mk.left span{left:auto;right:.35rem}
+.curve .xt{position:relative;height:2.2rem;font-family:var(--sans);font-size:.72rem;color:var(--muted);
+           font-variant-numeric:tabular-nums}
+.curve .xt span{position:absolute;top:.25rem;left:var(--x);transform:translateX(-50%)}
+.curve .xt .unit{top:1.2rem;left:auto;right:0;transform:none}
+.timing .card{min-width:0}
+.timing-notes{margin-top:1rem}
+table.compact td{padding:.3rem .6rem .3rem 0;border-bottom:1px solid var(--line)}
+table.compact tr:last-child td{border-bottom:0}
+table.compact tbody tr:hover td{background:none}
+
+/* What gets answered: a dot at the rate, a line for its 95% interval, and
+   ONE upright rule for everything together (--base) through every group.
+   All groups share one scale, so rows compare across groups too. A row whose
+   interval clears the rule is set in weight, not colour (UI rule 11's
+   treatment of "selected"). */
+.findings{margin:.9rem 0 1.2rem;max-width:72ch}
+.findings ul{margin:.2rem 0 0;padding-left:1.1rem}
+.findings li{margin:.15rem 0}
+/* Columns, not a grid: groups run 2 to 12 rows, and grid rows would pad
+   every short group out to its neighbour's height. */
+.forest{columns:2;column-gap:2.4rem;margin-top:1rem}
+.fg{break-inside:avoid;margin:0 0 1.5rem}
+.fg h3{font-family:var(--sans);font-size:.82rem;font-weight:600;margin:0 0 .25rem}
+.fg-note{font-size:.84rem;color:var(--muted);margin:-.1rem 0 .3rem}
+.fr{display:grid;grid-template-columns:minmax(0,9.5rem) minmax(4rem,1fr) 3.6rem 2.6rem;gap:0 .6rem;
+    align-items:center;padding:.16rem 0;border-bottom:1px solid color-mix(in srgb,var(--line) 55%,transparent)}
+.fr .fl{font-size:.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fr.thin .fl{color:var(--muted)}
+.fr.out .fl{font-weight:600}
+.fp{position:relative;height:1rem;
+    background:repeating-linear-gradient(to right,color-mix(in srgb,var(--line) 70%,transparent) 0 1px,
+                                         transparent 1px var(--tick))}
+.fr:not(.fax) .fp::after{content:"";position:absolute;top:-.3rem;bottom:-.3rem;left:var(--base);width:1px;
+                         background:color-mix(in srgb,var(--ink) 55%,transparent)}
+.fp .ci{position:absolute;top:50%;height:2px;margin-top:-1px;left:var(--a);width:calc(var(--b) - var(--a));
+        background:color-mix(in srgb,var(--ink) 45%,transparent);border-radius:1px}
+.fp .dot{position:absolute;top:50%;left:var(--x);width:8px;height:8px;margin:-4px 0 0 -4px;z-index:1;
+         border-radius:50%;background:var(--ink);box-shadow:0 0 0 2px var(--bg)}
+.fr .fn,.fr .fv{font-family:var(--sans);font-size:.82rem;text-align:right;font-variant-numeric:tabular-nums}
+.fr .fv{color:var(--muted)}
+.fr.out .fv{color:var(--ink);font-weight:600}
+.fr.fax{border-bottom:0;padding-top:.1rem}
+.fr.fax .fp{background:none;height:.9rem;font-family:var(--sans);font-size:.68rem;color:var(--muted)}
+.fr.fax .fp span{position:absolute;left:var(--x);transform:translateX(-50%)}
+.fr.fax .fp span:first-child{transform:none}
+
+/* Employers tried more than once: the name, its squares, the tally — two
+   columns wide, since no employer has more than a handful of squares. */
+.emps{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+.emps .erow:nth-child(even){border-left:1px solid var(--line)}
+.erow{display:grid;grid-template-columns:minmax(0,13rem) minmax(0,1fr) 6.2rem;gap:0 1rem;
+      align-items:center;padding:.38rem 1rem;border-bottom:1px solid var(--line)}
+.emps .erow:nth-last-child(-n+2){border-bottom:0}
+.erow .co{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-decoration:none}
+.erow .co:hover{text-decoration:underline}
+
+/* Rejection lags: a dot plot per closer, dots stacking where they coincide. */
+.lag{display:grid;grid-template-columns:9.5rem minmax(0,1fr);gap:0 1rem;align-items:end;
+     padding:.5rem 0;border-bottom:1px solid var(--line)}
+.lag .lk{font-size:.92rem;line-height:1.25}
+.lag .lk small{display:block;font-family:var(--sans);font-size:.76rem;color:var(--muted)}
+.pile{position:relative;height:calc(var(--stack) * 6px + 2px);min-height:8px}
+.pile a{position:absolute;left:var(--x);bottom:calc(var(--lv) * 6px);width:6px;height:6px;margin-left:-3px;
+        border-radius:50%;background:var(--rejected)}
+.pile a:hover{outline:1.5px solid var(--ink);outline-offset:1px}
+.lag.lax{border-bottom:0;padding-top:.2rem}
+.pile-ax{position:relative;height:2rem;font-family:var(--sans);font-size:.72rem;color:var(--muted)}
+.pile-ax span{position:absolute;top:0;left:var(--x);transform:translateX(-50%)}
+.pile-ax .unit{top:1rem;left:auto;right:0;transform:none}
+.ends{margin-top:1.4rem}
+.ends .card{overflow-x:auto}
+/* A grid item's min-width is auto: a wide table would push its column past
+   a phone's edge and the card's own scroll would never engage. */
+.ends>div,.timing-notes>div,.hours>div{min-width:0}
+
+/* Calendars: weeks as columns, weekdays as rows, shaded to their own peak. */
+.cals{display:flex;flex-wrap:wrap;gap:1.2rem 3rem}
+.calgrid{display:grid;grid-template-columns:2rem auto;grid-template-rows:auto auto;gap:.2rem .4rem}
+.calm{grid-column:2;display:grid;grid-auto-flow:column;grid-auto-columns:13px;gap:3px;
+      font-family:var(--sans);font-size:.7rem;color:var(--muted);height:1rem;white-space:nowrap}
+.cald{display:grid;grid-template-rows:repeat(7,13px);gap:3px;font-family:var(--sans);font-size:.66rem;
+      color:var(--muted);line-height:13px;text-align:right}
+.cal{display:grid;grid-template-rows:repeat(7,13px);grid-auto-flow:column;grid-auto-columns:13px;gap:3px}
+.cal i{display:block;border-radius:2px;
+       background:color-mix(in srgb,var(--c) var(--l,0%),color-mix(in srgb,var(--line) 55%,var(--card)))}
+.cal i.none{background:none}
+.hours{margin-top:1rem}
+.hax{position:relative;height:1rem;margin-top:.3rem;font-family:var(--sans);font-size:.72rem;color:var(--muted)}
+.hax span{position:absolute;left:var(--x)}
+.fbars.wide .fb{grid-template-columns:minmax(8rem,15rem) minmax(0,1fr) 6.5rem}
+
 /* ------------------------------------------------------------------ forms
    Controls are achromatic. A primary action is ink on paper, not blue —
    blue already means "someone engaged", and a button is not a state. */
@@ -429,6 +606,15 @@ pre.text{white-space:pre-wrap;font:inherit;margin:.5rem 0 0;max-width:70ch}
   .thread li{grid-template-columns:1fr}
   .thread form.why{margin-left:0}
   .list li{grid-template-columns:1fr}
+  .forest{columns:1}
+  .emps{grid-template-columns:minmax(0,1fr)}
+  .emps .erow:nth-child(even){border-left:0}
+  .emps .erow:nth-last-child(2){border-bottom:1px solid var(--line)}
+  .urow{grid-template-columns:3rem minmax(0,1fr) 4.4rem;gap:0 .6rem}
+  .erow{grid-template-columns:minmax(0,1fr) 5.6rem}
+  .erow .units{grid-column:1 / -1;grid-row:2;margin-top:.25rem}
+  .lag{grid-template-columns:minmax(0,1fr)}
+  .lag .lk{margin-bottom:.3rem}
 }
 @media (max-width:720px){
   main .inner{padding:1rem}

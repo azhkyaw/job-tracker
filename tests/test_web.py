@@ -2091,6 +2091,40 @@ check("analytics counts the buckets in the same fixed order, each linking to its
       and 'href="/?status=rejected&amp;how=no_round">without a round</a>' in tbl
       and tbl.index("after a round") < tbl.index("visa") < tbl.index("without a round"), tbl)
 
+print("analytics: the drawn page agrees with the SQL the list counts by")
+# /analytics is insights.report() over one fetch (25 Sep 2026); the list's
+# lede and chips are analytics.summary() and rejection_ends(). Two pages must
+# not count one thing two ways, so the report is held to the SQL here, on the
+# real fixture database rather than on hand-built rows.
+from pipeline import insights                                        # noqa: E402
+with db.connect() as conn:
+    apps_, events_ = analytics.facts(conn, user_id)
+    rep = insights.report(apps_, events_, datetime.now(timezone.utc), None, 10,
+                          status_word=web._display, how_words=web._HOW_FILTERS)
+    summ = analytics.summary(conn, user_id, False)
+    ends = {e["how"]: e["n"] for e in analytics.rejection_ends(conn, user_id)}
+    funnel = {f["key"]: f["n"] for f in web._funnel(conn, user_id, None)}
+check("sent and heard back are the list lede's applications and replies",
+      rep["head"]["sent"] == summ["applied"] and rep["head"]["heard"] == summ["responded"],
+      (rep["head"], summ))
+flow_nodes = {n["id"]: n["value"] for n in rep["flow"]["nodes"]}
+check("the flow's statuses are the funnel's counts, both pages together",
+      {k: v for k, v in flow_nodes.items() if k in web.FUNNEL_ORDER} == funnel,
+      (flow_nodes, funnel))
+check("the flow's rejection branches are rejection_ends' buckets",
+      {k[4:]: v for k, v in flow_nodes.items() if k.startswith("how_")} == ends,
+      (flow_nodes, ends))
+r = client.get("/analytics")
+check("every section renders on the fixture data",
+      r.status_code == 200 and all(f'id="{s}"' in r.text for s in
+                                   ("weeks", "stand", "answered", "ended", "seen")),
+      r.status_code)
+check("every square links its application and wears a tone",
+      re.search(r'<a class="u t-(live|wait|rejected|offer|withdrawn)( r)?" style="--heat:\d+%"\s+'
+                r'href="/applications/[0-9a-f-]{36}"', r.text) is not None)
+check("a band of the flow opens the list filtered to its rows",
+      re.search(r'<a href="/(inbound)?\?status=[a-z_]+"><path class="band', r.text) is not None)
+
 print("form answers: detail page + answer bank")
 # The real key function, never a copy of it: a hand-rolled key here is a row
 # `answers.renorm()` would find stale.

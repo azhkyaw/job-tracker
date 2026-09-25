@@ -127,6 +127,15 @@ Published ghost-job signals map almost exactly onto fields already captured:
 | No response after applying | **the event log** |
 | Company perpetually hiring the same role | `jobs` + dedup across postings |
 
+**Measured 25 Sep 2026, and one row points the other way.** On the author's
+record, reposted listings were answered MORE often than first postings: 12 of
+33 (36%) against 18 of 127 (14%), over applications at least 14 days old,
+with 95% intervals that do not overlap (`/analytics`, "Whether the listing
+was a repost"; worklog task 31). A repost may mean an employer still working
+the role, not a dead listing. Listing age runs the expected way: 30%
+answered at 1 to 6 days old, 10% at a month or more. Replay both before a
+ghost score weighs either.
+
 The last two are the differentiator. Every published ghost-job guide tells the
 reader to watch for non-response — but only a system holding a verified,
 timestamped outcome history can compute it. A per-employer "you have applied 4

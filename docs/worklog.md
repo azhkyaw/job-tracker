@@ -792,3 +792,48 @@ the key to each real case.
    placeholder. Not built: an email-side rescue that names a nameless record
    from its confirmation. It waits for that email to reach the database to
    be replayed against. Extension 0.15.0.
+31. **`/analytics` redrawn as a report** (25 Sep 2026). The old page was a
+   funnel of four bars, two weekly sparklines and three SQL tables whose
+   rates were computed over EVERY application, so the last weeks' sends
+   (with no time yet to be answered) dragged each row down, and LinkedIn's
+   "viewed" notice counted as a response. Rebuilt on one fetch
+   (`analytics.facts`) and two pure modules, `insights.py` (statistics) and
+   `charts.py` (flow and curve geometry), tested without a database in
+   `tests/test_insights.py` and held to the list's own SQL in
+   `tests/test_web.py`. Measured on the day, over 277 sent applications
+   and 25 approaches:
+   - **The reply clock stops.** Half of all replies came within 3 days and
+     nine in ten within 10. By Kaplan-Meier, 34% of applications ever hear
+     anything. Of applications silent at day 14, 4% heard later; at day 28,
+     under 1%. None has heard after day 34. The page calls that the reply
+     window, and 128 waiting records are past it. `trace.FULL_HEAT_DAYS`
+     (56, task 13) now has a measurement to replay against. It was not
+     changed.
+   - **Viewed is not an answer.** It is LinkedIn's alone, and it reversed a
+     comparison: by heard-back, on-platform beat the employer's site 33%
+     to 29%; by answered (a rejection or a round), the employer's site won
+     29% to 19%. Comparisons use answered, over applications at least 14
+     days old (by then 93% of all replies and 80% of rejections had come).
+   - **Reposted listings were answered more, not less:** 12 of 33 (36%)
+     against 18 of 127 (14%), intervals not overlapping. `docs/features.md`
+     §3.3 lists a repost as a ghost-job signal; on this record it points
+     the other way.
+   - **Fresh listings do better,** unevenly: 1 to 6 days old 30% (14 of 46),
+     a month or more 10% (2 of 20). No single row clears the baseline.
+   - **An approach reached a round one time in 5; an application one time
+     in 35** (8 rounds from 277 applications, 5 from 25 approaches).
+   - **LinkedIn's rejection letter is a timer:** 27 letters, median 3.0
+     days after applying, none sooner than 2.9.
+   - **58 employers were applied to more than once; 32 of them never
+     answered anything** (79 records): per-employer silence, the other half
+     of features.md's ghost-job signal.
+   - Of 67 comparison rows (59 rated), three cleared the baseline: an
+     applicant-tracking vendor at 4 of 8, reposts, and afternoon submissions.
+     About three would by chance alone, and the page says so beside them.
+   Salary is captured on 0 of 277 applications, so the page has no pay
+   analysis and its coverage panel says why. `by_platform`, `by_resume`,
+   `by_technology` and `weekly` are gone. They are now rows in
+   `insights.DIMENSIONS`, a registry the pure suite loops. Also in this
+   change: `trace.live()` is the one rule for a blue wait. It was
+   duplicated in two templates, and the page's squares need the same colour
+   as the list rows.

@@ -44,7 +44,7 @@ by (application, question_norm, **occurrence**) — see invariant #11.
 **Not every labelled control is a question.** The sweep can't tell a screening
 question from the form's own chrome, so `answers.py:_control_kind()` filters
 it: the resume picker is PROMOTED to `applications.resume_file` (migration
-014, feeding `analytics.by_resume`), while "Mark job as a top choice" and
+014, feeding `/analytics`' which-resume comparison), while "Mark job as a top choice" and
 "Follow <employer>" are dropped. Match anchored patterns against
 `question_norm`, never loose prefixes — a bare `follow` prefix also swallows
 "Do you follow industry news to stay up to date?".
@@ -68,9 +68,19 @@ Nationality and work authorisation stay recorded: the visa analysis reads them.
   has the four senders whose `text/plain` part is not the mail)
 - `pipeline/dedup.py` — the only place two jobs are merged (`merge_jobs`)
 - `pipeline/trace.py` — pure timeline/axis geometry for list + detail pages
-- `pipeline/analytics.py` — funnel, response-rate, weekly, reminders and
-  rejection-reason queries, and `reapplications` (the follow-up queue's
-  "you applied again" suggestion; `web.mark_reapplied` files it)
+- `pipeline/analytics.py` — the counts the LIST pages show (summary,
+  rejection reasons and endings, reminders), `reapplications` (the follow-up
+  queue's "you applied again" suggestion; `web.mark_reapplied` files it), and
+  `facts()`, the one fetch `/analytics` is drawn from
+- `pipeline/insights.py` — every number on `/analytics` (25 Sep 2026), pure
+  like `trace.py`: the Kaplan-Meier reply curve (a waiting application is
+  "not yet", never "never"), Wilson intervals, the reply window, forecast,
+  cohorts, employers, and `DIMENSIONS`, the comparison registry the pure
+  suite loops. Two words kept apart everywhere: HEARD BACK (any response,
+  the list's "reply") and ANSWERED (a rejection or a round — LinkedIn's
+  "viewed" notice is not one, and counting it reversed a comparison)
+- `pipeline/charts.py` — the analytics page's flow and curve geometry (marks
+  in a stretched SVG, words in HTML over it)
 - `pipeline/llm.py` — the ONE door to every model call (8 Sep 2026). Two
   backends behind `Client.complete()`: Anthropic (default; the request is
   byte-identical to what the stages sent before, so every measured
@@ -110,7 +120,7 @@ Nationality and work authorisation stay recorded: the visa analysis reads them.
   its submit (`docs/career-sites.md`; its posting id `<host>/<token>` is
   `joburl.generic_id` in Python, both held to `tests/job_urls.json`)
 - `migrations/` — append-only numbered schema files (invariant #8)
-- `tests/` — seven Python suites + `test_extension.js` (Node, no DB), see Commands
+- `tests/` — eight Python suites + `test_extension.js` (Node, no DB), see Commands
 
 ## Where the rest of this file went (9 Sep 2026)
 
@@ -127,8 +137,8 @@ that can be Read directly at any time:
 - `.claude/rules/matching.md` — `matcher.py`, `dedup.py`, `ingest.py`: the
   `COMPANY_TRGM_MIN` rescue, the margin, boilerplate suffixes, event dates
 - `.claude/rules/web-ui.md` — `web.py`, `templates/**`, `trace.py`,
-  `analytics.py`: the UI design system (rules 1-17) plus every Jinja, CSS,
-  FastAPI and ORDER BY gotcha
+  `analytics.py`, `insights.py`, `charts.py`: the UI design system (rules
+  1-18) plus every Jinja, CSS, FastAPI and ORDER BY gotcha
 - `.claude/rules/llm.md` — `llm.py`, `email_classifier.py`, `worker.py`,
   `prompts/**`: thinking/effort measurements, model versioning, the outage story
 - `.claude/rules/database.md` — `migrations/**`, `db.py`, scripts: the
@@ -567,7 +577,7 @@ rest of this file went" above.
   `^== `; the per-suite PASS/FAIL lines are the truth, not the exit status.
 - **`%-d` / `%-m` strftime directives are glibc-only and raise `ValueError` on
   Windows.** Format with `%d` and `.lstrip("0")` instead (`trace.py:_ticks`,
-  `analytics.weekly`). Sibling of the cp1252 gotcha below — both are ways a
+  `insights._day_label`). Sibling of the cp1252 gotcha below — both are ways a
   Linux-shaped one-liner dies natively.
 - **Windows consoles default to cp1252.** A Python one-liner printing
   non-ASCII (em-dash, curly quotes) via Bash/PowerShell can raise
@@ -715,9 +725,11 @@ The dated register behind each item, tasks 1-23 with their measurements, is
 - **Dedup and extraction verification have never run on real data** (0
   embeddings, 0 of 245 extractions verified on 24 Sep); exercise once or
   label experimental before release. (task 6)
-- **Visa signal vs outcome is still two unjoined facts** (task 9): 22
-  postings extracted `local_only`, all applied to, 6 rejected, 16 waiting —
-  and 40 of 54 rejected applications wait to be tagged at
+- **Visa signal vs outcome** (task 9) is joined on `/analytics` since
+  25 Sep ("What the job description said about visas"): answered 3 of 13
+  where it says it sponsors, 6 of 21 where it wants locals only, 35 of 178
+  where it says nothing — no difference the intervals can see. Still open:
+  40 of 54 rejected applications wait to be tagged at
   `/?reason=unrecorded` (24 Sep; task 12's `how=no_round&reason=unrecorded`
   is the bulk of that queue).
 - **Two emails from the sent-mail repair wait on the author** (task 16): the
@@ -738,6 +750,8 @@ The dated register behind each item, tasks 1-23 with their measurements, is
   agency's client) land in triage by choice — rejections filed twice
   (cosmetic), answers that differ between employers (the author's own). Offered, not built: a popup
   "Capture this job as applied" button (task 20).
-- **Heat ceiling** (task 13): `trace.FULL_HEAT_DAYS` = 56 is a judgement,
-  not a measurement; replay it over the waiting rows before tuning it, the
-  way every other threshold here was settled.
+- **Heat ceiling** (task 13): `trace.FULL_HEAT_DAYS` = 56 is a judgement.
+  It now has a measurement beside it: `/analytics` shows the reply window.
+  That is the longest any application waited to hear anything, 34 days on
+  25 Sep (task 31). Replay over the waiting rows before tuning, and note
+  the window moves as replies arrive. The author's call, not changed.

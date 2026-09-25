@@ -1,30 +1,48 @@
-"""Funnel analytics (design doc §6.6). Pure SQL over the event log — this is
-the payoff of status-as-events: response rates and time-to-response fall out
-of timestamps.
+"""The shared counts behind the list pages and /analytics (design doc §6.6).
+Pure SQL over the event log — this is the payoff of status-as-events: response
+rates and time-to-response fall out of timestamps.
 
-The per-dimension splits are `by_platform` and `by_resume`. A `by_focus` used
-to sit beside them, reading `applications.focused` with a COALESCE onto
-artifact existence so an untagged-but-prepped application still counted as
-focused. Both are gone (21 Aug 2026), on their own evidence: the column never
-split — 175 `false`, 22 null and zero `true` across every real application — so
-the dimension had one value and `_rate`'s own `len(rows) > 1` guard meant the
-panel never rendered once.
+Since 25 Sep 2026 `/analytics` itself is drawn from `facts()` — one fetch of
+every application and every event — by the pure functions in `insights.py`,
+because its questions (a reply curve that knows yesterday's application is
+"not yet", not "never"; a comparison that says how sure it is) are not
+GROUP BY-shaped. The counts the LIST also shows (summary, the rejection
+reasons and endings, the reminder queue) stay here in SQL: two pages must not
+count one thing two ways, and the page's own numbers are tested against them.
 
-`by_resume` did NOT replace it and does not answer its question. `focused`
-asked about EFFORT (was this application customised for this role);
-`resume_file` records POSITIONING (which of two standing resumes was sent —
-here AI-engineer 67, dotnet-engineer 21, neither written per employer). "Does
-tailoring pay off" is currently unmeasured, not answered."""
+What that replaced, and what it inherited. The page's per-dimension tables
+were SQL here — `by_platform`, `by_resume`, `by_technology` — rating a
+response over EVERY application, so the last weeks' sends (with no time yet
+to be answered) dragged every row down, and counting LinkedIn's "viewed"
+notice as a response scored LinkedIn up for a signal no other channel sends.
+They are insights.DIMENSIONS now, rated over settled applications on an
+answer. A `by_focus` sat beside them until 21 Aug 2026, reading
+`applications.focused`; the column never split (175 `false`, 22 null, zero
+`true`), so its panel never rendered once. The resume comparison did NOT
+replace it and does not answer its question: `focused` asked about EFFORT (was
+this application customised for this role), `resume_file` records POSITIONING
+(which of two standing resumes went out, neither written per employer). "Does
+tailoring pay off" is currently unmeasured, not answered.
+"""
 
 from __future__ import annotations
 
 import re
-from datetime import timedelta
 
 from . import config
 from .ingest import UNKNOWN_COMPANY, UNKNOWN_TITLE
 
-_RESPONSE_TYPES = "('viewed','engaged','interview_invite','rejected','offer')"
+
+def _sql_list(types) -> str:
+    return "(" + ",".join(f"'{t}'" for t in types) + ")"
+
+
+# An employer's response of any kind — what the list calls a reply and
+# `/analytics` calls hearing back. The tuple is the one list; the SQL string is
+# formatted from it, so insights.py (Python) and every query here (SQL) read
+# the same set.
+RESPONSE_TYPES = ("viewed", "engaged", "interview_invite", "rejected", "offer")
+_RESPONSE_TYPES = _sql_list(RESPONSE_TYPES)
 
 _APPS_CTE = f"""
 WITH apps AS (
@@ -49,32 +67,10 @@ WITH apps AS (
 )
 """
 
-_GROUPED = """
-SELECT {dim} AS dim,
-       count(*) FILTER (WHERE applied_at IS NOT NULL)               AS applied,
-       count(*) FILTER (WHERE first_resp IS NOT NULL)               AS responded,
-       count(*) FILTER (WHERE interviewed)                          AS interviews,
-       round(avg(EXTRACT(epoch FROM first_resp - applied_at) / 86400.0)::numeric, 1)
-                                                                    AS avg_days_to_resp
-FROM apps
-WHERE applied_at IS NOT NULL
-GROUP BY {dim}
-ORDER BY applied DESC, dim
-"""
-
-
 # Below this many applications a per-dimension response rate is noise wearing a
 # percent sign — 0% on n=3 says nothing about the technology, only about the
 # sample. The raw counts stay visible; only the derived rate is withheld.
 MIN_RATE_N = 5
-
-
-def _rate(rows, min_n: int = MIN_RATE_N):
-    for r in rows:
-        r["response_rate"] = (round(100.0 * r["responded"] / r["applied"])
-                              if r["applied"] >= min_n else None)
-        r["thin"] = r["applied"] < min_n
-    return rows
 
 
 def summary(conn, user_id, inbound: bool | None = None) -> dict:
@@ -98,101 +94,6 @@ def summary(conn, user_id, inbound: bool | None = None) -> dict:
     row["response_rate"] = (round(100.0 * row["responded"] / row["applied"])
                             if row["applied"] else None)
     return row
-
-
-def by_platform(conn, user_id):
-    return _rate(conn.execute(_APPS_CTE + _GROUPED.format(dim="platform"),
-                              {"user_id": user_id}).fetchall())
-
-
-def by_resume(conn, user_id):
-    """Response rate per resume actually sent (migration 014).
-
-    What this measures is POSITIONING — which of the candidate's standing
-    resumes went out, i.e. which specialisation they applied as. It is a real
-    split (AI-engineer 67 vs dotnet-engineer 21 on this author's data) and it
-    costs nothing, because the apply form already knows the answer.
-
-    It is NOT a tailoring metric, and the deleted `focused` dimension is not its
-    ancestor however often that got written down. `focused` asked whether an
-    application was customised for its role; neither resume here is written per
-    employer, so a split between them says which track gets replies, not whether
-    effort does. Read this panel as "AI framing vs .NET framing", nothing more.
-
-    Applications with no picker (external ATS, manual entry) group under a null
-    dim, which the template drops: 'unknown' is not a resume, and padding the
-    table with it would invite comparing a real resume against the absence of
-    data.
-    """
-    rows = _rate(conn.execute(
-        _APPS_CTE + _GROUPED.format(dim="resume_file"),
-        {"user_id": user_id}).fetchall())
-    return [r for r in rows if r["dim"]]
-
-
-def by_technology(conn, user_id, limit: int = 12):
-    return _rate(conn.execute(_APPS_CTE + """
-        , tech AS (
-            SELECT DISTINCT ap.id, initcap(lower(t.tech)) AS tech,
-                   ap.applied_at, ap.first_resp, ap.interviewed
-            FROM apps ap
-            JOIN postings p ON p.job_id = ap.job_id
-            JOIN extractions x ON x.posting_id = p.id
-            CROSS JOIN LATERAL unnest(x.languages || x.technologies) AS t(tech)
-            WHERE ap.applied_at IS NOT NULL
-        )
-        SELECT tech AS dim,
-               count(*)                                        AS applied,
-               count(*) FILTER (WHERE first_resp IS NOT NULL)  AS responded,
-               count(*) FILTER (WHERE interviewed)             AS interviews,
-               NULL::numeric                                   AS avg_days_to_resp
-        FROM tech
-        GROUP BY tech
-        ORDER BY applied DESC, tech
-        LIMIT %(limit)s
-    """, {"user_id": user_id, "limit": limit}).fetchall())
-
-
-def weekly(conn, user_id, weeks: int = 14):
-    """Applications sent and replies received, per calendar week.
-
-    Two measures an order of magnitude apart, so the page renders them as two
-    separate panels rather than one dual-axis chart — the bar heights are
-    percentages of each panel's OWN peak, and each panel direct-labels that
-    peak so the scale is never implied.
-    """
-    rows = conn.execute(f"""
-        SELECT date_trunc('week', e.occurred_at)::date          AS wk,
-               count(*) FILTER (WHERE e.type = 'applied')       AS applied,
-               count(*) FILTER (WHERE e.type IN {_RESPONSE_TYPES}) AS replied
-        FROM events e
-        JOIN applications a ON a.id = e.application_id
-        WHERE a.user_id = %(user_id)s
-          AND e.occurred_at >= date_trunc('week', now())
-                             - make_interval(weeks => %(weeks)s - 1)
-        GROUP BY 1 ORDER BY 1
-    """, {"user_id": user_id, "weeks": weeks}).fetchall()
-    if not rows:
-        return []
-
-    # Fill the gaps: a week with no activity is a real, meaningful zero, and
-    # dropping it would compress the x axis into a lie about pacing.
-    by_week = {r["wk"]: r for r in rows}
-    cur, last = rows[0]["wk"], rows[-1]["wk"]
-    out = []
-    while cur <= last:
-        r = by_week.get(cur, {"wk": cur, "applied": 0, "replied": 0})
-        out.append(dict(r))
-        cur += timedelta(days=7)
-
-    for key in ("applied", "replied"):
-        peak = max((r[key] for r in out), default=0)
-        for r in out:
-            r[f"{key}_h"] = f"{(100.0 * r[key] / peak) if peak else 0:.1f}%"
-            r[f"{key}_peak"] = peak
-    for r in out:
-        r["label"] = f'{r["wk"]:%d %b}'.lstrip("0")
-    return out
 
 
 def rejection_reasons(conn, user_id, inbound: bool | None = None):
@@ -264,7 +165,18 @@ def rejection_reasons(conn, user_id, inbound: bool | None = None):
 # rejected count. ONE definition, formatted into both the list's WHERE (web.py)
 # and the count below — two copies would let a chip promise a different number
 # of rows than it shows, the same trap rejection_reasons documents.
-ROUND_TYPES = "('interview_invite','engaged','offer')"
+ROUND_EVENTS = ("interview_invite", "engaged", "offer")
+ROUND_TYPES = _sql_list(ROUND_EVENTS)
+
+# What each bucket is called on a page — the list's `how` chips, the
+# /analytics table and the flow's branches. Fixed order, not by count (web.py
+# has the reasoning). Here, beside the bucket rule, so every page reads one
+# vocabulary; web.py's `_HOW_FILTERS` is this dict.
+HOW_LABELS = {
+    "after_round": "after a round",
+    "visa":        "visa",
+    "no_round":    "without a round",
+}
 
 
 def rejected_how_sql(reason: str, had_round: str) -> str:
@@ -273,6 +185,15 @@ def rejected_how_sql(reason: str, had_round: str) -> str:
     the count query can each name their own sources."""
     return (f"CASE WHEN {reason} = 'visa' THEN 'visa' "
             f"WHEN {had_round} THEN 'after_round' ELSE 'no_round' END")
+
+
+def rejected_how(reason: str | None, had_round: bool) -> str:
+    """The same bucket in Python, for insights.py's flow — written beside the
+    SQL so the two are read (and changed) together; tests/test_web.py holds
+    the page's counts equal to rejection_ends()."""
+    if reason == "visa":
+        return "visa"
+    return "after_round" if had_round else "no_round"
 
 
 def rejection_ends(conn, user_id, inbound: bool | None = None):
@@ -453,3 +374,70 @@ def lead_count(conn, user_id) -> int:
         JOIN application_status s ON s.application_id = a.id
         WHERE a.user_id = %s AND a.origin = 'inbound' AND s.status = 'interested'
     """, (user_id,)).fetchone()["n"]
+
+
+def facts(conn, user_id) -> tuple[list[dict], list[dict]]:
+    """Everything /analytics needs, in two queries: one row per application,
+    and every event of every application oldest first. insights.py turns them
+    into the page; nothing is aggregated here, so a statistic is one pure
+    function over a list and testable without a database.
+
+    Application columns are the properties a comparison can split on — how
+    the posting looked (platform, hiring system, listing age, repost), what
+    its job description said (visa, work mode, technologies: the newest
+    extraction of the posting applied through, else of any posting of the
+    job), what the user sent (resume, screening fields answered) — plus the
+    derived status, from the same view the list reads.
+
+    Event columns are the facts the timing needs and the two a rejection's
+    breakdown reads: `reason` (the closing event is chosen in insights.py by
+    the rule rejection_reasons() documents) and `mail_platform`, the closing
+    email's own extracted platform, which is how "LinkedIn's letter" is told
+    from an ATS's. `external` is only ever set on an `applied` event."""
+    apps = conn.execute("""
+        SELECT a.id, a.origin, a.resume_file, s.status,
+               j.company_norm, j.title_canonical,
+               COALESCE(pc.company_raw, j.company_norm) AS company_display,
+               p.platform, p.ats, p.posted_label, p.reposted,
+               EXISTS (SELECT 1 FROM postings pj WHERE pj.job_id = a.job_id
+                        AND COALESCE(pj.jd_text, '') <> '')                  AS has_jd,
+               EXISTS (SELECT 1 FROM postings pj WHERE pj.job_id = a.job_id
+                        AND (pj.salary_min IS NOT NULL OR pj.salary_raw IS NOT NULL)) AS has_salary,
+               x.visa_signal, x.work_mode, COALESCE(x.tech, '{}')           AS tech,
+               (x.posting_id IS NOT NULL)                                    AS extracted,
+               (SELECT count(*) FROM application_answers aa
+                 WHERE aa.application_id = a.id)                             AS n_answers
+        FROM applications a
+        JOIN jobs j ON j.id = a.job_id
+        JOIN application_status s ON s.application_id = a.id
+        LEFT JOIN postings p ON p.id = a.applied_via_posting_id
+        LEFT JOIN LATERAL (
+            SELECT p2.company_raw FROM postings p2
+             WHERE p2.job_id = a.job_id AND p2.company_raw IS NOT NULL
+             ORDER BY p2.captured_at DESC LIMIT 1
+        ) pc ON true
+        LEFT JOIN LATERAL (
+            SELECT x.posting_id, x.visa_signal, x.work_mode,
+                   x.languages || x.technologies AS tech
+            FROM extractions x JOIN postings p3 ON p3.id = x.posting_id
+            WHERE p3.job_id = a.job_id
+            ORDER BY (p3.id = a.applied_via_posting_id) DESC NULLS LAST,
+                     x.extracted_at DESC
+            LIMIT 1
+        ) x ON true
+        WHERE a.user_id = %(user_id)s
+    """, {"user_id": user_id}).fetchall()
+    events = conn.execute("""
+        SELECT e.application_id, e.type, e.source, e.occurred_at, e.created_at,
+               CASE WHEN e.type = 'applied'
+                    THEN (e.payload->>'external')::bool END  AS external,
+               e.payload->>'reason'                          AS reason,
+               (e.payload ? 'superseded_by')                 AS superseded,
+               em.extraction->>'platform'                    AS mail_platform
+        FROM events e
+        JOIN applications a ON a.id = e.application_id
+        LEFT JOIN emails em ON em.id = e.source_email_id
+        WHERE a.user_id = %(user_id)s
+        ORDER BY e.occurred_at, e.created_at
+    """, {"user_id": user_id}).fetchall()
+    return apps, events

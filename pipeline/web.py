@@ -33,7 +33,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from . import (analytics, answers, auth, config, db, dedup, gmail_imap, gmail_oauth,
-               ingest, joburl, mailbox, matcher, trace)
+               ingest, insights, joburl, mailbox, matcher, trace)
 from .email_classifier import norm_company
 
 app = FastAPI(title="Job Tracker")
@@ -203,6 +203,7 @@ templates.env.filters["dtt"] = _dtt
 templates.env.filters["day"] = _day
 templates.env.filters["stated_ahead"] = _stated_ahead
 templates.env.filters["event_label"] = _event_label
+templates.env.filters["days_text"] = insights.days_text
 templates.env.globals["theme"] = _theme
 templates.env.globals["asof"] = _asof
 templates.env.globals["queue_alert"] = _queue_alert
@@ -753,11 +754,7 @@ def _reason_rows(rows) -> list[dict]:
 # has the precedence and the reasoning). Fixed order, not by count: it reads as
 # a scale — a human round, a visa stop, or nothing at all — and a fixed order is
 # what makes the three numbers comparable between visits.
-_HOW_FILTERS = {
-    "after_round": "after a round",
-    "visa":        "visa",
-    "no_round":    "without a round",
-}
+_HOW_FILTERS = analytics.HOW_LABELS
 
 
 def _end_rows(rows) -> list[dict]:
@@ -2504,19 +2501,27 @@ def resolve_duplicate(request: Request, cand_id: str, action: str = Form(...)):
 
 @app.get("/analytics")
 def analytics_page(request: Request):
+    """How the search is going (redrawn 25 Sep 2026): one fetch
+    (`analytics.facts`) and one pure call (`insights.report`) for everything
+    drawn, plus the two rejection tables the list's chips are counted by,
+    which stay in SQL so a chip and its table cannot disagree. The viewer's
+    zone is passed for GROUPING only — which calendar day, week and hour an
+    event fell in, as the viewer lived it; every duration is UTC arithmetic."""
     user = _login_user(request)
     with db.connect_scoped(user["id"]) as conn:
         user_id = user["id"]
+        apps, events = analytics.facts(conn, user_id)
+        report = insights.report(apps, events, datetime.now(timezone.utc),
+                                 request.state.tz, config.REMINDER_DAYS,
+                                 status_word=_display, how_words=_HOW_FILTERS)
         return templates.TemplateResponse(request=request, name="analytics.html", context={
-            "summary": analytics.summary(conn, user_id),
-            "weekly": analytics.weekly(conn, user_id),
+            "r": report,
             "min_rate_n": analytics.MIN_RATE_N,
-            "by_platform": analytics.by_platform(conn, user_id),
-            "by_resume": analytics.by_resume(conn, user_id),
-            "by_technology": analytics.by_technology(conn, user_id),
             "by_reason": _reason_rows(analytics.rejection_reasons(conn, user_id)),
             "by_end": _end_rows(analytics.rejection_ends(conn, user_id)),
             "pending": _pending_count(conn),
+            "follow_ups": analytics.reminder_count(conn, user_id),
+            "leads": analytics.lead_count(conn, user_id),
         })
 
 

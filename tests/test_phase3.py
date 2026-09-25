@@ -283,10 +283,14 @@ with db.connect() as conn:   # give the merged app a response for the math
     conn.commit()
 r = client.get("/analytics")
 check("analytics renders", r.status_code == 200, r.status_code)
-check("platform table populated", "linkedin" in r.text)
-check("resume split renders once the dimension splits",
-      "By resume sent" in r.text and "resume-variant-0.pdf" in r.text, r.status_code)
-check("technology table populated", "Pytorch" in r.text or "PyTorch" in r.text)
+# The per-dimension tables became insights.DIMENSIONS on 25 Sep 2026: one
+# comparison per property, rated over settled applications. These fixtures
+# are dated July 2026, so every one is settled.
+check("platform comparison populated", "The platform" in r.text and "LinkedIn" in r.text)
+check("resume comparison lists each resume sent",
+      "Which resume you sent" in r.text and "resume-variant-0.pdf" in r.text
+      and "resume-variant-1.pdf" in r.text, r.status_code)
+check("technology comparison populated", "Pytorch" in r.text or "PyTorch" in r.text)
 
 print("reminders")
 with db.connect() as conn:
