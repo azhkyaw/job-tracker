@@ -995,3 +995,15 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   - **If it stays grey everywhere,** `syncIconRule` threw; it is caught so
     capture never suffers. The service worker's console (chrome://extensions
     → "service worker") names the error.
+- **A wizard's review-step "Submit" (0.15.1, 28 Sep 2026) has never been
+  seen on a real review page.** The rule is deduced from the logged reason
+  of the 25 Sep Workday miss (`generic.js` finds no root on an apply address
+  only with fewer than two controls, or a password in the container), and
+  the application it cost reached the tracker only through LinkedIn's
+  popover, answerless. What to read on the next Workday apply:
+  - the record carries the earlier steps' answers and `ats` workday, and the
+    popup's failure list has no `"Submit" was not captured` line;
+  - if that line reads "the button is outside the application form", the
+    review page held two or more VISIBLE controls (a consent checkbox), the
+    root rule found them, and the footer's Submit sits outside it. That shape
+    was not built for, on purpose: nothing has shown it yet.

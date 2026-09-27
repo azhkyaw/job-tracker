@@ -1145,5 +1145,50 @@ console.log("\ngeneric.js: what must NOT be an application");
   check("wizard: 'Submit' is", a.isCompletion(submit), true);
 }
 
+console.log("\ngeneric.js: a wizard's last step, which shows the answers as text (25 Sep 2026)");
+{
+  // Workday's "Review" step: every answer printed, NO controls, and "Submit"
+  // in the page footer. Workday keeps one address for the whole wizard. A real
+  // submit here was turned down with "no application form found on this
+  // page": the case above puts "Submit" beside inputs, which a review step
+  // never does (docs/career-sites.md §16).
+  const WD = "https://contoso.wd3.myworkdayjobs.com/en-US/Contoso/job/Singapore/Senior-AI-Engineer_R200001/apply/autofillWithResume";
+  const back = button("Back");
+  const submit = button("Submit", { "data-automation-id": "pageFooterNextButton" });
+  const review = node("div", { "data-automation-id": "applyFlowReviewPage" },
+    [node("h2", {}, ["Review"]), node("div", {}, ["Email Address: jane@contoso.com"]),
+     node("div", {}, ["How did you hear about us? LinkedIn"])]);
+  const footer = node("div", { "data-automation-id": "pageFooter" }, [back, submit]);
+  const a = loadGeneric([review, footer], WD);
+  check("review step: there is no root to find", a.answerFormRoot() === null, true);
+  check("review step: its 'Submit' sends the application", a.isCompletion(submit), true);
+  check("review step: and is no near miss", a.nearMiss(submit), null);
+  check("review step: 'Back' is not the submit", a.isCompletion(back), false);
+  // The sign-in dialog left in the DOM, closed: a password not in view does
+  // not make the review a sign-in.
+  const pw = node("input", { type: "password", name: "password" });
+  const em = text("email");
+  pw.getClientRects = () => [];
+  em.getClientRects = () => [];
+  const b = loadGeneric([review, node("div", { role: "dialog" }, [em, pw]), footer], WD);
+  check("review step with a closed sign-in dialog in the DOM: still the submit", b.isCompletion(submit), true);
+}
+{
+  // Still refused. A sign-in IN VIEW on the same address, as its own
+  // container rather than a <form> (the case further up has the form).
+  const WD = "https://contoso.wd3.myworkdayjobs.com/en-US/Contoso/job/Singapore/Senior-AI-Engineer_R200001/apply/autofillWithResume";
+  const signIn = button("Submit");
+  const a = loadGeneric([node("div", {}, [text("email"), node("input", { type: "password", name: "password" }), signIn])], WD);
+  check("a sign-in in view on an apply address: its 'Submit' is not an application", a.isCompletion(signIn), false);
+  check("...and the miss says why", a.nearMiss(signIn), "no application form found on this page");
+  // A page that is not an apply flow at all: SuccessFactors' own job page,
+  // whose "Apply" can send a quick application (§16.3 item 6). That is a
+  // different rule, not this one.
+  const apply = node("span", { role: "button" }, ["Apply"]);
+  const c = loadGeneric([node("h1", {}, ["Senior AI Engineer (170001)"]), apply],
+                        "https://career2.successfactors.eu/careers?company=SF1001");
+  check("a job page's 'Apply' (no apply address): still not an application", c.isCompletion(apply), false);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

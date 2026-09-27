@@ -48,6 +48,9 @@
   // a SuccessFactors career site's career_ns=job_application. Needed for the
   // steps of a wizard that carry no file input of their own.
   const APPLY_PATH = /(^|\/)(apply|application)(\/|$)/i;
+  const applyFlowAt = (loc) => APPLY_PATH.test(loc.pathname || "") ||
+    /career_ns=job_application/i.test(loc.search || "");
+  const rendered = (el) => !el.getClientRects || el.getClientRects().length > 0;
 
   /* The element holding the application's answerable controls, or null when
    * this page has none. Never a container that also holds a password field:
@@ -82,15 +85,12 @@
       const form = b.closest("form");
       if (form && !hasPassword(form) && controlsIn(form).length >= MIN_FORM_FIELDS) return form;
     }
-    const applyFlow = APPLY_PATH.test(loc.pathname || "") ||
-      /career_ns=job_application/i.test(loc.search || "");
-    if (!files.length && !applyFlow) return null;
+    if (!files.length && !applyFlowAt(loc)) return null;
     // The controls a person can SEE decide the container. Measured live on
     // Ashby: 21 controls sit in its form pane and the 22nd is reCAPTCHA's
     // hidden response field, portalled to <body> — counting it made the whole
     // page the root. Hidden controls inside the container are still swept
     // (answers.js decides what is machinery); they just cannot move it.
-    const rendered = (el) => !el.getClientRects || el.getClientRects().length > 0;
     const seen = all.filter(rendered);
     const root = commonAncestor(seen.length ? seen : all);
     return root && !hasPassword(root) ? root : null;
@@ -123,10 +123,26 @@
     return hooked || SUBMIT_WORDS.test(label(el));
   }
 
+  /* A wizard's LAST step, which shows the answers as text. Workday's review
+   * page has no controls, so there is no root, and its "Submit" is what sends
+   * the application. Workday keeps one address for the whole wizard
+   * (…/apply/autofillWithResume), and on 25 Sep 2026 a real submit there was
+   * turned down with "no application form found on this page"; the
+   * application reached the tracker only through the job board's popover,
+   * with none of its answers (docs/career-sites.md §16). So: on an address
+   * that says it is the application, a page with no root and no password
+   * field IN VIEW is that step. A sign-in on the same address shows its
+   * password and stays refused; one left in the DOM, closed, does not count.
+   * Earlier steps' answers are already in answers.js's store. */
+  function reviewStep(doc, loc) {
+    if (!applyFlowAt(loc)) return false;
+    return ![...doc.querySelectorAll("input[type='password']")].some(rendered);
+  }
+
   function isSubmitControl(el, doc, loc) {
     if (!submitWorded(el)) return false;
     const root = applicationRoot(doc, loc);
-    return !!root && inside(el, root);
+    return root ? inside(el, root) : reviewStep(doc, loc);
   }
 
   /* Why a submit-worded control was NOT taken for the application's submit,
@@ -138,7 +154,7 @@
   function whyNotSubmit(el, doc, loc) {
     if (!submitWorded(el)) return null;
     const root = applicationRoot(doc, loc);
-    if (!root) return "no application form found on this page";
+    if (!root) return reviewStep(doc, loc) ? null : "no application form found on this page";
     return inside(el, root) ? null : "the button is outside the application form";
   }
 
