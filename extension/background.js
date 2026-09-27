@@ -386,7 +386,20 @@ async function syncSites() {
  * The rule's pages are exactly the capture scripts' pages: the manifest's
  * content_scripts patterns and the enabled sites, one list, translated by
  * jobposting.js:matchPatternRegex. declarativeContent wants image DATA, not
- * paths, so the PNGs are decoded here. */
+ * paths, so the PNGs are decoded here.
+ *
+ * A THIRD state since 28 Sep 2026: grey with a FILLED dot on a job page the
+ * extension does not capture on, i.e. one that publishes a JobPosting as
+ * microdata (docs/career-sites.md §16.3 item 5): turn the site on, or capture
+ * by hand. It needs no host permission, but CSS conditions match only
+ * DISPLAYED elements, so JSON-LD (a <script>) is invisible to it.
+ * Where both rules match (an enabled site's listing) the capturing icon must
+ * win. Chromium keeps declarative icons BY RULE PRIORITY and shows the
+ * highest one's (extension_action.cc GetDeclarativeIcon), so it gets 200 and
+ * this 100. Every committed navigation clears a tab's declarative icons
+ * (extension_action_runner.cc DidFinishNavigation → ClearAllValuesForTab),
+ * so no page inherits the last one's. Read in the source, not run. */
+const LISTING_CSS = ['[itemtype$="JobPosting"]'];
 async function _iconData(state) {
   const out = {};
   for (const size of [16, 32]) {
@@ -408,10 +421,13 @@ async function syncIconRule(enabledHosts) {
   const DC = chrome.declarativeContent;
   const conditions = patterns.map((p) => J.matchPatternRegex(p)).filter(Boolean)
     .map((re) => new DC.PageStateMatcher({ pageUrl: { urlMatches: re } }));
-  const imageData = await _iconData("on");
+  const [on, found] = [await _iconData("on"), await _iconData("found")];
   await new Promise((res) => DC.onPageChanged.removeRules(undefined, res));
-  await new Promise((res) => DC.onPageChanged.addRules(
-    [{ conditions, actions: [new DC.SetIcon({ imageData })] }], res));
+  await new Promise((res) => DC.onPageChanged.addRules([
+    { conditions, actions: [new DC.SetIcon({ imageData: on })], priority: 200 },
+    { conditions: [new DC.PageStateMatcher({ css: LISTING_CSS })],
+      actions: [new DC.SetIcon({ imageData: found })], priority: 100 },
+  ], res));
 }
 
 /* Enable one host, and start on the page the user is looking at: the listing

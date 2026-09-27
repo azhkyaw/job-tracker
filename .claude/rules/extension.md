@@ -738,6 +738,13 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
 
 - **A tab's own toolbar icon does NOT reset when the tab navigates** (Chrome
   docs: it "automatically resets when the tab is closed").
+  **Corrected 28 Sep 2026, from Chromium's source, not run:** every committed
+  main-frame, cross-document navigation calls `ClearAllValuesForTab`
+  (`extension_action_runner.cc` `DidFinishNavigation`), which clears the
+  tab's icon, badge, title and declarative icons, so a per-tab icon DOES
+  reset on navigation. The declarativeContent design below stands on its own
+  merits (no content-script hello, no worker wake-up per page); the reason
+  given here for it was wrong.
   - **Why that rules out the obvious design:** content scripts saying hello
     and `chrome.action.setIcon({tabId})` would leave the "capturing here"
     icon on every page browsed to afterwards, unless the worker also watched
@@ -1019,6 +1026,15 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   - **If it stays grey everywhere,** `syncIconRule` threw; it is caught so
     capture never suffers. The service worker's console (chrome://extensions
     → "service worker") names the error.
+  - **The third state (0.20.0, 28 Sep 2026), grey with a FILLED dot on a job
+    page that is not captured, rests on reading Chromium, not on a run:**
+    `PageStateMatcher({css: ['[itemtype$="JobPosting"]']})` at rule priority
+    100 against the capturing rule's 200 (`background.js:LISTING_CSS`). Check
+    on an employer's Career Site Builder listing (microdata): filled dot
+    while the site is off, blue once it is on. A JSON-LD-only job page stays
+    hollow, by design (CSS conditions see only displayed elements). If an
+    enabled site's listing shows the filled dot, the priorities did not
+    order the two rules the way the source reads.
 - **A wizard's review-step "Submit" (0.15.1, 28 Sep 2026) has never been
   seen on a real review page.** The rule is deduced from the logged reason
   of the 25 Sep Workday miss (`generic.js` finds no root on an apply address
