@@ -2317,6 +2317,9 @@ class CaptureIn(BaseModel):
     # (migration 018): sent from an ATS page, BESIDE the identity, because a
     # submit linked to a job board's record carries the board's id instead.
     ats_job_id: str | None = None
+    # Ids a LISTING believes its hiring system holds (P4): used only to find
+    # the job holding one, never stored (ingest.upsert_record).
+    ats_job_candidates: list[str] | None = None
     # Structured facts the platform prints BESIDE the ad, which the JD
     # extractor can never see because they aren't in the ad body (migration
     # 011). `salary_raw` is the displayed string verbatim — pipeline/salary.py
@@ -2368,6 +2371,8 @@ def captures(payload: CaptureIn, authorization: str | None = Header(None)):
             salary_raw=payload.salary_raw, work_type=payload.work_type,
             salary_match=payload.salary_match,
             ats_job_id=(payload.ats_job_id or "").strip()[:300] or None,
+            ats_job_candidates=[c.strip()[:300] for c in (payload.ats_job_candidates or [])[:5]
+                                if c and c.strip()] or None,
             origin="applied" if payload.trigger == "apply" else "saved")
         job_id, posting_id, app_id = r["job_id"], r["posting_id"], r["application_id"]
 
@@ -2533,6 +2538,85 @@ def capture_tag(application_id: str, payload: TagIn,
                          "WHERE job_id = %s AND company_raw IS NULL", (company, norm, a["job_id"]))
         return {"ok": True, "note": bool(note), "company": bool(company),
                 "label": f"{company or a['company_display']} · {a['title_canonical']}"}
+
+
+class ListingIn(BaseModel):
+    """One page's job, as the extension reads it: CaptureIn's ad fields."""
+    platform: str
+    platform_job_id: str | None = None
+    url: str | None = None
+    company: str | None = None
+    title: str | None = None
+    jd_text: str | None = None
+    location: str | None = None
+    posted_label: str | None = None
+    reposted: bool | None = None
+    ats: str | None = None
+    salary_raw: str | None = None
+    work_type: str | None = None
+    salary_match: bool | None = None
+
+
+@app.post("/captures/{application_id}/listing")
+def capture_listing(application_id: str, payload: ListingIn,
+                    authorization: str | None = Header(None)):
+    """Attach the page in front of the user to an application THEY chose
+    (docs/career-sites.md §16.5, P4): the listing of a record a hiring
+    system's form filed thin, with no JD and perhaps no employer. The page
+    becomes a posting of that record's job, through ingest.upsert_record's
+    `attach_to_job`, so its JD is extracted and its company and title fill
+    only the placeholders. A page that is already another record's posting
+    is refused (409): combining two records is a merge, not an attach."""
+    user_id = _bearer_user_id(authorization)
+    if payload.platform not in ("linkedin", "jobstreet", "indeed", "other"):
+        raise HTTPException(422, "unknown platform")
+    if not (payload.title or payload.jd_text):
+        raise HTTPException(422, "the page names no job")
+    with db.connect_scoped(user_id) as conn, conn.transaction():
+        a = _get_application(conn, application_id)
+        try:
+            r = ingest.upsert_record(
+                conn, user_id, platform=payload.platform,
+                platform_job_id=payload.platform_job_id, url=payload.url,
+                company=payload.company, title=payload.title, jd_text=payload.jd_text,
+                location=payload.location, posted_label=payload.posted_label,
+                reposted=payload.reposted, ats=payload.ats, captured_via="extension",
+                salary_raw=payload.salary_raw, work_type=payload.work_type,
+                salary_match=payload.salary_match, attach_to_job=a["job_id"])
+        except ingest.AttachConflict:
+            raise HTTPException(409, "this page is already another record's posting: merge the two instead")
+        b = _get_application(conn, application_id)
+        return {"ok": True, "application_id": str(a["id"]), "posting_id": str(r["posting_id"]),
+                "jd": bool(payload.jd_text),
+                "label": f"{b['company_display']} · {b['title_canonical']}"}
+
+
+@app.get("/captures/recent")
+def captures_recent(authorization: str | None = Header(None)):
+    """The applications a listing might complete, for the popup's "attach
+    this page" list: made in the last 30 days, the thin ones first (no JD on
+    any posting, or no employer), then the newest."""
+    user_id = _bearer_user_id(authorization)
+    with db.connect_scoped(user_id) as conn:
+        rows = conn.execute(
+            """
+            SELECT a.id, a.created_at, j.title_canonical, j.company_norm <> %(unknown)s AS named,
+                   COALESCE((SELECT p.company_raw FROM postings p
+                              WHERE p.job_id = j.id AND p.company_raw IS NOT NULL
+                              ORDER BY p.captured_at DESC LIMIT 1), j.company_norm) AS company,
+                   EXISTS (SELECT 1 FROM postings p WHERE p.job_id = j.id
+                            AND p.jd_text IS NOT NULL) AS has_jd
+            FROM applications a JOIN jobs j ON j.id = a.job_id
+            WHERE a.created_at > now() - interval '30 days'
+            ORDER BY (j.company_norm = %(unknown)s
+                      OR NOT EXISTS (SELECT 1 FROM postings p WHERE p.job_id = j.id
+                                      AND p.jd_text IS NOT NULL)) DESC,
+                     a.created_at DESC, a.id
+            LIMIT 10
+            """, {"unknown": ingest.UNKNOWN_COMPANY}).fetchall()
+    return {"records": [{"application_id": str(r["id"]), "label": f"{r['company']} · {r['title_canonical']}",
+                         "created_at": r["created_at"].isoformat(), "has_jd": r["has_jd"],
+                         "company_known": r["named"]} for r in rows]}
 
 
 # --------------------------------------------------------------------------- phase 3 routes

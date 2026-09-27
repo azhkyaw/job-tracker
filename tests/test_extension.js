@@ -1079,6 +1079,18 @@ console.log("\njobposting.js: the handoff from a listing to its hiring system (P
   check("handoffFits: another host, or no binding",
         [J.handoffFits(b, { host: "career10.successfactors.com", atsJobId: null }), J.handoffFits(null, { host: b.host })],
         [false, false]);
+
+  // atsCandidates (P4): what a listing BELIEVES its hiring system holds, for
+  // the server to look up and never store.
+  const h = { atsHost: "career2.successfactors.eu", tenant: "litwarebk" };
+  check("atsCandidates: the listing's own number under its handover",
+        J.atsCandidates({ platform_job_id: "jobs.litwarebank.com/51234" }, h),
+        ["career2.successfactors.eu/litwarebk/51234"]);
+  check("atsCandidates: none without a handover, with half of one, or with a number-less id",
+        [J.atsCandidates({ platform_job_id: "jobs.litwarebank.com/51234" }, null),
+         J.atsCandidates({ platform_job_id: "jobs.litwarebank.com/51234" }, { atsHost: h.atsHost, tenant: null }),
+         J.atsCandidates({ platform_job_id: "careers.contoso.com/jobs/senior-engineer" }, h)],
+        [[], [], []]);
 }
 {
   const at = (href) => makeLoc(href);
@@ -1488,6 +1500,27 @@ console.log("\ngeneric.js: a wizard's last step, which shows the answers as text
   const c = loadGeneric([node("h1", {}, ["Senior AI Engineer (170001)"]), apply],
                         "https://career2.successfactors.eu/careers?company=SF1001");
   check("a job page's 'Apply' (no apply address): still not an application", c.isCompletion(apply), false);
+}
+
+console.log("\ngeneric.js getJob: a listing proposes its hiring system's id (P4)");
+{
+  // The Career Site Builder listing of 28 Sep 2026, placeholder names: its
+  // inline config names the data centre and tenant, and its own number is
+  // the requisition on this site (not on every one: the server only looks).
+  const kids = () => [
+    node("span", { itemprop: "title" }, ["Principal AI Engineer"]),
+    node("div", { itemscope: "", itemtype: "http://schema.org/JobPosting" },
+         [node("span", { itemprop: "description" }, ["The job."])]),
+    node("script", {}, [`{"ssoCompanyId" : 'litwarebk', "ssoUrl" : 'https://career2.successfactors.eu'}`]),
+  ];
+  const listing = loadGeneric(kids(), "https://jobs.litwarebank.com/job/Principal-AI-Engineer/51234-en_GB",
+                              "Principal AI Engineer Job Details | Litware Bank");
+  check("the listing's job carries the candidate id",
+        listing.getJob().ats_job_candidates, ["career2.successfactors.eu/litwarebk/51234"]);
+  const onAts = loadGeneric([node("h1", {}, ["Principal AI Engineer (51234)"]), ...kids()],
+                            "https://career2.successfactors.eu/portalcareer?_s.crb=x");
+  check("…a hiring system's own page proposes none (it has its real id)",
+        onAts.getJob().ats_job_candidates, undefined);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

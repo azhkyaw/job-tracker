@@ -582,6 +582,20 @@
     return atsHost || tenant ? { atsHost, tenant } : null;
   }
 
+  /* The ids a listing BELIEVES its hiring system holds for its job (P4): its
+   * handover's data centre and tenant (atsHandoff) and its own job number,
+   * `career2.successfactors.eu/litwarebk/51234`. On one Career Site Builder
+   * site that number is the requisition, on another it is not (§16.2), so
+   * this is a CANDIDATE: the server only looks for a job holding it and never
+   * stores it (ingest.upsert_record), and a wrong guess matches nothing.
+   * [] without both halves of the handover or an id-shaped number. */
+  function atsCandidates(job, handoff) {
+    if (!job || !job.platform_job_id || !handoff || !handoff.atsHost || !handoff.tenant) return [];
+    const token = job.platform_job_id.slice(job.platform_job_id.lastIndexOf("/") + 1);
+    if (!/^[a-z0-9_-]{1,40}$/i.test(token) || !/\d/.test(token)) return [];
+    return [`${handoff.atsHost}/${handoff.tenant}/${token.toLowerCase()}`];
+  }
+
   /* Does this page publish a JobPosting? A page that does is a LISTING, and
    * one of its own "Apply" controls leaves for the application rather than
    * sending it (adapters/generic.js). */
@@ -773,7 +787,7 @@
   // `self` in the service worker, which imports this file for sameJob so the
   // rule exists once; `window` in a page, where the two are the same object.
   (typeof window !== "undefined" ? window : self).__trackerJobPosting =
-    { read, idFrom, pageId, tenantOf, atsHandoff, hasPosting, siteOwner, pickDeparture,
+    { read, idFrom, pageId, tenantOf, atsHandoff, atsCandidates, hasPosting, siteOwner, pickDeparture,
       handoffFits, quickApplies, quickApplySent, atsOfUrl, vendorOf, htmlToText, sameJob,
       pickListed, siteOf,
       matchPatternRegex, stripRequisition, suggestCompany };

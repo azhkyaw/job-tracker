@@ -1099,3 +1099,17 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
     expires after ten minutes. The confirmation email still makes the
     record, and matches it by the requisition it prints (the email
     lookup), so the loss would be the answers-free capture only.
+- **Completing a thin record, and a tenant's name (P4, 0.21.0, 28 Sep 2026)
+  have run only against tests.** The server routes are tested
+  (`tests/test_captures.py`); the popup's "Attach this page to an
+  application…", `tracker-recent-records` / `tracker-attach-listing` and the
+  receipt taking the server's `company_suggestion` are not. What to read:
+  - on an employer's listing, the popup's attach lists the last 30 days'
+    records, thin ones first and marked "no job description" / "no
+    employer"; the pick says "Attached to …" and the record's page shows a
+    second posting with the listing's JD;
+  - "Capture this job as applied" on a Career Site Builder listing whose
+    number is its requisition joins the thin SuccessFactors record (the
+    candidate id) instead of filing a second one;
+  - the next nameless SuccessFactors submit on a tenant already named
+    opens its receipt with that name filled in.

@@ -145,6 +145,9 @@
       // The job's own id on its hiring system (generic.js:atsJobId), read
       // off the page before any link replaced the identity above.
       ats_job_id: atsJobId || null,
+      // What a LISTING believes that id to be, for the server to look up
+      // only (generic.js getJob; P4).
+      ats_job_candidates: job.ats_job_candidates || null,
       answers: (answers && answers.length) ? answers : null,
     };
   }
@@ -1114,7 +1117,9 @@
     if (msg && msg.type === "tracker-getjob") {
       let job = null;
       try { job = adapter.getJob(); } catch (e) { job = null; }
-      respond({ job });
+      // `platform` beside the job, for the popup's attach (P4): a page's job
+      // does not name its platform, the adapter does.
+      respond({ job, platform: adapter.platform });
     }
     return false;
   });

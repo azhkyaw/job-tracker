@@ -91,11 +91,17 @@ def local_date_to_utc(d: date, tz: ZoneInfo, t: time | None = None) -> datetime:
                             tzinfo=tz).astimezone(timezone.utc)
 
 
+class AttachConflict(Exception):
+    """The page to attach is already a posting of ANOTHER job: joining it would
+    combine two records, which is merge_jobs' decision, never an attach's."""
+
+
 def upsert_record(conn, user_id, *, platform, captured_via, platform_job_id=None,
                   url=None, company=None, title=None, jd_text=None, location=None,
                   posted_label=None, reposted=None, ats=None, captured_at=None,
                   origin="applied", salary_raw=None, work_type=None,
-                  salary_match=None, ats_job_id=None) -> dict:
+                  salary_match=None, ats_job_id=None, ats_job_candidates=None,
+                  attach_to_job=None) -> dict:
     """Create or enrich job + posting + application for one captured ad.
 
     Returns {job_id, posting_id, application_id, created, enriched,
@@ -117,6 +123,20 @@ def upsert_record(conn, user_id, *, platform, captured_via, platform_job_id=None
     id is recorded on the capture's job, unless another job holds it — then
     it is left there and nothing is merged.
 
+    `ats_job_candidates` (P4): ids a LISTING believes its hiring system
+    holds, e.g. a Career Site Builder page's data centre, tenant and own job
+    number, which is the requisition on some sites and not on others. Used
+    only to FIND a job holding exactly one of them, never stored, so a wrong
+    guess matches nothing and records nothing.
+
+    `attach_to_job` (P4): a human chose the record this page belongs to (the
+    popup's "attach this page to an application"). The ad becomes a posting of
+    THAT job; if it is already another job's posting, AttachConflict, since
+    combining two records is merge_jobs' decision (invariant #3).
+
+    A job found by a key or an attach takes the capture's company and title
+    only where it holds the placeholders, as the receipt's tag route does.
+
     Caller owns the connection and its transaction, and is responsible for
     everything after this: events, notes, contacts — their
     semantics differ too much between callers (extension vs. manual entry)
@@ -134,6 +154,9 @@ def upsert_record(conn, user_id, *, platform, captured_via, platform_job_id=None
             "SELECT id, job_id FROM postings WHERE user_id = %s AND platform = %s "
             "AND platform_job_id = %s",
             (user_id, platform, platform_job_id)).fetchone()
+
+    if existing and attach_to_job is not None and str(existing["job_id"]) != str(attach_to_job):
+        raise AttachConflict(str(existing["job_id"]))
 
     if existing:
         # Re-capture of a known ad: fill gaps, never blank existing data.
@@ -173,16 +196,27 @@ def upsert_record(conn, user_id, *, platform, captured_via, platform_job_id=None
         # company/role (the backfill created it; this capture enriches it)
         # over creating a duplicate. Full cross-posting dedup is Phase 3.
         job = None
-        if ats_job_id:
+        if attach_to_job is not None:
+            job = {"id": attach_to_job}
+        if job is None and ats_job_id:
             job = conn.execute(
                 "SELECT id FROM jobs WHERE user_id = %s AND ats_job_id = %s",
                 (user_id, ats_job_id)).fetchone()
-            if job is not None and company_norm:
-                # The ATS form named no employer (SuccessFactors' does not); its
-                # listing does. Only the placeholder is ever replaced, as the
-                # receipt's /captures/{id}/tag does.
+        if job is None and ats_job_candidates:
+            hits = conn.execute(
+                "SELECT id FROM jobs WHERE user_id = %s AND ats_job_id = ANY(%s)",
+                (user_id, list(ats_job_candidates))).fetchall()
+            job = hits[0] if len(hits) == 1 else None
+        if job is not None:
+            # The ATS form named no employer (SuccessFactors' does not); its
+            # listing does. Only the placeholders are ever replaced, as the
+            # receipt's /captures/{id}/tag does.
+            if company_norm:
                 conn.execute("UPDATE jobs SET company_norm = %s WHERE id = %s AND company_norm = %s",
                              (company_norm, job["id"], UNKNOWN_COMPANY))
+            if title:
+                conn.execute("UPDATE jobs SET title_canonical = %s WHERE id = %s AND title_canonical = %s",
+                             (title, job["id"], UNKNOWN_TITLE))
         if job is None and company_norm:
             job = conn.execute(ENRICH_JOB_SQL, {
                 "user_id": user_id, "company": company_norm,

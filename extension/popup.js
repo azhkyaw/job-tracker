@@ -48,6 +48,67 @@ async function captureAs(as) {
 document.getElementById("applied").addEventListener("click", () => captureAs("applied"));
 document.getElementById("cap").addEventListener("click", () => captureAs("interested"));
 
+/* "Attach this page to an application…" (docs/career-sites.md §16.5, P4). A
+ * hiring system's form filed an application thin (no job description, maybe
+ * no employer) and this page is its listing: pick the record, and the page
+ * becomes a posting of its job (web.py capture_listing). The pick is the
+ * user's; nothing is matched by likeness. The page's job is read in its TOP
+ * frame, injecting the reader first where nothing runs, as captureAs does. */
+async function readPageJob(tab) {
+  const ask = async () => {
+    try { return await chrome.tabs.sendMessage(tab.id, { type: "tracker-getjob" }, { frameId: 0 }); }
+    catch (e) { return null; }
+  };
+  let r = await ask();
+  if (!r && !onStaticHost(tab.url)) {
+    try {
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: INJECT });
+    } catch (e) {
+      return { error: `This page can't be read (${(e && e.message) || e}).` };
+    }
+    r = await ask();
+  }
+  if (!r) return { error: "The extension was reloaded since this page opened — refresh it first." };
+  if (!r.job || !(r.job.title || r.job.jd_text)) return { error: "This page names no job to attach." };
+  return { job: { ...r.job, platform: r.job.platform || r.platform || "other" } };
+}
+
+document.getElementById("attach").addEventListener("click", async () => {
+  const out = document.getElementById("out");
+  const list = document.getElementById("records");
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab) return;
+  const page = await readPageJob(tab);
+  if (page.error) { out.textContent = page.error; return; }
+  const r = await chrome.runtime.sendMessage({ type: "tracker-recent-records" });
+  if (!r || !r.ok) { out.textContent = `Couldn't list your records: ${(r && r.error) || "no response"}`; return; }
+  if (!r.records.length) { out.textContent = "No application in the last 30 days to attach it to."; return; }
+  out.textContent = `Which application is "${page.job.title || "this page"}" the listing of?`;
+  list.replaceChildren();
+  list.hidden = false;
+  for (const rec of r.records) {
+    const b = document.createElement("button");
+    b.className = "sec";
+    b.textContent = rec.label;
+    const gaps = [!rec.has_jd && "no job description", !rec.company_known && "no employer"].filter(Boolean);
+    const dim = document.createElement("div");
+    dim.className = "dim";
+    dim.textContent = `${new Date(rec.created_at).toLocaleDateString()}${gaps.length ? ` · ${gaps.join(", ")}` : ""}`;
+    b.appendChild(dim);
+    b.addEventListener("click", async () => {
+      list.querySelectorAll("button").forEach((x) => { x.disabled = true; });
+      const res = await chrome.runtime.sendMessage(
+        { type: "tracker-attach-listing", application_id: rec.application_id, job: page.job });
+      out.textContent = res && res.ok
+        ? `Attached to ${res.label}.${res.jd ? " Its job description is on the record now." : ""}`
+        : `Couldn't attach: ${(res && res.error) || "no response"}`;
+    });
+    const li = document.createElement("li");
+    li.appendChild(b);
+    list.appendChild(li);
+  }
+});
+
 /* "Always capture on <this site>" — an employer's own career domain, which no
  * manifest can list in advance (docs/career-sites.md phase C). Enabled, the
  * site gets the generic capture scripts on every visit: each listing

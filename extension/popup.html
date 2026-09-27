@@ -12,6 +12,11 @@
   #out{margin-top:8px;color:#5A6873;min-height:1.2em}
   #site{margin-top:10px;padding-top:10px;border-top:1px solid #CCD5DB}
   #site .note{margin-top:4px;color:#5A6873;font-size:.9em}
+  /* The records a page might be the listing of: plain choices, not errors. */
+  ul#records{list-style:none;padding:0;margin:.4em 0 0;color:inherit}
+  #records li{word-break:normal}
+  #records button{text-align:left;margin-top:4px}
+  #records .dim{color:#5A6873;font-size:.9em}
   h4{margin:.9em 0 .3em;font-size:.8em;color:#5A6873;text-transform:uppercase;letter-spacing:.06em}
   ul{margin:0;padding-left:1.1em;color:#9A4231}
   li{margin-bottom:.2em;word-break:break-all}
@@ -26,7 +31,7 @@
     body{color:#DBE3EA;background:#181E25}
     button{border-color:#7FB0FF;background:#7FB0FF;color:#0A1017}
     button.sec{background:transparent;color:#7FB0FF}
-    #out,h4,li.none,ul#sweeps,ul#prov,#site .note{color:#8695A2}
+    #out,h4,li.none,ul#sweeps,ul#prov,#site .note,#records .dim{color:#8695A2}
     #site{border-top-color:#262F39}
     ul{color:#E28D79}
     #sweeps b,#prov b{color:#DBE3EA}
@@ -35,7 +40,9 @@
 </style>
 <button id="applied">Capture this job as applied</button>
 <button id="cap" class="sec">Capture this job as interested</button>
+<button id="attach" class="sec">Attach this page to an application…</button>
 <div id="out"></div>
+<ul id="records" hidden></ul>
 <div id="site" hidden>
   <button id="site-toggle" class="sec"></button>
   <div class="note" id="site-note"></div>

@@ -473,16 +473,17 @@ chrome.permissions.onAdded.addListener((perms) => {
   })().catch(() => {});
 });
 
+// `body` undefined makes it a GET (the popup's list of recent records).
 async function api(path, body) {
   const { apiBase, token } = await settings();
   if (!token) return { ok: false, error: "no API token set in options" };
   const base = apiBase.replace(/\/$/, "");
   try {
-    const r = await fetch(`${base}${path}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-      body: JSON.stringify(body),
-    });
+    const r = await fetch(`${base}${path}`, body === undefined
+      ? { method: "GET", headers: { "Authorization": `Bearer ${token}` } }
+      : { method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+          body: JSON.stringify(body) });
     const parsed = await r.json().catch(() => ({}));
     if (!r.ok) return { ok: false, error: parsed.detail || `HTTP ${r.status}`, base };
     return { ok: true, body: parsed, base };
@@ -534,6 +535,26 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
       respond({ ok: true, apiBase: r.base, ...r.body, suggest });
     })();
     return true;                       // async respond
+  }
+
+  // The popup's "attach this page to an application" (P4): the records a
+  // listing might complete, and the attach itself (web.py capture_listing).
+  if (msg && msg.type === "tracker-recent-records") {
+    api("/captures/recent").then((r) => respond(r.ok ? { ok: true, records: r.body.records }
+                                                     : { ok: false, error: r.error }));
+    return true;
+  }
+  if (msg && msg.type === "tracker-attach-listing") {
+    const j = msg.job || {};
+    api(`/captures/${encodeURIComponent(msg.application_id)}/listing`, {
+      platform: j.platform || "other", platform_job_id: j.platform_job_id || null,
+      url: j.url || null, company: j.company || null, title: j.title || null,
+      jd_text: j.jd_text || null, location: j.location || null,
+      posted_label: j.posted_label || null, reposted: j.reposted ?? null, ats: j.ats || null,
+      salary_raw: j.salary_raw || null, work_type: j.work_type || null,
+      salary_match: j.salary_match ?? null,
+    }).then((r) => respond(r.ok ? { ok: true, ...r.body, apiBase: r.base } : { ok: false, error: r.error }));
+    return true;
   }
 
   // Same worker-lifetime rule as the job stash below: sent by the click that

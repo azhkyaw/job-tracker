@@ -219,7 +219,15 @@
     // capture completes THAT record instead of starting its own (§8).
     linksOpener: true,
     getJob() {
-      return J.read(document, location, hints());
+      const job = J.read(document, location, hints());
+      // A listing on an employer's own site that says where it hands over
+      // proposes the id its hiring system may hold, for the server to look
+      // up, never to store (P4; jobposting.js:atsCandidates).
+      if (job && !J.atsOfUrl(location.href)) {
+        const c = J.atsCandidates(job, J.atsHandoff(document));
+        if (c.length) job.ats_job_candidates = c;
+      }
+      return job;
     },
     // Identity from a URL alone — capture.js's last resort when the page read
     // comes back empty. Same id read() would have derived from the same URL.

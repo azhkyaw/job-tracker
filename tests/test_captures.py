@@ -855,6 +855,64 @@ other_t = post({"platform": "other", "platform_job_id": "career5.successfactors.
 check("…a tenant nobody named offers nothing", other_t["company_suggestion"] is None, other_t)
 check("…nor does a capture that names its employer", named_t["company_suggestion"] is None, named_t)
 
+# Litware's shape: the listing's own number IS the requisition, so its
+# capture can propose the ATS id as a candidate and join the thin record.
+SF4 = "career2.successfactors.eu/litwarebk/53001"
+thin = post({"platform": "other", "platform_job_id": SF4, "title": "Staff Data Engineer",
+             "trigger": "apply", "completed": True, "external": True, "ats": "successfactors",
+             "ats_job_id": SF4}).json()
+joined = post({"platform": "other", "platform_job_id": "jobs.litwarebank.com/53001", "company": "Litware Bank",
+               "title": "Staff Data Engineer", "jd_text": "The listing's JD.", "trigger": "apply",
+               "external": True, "ats": "successfactors", "ats_job_candidates": [SF4]}).json()
+row = app_row(thin["application_id"])
+check("a listing proposing the requisition as a candidate joins the thin record",
+      joined["application_id"] == thin["application_id"] and joined["created"] is False, joined)
+check("…names it, gives it the JD, and keeps the form's own ATS id",
+      (row["company_norm"], row["has_jd"], row["postings"], row["ats_job_id"]) == ("litware bank", True, 2, SF4), row)
+# The other site's shape: the listing's number is NOT the requisition. The
+# candidate matches nothing, and records nothing.
+miss = post({"platform": "other", "platform_job_id": "careers.contoso.com/1367863566", "company": "Contoso",
+             "title": "AVP, Software Engineer", "trigger": "apply", "external": True,
+             "ats_job_candidates": ["career10.successfactors.com/contoso/1367863566"]}).json()
+check("a candidate that matches nothing: its own record, holding no ATS id",
+      miss["created"] is True and app_row(miss["application_id"])["ats_job_id"] is None, miss)
+
+# …so a human attaches that listing to the thin record the form made.
+SF5 = "career10.successfactors.com/contoso/1234"
+thin5 = post({"platform": "other", "platform_job_id": SF5, "title": "VP, Deployed AI Engineer",
+              "trigger": "apply", "completed": True, "external": True, "ats_job_id": SF5}).json()
+LISTING = {"platform": "other", "platform_job_id": "careers.contoso.com/1366006266",
+           "url": "https://careers.contoso.com/job/Singapore-VP/1366006266/", "company": "Contoso",
+           "title": "VP, Deployed AI Engineer", "jd_text": "Deploy AI.", "location": "Singapore"}
+att = client.post(f"/captures/{thin5['application_id']}/listing", json=LISTING, headers=AUTH)
+row5 = app_row(thin5["application_id"])
+check("attach: the listing becomes a posting of the chosen record, with its JD and its employer",
+      att.status_code == 200 and att.json()["jd"] is True
+      and (row5["postings"], row5["has_jd"], row5["company_norm"]) == (2, True, "contoso"), (att.text, row5))
+again = client.post(f"/captures/{thin5['application_id']}/listing", json=LISTING, headers=AUTH)
+check("…the same page again changes nothing but gaps", again.status_code == 200
+      and app_row(thin5["application_id"])["postings"] == 2, again.text)
+taken = client.post(f"/captures/{thin5['application_id']}/listing",
+                    json={"platform": "other", "platform_job_id": "careers.fabrikam.com/9", "title": "Data Engineer"},
+                    headers=AUTH)
+check("…a page that is ANOTHER record's posting is refused: that is a merge", taken.status_code == 409, taken.text)
+check("…a page naming no job is refused",
+      client.post(f"/captures/{thin5['application_id']}/listing", json={"platform": "other"},
+                  headers=AUTH).status_code == 422)
+check("…an unknown record is a 404, and the route needs the token",
+      [client.post("/captures/00000000-0000-0000-0000-000000000000/listing", json=LISTING, headers=AUTH).status_code,
+       client.post(f"/captures/{thin5['application_id']}/listing", json=LISTING, headers={}).status_code] == [404, 401])
+
+# The popup's list: the records a listing might complete, thin ones first.
+thin6 = post({"platform": "other", "platform_job_id": "career2.successfactors.eu/litwarebk/53002",
+              "title": "ML Engineer", "trigger": "apply", "completed": True, "external": True,
+              "ats_job_id": "career2.successfactors.eu/litwarebk/53002"}).json()
+rec = client.get("/captures/recent", headers=AUTH)
+first = rec.json()["records"][0] if rec.status_code == 200 else None
+check("recent: the newest thin record leads the list",
+      first and first["application_id"] == thin6["application_id"] and first["has_jd"] is False
+      and first["company_known"] is False, rec.text[:300])
+check("recent: needs the token", client.get("/captures/recent").status_code == 401)
 
 print("manual capture -> interested")
 r4 = post({"platform": "indeed", "platform_job_id": "IN-42",
