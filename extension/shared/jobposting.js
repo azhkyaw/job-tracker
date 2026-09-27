@@ -587,6 +587,28 @@
    * sending it (adapters/generic.js). */
   const hasPosting = (doc) => jsonLdPostings(doc).length > 0 || microdataPostings(doc).length > 0;
 
+  /* A hiring system whose JOB page can send the application itself, with no
+   * form: SuccessFactors' quick apply, for a signed-in candidate with a
+   * complete profile. The job page's own "Apply" sent Relecloud's application
+   * on 25 Sep 2026, and the tab landed three seconds later on
+   * `/portalcareer?…&isRedirectToAppSent=true&…`, the confirmation email
+   * arriving the same minute (seen once). `quickApplies` says the vendor can;
+   * `quickApplySent` says an address is that landing. generic.js ties the two
+   * together with a note left by the click, so the landing alone never files
+   * anything (docs/career-sites.md §16.3 item 6). */
+  const QUICK_APPLY_SENT = { successfactors: /[?&]isRedirectToAppSent=true(?:&|$)/i };
+
+  function quickApplyRule(href) {
+    try { return QUICK_APPLY_SENT[vendorOfHost(new URL(href).hostname.toLowerCase())] || null; }
+    catch (e) { return null; }
+  }
+  const quickApplies = (href) => !!quickApplyRule(href);
+
+  function quickApplySent(href) {
+    const rx = quickApplyRule(href);
+    try { return !!rx && rx.test(new URL(href).search); } catch (e) { return false; }
+  }
+
   /* A company to SUGGEST when a capture found none — shown on the receipt for
    * the user to confirm or correct, never stored on its own say-so. Two
    * sources, in order:
@@ -752,6 +774,7 @@
   // rule exists once; `window` in a page, where the two are the same object.
   (typeof window !== "undefined" ? window : self).__trackerJobPosting =
     { read, idFrom, pageId, tenantOf, atsHandoff, hasPosting, siteOwner, pickDeparture,
-      handoffFits, atsOfUrl, vendorOf, htmlToText, sameJob, pickListed, siteOf,
+      handoffFits, quickApplies, quickApplySent, atsOfUrl, vendorOf, htmlToText, sameJob,
+      pickListed, siteOf,
       matchPatternRegex, stripRequisition, suggestCompany };
 })();

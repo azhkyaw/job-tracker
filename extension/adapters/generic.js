@@ -179,6 +179,38 @@
     return inside(el, root) ? null : "the button is outside the application form";
   }
 
+  /* QUICK APPLY (jobposting.js:quickApplies; docs/career-sites.md §16.3
+   * item 6). A SuccessFactors job page's own "Apply" can send the
+   * application with no form. Its press leaves a NOTE in the hiring system's
+   * own sessionStorage (this tab, this origin), and the page it lands on,
+   * which says the application was sent, files it: capture.js asks
+   * landedCompletion() at load. The note alone files nothing. A candidate who
+   * is not signed in gets a sign-in first, and the note waits for ten minutes.
+   * Only on a JOB page: no application form here (a form's own submit is the
+   * form hook's), no sign-in in view, and a real id for the job. */
+  const QA_KEY = "__tracker_quick_apply";
+  const QA_WINDOW_MS = 10 * 60 * 1000;
+
+  function quickApplyStart(el, doc = document, loc = location, now = Date.now()) {
+    if (!J.quickApplies(loc.href) || !submitWorded(el) || applicationRoot(doc, loc)) return null;
+    if ([...doc.querySelectorAll("input[type='password']")].some(rendered)) return null;
+    const id = J.pageId(doc, loc, hints());
+    const job = J.read(doc, loc, hints());
+    if (!job || !id || id.by === "path") return null;
+    return { at: now, atsJobId: id.platform_job_id, job: { ...job, _prov: undefined } };
+  }
+
+  function landedCompletion(now) {
+    if (!J.quickApplySent(location.href)) return null;
+    let note = null;
+    try {
+      note = JSON.parse(sessionStorage.getItem(QA_KEY) || "null");
+      sessionStorage.removeItem(QA_KEY);
+    } catch (e) { return null; }
+    if (!note || !note.job || !(now - note.at <= QA_WINDOW_MS)) return null;
+    return { job: note.job, atsJobId: note.atsJobId || null };
+  }
+
   const adapter = {
     platform: "other",
     applySelectors: [],
@@ -226,9 +258,14 @@
     nearMiss(el) {
       return whyNotSubmit(el, document, location);
     },
+    // An application a quick apply sent from the previous page, or null.
+    landedCompletion(now = Date.now()) {
+      return landedCompletion(now);
+    },
     // Pure forms of the rules, for tests/test_extension.js.
     applicationRoot,
     isSubmitControl,
+    quickApplyStart,
   };
   window.__trackerAdapter = adapter;
 
@@ -242,7 +279,14 @@
       if (Date.now() - lastMissAt < 3000) return;
       const path = ev.composedPath ? ev.composedPath() : [ev.target];
       const el = path.find((x) => x && x.tagName && submitWorded(x));
-      const reason = el && whyNotSubmit(el, document, location);
+      if (!el) return;
+      // A quick apply's press is not a miss: it leaves its note instead.
+      const note = quickApplyStart(el, document, location, Date.now());
+      if (note) {
+        try { sessionStorage.setItem(QA_KEY, JSON.stringify(note)); } catch (e) { /* storage blocked */ }
+        return;
+      }
+      const reason = whyNotSubmit(el, document, location);
       if (!reason) return;
       lastMissAt = Date.now();
       try {

@@ -1068,3 +1068,18 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
     without it on a SuccessFactors host means the visit's earlier pages
     never named it, i.e. the tab's `sessionStorage` held no
     `__tracker_ats_tenant`.
+- **SuccessFactors quick apply (0.19.0, 28 Sep 2026) rests on ONE sighting.**
+  The landing `isRedirectToAppSent=true` was seen once (Relecloud, 25 Sep:
+  job page "Apply" at 10:31:27, landing at 10:31:30, the confirmation email
+  the same minute); `jobposting.js:QUICK_APPLY_SENT` is that one address.
+  The note and the landing are tested; the click listener that writes the
+  note and `capture.js`'s landing `proceed` are not. What to read on the
+  next job-page "Apply" on SuccessFactors:
+  - no `"Apply" was not captured` line in the popup's failures any more;
+  - a record at the landing, `completed`, with no answers, the job page's
+    title without its "(N)", and `jobs.ats_job_id` = `<host>/<tenant>/<N>`;
+  - if the landing carries NO `isRedirectToAppSent=true` (another tenant,
+    another flow), nothing files and nothing says so: the note simply
+    expires after ten minutes. The confirmation email still makes the
+    record, and matches it by the requisition it prints (the email
+    lookup), so the loss would be the answers-free capture only.

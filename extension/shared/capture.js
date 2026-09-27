@@ -888,7 +888,9 @@
    * (the normal case) or from the last-resort rescue above. Split out so the
    * rescue can be awaited without the healthy path ever paying for a round
    * trip, and without duplicating the send/receipt logic to serve it. */
-  function proceed(job, trigger, external, ats, completed, explicit) {
+  // `atsJobIdGiven`: the job's hiring-system id when it was read on an
+  // EARLIER page (a quick apply's job page), since this page may not show it.
+  function proceed(job, trigger, external, ats, completed, explicit, atsJobIdGiven) {
     // Same breadcrumb for the path that never consults a stash (an immediate
     // apply), so "where did this title come from" is answerable for EVERY
     // capture rather than only deferred ones. withStashedJob emits the richer
@@ -912,8 +914,10 @@
     // The job's own id on its hiring system, read NOW for the same reason: the
     // page it is printed on is about to go, and a link to a job board's record
     // (withStashedJob) replaces the identity it would otherwise ride in.
-    let atsJobId = null;
-    try { atsJobId = adapter.atsJobId ? adapter.atsJobId() : null; } catch (e) { atsJobId = null; }
+    let atsJobId = atsJobIdGiven || null;
+    if (!atsJobId) {
+      try { atsJobId = adapter.atsJobId ? adapter.atsJobId() : null; } catch (e) { atsJobId = null; }
+    }
     // Same reason as the job snapshot above, only more so: the apply form is
     // torn out of the DOM the instant the submit lands. shared/answers.js has
     // been accumulating it step by step; take() sweeps the final step and
@@ -1130,5 +1134,19 @@
         .then((r) => { if (r && r.detail) receiptPopover(r.detail); })
         .catch(() => {});
     } catch (e) { /* worker asleep on a cold start — nothing owed, then */ }
+  });
+
+  /* An application sent by the PREVIOUS page's own "Apply", with no form:
+   * SuccessFactors' quick apply lands here saying it was sent, and the job
+   * page left a note naming the job (generic.js:landedCompletion). Filed as
+   * a completed, external apply with no answers, since there was no form, and
+   * linked like any other ATS submit (the tab's handoff). Top frame only. */
+  frameKnown.then((top) => {
+    if (!top || !adapter.landedCompletion) return;
+    let landed = null;
+    try { landed = adapter.landedCompletion(); } catch (e) { landed = null; }
+    if (landed && landed.job) {
+      proceed(landed.job, "apply", adapter.platform === "other", null, true, false, landed.atsJobId);
+    }
   });
 })();

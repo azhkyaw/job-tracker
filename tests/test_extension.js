@@ -1173,7 +1173,8 @@ const GENERIC_SRC = fs.readFileSync(path.join(ROOT, "extension/adapters/generic.
 // later page reads what an earlier one kept (the tenant hint).
 function memoryStorage() {
   const m = new Map();
-  return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)) };
+  return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)),
+           removeItem: (k) => m.delete(k) };
 }
 
 function loadGeneric(kids, href, title = "", storage = undefined) {
@@ -1339,6 +1340,68 @@ console.log("\ngeneric.js: a listing's own Apply leaves for the application (P2)
                         "https://jobs.ashbyhq.com/fabrikam/d9b9d44f-0a87-4237-b101-360052373643/application");
   check("…while a page that publishes one AND has an apply address is still the application",
         [b.answerFormRoot() === pane, b.isCompletion(submit)], [true, true]);
+}
+
+console.log("\ngeneric.js: SuccessFactors' quick apply sends from the job page (P3; seen 25 Sep 2026)");
+{
+  // Relecloud's shape, placeholder tenant: the job page at /careers with the
+  // requisition in its heading; its own "Apply" sent the application; the tab
+  // landed three seconds later on a /portalcareer address saying so.
+  const JOBPAGE = "https://career2.successfactors.eu/careers?company=SF1001&career_ns=job_listing";
+  const LANDING = "https://career2.successfactors.eu/portalcareer?_s.crb=AbC%3d&isQuickApplyPostLoginRedirect=true" +
+                  "&navBarLevel=JOB_SEARCH&isRedirectToAppSent=true&company=SF1001&career_ns=job_application";
+  const T = "Career Opportunities: Senior AI Engineer (170001)";
+  const NOW = 1_800_000_000_000;
+  const KEY = "__tracker_quick_apply";
+  check("quickApplySent: the landing address", J.quickApplySent(LANDING), true);
+  check("…not another SuccessFactors page, nor the flag on another vendor",
+        [J.quickApplySent(JOBPAGE), J.quickApplySent("https://jobs.lever.co/x/y?isRedirectToAppSent=true")],
+        [false, false]);
+  const jobPage = (visit, kids) => {
+    const apply = node("span", { role: "button" }, ["Apply"]);
+    return [loadGeneric([node("h1", {}, ["Senior AI Engineer (170001)"]), ...(kids || []), apply], JOBPAGE, T, visit), apply];
+  };
+  const visit = memoryStorage();
+  const [page, apply] = jobPage(visit);
+  const note = page.quickApplyStart(apply, undefined, undefined, NOW);
+  check("the job page's Apply leaves a note naming the job and its hiring-system id",
+        [note && note.job.title, note && note.atsJobId, note && note.at],
+        ["Senior AI Engineer", "career2.successfactors.eu/sf1001/170001", NOW]);
+  check("…and is still no application by itself", page.isCompletion(apply), false);
+  visit.setItem(KEY, JSON.stringify(note));          // what the click listener does
+  const land = loadGeneric([], LANDING, "", visit);
+  const got = land.landedCompletion(NOW + 3000);
+  check("the landing files it: the job page's job and id",
+        got && [got.job.title, got.atsJobId], ["Senior AI Engineer", "career2.successfactors.eu/sf1001/170001"]);
+  check("…once: the note is consumed", land.landedCompletion(NOW + 4000), null);
+  const stale = memoryStorage();
+  stale.setItem(KEY, JSON.stringify(note));
+  check("a note older than ten minutes files nothing",
+        loadGeneric([], LANDING, "", stale).landedCompletion(NOW + 11 * 60_000), null);
+  const waiting = memoryStorage();
+  waiting.setItem(KEY, JSON.stringify(note));
+  check("a page that is not the landing (a sign-in first) files nothing and keeps the note",
+        [loadGeneric([], "https://career2.successfactors.eu/career?company=SF1001&loginFlowRequired=true", "", waiting)
+           .landedCompletion(NOW + 5000), waiting.getItem(KEY) !== null], [null, true]);
+  // No note where the press is not a quick apply.
+  const field = (n) => { const i = node("input", { type: "text", name: n }); return i; };
+  const formApply = node("span", { role: "button" }, ["Apply"]);
+  const form = node("form", { id: "careerform" }, [field("a"), field("b"), field("c"), field("d"), field("e"), formApply]);
+  // The form page NAMES its job, so only the form rule can refuse it (a
+  // mutation run found the first version refused by the id rule instead).
+  const onForm = loadGeneric([node("h1", {}, ["Principal AI Engineer (51234)"]), form],
+                             "https://career2.successfactors.eu/portalcareer?_s.crb=x", "", memoryStorage());
+  check("the form's own Apply leaves no note (the form hook files it)",
+        onForm.quickApplyStart(formApply, undefined, undefined, NOW), null);
+  const [signIn, signInApply] = jobPage(memoryStorage(), [node("input", { type: "password", name: "pw" })]);
+  check("…nor one with a sign-in in view", signIn.quickApplyStart(signInApply, undefined, undefined, NOW), null);
+  const bare = node("span", { role: "button" }, ["Apply"]);
+  const noId = loadGeneric([node("h1", {}, ["Search Jobs"]), bare], JOBPAGE, "Career Opportunities", memoryStorage());
+  check("…nor a page that names no job", noId.quickApplyStart(bare, undefined, undefined, NOW), null);
+  const gh = node("button", {}, ["Apply"]);
+  const other = loadGeneric([node("h1", {}, ["Engineer (4377)"]), gh],
+                            "https://job-boards.greenhouse.io/northwind/jobs/4377390009", "", memoryStorage());
+  check("…nor another vendor's job page", other.quickApplyStart(gh, undefined, undefined, NOW), null);
 }
 
 console.log("\ngeneric.js: what must NOT be an application");
