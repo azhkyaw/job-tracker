@@ -52,6 +52,21 @@
     /career_ns=job_application/i.test(loc.search || "");
   const rendered = (el) => !el.getClientRects || el.getClientRects().length > 0;
 
+  // The employer an earlier page of this visit named in its address
+  // (SuccessFactors' `?company=`), kept in the hiring system's OWN
+  // sessionStorage for the pages whose address has lost it: the form after a
+  // postback. Same tab and same origin, so it outlives the postback and a
+  // sign-in (docs/career-sites.md §16). Read wherever the page's id is.
+  const TENANT_KEY = "__tracker_ats_tenant";
+  function tenantHint() {
+    try {
+      const t = J.tenantOf(location.href);
+      if (t) { sessionStorage.setItem(TENANT_KEY, t); return t; }
+      return sessionStorage.getItem(TENANT_KEY);
+    } catch (e) { return null; }       // no storage: a test, or storage blocked
+  }
+  const hints = () => ({ tenant: tenantHint() });
+
   /* The element holding the application's answerable controls, or null when
    * this page has none. Never a container that also holds a password field:
    * that is a candidate sign-in, and its username is not an answer. In order:
@@ -166,7 +181,7 @@
     // capture completes THAT record instead of starting its own (§8).
     linksOpener: true,
     getJob() {
-      return J.read(document, location);
+      return J.read(document, location, hints());
     },
     // Identity from a URL alone — capture.js's last resort when the page read
     // comes back empty. Same id read() would have derived from the same URL.
@@ -184,7 +199,7 @@
     // crumb after any postback, and a sign-in mid-form (28 Sep 2026) would
     // otherwise start both over (jobposting.js:pageId).
     answerFormKey() {
-      const id = J.pageId(document, location);
+      const id = J.pageId(document, location, hints());
       return id ? id.platform_job_id : location.href;
     },
     // The job's own id on its hiring system, which the server keeps on the
@@ -194,7 +209,7 @@
     // replaces the page's.
     atsJobId() {
       if (!J.atsOfUrl(location.href)) return null;
-      const id = J.pageId(document, location);
+      const id = J.pageId(document, location, hints());
       return id && id.by !== "path" ? id.platform_job_id : null;
     },
     isCompletion(el) {

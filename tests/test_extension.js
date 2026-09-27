@@ -963,9 +963,16 @@ console.log("\njobposting.js pageId: the job's id when the address has lost it (
           url: "https://career2.successfactors.eu/portalcareer", by: "page" });
   check("…the same id after a sign-in hands out a new crumb",
         J.pageId(...form("XyZ%2f")).platform_job_id, J.pageId(...form("AbC%3d")).platform_job_id);
-  check("…and the same id the form's first address gives",
-        J.idFrom("https://career2.successfactors.eu/career?company=litwarebk&career_ns=job_application&career_job_req_id=51234")
-          .platform_job_id, "career2.successfactors.eu/51234");
+  // The first address names the tenant (P2: SuccessFactors ids carry it, one
+  // host serving many employers); the postback page gets it as a hint from
+  // the visit's earlier page (generic.js keeps it in sessionStorage).
+  check("…and, with the tenant an earlier page named, the same id the form's first address gives",
+        [J.pageId(...form("AbC%3d"), { tenant: "LitwareBK" }).platform_job_id,
+         J.idFrom("https://career2.successfactors.eu/career?company=litwarebk&career_ns=job_application&career_job_req_id=51234")
+           .platform_job_id],
+        ["career2.successfactors.eu/litwarebk/51234", "career2.successfactors.eu/litwarebk/51234"]);
+  check("…a hint that is not tenant-shaped is ignored",
+        J.pageId(...form("AbC%3d"), { tenant: "a b/c" }).platform_job_id, "career2.successfactors.eu/51234");
   const titleOnly = J.pageId(pageDoc([], "Career Opportunities: Apply for Principal AI Engineer (51234)"),
                              makeLoc("https://career2.successfactors.eu/portalcareer?_s.crb=AbC%3d"));
   check("…from the tab title alone when there is no <h1>", titleOnly.platform_job_id,
@@ -987,7 +994,16 @@ console.log("\njobposting.js pageId: the job's id when the address has lost it (
                           makeLoc("https://career2.successfactors.eu/careers?company=litwarebk"));
   check("an ATS page that prints no number keeps the URL's id",
         [signIn.platform_job_id, signIn.by], ["career2.successfactors.eu/careers?company=litwarebk", "path"]);
+  check("tenantOf: SuccessFactors' company= parameter, lower-cased",
+        J.tenantOf("https://career2.successfactors.eu/careers?company=LitwareBK"), "litwarebk");
+  check("tenantOf: a company= parameter on any other host is not a tenant",
+        J.tenantOf("https://careers.contoso.com/jobs?company=northwind"), null);
+  check("stripRequisition reads a tenant-carrying id's LAST segment",
+        J.stripRequisition("Principal AI Engineer (51234)",
+          J.idFrom("https://career2.successfactors.eu/career?company=litwarebk&career_job_req_id=51234")),
+        "Principal AI Engineer");
 }
+
 {
   const at = (href) => makeLoc(href);
   const s = (href, ref) => { const r = J.suggestCompany(at(href), ref); return [r.name, r.site]; };
@@ -1047,10 +1063,18 @@ console.log("\njobposting.js matchPatternRegex: which pages the icon (and the po
 
 const GENERIC_SRC = fs.readFileSync(path.join(ROOT, "extension/adapters/generic.js"), "utf8");
 
-function loadGeneric(kids, href, title = "") {
+// `storage`: a sessionStorage stand-in shared across loads, for a visit whose
+// later page reads what an earlier one kept (the tenant hint).
+function memoryStorage() {
+  const m = new Map();
+  return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)) };
+}
+
+function loadGeneric(kids, href, title = "", storage = undefined) {
   const doc = pageDoc(kids, title);
   const loc = makeLoc(href);
   const sandbox = { URL, URLSearchParams, console, setTimeout: () => 0 };
+  if (storage) sandbox.sessionStorage = storage;
   sandbox.window = { document: doc, location: loc };
   sandbox.document = doc;
   sandbox.location = loc;
@@ -1171,6 +1195,17 @@ console.log("\ngeneric.js: SuccessFactors' signed-in form (read live 24 Sep 2026
         loadGeneric([], "https://jobs.litwarebank.com/job/Principal-AI-Engineer/51234-en_GB").atsJobId(), null);
   check("SuccessFactors: the answers' key is the requisition, through a new crumb",
         [key("AbC%3d"), key("XyZ%2f")], ["career2.successfactors.eu/51234", "career2.successfactors.eu/51234"]);
+  // One visit, one tab: the create-account page's address names the tenant,
+  // the form after a postback does not, and the tab's own storage carries it.
+  const visit = memoryStorage();
+  const first = loadGeneric([node("h1", {}, ["Create an Account"])],
+    "https://career2.successfactors.eu/career?company=LitwareBK&career_ns=job_application&career_job_req_id=51234",
+    "Career Opportunities: Create an Account", visit);
+  const later = loadGeneric([node("h1", {}, ["Principal AI Engineer (51234)"])],
+    "https://career2.successfactors.eu/portalcareer?_s.crb=AbC%3d", t, visit);
+  check("the tenant an earlier page named reaches the postback form's id, key and ATS id",
+        [first.atsJobId(), later.answerFormKey(), later.atsJobId(), later.getJob().platform_job_id],
+        Array(4).fill("career2.successfactors.eu/litwarebk/51234"));
 }
 
 console.log("\ngeneric.js: what must NOT be an application");

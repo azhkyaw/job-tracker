@@ -7,7 +7,7 @@
  *
  *   read(doc, loc)   the getJob() shape, or null when the page names no job
  *   idFrom(href)     {platform_job_id, url, by} | null — the posting's identity
- *   pageId(doc, loc) the same, from the page when its address lost the id
+ *   pageId(doc, loc, hints)  the same, from the page when its address lost the id
  *   atsOfUrl(href)   ATS vendor of a URL's host, or null
  *   vendorOf(doc, loc)  the same, falling back to the hosts the page loads
  *
@@ -121,6 +121,25 @@
     try { return decodeURIComponent(s); } catch (e) { return s; }
   }
 
+  // A hiring system that serves many employers from ONE host names the
+  // employer in a parameter, and each employer numbers its requisitions on
+  // its own: career2.successfactors.eu serves both Litware Bank and Relecloud,
+  // whose "51234"s are different jobs. So the tenant goes into the token,
+  // `<host>/<tenant>/<id>` (docs/career-sites.md §16.5, P2). Vendors whose
+  // tenant is in the host (Workday's contoso.wd3…) need nothing.
+  const TENANT_PARAM = { successfactors: "company" };
+  const TENANT_SHAPE = /^[a-z0-9_-]{1,40}$/i;
+
+  // The tenant an address names, for a vendor that names it in a parameter.
+  function tenantOf(href) {
+    let u;
+    try { u = new URL(href); } catch (e) { return null; }
+    const name = TENANT_PARAM[vendorOfHost(u.hostname.toLowerCase().replace(/^www\./, ""))];
+    if (!name) return null;
+    const hit = [...u.searchParams].find(([k, v]) => k.toLowerCase() === name && TENANT_SHAPE.test(v));
+    return hit ? hit[1].toLowerCase() : null;
+  }
+
   function idFrom(href) {
     let u;
     try { u = new URL(href); } catch (e) { return null; }
@@ -151,6 +170,8 @@
       token = segs.join("/") + (query ? `?${query}` : "");
       by = "path";
     }
+    const tenant = by !== "path" ? tenantOf(href) : null;
+    if (tenant) token = `${tenant}/${token}`;
     return {
       platform_job_id: `${host}/${token}`.slice(0, 300),
       url: u.origin + u.pathname + u.search,
@@ -170,10 +191,15 @@
    * Only on an ATS's own host and only when the address gave no id, so a
    * title's "(2027)" anywhere else is left alone. The stored address drops
    * the query: a crumb is session state, not where the job is.
-   * The page rule has no Python mirror — manual entry has only a URL. */
+   * The page rule has no Python mirror — manual entry has only a URL.
+   * `hints.tenant`: the employer an EARLIER page of this tab's visit named
+   * (generic.js keeps it in the hiring system's own sessionStorage), since
+   * the postback address has lost the tenant too. Without it the id is
+   * `<host>/<id>`, which still keys the form but cannot tell two employers
+   * on one host apart. */
   const PRINTED_REQ = /\((\d{3,9})\)\s*$/;
 
-  function pageId(doc, loc) {
+  function pageId(doc, loc, hints) {
     const id = idFrom(loc.href);
     if (!id || id.by !== "path" || !atsOfUrl(loc.href)) return id;
     const h1 = doc.querySelector("h1");
@@ -181,8 +207,11 @@
       .map((t) => PRINTED_REQ.exec(str(t) || "")).find(Boolean);
     if (!printed) return id;
     const u = new URL(loc.href);
+    const hinted = hints && hints.tenant && TENANT_SHAPE.test(hints.tenant) ? hints.tenant.toLowerCase() : null;
+    const tenant = tenantOf(loc.href) || hinted;
     return {
-      platform_job_id: `${u.hostname.toLowerCase().replace(/^www\./, "")}/${printed[1]}`,
+      platform_job_id: `${u.hostname.toLowerCase().replace(/^www\./, "")}/` +
+                       (tenant ? `${tenant}/` : "") + printed[1],
       url: u.origin + u.pathname,
       by: "page",
     };
@@ -425,11 +454,11 @@
     } catch (e) { return null; }
   }
 
-  function read(doc, loc) {
+  function read(doc, loc, hints) {
     const ld = jsonLdPostings(doc);
     const md = ld.length ? [] : microdataPostings(doc);
     const p = pick(ld.length ? ld : md, loc);
-    const id = pageId(doc, loc);
+    const id = pageId(doc, loc, hints);
     const job = {
       platform_job_id: id ? id.platform_job_id : null,
       url: canonicalUrl(doc, loc) || (id ? id.url : loc.href),
@@ -487,13 +516,16 @@
    * the job's name. The suffix also defeats exact-title email matching
    * (.claude/rules/matching.md). */
   function stripRequisition(title, id) {
-    if (!title || !id) return title;
-    const token = id.platform_job_id.slice(id.platform_job_id.indexOf("/") + 1);
-    if (!token || token.includes("/")) return title;
+    if (!title || !id || id.by === "path") return title;
+    // The id's LAST segment: a SuccessFactors id carries its tenant before it
+    // (`<host>/<tenant>/<id>`).
+    const token = id.platform_job_id.slice(id.platform_job_id.lastIndexOf("/") + 1);
+    if (!token) return title;
     const esc = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const m = new RegExp(`^(.*?)\\s*[([]\\s*(?:req\\w*\\s*)?#?\\s*${esc}\\s*[)\\]]\\s*$`, "i").exec(title);
     return m && m[1].trim() ? m[1].trim() : title;
   }
+
 
   /* A company to SUGGEST when a capture found none — shown on the receipt for
    * the user to confirm or correct, never stored on its own say-so. Two
@@ -577,6 +609,7 @@
     return entries.length === 1 ? { entry: entries[0], byTitle: false } : null;
   }
 
+
   /* The site an "Always capture on this site" click enables: one host, both
    * schemes — `*://careers.contoso.com/*` — and nothing wider. Only web pages
    * qualify; chrome:// and file:// cannot be granted. */
@@ -614,6 +647,6 @@
   // `self` in the service worker, which imports this file for sameJob so the
   // rule exists once; `window` in a page, where the two are the same object.
   (typeof window !== "undefined" ? window : self).__trackerJobPosting =
-    { read, idFrom, pageId, atsOfUrl, vendorOf, htmlToText, sameJob, pickListed, siteOf,
+    { read, idFrom, pageId, tenantOf, atsOfUrl, vendorOf, htmlToText, sameJob, pickListed, siteOf,
       matchPatternRegex, stripRequisition, suggestCompany };
 })();

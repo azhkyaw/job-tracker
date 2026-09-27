@@ -40,6 +40,21 @@ _SEGMENT_IDS = (
 )
 
 
+# jobposting.js:TENANT_PARAM: a hiring system serving many employers from one
+# host names the employer in a parameter, and each numbers its requisitions on
+# its own, so the tenant goes into the token (`<host>/<tenant>/<id>`).
+_TENANT_PARAM = (("successfactors.com", "company"), ("successfactors.eu", "company"))
+_TENANT_SHAPE = re.compile(r"^[a-z0-9_-]{1,40}$", re.IGNORECASE)
+
+
+def _tenant(host: str, params: list[tuple[str, str]]) -> str | None:
+    for suffix, name in _TENANT_PARAM:
+        if host == suffix or host.endswith("." + suffix):
+            hit = next((v for k, v in params if k == name and _TENANT_SHAPE.match(v)), None)
+            return hit.lower() if hit else None
+    return None
+
+
 def generic_id(url: str | None) -> str | None:
     """A posting's id on any site that is not one of the three platforms:
     `<host>/<token>`, or None for a URL that names no page (a bare site, a
@@ -75,6 +90,10 @@ def generic_id(url: str | None) -> str | None:
         query = "&".join(f"{k}={v}" for k, v in
                          sorted((k, v.lower()) for k, v in params if not k.startswith("utm_")))
         token = "/".join(segs) + (f"?{query}" if query else "")
+    else:
+        tenant = _tenant(host, params)
+        if tenant:
+            token = f"{tenant}/{token}"
     return f"{host}/{token}"[:300]
 
 

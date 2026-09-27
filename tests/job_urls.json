@@ -1,5 +1,5 @@
 {
-  "about": "One list, two implementations: extension/shared/jobposting.js:idFrom (tests/test_extension.js) and pipeline/joburl.py:generic_id (tests/test_captures.py) must derive the same posting id from each URL, or a manual entry pasted from a page never converges with a capture of it. Shapes are the ones the 24 Sep 2026 survey of 18 ATS vendors measured (docs/career-sites.md 4.2); every tenant is a placeholder. The last cases pin the fallback: with no id-shaped part, the whole path PLUS the non-tracking query, so two jobs on one generic page cannot share an id.",
+  "about": "One list, two implementations: extension/shared/jobposting.js:idFrom (tests/test_extension.js) and pipeline/joburl.py:generic_id (tests/test_captures.py) must derive the same posting id from each URL, or a manual entry pasted from a page never converges with a capture of it. Shapes are the ones the 24 Sep 2026 survey of 18 ATS vendors measured (docs/career-sites.md 4.2); every tenant is a placeholder. A SuccessFactors id carries its tenant (`company=`) before the requisition, since one host serves many employers; a sign-in page with no requisition keeps the fallback, and a `company` parameter on any other host is not a tenant. The last cases pin the fallback: with no id-shaped part, the whole path PLUS the non-tracking query, so two jobs on one generic page cannot share an id.",
   "cases": [
     ["https://careers.contoso.com/job/Singapore-AVP%2C-Software-Engineer/1234567890/", "careers.contoso.com/1234567890"],
     ["https://careers.contoso.com/job/Singapore-AVP%2C-Software-Engineer/1234567890/?locale=en_GB", "careers.contoso.com/1234567890"],
@@ -28,7 +28,10 @@
     ["https://contoso.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/210754291", "contoso.fa.oraclecloud.com/210754291"],
     ["https://contoso.avature.net/careers/JobDetail/Account-Manager-Singapore/22298", "contoso.avature.net/22298"],
     ["https://careers.contoso.com/careers?pid=25410774&domain=contoso.com", "careers.contoso.com/25410774"],
-    ["https://career10.successfactors.com/careers?company=contoso&career_job_req_id=12345", "career10.successfactors.com/12345"],
+    ["https://career10.successfactors.com/careers?company=contoso&career_job_req_id=12345", "career10.successfactors.com/contoso/12345"],
+    ["https://career2.successfactors.eu/career?company=LitwareBK&career_ns=job_application&career_job_req_id=51234", "career2.successfactors.eu/litwarebk/51234"],
+    ["https://career2.successfactors.eu/careers?company=litwarebk", "career2.successfactors.eu/careers?company=litwarebk"],
+    ["https://careers.contoso.com/jobs?company=northwind&job=77", "careers.contoso.com/77"],
     ["https://careers.contoso.com/jobs/senior-engineer?utm_source=linkedin&ref=abc", "careers.contoso.com/jobs/senior-engineer?ref=abc"],
     ["https://careers.contoso.com/jobs/senior-engineer", "careers.contoso.com/jobs/senior-engineer"],
     ["https://careers.contoso.com/", null],
