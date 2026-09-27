@@ -943,6 +943,51 @@ console.log("\njobposting.js: an employer the capture could not name");
   check("read(): the form's title comes out bare, and says what it was",
         [j.title, j._prov.title_stripped], ["AVP, Software Engineer", "AVP, Software Engineer (1234)"]);
 }
+
+console.log("\njobposting.js pageId: the job's id when the address has lost it (28 Sep 2026)");
+{
+  // After any postback SuccessFactors' form sits at /portalcareer?_s.crb=<a
+  // session crumb>: the URL rule falls back to path plus query, an id that
+  // changes at every sign-in, and 28 Sep's session timed out mid-form. The
+  // page still prints the requisition in its <h1> and tab title
+  // (docs/career-sites.md §16).
+  const form = (crumb) => [
+    pageDoc([node("h1", {}, ["Principal AI Engineer (51234)"])],
+            "Career Opportunities: Apply for Principal AI Engineer (51234)"),
+    makeLoc(`https://career2.successfactors.eu/portalcareer?_s.crb=${crumb}`)];
+  check("idFrom says when it fell back",
+        J.idFrom("https://career2.successfactors.eu/portalcareer?_s.crb=AbC%3d").by, "path");
+  check("pageId: the printed requisition, on the ATS's host, with no query kept",
+        J.pageId(...form("AbC%3d")),
+        { platform_job_id: "career2.successfactors.eu/51234",
+          url: "https://career2.successfactors.eu/portalcareer", by: "page" });
+  check("…the same id after a sign-in hands out a new crumb",
+        J.pageId(...form("XyZ%2f")).platform_job_id, J.pageId(...form("AbC%3d")).platform_job_id);
+  check("…and the same id the form's first address gives",
+        J.idFrom("https://career2.successfactors.eu/career?company=litwarebk&career_ns=job_application&career_job_req_id=51234")
+          .platform_job_id, "career2.successfactors.eu/51234");
+  const titleOnly = J.pageId(pageDoc([], "Career Opportunities: Apply for Principal AI Engineer (51234)"),
+                             makeLoc("https://career2.successfactors.eu/portalcareer?_s.crb=AbC%3d"));
+  check("…from the tab title alone when there is no <h1>", titleOnly.platform_job_id,
+        "career2.successfactors.eu/51234");
+  const j = J.read(...form("AbC%3d"));
+  check("read(): the requisition leaves the title, the crumb leaves the address",
+        [j.platform_job_id, j.url, j.title, j.ats],
+        ["career2.successfactors.eu/51234", "https://career2.successfactors.eu/portalcareer",
+         "Principal AI Engineer", "successfactors"]);
+  // Where it must NOT act.
+  const grad = J.pageId(pageDoc([node("h1", {}, ["Graduate Programme (2027)"])]),
+                        makeLoc("https://careers.contoso.com/jobs/graduate-programme"));
+  check("not on an ATS's host: a title's '(2027)' is not an id",
+        grad.platform_job_id, "careers.contoso.com/jobs/graduate-programme");
+  const wd = J.pageId(pageDoc([node("h1", {}, ["Senior Engineer (12345)"])]),
+                      makeLoc("https://contoso.wd3.myworkdayjobs.com/Contoso/job/Engineer_R120291/apply"));
+  check("an address that carries its id keeps it", wd.platform_job_id, "contoso.wd3.myworkdayjobs.com/r120291");
+  const signIn = J.pageId(pageDoc([node("h1", {}, ["Sign In"])], "Career Opportunities: Sign In"),
+                          makeLoc("https://career2.successfactors.eu/careers?company=litwarebk"));
+  check("an ATS page that prints no number keeps the URL's id",
+        [signIn.platform_job_id, signIn.by], ["career2.successfactors.eu/careers?company=litwarebk", "path"]);
+}
 {
   const at = (href) => makeLoc(href);
   const s = (href, ref) => { const r = J.suggestCompany(at(href), ref); return [r.name, r.site]; };
@@ -1102,6 +1147,16 @@ console.log("\ngeneric.js: SuccessFactors' signed-in form (read live 24 Sep 2026
   check("SuccessFactors: no near miss on the real submit", a.nearMiss(apply), null);
   const b = loadGeneric([form], "https://career10.successfactors.com/portalcareer?career_ns=job_application");
   check("SuccessFactors as first loaded (career_ns): root is still the form", b.answerFormRoot() === form, true);
+}
+{
+  // The answer store and the listing stash are both keyed by answerFormKey().
+  // Keyed by the crumb, a sign-in in the middle of the form (28 Sep 2026: a
+  // session timeout) started both over. The requisition does not change.
+  const t = "Career Opportunities: Apply for Principal AI Engineer (51234)";
+  const key = (crumb) => loadGeneric([node("h1", {}, ["Principal AI Engineer (51234)"])],
+    `https://career2.successfactors.eu/portalcareer?_s.crb=${crumb}`, t).answerFormKey();
+  check("SuccessFactors: the answers' key is the requisition, through a new crumb",
+        [key("AbC%3d"), key("XyZ%2f")], ["career2.successfactors.eu/51234", "career2.successfactors.eu/51234"]);
 }
 
 console.log("\ngeneric.js: what must NOT be an application");

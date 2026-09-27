@@ -1007,3 +1007,12 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
     review page held two or more VISIBLE controls (a consent checkbox), the
     root rule found them, and the footer's Submit sits outside it. That shape
     was not built for, on purpose: nothing has shown it yet.
+- **An ATS page's id read off the page (0.16.0, 28 Sep 2026,
+  `jobposting.js:pageId`) has run only against the tests' fake pages.** On a
+  real SuccessFactors form it was measured by eye, not run: the `<h1>` and
+  tab title end "(51234)" on three tenants. What to read on the next
+  SuccessFactors apply: the posting id is `career{N}.successfactors.{com,eu}/<requisition>`,
+  the title carries no "(N)", the stored url has no `_s.crb`, and after a
+  sign-in mid-form the answers typed before it are still in the record.
+  Manual entry has no page, so a pasted `_s.crb` address still gives the
+  crumb id: paste the listing's address instead.

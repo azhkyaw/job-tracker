@@ -179,9 +179,12 @@
     },
     // The listing and its apply page share an id on every vendor measured
     // (/apply, /application and Workday's /apply/… suffixes are not ids), so
-    // the answers store and the listing's stash both survive the move.
+    // the answers store and the listing's stash both survive the move. The
+    // PAGE's id, not the address's: SuccessFactors' form address is a session
+    // crumb after any postback, and a sign-in mid-form (28 Sep 2026) would
+    // otherwise start both over (jobposting.js:pageId).
     answerFormKey() {
-      const id = J.idFrom(location.href);
+      const id = J.pageId(document, location);
       return id ? id.platform_job_id : location.href;
     },
     isCompletion(el) {

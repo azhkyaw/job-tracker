@@ -6,7 +6,8 @@
  * tests/test_extension.js can run it against a fake document:
  *
  *   read(doc, loc)   the getJob() shape, or null when the page names no job
- *   idFrom(href)     {platform_job_id, url} | null — the posting's identity
+ *   idFrom(href)     {platform_job_id, url, by} | null — the posting's identity
+ *   pageId(doc, loc) the same, from the page when its address lost the id
  *   atsOfUrl(href)   ATS vendor of a URL's host, or null
  *   vendorOf(doc, loc)  the same, falling back to the hosts the page loads
  *
@@ -126,17 +127,19 @@
     if (u.protocol !== "http:" && u.protocol !== "https:") return null;
     const host = u.hostname.toLowerCase().replace(/^www\./, "");
     const params = [...u.searchParams].map(([k, v]) => [k.toLowerCase(), v]);
-    let token = null;
+    // `by` says which rule gave the token — "param", "segment", or "path"
+    // for the fallback, which pageId() reads as "this address has no id".
+    let token = null, by = null;
     for (const name of ID_PARAMS) {
       const hit = params.find(([k, v]) => k === name && v && v.length <= 64);
-      if (hit) { token = hit[1].toLowerCase(); break; }
+      if (hit) { token = hit[1].toLowerCase(); by = "param"; break; }
     }
     const segs = u.pathname.split("/").map(decodeSegment)
       .map((s) => s.toLowerCase()).filter(Boolean);
     for (let i = segs.length - 1; i >= 0 && !token; i--) {
       for (const rx of SEGMENT_IDS) {
         const m = rx.exec(segs[i]);
-        if (m) { token = m[1]; break; }
+        if (m) { token = m[1]; by = "segment"; break; }
       }
     }
     if (!token) {
@@ -146,10 +149,42 @@
         .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0))
         .map(([k, v]) => `${k}=${v}`).join("&");
       token = segs.join("/") + (query ? `?${query}` : "");
+      by = "path";
     }
     return {
       platform_job_id: `${host}/${token}`.slice(0, 300),
       url: u.origin + u.pathname + u.search,
+      by,
+    };
+  }
+
+  /* The posting's identity on the page in front of the user: idFrom() of its
+   * address, unless that address has lost the job's id and the page prints
+   * it. SuccessFactors' form, after any postback, sits at
+   * /portalcareer?_s.crb=<a session crumb>: idFrom falls back to path plus
+   * query, an id that changes at every sign-in (28 Sep 2026: the session
+   * timed out mid-form), while the page's <h1> and tab title end in the
+   * requisition, "(51234)" — on three tenants of three
+   * (docs/career-sites.md §16). The same number is what the form's first
+   * address carries (career_job_req_id), so the two ids agree.
+   * Only on an ATS's own host and only when the address gave no id, so a
+   * title's "(2027)" anywhere else is left alone. The stored address drops
+   * the query: a crumb is session state, not where the job is.
+   * The page rule has no Python mirror — manual entry has only a URL. */
+  const PRINTED_REQ = /\((\d{3,9})\)\s*$/;
+
+  function pageId(doc, loc) {
+    const id = idFrom(loc.href);
+    if (!id || id.by !== "path" || !atsOfUrl(loc.href)) return id;
+    const h1 = doc.querySelector("h1");
+    const printed = [h1 && h1.textContent, doc.title]
+      .map((t) => PRINTED_REQ.exec(str(t) || "")).find(Boolean);
+    if (!printed) return id;
+    const u = new URL(loc.href);
+    return {
+      platform_job_id: `${u.hostname.toLowerCase().replace(/^www\./, "")}/${printed[1]}`,
+      url: u.origin + u.pathname,
+      by: "page",
     };
   }
 
@@ -394,7 +429,7 @@
     const ld = jsonLdPostings(doc);
     const md = ld.length ? [] : microdataPostings(doc);
     const p = pick(ld.length ? ld : md, loc);
-    const id = idFrom(loc.href);
+    const id = pageId(doc, loc);
     const job = {
       platform_job_id: id ? id.platform_job_id : null,
       url: canonicalUrl(doc, loc) || (id ? id.url : loc.href),
@@ -444,8 +479,9 @@
 
   /* An ATS form's title with its own requisition number appended —
    * SuccessFactors' <h1> reads "AVP, Software Engineer (1234)" (measured live
-   * 24 Sep 2026) — loses the suffix, but ONLY when that number is the one in
-   * the page's own address (`career_job_req_id=1234`, i.e. idFrom's token).
+   * 24 Sep 2026) — loses the suffix, but ONLY when that number is the page's
+   * own id: in its address (`career_job_req_id=1234`, i.e. idFrom's token),
+   * or, where the address lost it, the one pageId() took from the page.
    * Stripping every trailing parenthesis would merge "Engineer (Backend)" with
    * "Engineer (Web)"; a number the page itself proves is its id is no part of
    * the job's name. The suffix also defeats exact-title email matching
@@ -578,6 +614,6 @@
   // `self` in the service worker, which imports this file for sameJob so the
   // rule exists once; `window` in a page, where the two are the same object.
   (typeof window !== "undefined" ? window : self).__trackerJobPosting =
-    { read, idFrom, atsOfUrl, vendorOf, htmlToText, sameJob, pickListed, siteOf,
+    { read, idFrom, pageId, atsOfUrl, vendorOf, htmlToText, sameJob, pickListed, siteOf,
       matchPatternRegex, stripRequisition, suggestCompany };
 })();
