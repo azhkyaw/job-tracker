@@ -115,7 +115,14 @@ def merge_jobs(conn, user_id, keep_job, drop_job) -> None:
                      (keep_job, la["id"]))
     conn.execute("UPDATE postings SET job_id = %s WHERE job_id = %s", (keep_job, drop_job))
     conn.execute("UPDATE contacts SET job_id = %s WHERE job_id = %s", (keep_job, drop_job))
+    # The job's ATS id (migration 018) is the job's, so it moves too: to a
+    # winner without one. A winner's own stays. Read before the delete, set
+    # after it, since the unique index would refuse two jobs holding one id.
+    carried = conn.execute("SELECT ats_job_id FROM jobs WHERE id = %s", (drop_job,)).fetchone()
     conn.execute("DELETE FROM jobs WHERE id = %s", (drop_job,))
+    if carried and carried["ats_job_id"]:
+        conn.execute("UPDATE jobs SET ats_job_id = %s WHERE id = %s AND ats_job_id IS NULL",
+                     (carried["ats_job_id"], keep_job))
     _sweep_moot_pendings(conn, user_id)
 
 

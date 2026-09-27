@@ -727,6 +727,98 @@ check("a note alone still works, and says no company was set",
                   headers=AUTH).json() == {"ok": True, "note": True, "company": False,
                                            "label": "unknown company · Data Engineer"})
 
+print("the job's own id on its hiring system (migration 018; docs/career-sites.md §16)")
+from pipeline import dedup
+
+
+def job_of(app_id):
+    with db.connect() as conn:
+        return conn.execute(
+            "SELECT j.id, j.ats_job_id FROM applications a JOIN jobs j ON j.id = a.job_id "
+            "WHERE a.id = %s::uuid", (app_id,)).fetchone()
+
+
+# Ids of this suite's own: the suites share one database, and
+# test_integration's path 3k already holds ".../51234" on a job, which a
+# capture naming it would (correctly) join.
+SF_ID = "career2.successfactors.eu/52234"
+# An ATS submit that linked to nothing (28 Sep 2026's shape): its own id is
+# the ATS id.
+r_sf = post({"platform": "other", "platform_job_id": SF_ID, "company": "Litware Bank",
+             "title": "Principal AI Engineer", "trigger": "apply", "completed": True,
+             "external": True, "ats": "successfactors", "ats_job_id": SF_ID})
+sf_app = r_sf.json()["application_id"]
+check("an ATS submit keeps the job's ATS id, on its JOB",
+      r_sf.json()["created"] is True and job_of(sf_app)["ats_job_id"] == SF_ID, r_sf.text)
+# The listing, captured AFTER the submit from the employer's own site, naming
+# the same requisition: order does not matter.
+r_list = post({"platform": "other", "platform_job_id": "jobs.litwarebank.com/52234",
+               "company": "Litware Bank", "title": "Principal AI Engineer",
+               "jd_text": "The listing's own JD.", "trigger": "apply", "external": True,
+               "ats": "successfactors", "ats_job_id": SF_ID})
+check("a later capture naming the same ATS id joins that application, not a new one",
+      r_list.json()["application_id"] == sf_app and r_list.json()["created"] is False, r_list.text)
+with db.connect() as conn:
+    n_post = conn.execute("SELECT count(*) AS n FROM postings WHERE job_id = %s",
+                          (job_of(sf_app)["id"],)).fetchone()["n"]
+    n_applied = conn.execute("SELECT count(*) AS n FROM events WHERE application_id = %s::uuid "
+                             "AND type = 'applied'", (sf_app,)).fetchone()["n"]
+check("...as a second posting of the same job (postings != jobs)", n_post == 2, n_post)
+check("...with still one applied event", n_applied == 1, n_applied)
+# The form named no employer; the listing that joins it does, and replaces
+# only the placeholder.
+NL_ID = "career2.successfactors.eu/52300"
+r_nl = post({"platform": "other", "platform_job_id": NL_ID, "title": "Data Scientist",
+             "trigger": "apply", "completed": True, "external": True, "ats_job_id": NL_ID})
+post({"platform": "other", "platform_job_id": "jobs.litwarebank.com/52300", "company": "Litware Bank",
+      "title": "Data Scientist", "trigger": "apply", "external": True, "ats_job_id": NL_ID})
+with db.connect() as conn:
+    nl = conn.execute("SELECT j.company_norm FROM applications a JOIN jobs j ON j.id = a.job_id "
+                      "WHERE a.id = %s::uuid", (r_nl.json()["application_id"],)).fetchone()
+check("a listing joining a nameless ATS record names it", nl["company_norm"] == "litware bank", nl)
+
+# A job board's record, then the ATS submit that completed it (phase B's link):
+# the payload carries the BOARD's identity, and the form's ATS id beside it.
+WD_ID = "contoso.wd3.myworkdayjobs.com/r200001"
+r_board = post({"platform": "linkedin", "platform_job_id": "LI-ats-1", "company": "Contoso Markets",
+                "title": "Backend Engineer", "trigger": "apply", "external": True})
+post({"platform": "linkedin", "platform_job_id": "LI-ats-1", "company": "Contoso Markets",
+      "title": "Backend Engineer", "trigger": "apply", "external": True, "completed": True,
+      "ats": "workday", "ats_job_id": WD_ID})
+check("a submit that completed a job board's record puts the ATS id on that record's job",
+      job_of(r_board.json()["application_id"])["ats_job_id"] == WD_ID)
+
+# An id another job already holds is not copied: two jobs cannot share one
+# requisition, and nothing is merged behind anyone's back (invariant #3).
+r_fab = post({"platform": "other", "platform_job_id": "careers.fabrikam.com/9",
+              "company": "Fabrikam", "title": "Data Engineer", "trigger": "apply"})
+r_clash = post({"platform": "other", "platform_job_id": "careers.fabrikam.com/9",
+                "company": "Fabrikam", "title": "Data Engineer", "trigger": "apply",
+                "ats_job_id": SF_ID})
+check("an ATS id held by another job: accepted, and left where it was",
+      r_clash.status_code == 200 and job_of(r_fab.json()["application_id"])["ats_job_id"] is None
+      and job_of(sf_app)["ats_job_id"] == SF_ID, r_clash.text)
+r_blank = post({"platform": "other", "platform_job_id": "careers.fabrikam.com/10",
+                "company": "Fabrikam", "title": "ML Engineer", "trigger": "apply", "ats_job_id": "  "})
+check("a blank ATS id stores nothing", job_of(r_blank.json()["application_id"])["ats_job_id"] is None)
+
+# dedup.merge_jobs carries it: the loser's id moves to a winner that has none,
+# and a winner's own id is kept.
+with db.connect() as conn, conn.transaction():
+    uid = db.single_user_id(conn)
+    mk = lambda ats_id: conn.execute(
+        "INSERT INTO jobs (user_id, company_norm, title_canonical, ats_job_id) "
+        "VALUES (%s, 'coho', 'Engineer', %s) RETURNING id", (uid, ats_id)).fetchone()["id"]
+    keep, drop = mk(None), mk("coho.wd3.myworkdayjobs.com/r1")
+    dedup.merge_jobs(conn, uid, keep, drop)
+    got = conn.execute("SELECT ats_job_id FROM jobs WHERE id = %s", (keep,)).fetchone()["ats_job_id"]
+    keep2, drop2 = mk("coho.wd3.myworkdayjobs.com/r2"), mk("coho.wd3.myworkdayjobs.com/r3")
+    dedup.merge_jobs(conn, uid, keep2, drop2)
+    got2 = conn.execute("SELECT ats_job_id FROM jobs WHERE id = %s", (keep2,)).fetchone()["ats_job_id"]
+check("merge_jobs moves the loser's ATS id to a winner without one",
+      got == "coho.wd3.myworkdayjobs.com/r1", got)
+check("...and a winner keeps its own", got2 == "coho.wd3.myworkdayjobs.com/r2", got2)
+
 print("manual capture -> interested")
 r4 = post({"platform": "indeed", "platform_job_id": "IN-42",
            "company": "Solstice Mobility", "title": "AI Platform Engineer",

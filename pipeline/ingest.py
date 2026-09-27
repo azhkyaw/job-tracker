@@ -95,7 +95,7 @@ def upsert_record(conn, user_id, *, platform, captured_via, platform_job_id=None
                   url=None, company=None, title=None, jd_text=None, location=None,
                   posted_label=None, reposted=None, ats=None, captured_at=None,
                   origin="applied", salary_raw=None, work_type=None,
-                  salary_match=None) -> dict:
+                  salary_match=None, ats_job_id=None) -> dict:
     """Create or enrich job + posting + application for one captured ad.
 
     Returns {job_id, posting_id, application_id, created, enriched,
@@ -108,6 +108,14 @@ def upsert_record(conn, user_id, *, platform, captured_via, platform_job_id=None
     `origin` only applies when a NEW application row is inserted — an
     existing application's provenance is never overwritten by a later capture
     (e.g. the extension re-capturing a lead you're now actually applying to).
+
+    `ats_job_id` is the job's own id on its hiring system (migration 018,
+    docs/career-sites.md §16). A new ad whose ATS id a job already holds
+    joins THAT job, whichever side arrived first: an ATS submit and its
+    listing meet on it with no tab, title or company to compare, which is
+    the exact kind of key invariant #3 allows to join records. Otherwise the
+    id is recorded on the capture's job, unless another job holds it — then
+    it is left there and nothing is merged.
 
     Caller owns the connection and its transaction, and is responsible for
     everything after this: events, notes, contacts — their
@@ -165,7 +173,17 @@ def upsert_record(conn, user_id, *, platform, captured_via, platform_job_id=None
         # company/role (the backfill created it; this capture enriches it)
         # over creating a duplicate. Full cross-posting dedup is Phase 3.
         job = None
-        if company_norm:
+        if ats_job_id:
+            job = conn.execute(
+                "SELECT id FROM jobs WHERE user_id = %s AND ats_job_id = %s",
+                (user_id, ats_job_id)).fetchone()
+            if job is not None and company_norm:
+                # The ATS form named no employer (SuccessFactors' does not); its
+                # listing does. Only the placeholder is ever replaced, as the
+                # receipt's /captures/{id}/tag does.
+                conn.execute("UPDATE jobs SET company_norm = %s WHERE id = %s AND company_norm = %s",
+                             (company_norm, job["id"], UNKNOWN_COMPANY))
+        if job is None and company_norm:
             job = conn.execute(ENRICH_JOB_SQL, {
                 "user_id": user_id, "company": company_norm,
                 "title": title,
@@ -199,6 +217,13 @@ def upsert_record(conn, user_id, *, platform, captured_via, platform_job_id=None
              captured_via, captured_at)).fetchone()["id"]
         if jd_text:
             db.enqueue(conn, user_id, "extract_jd", {"posting_id": str(posting_id)})
+
+    if ats_job_id:
+        conn.execute(
+            "UPDATE jobs SET ats_job_id = %(ats)s WHERE id = %(job)s AND ats_job_id IS NULL "
+            "AND NOT EXISTS (SELECT 1 FROM jobs o WHERE o.user_id = %(user)s "
+            "                AND o.ats_job_id = %(ats)s)",
+            {"ats": ats_job_id, "job": job_id, "user": user_id})
 
     app_row = conn.execute(
         "SELECT id FROM applications WHERE user_id = %s AND job_id = %s",

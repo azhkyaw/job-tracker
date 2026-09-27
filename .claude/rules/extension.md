@@ -1016,3 +1016,11 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   sign-in mid-form the answers typed before it are still in the record.
   Manual entry has no page, so a pasted `_s.crb` address still gives the
   crumb id: paste the listing's address instead.
+- **The `ats_job_id` a capture sends (0.17.0, 28 Sep 2026) travels through
+  `capture.js`, which no test covers.** `generic.js:atsJobId()` is tested;
+  its read in `proceed()` (the submit's own tick, before `withStashedJob`
+  can replace the identity) and the two `buildPayload` call sites are not.
+  What to read on the next ATS submit: the record's job has `ats_job_id`
+  set (`SELECT ats_job_id FROM jobs …`) to the form's own id, also when the
+  capture completed a job board's record, whose posting id stays the
+  board's.

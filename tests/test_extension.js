@@ -1155,6 +1155,20 @@ console.log("\ngeneric.js: SuccessFactors' signed-in form (read live 24 Sep 2026
   const t = "Career Opportunities: Apply for Principal AI Engineer (51234)";
   const key = (crumb) => loadGeneric([node("h1", {}, ["Principal AI Engineer (51234)"])],
     `https://career2.successfactors.eu/portalcareer?_s.crb=${crumb}`, t).answerFormKey();
+  // The id the server keeps on the JOB (docs/career-sites.md §16.3 item 3):
+  // the page's own, only on the vendor's host, and only a real id. A link to a
+  // job board's record replaces the page's identity, so this travels apart.
+  const sf = loadGeneric([node("h1", {}, ["Principal AI Engineer (51234)"])],
+    "https://career2.successfactors.eu/portalcareer?_s.crb=AbC%3d", t);
+  check("atsJobId: the requisition on SuccessFactors' form", sf.atsJobId(), "career2.successfactors.eu/51234");
+  const crumbOnly = loadGeneric([node("h1", {}, ["Sign In"])],
+    "https://career2.successfactors.eu/portalcareer?_s.crb=AbC%3d", "Career Opportunities: Sign In");
+  check("atsJobId: a page whose only id is its crumb gives none", crumbOnly.atsJobId(), null);
+  check("atsJobId: Workday's, from its address on every step",
+        loadGeneric([], "https://contoso.wd3.myworkdayjobs.com/en-US/Contoso/job/Engineer_R200001/apply/autofillWithResume")
+          .atsJobId(), "contoso.wd3.myworkdayjobs.com/r200001");
+  check("atsJobId: an employer's own site is not a hiring system",
+        loadGeneric([], "https://jobs.litwarebank.com/job/Principal-AI-Engineer/51234-en_GB").atsJobId(), null);
   check("SuccessFactors: the answers' key is the requisition, through a new crumb",
         [key("AbC%3d"), key("XyZ%2f")], ["career2.successfactors.eu/51234", "career2.successfactors.eu/51234"]);
 }

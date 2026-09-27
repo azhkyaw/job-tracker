@@ -2313,6 +2313,10 @@ class CaptureIn(BaseModel):
     posted_label: str | None = None     # platform's own relative-time text, e.g. "3 weeks ago"
     reposted: bool | None = None
     ats: str | None = None              # detected from an external apply's destination host
+    # The job's own id on its hiring system, "career2.successfactors.eu/51234"
+    # (migration 018): sent from an ATS page, BESIDE the identity, because a
+    # submit linked to a job board's record carries the board's id instead.
+    ats_job_id: str | None = None
     # Structured facts the platform prints BESIDE the ad, which the JD
     # extractor can never see because they aren't in the ad body (migration
     # 011). `salary_raw` is the displayed string verbatim — pipeline/salary.py
@@ -2363,6 +2367,7 @@ def captures(payload: CaptureIn, authorization: str | None = Header(None)):
             reposted=payload.reposted, ats=payload.ats, captured_via="extension",
             salary_raw=payload.salary_raw, work_type=payload.work_type,
             salary_match=payload.salary_match,
+            ats_job_id=(payload.ats_job_id or "").strip()[:300] or None,
             origin="applied" if payload.trigger == "apply" else "saved")
         job_id, posting_id, app_id = r["job_id"], r["posting_id"], r["application_id"]
 

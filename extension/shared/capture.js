@@ -114,7 +114,7 @@
     return urlStr && J ? J.atsOfUrl(urlStr) : null;
   }
 
-  function buildPayload(trigger, external, ats, job, recruiter, answers, tags, completed) {
+  function buildPayload(trigger, external, ats, job, recruiter, answers, tags, completed, atsJobId) {
     return {
       completed: !!completed,
       // A job's own platform wins: an ATS submit linked to the job board's
@@ -142,6 +142,9 @@
       // The destination's vendor for an external apply; else the page's own,
       // which the generic reader names (a career site's vendor lives there).
       ats: ats || job.ats || null,
+      // The job's own id on its hiring system (generic.js:atsJobId), read
+      // off the page before any link replaced the identity above.
+      ats_job_id: atsJobId || null,
       answers: (answers && answers.length) ? answers : null,
     };
   }
@@ -904,6 +907,11 @@
     // contact on the job page, and adapters that don't implement it just
     // omit the method rather than returning null every time.
     const recruiter = adapter.getRecruiter ? adapter.getRecruiter() : null;
+    // The job's own id on its hiring system, read NOW for the same reason: the
+    // page it is printed on is about to go, and a link to a job board's record
+    // (withStashedJob) replaces the identity it would otherwise ride in.
+    let atsJobId = null;
+    try { atsJobId = adapter.atsJobId ? adapter.atsJobId() : null; } catch (e) { atsJobId = null; }
     // Same reason as the job snapshot above, only more so: the apply form is
     // torn out of the DOM the instant the submit lands. shared/answers.js has
     // been accumulating it step by step; take() sweeps the final step and
@@ -947,7 +955,7 @@
       confirmPopover((tags, report) => {
         merged
           .then((j) => send(buildPayload(trigger, external, ats, j, recruiter,
-                                         answers, tags, completed)))
+                                         answers, tags, completed, atsJobId)))
           .then((res) => {
             if (res && res.ok) {
               const qa = res.answers ? ` ${res.answers} form answers kept.` : "";
@@ -969,7 +977,7 @@
     // modal, and it was gone with nothing recorded anywhere.
     merged.then((j) => {
       const payload = buildPayload(trigger, external, ats, j, recruiter, answers,
-                                   { note: null }, completed);
+                                   { note: null }, completed, atsJobId);
       // Only a link THROUGH the opener has a board tab to tell; a link to
       // this tab's own listing (an employer's career site, phase C) does not.
       // A capture that names no employer carries a SUGGESTION for the receipt

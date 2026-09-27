@@ -187,6 +187,16 @@
       const id = J.pageId(document, location);
       return id ? id.platform_job_id : location.href;
     },
+    // The job's own id on its hiring system, which the server keeps on the
+    // JOB (migration 018, docs/career-sites.md §16): this page's id, only on
+    // the vendor's own host and only a real one, never a crumb. capture.js
+    // sends it beside the identity, since a link to a job board's record
+    // replaces the page's.
+    atsJobId() {
+      if (!J.atsOfUrl(location.href)) return null;
+      const id = J.pageId(document, location);
+      return id && id.by !== "path" ? id.platform_job_id : null;
+    },
     isCompletion(el) {
       return isSubmitControl(el, document, location);
     },
