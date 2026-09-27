@@ -500,6 +500,11 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
         return respond({ ok: false, error: r.error });
       }
       await setLocal({ last: { at: Date.now(), ...r.body } });
+      // The name to offer a nameless record: the server's, from another record
+      // of the same hiring-system tenant (P4), over the page's own guess.
+      const suggest = r.body.company_suggestion
+        ? { name: r.body.company_suggestion, site: (msg.suggest && msg.suggest.site) || null }
+        : (msg.suggest || null);
       // Stashed BEFORE responding, because responding may be pointless: if the
       // click navigated the tab, the frame waiting on this reply is already
       // gone. Shape matches what showResult() builds in the content script —
@@ -509,7 +514,7 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
         answers: r.body.answers, enriched: r.body.enriched, apiBase: r.base,
         // So the receipt can ask for an employer the capture could not name —
         // an ATS submit navigates, and this held copy is the one it shows.
-        company_known: r.body.company_known, suggest: msg.suggest || null,
+        company_known: r.body.company_known, suggest,
       });
       // An ATS submit that completed the record a job board's tab started:
       // tell that tab, so a box still asking "Capture this application?"
@@ -526,7 +531,7 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
       }
       // apiBase travels back so the receipt can link straight to the record —
       // only the worker knows it (it lives in chrome.storage.sync).
-      respond({ ok: true, apiBase: r.base, ...r.body, suggest: msg.suggest || null });
+      respond({ ok: true, apiBase: r.base, ...r.body, suggest });
     })();
     return true;                       // async respond
   }

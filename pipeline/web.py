@@ -2444,11 +2444,39 @@ def captures(payload: CaptureIn, authorization: str | None = Header(None)):
         # nameless capture of a job already named elsewhere needs nothing.
         named = conn.execute("SELECT company_norm <> %s AS n FROM jobs WHERE id = %s",
                              (ingest.UNKNOWN_COMPANY, job_id)).fetchone()["n"]
+        # A nameless record whose hiring system names a tenant another record
+        # already put a name to: offer that name on the receipt (P4). Offered,
+        # not stored: the user confirms it with one key.
+        suggestion = None if named else _tenant_company(conn, payload.ats_job_id, job_id)
         return {"application_id": str(app_id), "posting_id": str(posting_id),
                 "created": r["created"], "enriched": r["enriched"],
                 "answers": n_answers, "company_known": named,
+                "company_suggestion": suggestion,
                 "label": f"{payload.company or 'unknown company'}"
                          f" · {payload.title or 'unknown role'}"}
+
+
+def _tenant_company(conn, ats_job_id: str | None, job_id) -> str | None:
+    """The employer's name another record gave the same hiring-system tenant
+    (`career2.successfactors.eu/litwarebk/…` -> the name the user typed on an
+    earlier receipt, or its listing carried). A tenant is ONE employer's
+    instance of the hiring system, so its name is a fact about the tenant, not
+    a guess about the job; SuccessFactors only, the one vendor measured whose
+    form names no employer (docs/career-sites.md §16.3 item 5)."""
+    tenant = joburl.ats_tenant((ats_job_id or "").strip())
+    if not tenant:
+        return None
+    rows = conn.execute(
+        """
+        SELECT j.ats_job_id,
+               COALESCE((SELECT p.company_raw FROM postings p
+                          WHERE p.job_id = j.id AND p.company_raw IS NOT NULL
+                          ORDER BY p.captured_at DESC LIMIT 1), j.company_norm) AS company
+        FROM jobs j
+        WHERE j.id <> %s AND j.company_norm <> %s AND j.ats_job_id LIKE %s
+        ORDER BY j.created_at DESC
+        """, (job_id, ingest.UNKNOWN_COMPANY, f"%/{tenant}/%")).fetchall()
+    return next((r["company"] for r in rows if joburl.ats_tenant(r["ats_job_id"]) == tenant), None)
 
 
 class TagIn(BaseModel):

@@ -819,6 +819,43 @@ check("merge_jobs moves the loser's ATS id to a winner without one",
       got == "coho.wd3.myworkdayjobs.com/r1", got)
 check("...and a winner keeps its own", got2 == "coho.wd3.myworkdayjobs.com/r2", got2)
 
+print("P4: a thin record completed from its listing, and a tenant's name (docs/career-sites.md §16)")
+check("ats_tenant: a SuccessFactors id's tenant",
+      joburl.ats_tenant("career2.successfactors.eu/litwarebk/51234") == "litwarebk")
+check("ats_tenant: none without one, nor on another vendor",
+      [joburl.ats_tenant(x) for x in ("career2.successfactors.eu/51234", "contoso.wd3.myworkdayjobs.com/r1",
+                                      "jobs.lever.co/contoso/1")] == [None, None, None])
+
+
+def app_row(app_id):
+    with db.connect() as conn:
+        return conn.execute(
+            "SELECT j.id AS job_id, j.company_norm, j.title_canonical, j.ats_job_id, "
+            "(SELECT count(*) FROM postings p WHERE p.job_id = j.id) AS postings, "
+            "EXISTS (SELECT 1 FROM postings p WHERE p.job_id = j.id AND p.jd_text IS NOT NULL) AS has_jd "
+            "FROM applications a JOIN jobs j ON j.id = a.job_id WHERE a.id = %s::uuid", (app_id,)).fetchone()
+
+
+# A tenant's name: a hiring-system tenant is ONE employer's instance, so the
+# name another record gave it is offered to the next nameless capture there.
+TEN = "career5.successfactors.eu/fabrikambk/"
+named_t = post({"platform": "other", "platform_job_id": TEN + "61001", "company": "Fabrikam Bank",
+                "title": "Risk Analyst", "trigger": "apply", "external": True,
+                "ats_job_id": TEN + "61001"}).json()
+nameless_t = post({"platform": "other", "platform_job_id": TEN + "61002", "title": "Quant Developer",
+                   "trigger": "apply", "completed": True, "external": True,
+                   "ats_job_id": TEN + "61002"}).json()
+check("a nameless capture on a tenant another record named is offered that name",
+      (nameless_t["company_known"], nameless_t["company_suggestion"]) == (False, "Fabrikam Bank"), nameless_t)
+check("…offered, not stored: it stays unnamed until the user confirms it",
+      app_row(nameless_t["application_id"])["company_norm"] == "unknown company")
+other_t = post({"platform": "other", "platform_job_id": "career5.successfactors.eu/relecloud/9",
+                "title": "Analyst", "trigger": "apply",
+                "ats_job_id": "career5.successfactors.eu/relecloud/9"}).json()
+check("…a tenant nobody named offers nothing", other_t["company_suggestion"] is None, other_t)
+check("…nor does a capture that names its employer", named_t["company_suggestion"] is None, named_t)
+
+
 print("manual capture -> interested")
 r4 = post({"platform": "indeed", "platform_job_id": "IN-42",
            "company": "Solstice Mobility", "title": "AI Platform Engineer",

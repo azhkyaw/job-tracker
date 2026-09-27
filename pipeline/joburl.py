@@ -55,6 +55,18 @@ def _tenant(host: str, params: list[tuple[str, str]]) -> str | None:
     return None
 
 
+def ats_tenant(ats_job_id: str | None) -> str | None:
+    """The employer's tenant inside a hiring-system job id that carries one:
+    `career2.successfactors.eu/litwarebk/51234` -> "litwarebk" (P2's
+    `<host>/<tenant>/<id>`). None for any other id, including a SuccessFactors
+    id whose visit never named its tenant (`<host>/<id>`)."""
+    parts = (ats_job_id or "").split("/")
+    if len(parts) != 3 or not parts[1]:
+        return None
+    host = parts[0]
+    return parts[1] if any(host == s or host.endswith("." + s) for s, _ in _TENANT_PARAM) else None
+
+
 def generic_id(url: str | None) -> str | None:
     """A posting's id on any site that is not one of the three platforms:
     `<host>/<token>`, or None for a URL that names no page (a bare site, a
