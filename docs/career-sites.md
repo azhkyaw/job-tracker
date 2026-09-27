@@ -4,6 +4,9 @@
 **Status:** Accepted; being built. The four decisions in §14 were taken on
 24 Sep 2026, all as recommended. Built the same day: the redaction in §11
 and phases A, B and C (§12). Awaiting a real apply through each to verify.
+**Revised 28 Sep 2026 (§16):** the link from a listing to its ATS form moves
+from the tab to the job's own id on the ATS; P0 and the extension half of
+P1 are built.
 **Date:** 24 September 2026
 **Scope:** What it takes for the extension to capture a job, and the
 application made for it, on an employer's own career site or its applicant
@@ -643,7 +646,223 @@ All four were taken by the author on 24 Sep 2026, each as recommended.
   observed. If so, frame 0 needs a content script (per-site opt-in) before
   `tracker-relay-getjob` can ask it who the job is.
 
-## 16. Sources
+## 16. The handoff, rebuilt (28 Sep 2026)
+
+The phases in §12 link an ATS submit to its listing by the TAB (the opener's
+list, then the tab's own) plus a title check. A real application on 28 Sep
+2026 showed every link in that chain failing at once, and the author's data
+showed the same path losing far more elsewhere. This section is the design
+that replaces it, measured first.
+
+### 16.1 The case
+
+An employer's career site (SuccessFactors Career Site Builder, placeholder
+`jobs.litwarebank.com`) hands over to SuccessFactors' hosted form on another
+data centre, in the same tab:
+
+```
+jobs.litwarebank.com/job/Principal-AI-Engineer/51234-en_GB   listing: company, title, JD
+  "Apply now" = <a href="/talentcommunity/apply/51234/">
+career2.successfactors.eu/careers?company=litwarebk          sign-in: tenant only
+career2.successfactors.eu/career?company=litwarebk&career_job_req_id=51234   create account
+career2.successfactors.eu/portalcareer?_s.crb=…              form: <h1> "Principal AI Engineer (51234)"
+  … 13 minutes idle: the session timed out, back to sign-in, the form again
+```
+
+What broke, link by link:
+
+1. **No script ran on the listing:** the site was not enabled (§12 phase
+   C). Enabling is itself broken: the one attempt, on the 24 Sep employer's
+   site, never completed (Chrome holds no grant, and the popup's
+   `pendingSite` note has waited since 25 Sep 00:22).
+2. **Had it run, the listing would not have been stashed.** This site
+   writes `itemprop="title"` OUTSIDE its JobPosting scope, which holds only
+   the description, and there is no `hiringOrganization`. The title falls
+   back to `og:title`, and `stashListing()` stashes only a read whose
+   `title_source` is `jsonld` or `microdata`.
+3. **The form names no employer, and its address is a session crumb.** The
+   posting id became `career2.successfactors.eu/portalcareer?_s.crb=…`,
+   which changes at every sign-in, and `stripRequisition` could not remove
+   "(51234)" because the id held no 51234.
+4. **Titles cannot pick the job.** The same site lists a sibling
+   "Principal AI Engineer", 51232, in the same city: `pickListed` would find
+   two entries of one title and link neither.
+
+A submit there would still have been captured: the rules found
+`form#careerform` (30 fields) and exactly one submit of 136 buttons, read
+live and read-only. It would have filed as "unknown company" with no JD.
+
+### 16.2 Measured on the author's data (28 Sep 2026)
+
+| How the application was sent | Applications | With form answers |
+|---|---|---|
+| On the platform (Easy Apply, SEEK Quick Apply) | 218 | 164 |
+| **LinkedIn → the employer's site** | **55** | **0** |
+| Directly on an employer's site, captured | 1 | 1 |
+| Manual entry or email only | 9 | 0 |
+
+The 55 by vendor: Workday 10, SuccessFactors 7, Ashby 6, Greenhouse 6,
+Workable 4, iCIMS 2, Breezy, JazzHR and Rippling 1 each, and 17 whose vendor
+was never detected (LinkedIn resolves the destination on its server).
+**Phase B has not captured one of them.** The one clue: on 25 Sep 2026 at
+10:52:13, "Submit" on a Workday form (placeholder Alpine Ski House,
+`…/Senior-AI-Engineer_R200001/apply/autofillWithResume`) was turned down with
+"no application form found on this page". The record exists only because the
+LinkedIn popover was answered 18 seconds later, with 0 answers, and that
+application went on to an interview invitation.
+
+**Which surfaces carry the job's own id on the ATS** (the requisition):
+
+| Surface | Tenant | Requisition |
+|---|---|---|
+| Career Site Builder listing | inline `companyId`, `ssoUrl` | `j2w.Apply.init({jobID})`, URL, "Requisition Number" — **but** on the 24 Sep employer's site the listing id (ten digits) is not the requisition (four) |
+| First SuccessFactors pages | `?company=` | `career_job_req_id=` on some tenants |
+| SuccessFactors form, job page | lost after a postback | `<h1>` and tab title end "(51234)": 3 tenants of 3 |
+| Workday, every step | host | URL `_R200001`, kept through `/apply/…` |
+
+**Emails that carry that id**, per vendor, over every email filed to an
+application whose vendor is known: Workday 4 of 19 (R-numbers: "Reference
+Role: R0012345"), SuccessFactors 3 of 11 (every confirmation: "your interest
+in AVP, Software Engineer (1234)"), Greenhouse 0 of 21, Workable 0 of 29,
+Ashby 0 of 15, SmartRecruiters 0 of 9. A first pattern counted Ashby's
+interview-meeting links and SuccessFactors' dates as ids; the counts above
+are from the corrected patterns, each hit read by eye.
+
+### 16.3 The design
+
+1. **The join key is the job's id on the ATS: the ATS page's own `idFrom`,
+   and where its address has lost the id, the requisition number the page
+   prints.** That is one exception, not a vendor table: every other vendor
+   in §4.2 keeps the id in the URL through the whole flow. Pages whose
+   address fell back to path-plus-query (§5) and whose `<h1>` or tab title
+   ends in "(digits)" take `host/<digits>`. `stripRequisition` then works,
+   and the answer store and the stash share the key, so both survive a
+   postback, a sign-in and a timeout.
+2. **Bind at the handoff, not at the submit.** On a page that publishes a
+   JobPosting, an apply-worded link or button outside any application form
+   is a DEPARTURE: the job is leaving for its ATS (today's `nearMiss` case,
+   reread; SuccessFactors' "Apply now" is an `<a>`). The first ATS page to
+   load in that tab, or in a tab it opened, claims the departure within
+   seconds, and the worker records `ATS id → listing job` for days, not the
+   same-tab guess's 30 minutes (which stays as it is). The ATS page also
+   writes `{tenant, requisition}` into its own origin's `sessionStorage`,
+   which outlives the postbacks that strip them from the URL. Decided at
+   the handoff, the binding is made seconds after the click; decided at
+   the submit, it is made after the sign-in, the account and, on 28 Sep,
+   a session timeout.
+3. **The server stores the ATS id on the JOB and upserts on it** (a
+   migration; a requisition is the employer's role, not an ad, so
+   `dedup.merge_jobs` carries it). Order stops mattering:
+   - listing first (an enabled site, or the popup on the listing): the
+     submit completes that record;
+   - submit first (a thin record): a later capture of the listing, even a
+     toolbar click after applying, fills in its company, title and JD.
+
+   An exact key is the recoverable kind of link invariant #3 asks for, and
+   it holds across the author's two machines.
+4. **Email joins on the key, by lookup, not by parsing.** A job-related
+   email whose body contains the ATS id of an application still open is
+   that application's, before any name matching. Parsing "a number in the
+   body" would take any figure in a letter for an id. It fixes the
+   sibling case (two records, one title) and gives the open "email-side
+   rescue" (§12, task 30) a key instead of a guessed name. Measured above:
+   SuccessFactors and Workday only.
+5. **Reading an employer-branded listing:**
+   - fix the enable flow (link 1);
+   - stash any page where a JobPosting was FOUND, whatever the title's
+     source (link 2);
+   - read the Career Site Builder's inline config (`companyId`, `ssoUrl`,
+     `jobID`);
+   - take the company from the tab-title suffix ("… | Litware Bank") as a
+     weak field;
+   - remember tenant → company once the receipt's question is answered, so
+     each tenant is asked once;
+   - a third toolbar-icon state, "job page, capture off", from
+     `declarativeContent`'s `PageStateMatcher({css: ['[itemtype$="JobPosting"]']})`.
+     It needs no host permission, but CSS conditions match only DISPLAYED
+     elements, so it sees microdata (Career Site Builder) and never JSON-LD,
+     which lives in a `<script>`.
+6. **SuccessFactors quick apply.** Signed in with a complete profile, the
+   job page's own "Apply" sends the application at once (Relecloud, 25 Sep
+   2026: `isQuickApplyPostLoginRedirect`, then
+   `isRedirectToAppSent`, and the confirmation email the same minute). The
+   click is a departure; landing on `isRedirectToAppSent=true` is the
+   completion. There is no form, so no answers.
+
+**Not in the design:** fetching the listing from the background (invariant
+#1, §9: no background visits); a content script on every site; lengthening
+the same-tab guess; linking on a title alone when two candidates share it.
+**What stays unavoidable:** the JD of an employer-branded listing needs one
+click on that domain — enabling it once, or the toolbar on the listing,
+before or after applying.
+
+### 16.4 How general
+
+| Flow | Vendors | Listing readable | Id on the form page | Email carries it |
+|---|---|---|---|---|
+| Listing and form on one ATS host | Workday, Ashby, Greenhouse, Workable, Lever, Personio, JazzHR, iCIMS (unverified) | yes, static hosts | the URL, throughout | Workday only |
+| One host, the apply page drops the id | SmartRecruiters (apply UUID), Recruitee (no id) | yes | no: only the binding carries it | no |
+| Employer front end → ATS elsewhere | Career Site Builder → SuccessFactors, Phenom → Workday, Careers@Gov | after one click on the domain | SuccessFactors: the printed "(N)"; Workday: URL | SuccessFactors |
+| Front end with the form in an iframe | Greenhouse embed (`?gh_jid=`) | the same | the iframe's token | no |
+
+The mechanism (key, binding, upsert, email lookup) is the same for every
+vendor. What varies is where the id sits, which is `idFrom` everywhere but
+one place, and whether the listing is on a host the extension can read.
+Weighted by §16.2, the employer-branded case is 2 applications and the
+LinkedIn → ATS case is 55; the binding serves both, through the opener tab
+for the second.
+
+### 16.5 Plan
+
+- **P0. Make the ATS submit fire on a wizard's last step.** The Workday miss
+  above: the reason logged means `applicationRoot` found no root on an apply
+  address, which the code allows only when fewer than two answerable
+  controls exist or a password sits in the container. A review step shows
+  the answers as text. So on an apply-flow address with no root and no
+  visible password field, a submit-worded control is the submit. The
+  existing wizard test put "Submit" beside inputs, which a real review step
+  does not. **Built 28 Sep 2026** (§16.6).
+- **P1. The job's ATS id, on both sides.** Extension: §16.3 item 1. **Built
+  28 Sep 2026.** Server, still open: the column on `jobs`, the upsert, the
+  email lookup (items 3 and 4).
+- **P2.** The handoff binding, the stash gate, the Career Site Builder
+  config reader, and the tenant inside SuccessFactors ids (below).
+- **P3.** Fix enabling, the icon's third state, quick apply.
+- **P4.** Completing a thin record from its listing afterwards; tenant →
+  company names.
+
+**Open decisions and risks:**
+
+- **The tenant is not in a SuccessFactors id** (`career10.successfactors.com/12345`,
+  pinned in `tests/job_urls.json` before this). Requisitions are per-tenant
+  sequences on a shared host, so two employers on one data centre can
+  share a number and collide under `postings_platform_job_uidx`, the §10
+  failure. P2 adds the tenant, carried to postback pages in
+  `sessionStorage`; stored rows need no rewrite, because no posting holds a
+  SuccessFactors-host id today.
+- **Unverified:** that a Workday review step has fewer than two controls
+  (deduced from the logged reason, not seen); the "(N)" suffix beyond three
+  tenants; how often a Career Site Builder listing's id differs from the
+  requisition (seen once of two).
+
+### 16.6 Built
+
+- **P0, extension 0.15.1** (`adapters/generic.js`): `applicationRoot`
+  unchanged; a submit-worded control on an apply-flow address counts when
+  the page has no application root and no visible password field. The
+  sign-in and job-alert cases stay refused. Red against the old code on the
+  three review-step checks; without the password guard, both sign-in tests
+  go red.
+- **P1, extension 0.16.0** (`shared/jobposting.js:pageId`): the page-aware
+  id, used by `read()` and by `generic.js`'s `answerFormKey()`. `idFrom`
+  now says when it fell back (`by: "path"`); the URL-only rule and its
+  Python mirror are unchanged. A page-derived id stores the address without
+  its query, since a crumb is session state and not the job's address. Each
+  guard (the ATS host, the fallback) mutated out turns exactly one test red.
+- Neither has run on a real apply; `.claude/rules/extension.md` says what to
+  read on the next one.
+
+## 17. Sources
 
 - Google Search Central, [Job posting (JobPosting) structured
   data](https://developers.google.com/search/docs/appearance/structured-data/job-posting):
@@ -662,3 +881,10 @@ All four were taken by the author on 24 Sep 2026, each as recommended.
 - Live evidence, 24 Sep 2026: the §2 walk in the browser, the §3 queries
   against the dev DB, and the §4 survey (URLs withheld under the real-names
   rule).
+- Chrome for Developers, [chrome.declarativeContent](https://developer.chrome.com/docs/extensions/reference/api/declarativeContent):
+  `PageStateMatcher.css` takes compound selectors only, "CSS conditions only
+  match displayed elements", and the API "can be used without host
+  permissions".
+- Live evidence, 28 Sep 2026: the §16.1 form read live and read-only in the
+  author's own tab; Chrome's History database for the navigation chain
+  (paths and parameter names only); the §16.2 queries against the dev DB.

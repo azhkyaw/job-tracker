@@ -702,8 +702,8 @@ The dated register behind each item, tasks 1-35 with their measurements, is
   queue as the author confirms them. Four `follow_up_sent` are on record: one filed
   by hand, three recovered from follow-ups the user EMAILED, which since
   migration 016 file themselves (task 16). (worklog task 4)
-- **Extension, next real Easy Apply:** verify the current build (0.15.0 on
-  25 Sep) is live on BOTH machines and the tab was opened after the
+- **Extension, next real Easy Apply:** verify the current build (0.16.0 on
+  28 Sep) is live on BOTH machines and the tab was opened after the
   reload; read `doc_source` and the sweep
   line. JobStreet still owes one clean submit with the race fix and salary
   capture together. (tasks 5, 18)
@@ -717,6 +717,14 @@ The dated register behind each item, tasks 1-35 with their measurements, is
   says what to read). Workday's form sits behind a candidate sign-in and is
   unverified. Open: an email-side rescue that names a nameless record from
   its confirmation, to be replayed first.
+  **Redesigned 28 Sep 2026** (`docs/career-sites.md` §16, task 36): 55
+  applications went LinkedIn → an employer's site and **none** has its
+  answers, so the link moves from the tab to the job's own id on the ATS,
+  bound at the handoff and upserted on by the server. Built: P0 (a Workday
+  review step's "Submit", 0.15.1) and P1's extension half (the id read off
+  the page when a SuccessFactors address lost it, 0.16.0). Open: P1's
+  server half (the id on `jobs`, the email lookup; the column's home is
+  the author's call), then P2-P4 in §16.5.
 - **Release blockers:** LICENSE (Apache-2.0 recommended), split the extension
   into its own repo, decide whether CLAUDE.md ships; `audit_names.py --history`
   is the pre-publish check. (task 3)

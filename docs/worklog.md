@@ -966,3 +966,32 @@ the key to each real case.
    `analytics.py`'s two response-type lists had been unified. They have
    not: `_REMINDER_WHERE` keeps its own list, as `.claude/rules/web-ui.md`
    says. The memory was corrected.
+36. **The listing → ATS handoff, rebuilt around the job's ATS id** (28 Sep
+   2026; `docs/career-sites.md` §16). Asked before a real apply whether the
+   extension would record it: an employer's Career Site Builder listing
+   handing over to SuccessFactors' form on another data centre. Checked
+   read-only, and the answer was yes for the submit, no for the rest:
+   - the tracker server was not running, and the worker does not retry a
+     failed POST, so the submit would have been lost; it was started;
+   - the form rules found `form#careerform` and one submit of 136 buttons;
+   - the record would have filed as "unknown company", with no JD and the
+     session crumb as its id. The listing was never read (the site was not
+     enabled, and this site's JobPosting scope holds only the description,
+     so even an enabled site would not have stashed it), and a sibling role
+     with the same title rules a title-only link out.
+   The form's session then timed out 13 minutes idle. Measured next: 55
+   applications went LinkedIn → an employer's site and none has its
+   answers; phase B has not fired once. The one clue was a Workday submit on
+   25 Sep turned down as "no application form found", its record saved only
+   by the popover, answerless, and later invited to interview. Only the
+   requisition is printed on every surface of the flow (the SuccessFactors
+   form, its first addresses, every confirmation email), and emails carry an
+   ATS id for SuccessFactors and Workday only (3 of 11 and 4 of 19; 0 of 74
+   for Greenhouse, Workable, Ashby and SmartRecruiters, after a first
+   pattern that miscounted meeting links and dates was corrected).
+   Designed: the join key is the job's id on the ATS, bound at the handoff,
+   stored on the job and upserted on by the server, and looked up in email.
+   Built the same day, on a branch while the application was still open:
+   P0, a review step's "Submit" (0.15.1), and P1's extension half, the id
+   read off the page when the address lost it (0.16.0). Open: P1's server
+   half and P2-P4.
