@@ -832,7 +832,9 @@ for the second.
   the tab showed on another site (`pickDeparture`). A listing's own Apply
   is never an application's submit: a page that publishes a JobPosting
   gets no form root by rule 3 unless its address is an apply flow.
-- **P3.** Fix enabling, the icon's third state, quick apply.
+- **P3.** Fix enabling, the icon's third state, quick apply. **Built 28 Sep
+  2026** (§16.6). Enabling's cause was not the prompt at all: Chrome refused
+  every request before showing one.
 - **P4.** Completing a thin record from its listing afterwards; tenant →
   company names.
 
@@ -844,12 +846,11 @@ for the second.
   share a number and collide under `postings_platform_job_uidx` (the §10
   failure) and, since P1, under `jobs.ats_job_id`. P2 puts it in:
   `<host>/<tenant>/<id>`. No posting holds a SuccessFactors-host id; the
-  five SuccessFactors `ats_job_id`s backfilled on 28 Sep need the same
-  rewrite, or a new capture will not meet them.
+  five SuccessFactors `ats_job_id`s backfilled on 28 Sep were rewritten the
+  same day, with the author's go-ahead and a snapshot.
 - **The listing must still be read.** On an employer-branded domain that
-  means the site is enabled, and enabling has never completed once (§16.1
-  link 1): P3. Until then the binding serves the job board path (the
-  opener) and the hiring systems' own listings.
+  means the site is enabled. Since P3 enabling reaches Chrome's prompt; it
+  has still never completed on a real site.
 - **Unverified:** that a Workday review step has fewer than two controls
   (deduced from the logged reason, not seen); the "(N)" suffix beyond three
   tenants; how often a Career Site Builder listing's id differs from the
@@ -915,6 +916,27 @@ for the second.
   - The pure rules are tested, and each guard mutated out turns its test red
     (the listing root, the tenant, most-recent-only, the same-host
     exclusion, the job id). The worker's store and the messages are not.
+- **P3, extension 0.18.1 to 0.20.0:**
+  - **Enabling (0.18.1).** The popup asked for `*://host/*` while the
+    manifest declared `https://*/*` and `http://*/*` apart. Chromium needs
+    ONE declared pattern to contain every scheme of a request
+    (`URLPatternSet::ContainsPattern` → `URLPattern::Contains`), so every
+    request was unlisted and refused ("Only permissions specified in the
+    manifest may be requested") before any prompt, and the click handler,
+    with no catch, showed nothing. The manifest declares `*://*/*`; the
+    popup reports a refusal; a test checks every requested origin against
+    the manifest with Chromium's rule.
+  - **Quick apply (0.19.0).** A SuccessFactors job page's own "Apply"
+    leaves a note in the hiring system's sessionStorage (a job page with a
+    real id, no application form, no sign-in in view); the landing
+    `isRedirectToAppSent=true`, seen once, files it through `capture.js`
+    as a completed external apply, linked like any ATS submit. The landing
+    alone files nothing; a note waits ten minutes and is used once.
+  - **The icon's third state (0.20.0).** Grey with a filled dot on a page
+    that publishes a JobPosting as microdata and is not captured: a
+    `declarativeContent` CSS rule at priority 100 under the capturing
+    rule's 200, the order Chromium's `GetDeclarativeIcon` resolves by.
+    JSON-LD pages stay hollow: CSS conditions see only displayed elements.
 - None of it has run on a real apply; `.claude/rules/extension.md` says what
   to read on the next one.
 

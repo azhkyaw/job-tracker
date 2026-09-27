@@ -711,7 +711,7 @@ The dated register behind each item, tasks 1-35 with their measurements, is
   queue as the author confirms them. Four `follow_up_sent` are on record: one filed
   by hand, three recovered from follow-ups the user EMAILED, which since
   migration 016 file themselves (task 16). (worklog task 4)
-- **Extension, next real Easy Apply:** verify the current build (0.18.0 on
+- **Extension, next real Easy Apply:** verify the current build (0.20.0 on
   28 Sep) is live on BOTH machines and the tab was opened after the
   reload; read `doc_source` and the sweep
   line. JobStreet still owes one clean submit with the race fix and salary
@@ -735,9 +735,12 @@ The dated register behind each item, tasks 1-35 with their measurements, is
   half the same day (`jobs.ats_job_id`, migration 018, the author's choice
   of home; the upsert on it; the email lookup; 0.17.0 sends it), then P2
   (the handoff bound at the hiring system's first page, SuccessFactors ids
-  with their tenant; 0.18.0). Open: P3-P4 in §16.5, P3 first: an
-  employer-branded listing binds only once its site is enabled, and
-  enabling has never completed.
+  with their tenant; 0.18.0), then P3 (0.20.0): "Always capture on this
+  site" had never worked because Chrome refused every request before its
+  prompt (a `*://` request against `https://` and `http://` declared
+  apart); SuccessFactors quick apply files from its landing; the icon's
+  third state marks a job page that is not captured. Open: P4 in §16.5,
+  and the first real apply through each.
 - **Release blockers:** LICENSE (Apache-2.0 recommended), split the extension
   into its own repo, decide whether CLAUDE.md ships; `audit_names.py --history`
   is the pre-publish check. (task 3)

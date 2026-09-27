@@ -1006,4 +1006,10 @@ the key to each real case.
    when the hiring system's first page loads, to the last listing the tab
    (or its opener) showed, instead of watching the Apply click; a listing
    is a page that publishes a JobPosting; SuccessFactors ids carry their
-   tenant. Open: P3-P4.
+   tenant. P3 the same day (0.20.0). Enabling a site had never worked: the
+   stuck 25 Sep `pendingSite` note and the missing grant read like a
+   dismissed prompt, but Chromium's source showed every request refused
+   before any prompt, since the popup asked for `*://host/*` and no ONE
+   declared pattern contained both schemes. Also SuccessFactors quick apply
+   (a note from the job page's Apply, filed by the landing) and the icon's
+   third state (a job page that is not captured). Open: P4.
