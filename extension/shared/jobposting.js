@@ -479,6 +479,11 @@
       job.work_type = workType(p.employmentType);
       job._prov.title_source = ld.length ? "jsonld" : "microdata";
     }
+    // "This page publishes a JobPosting": what makes it a LISTING, whatever
+    // its title was read from. A Career Site Builder page (28 Sep 2026) holds
+    // only the description inside its JobPosting and the title outside it, so
+    // title_source says "og" on a page that is every bit a listing.
+    job._prov.structured = !!p;
     // Fields filled by a fallback are WEAK, and capture.js lets a keyed stash
     // of this same job replace them. Gaps-only merging assumes the page in
     // front of the user reads best, which is false exactly here: an apply
@@ -498,6 +503,15 @@
     }
     if (!job.company) {
       job.company = meta(doc, 'meta[property="og:site_name"]');
+      if (job.company) job._prov.weak.push("company");
+    }
+    // Last, on an employer's OWN site only: the tab title's "… | <site>" is
+    // the site's owner, and there that is the employer ("Principal AI Engineer
+    // Job Details | Litware Bank", a listing with no hiringOrganization and no
+    // og:site_name, 28 Sep 2026). On a hiring system's host the owner is the
+    // vendor or an arbitrary tenant brand, so it is never read there.
+    if (!job.company && !atsOfUrl(loc.href)) {
+      job.company = siteOwner(doc.title, job.title);
       if (job.company) job._prov.weak.push("company");
     }
     const bare = stripRequisition(job.title, id);
@@ -526,6 +540,52 @@
     return m && m[1].trim() ? m[1].trim() : title;
   }
 
+  /* The owner of a site, from its tab title's last "|" segment, as a weak
+   * company (read() above uses it on employers' own sites only). Not the job's
+   * own title, not a word that names the page rather than the owner, and a
+   * trailing "Careers"/"Jobs" is the site's name, not the employer's. */
+  const NOT_OWNER = /^(careers?|jobs?|job details|job search|search jobs|home|apply|opportunities)$/i;
+
+  function siteOwner(tabTitle, jobTitle) {
+    const parts = (tabTitle || "").split(/\s+\|\s+/);
+    if (parts.length < 2) return null;
+    const owner = (str(parts[parts.length - 1]) || "")
+      .replace(/\s+(careers?|jobs?|recruitment|talent)$/i, "").trim();
+    if (!owner || owner.length > 60 || !/\p{L}/u.test(owner) || NOT_OWNER.test(owner)) return null;
+    if (jobTitle && owner.toLowerCase() === jobTitle.toLowerCase()) return null;
+    return owner;
+  }
+
+  /* Where a Career Site Builder listing hands its applicant over: the
+   * SuccessFactors data centre and the tenant, from the site's own inline
+   * configuration (`"ssoUrl" : 'https://career2.successfactors.eu'`,
+   * `"ssoCompanyId" : 'litwarebk'`; read on the 28 Sep 2026 page). An
+   * isolated-world content script cannot read the page's globals but can read
+   * its inline script TEXT. The listing's own job number is deliberately not
+   * taken: on one site of two it is not the requisition (§16.2). Null when
+   * the page says nothing of the kind. */
+  function atsHandoff(doc) {
+    let atsHost = null, tenant = null;
+    for (const s of doc.querySelectorAll("script")) {
+      if (s.getAttribute("src")) continue;
+      const t = s.textContent || "";
+      if (!atsHost) {
+        const m = /["']?ssoUrl["']?\s*[:=]\s*["']https?:\/\/([a-z0-9.-]+)/i.exec(t);
+        if (m && vendorOfHost(m[1].toLowerCase())) atsHost = m[1].toLowerCase();
+      }
+      if (!tenant) {
+        const m = /["']?(?:ssoCompanyId|companyId)["']?\s*[:=]\s*["']([a-z0-9_-]{1,40})["']/i.exec(t);
+        if (m) tenant = m[1].toLowerCase();
+      }
+      if (atsHost && tenant) break;
+    }
+    return atsHost || tenant ? { atsHost, tenant } : null;
+  }
+
+  /* Does this page publish a JobPosting? A page that does is a LISTING, and
+   * one of its own "Apply" controls leaves for the application rather than
+   * sending it (adapters/generic.js). */
+  const hasPosting = (doc) => jsonLdPostings(doc).length > 0 || microdataPostings(doc).length > 0;
 
   /* A company to SUGGEST when a capture found none — shown on the receipt for
    * the user to confirm or correct, never stored on its own say-so. Two
@@ -609,6 +669,50 @@
     return entries.length === 1 ? { entry: entries[0], byTitle: false } : null;
   }
 
+  /* THE HANDOFF (docs/career-sites.md §16.3 item 2). When a hiring system's
+   * page loads in a tab, which listing did the applicant just leave? The
+   * last one the tab showed on ANOTHER site: its Apply is what navigated
+   * here. Or, in a tab another opened (a job board's "Apply on company
+   * website"), the opener's last one, which that click stashed moments ago.
+   * Decided here, seconds after the click, rather than at the submit, which
+   * comes after a sign-in, an account and (28 Sep 2026) a session timeout.
+   *
+   * `page` is {host, vendor, tenant}. Only the MOST RECENT entry of each list
+   * is considered: an older one is a guess about which job was meant. It must
+   * not contradict the page: a listing that names where it hands over
+   * (atsHandoff: data centre, tenant) must name THIS host and tenant, and a
+   * known vendor must be this page's. The opener's entry must be fresh, since
+   * the click that opened this tab stashed it; a same-tab listing may have
+   * been read for a while. Returns {entry, via} or null. */
+  const OPENER_WINDOW_MS = 15 * 60 * 1000;
+
+  function pickDeparture(openerEntries, ownEntries, page, now) {
+    const fits = (e) => {
+      if (!e || !e.job) return false;
+      const h = e.job.handoff || {};
+      if (h.atsHost && h.atsHost !== page.host) return false;
+      if (h.tenant && page.tenant && h.tenant !== page.tenant) return false;
+      if (e.job.ats && page.vendor && e.job.ats !== page.vendor) return false;
+      return true;
+    };
+    const opener = (openerEntries || [])[0];
+    if (opener && now - opener.at <= OPENER_WINDOW_MS && fits(opener)) {
+      return { entry: opener, via: "opener" };
+    }
+    // Same-tab: never a listing on this very host (a hiring system's own job
+    // page before its own form, which the keyed stash already links).
+    const own = (ownEntries || []).find((e) => e && e.job && hostOf(e.job.url) !== page.host);
+    if (own && fits(own)) return { entry: own, via: "tab" };
+    return null;
+  }
+
+  /* Does a submit belong to its tab's handoff? The same hiring system's host,
+   * and, when both sides know it, the same job id on it: a tab that went on
+   * to another job's form must not file that job onto the listing. */
+  function handoffFits(binding, page) {
+    if (!binding || !binding.job || binding.host !== page.host) return false;
+    return !binding.atsJobId || !page.atsJobId || binding.atsJobId === page.atsJobId;
+  }
 
   /* The site an "Always capture on this site" click enables: one host, both
    * schemes — `*://careers.contoso.com/*` — and nothing wider. Only web pages
@@ -647,6 +751,7 @@
   // `self` in the service worker, which imports this file for sameJob so the
   // rule exists once; `window` in a page, where the two are the same object.
   (typeof window !== "undefined" ? window : self).__trackerJobPosting =
-    { read, idFrom, pageId, tenantOf, atsOfUrl, vendorOf, htmlToText, sameJob, pickListed, siteOf,
+    { read, idFrom, pageId, tenantOf, atsHandoff, hasPosting, siteOwner, pickDeparture,
+      handoffFits, atsOfUrl, vendorOf, htmlToText, sameJob, pickListed, siteOf,
       matchPatternRegex, stripRequisition, suggestCompany };
 })();

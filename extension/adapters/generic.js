@@ -100,7 +100,13 @@
       const form = b.closest("form");
       if (form && !hasPassword(form) && controlsIn(form).length >= MIN_FORM_FIELDS) return form;
     }
-    if (!files.length && !applyFlowAt(loc)) return null;
+    // Rule 3 needs an address that says "application", or a file input on a
+    // page that is NOT a listing. A job page that publishes a JobPosting and
+    // carries an upload widget of its own (a Career Site Builder's "match
+    // your CV", 28 Sep 2026) would otherwise become an "application" whose
+    // root holds the page's own <a role=button>Apply now</a>, and the click
+    // that only LEAVES for the application would file one.
+    if (!applyFlowAt(loc) && (!files.length || J.hasPosting(doc))) return null;
     // The controls a person can SEE decide the container. Measured live on
     // Ashby: 21 controls sit in its form pane and the 22nd is reCAPTCHA's
     // hidden response field, portalled to <body> — counting it made the whole
@@ -253,13 +259,19 @@
    * JobPosting the listing published (Lever, Workable, Personio), so without
    * this the submit would file the apply page's tab title. Keyed by the id
    * the apply page will ask for; the worker expires it unsent (2 h) when
-   * nothing is submitted. Only a STRUCTURED read is worth remembering, and a
-   * client-rendered one may not exist yet at load — hence the retries. */
+   * nothing is submitted. Only a page that PUBLISHES a JobPosting is a
+   * listing worth remembering, whatever its title was read from: until
+   * 28 Sep 2026 this asked for a structured TITLE, and a Career Site Builder
+   * page that writes its title outside its JobPosting was never stashed. A
+   * client-rendered one may not exist yet at load, hence the retries. The
+   * listing also says where it hands its applicant over, when it says
+   * (jobposting.js:atsHandoff), for the handoff to check against. */
   function stashListing() {
     let job = null;
     try { job = J.read(document, location); } catch (e) { return true; }
-    const src = job && job._prov && job._prov.title_source;
-    if (src !== "jsonld" && src !== "microdata") return false;
+    if (!(job && job._prov && job._prov.structured)) return false;
+    const handoff = J.atsHandoff(document);
+    if (handoff) job.handoff = handoff;
     try {
       // Keyed by the id: for an apply page on the same site (Lever's /apply).
       chrome.runtime.sendMessage({ type: "tracker-stash-job", key: adapter.answerFormKey(), job })
@@ -278,4 +290,22 @@
     setTimeout(stashListing, 1500);
     setTimeout(stashListing, 5000);
   }
+
+  /* THE HANDOFF, from the hiring system's side (docs/career-sites.md §16.3
+   * item 2). Its page, loading in the tab's top frame, tells the worker where
+   * it is; the worker binds this tab to the listing the applicant just left
+   * (jobposting.js:pickDeparture) and keeps that for days. Every later page
+   * of the visit says so again, which adds the job's id once an address or a
+   * heading shows it. Only on a hiring system's own host. */
+  function claimHandoff() {
+    if (!J.atsOfUrl(location.href) || window !== window.top) return;
+    let atsJobId = null;
+    try { atsJobId = adapter.atsJobId(); } catch (e) { atsJobId = null; }
+    try {
+      chrome.runtime.sendMessage({ type: "tracker-claim-handoff", page: {
+        host: location.hostname.toLowerCase(), vendor: J.atsOfUrl(location.href),
+        tenant: tenantHint(), atsJobId } }).catch(() => {});
+    } catch (e) { /* no extension context: a test, or a reloaded extension */ }
+  }
+  if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id) claimHandoff();
 })();

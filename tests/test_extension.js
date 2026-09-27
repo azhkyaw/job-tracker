@@ -1004,6 +1004,82 @@ console.log("\njobposting.js pageId: the job's id when the address has lost it (
         "Principal AI Engineer");
 }
 
+console.log("\njobposting.js: the handoff from a listing to its hiring system (P2, 28 Sep 2026)");
+{
+  // The Career Site Builder listing of 28 Sep 2026, placeholder names: its
+  // JobPosting scope holds ONLY the description; the title sits outside it;
+  // no hiringOrganization, no og:site_name; the tab title names the owner;
+  // and the site's inline config says where Apply hands over.
+  const LIST = "https://jobs.litwarebank.com/job/Principal-AI-Engineer/51234-en_GB?&feedid=363857";
+  const listing = () => pageDoc([
+    node("span", { itemprop: "title" }, ["Principal AI Engineer"]),
+    node("div", { itemscope: "", itemtype: "http://schema.org/JobPosting" },
+         [node("span", { itemprop: "description" }, ["Job Summary. Design the data pipelines."])]),
+    node("meta", { property: "og:title", content: "Principal AI Engineer" }),
+    node("script", {}, ["var j2w = {}; j2w.init({ companyId: 'litwarebk', jobAlertEnabled: 'true' });"]),
+    node("script", {}, [`{"ssoCompanyId" : 'litwarebk', "ssoUrl" : 'https://career2.successfactors.eu'}`]),
+    node("script", { src: "//rmkcdn.successfactors.com/0a1b2c3d/js/app.js" }),
+  ], "Principal AI Engineer Job Details | Litware Bank");
+  const j = J.read(listing(), makeLoc(LIST));
+  check("a JobPosting holding only the description still makes the page a listing",
+        [j._prov.structured, j._prov.title_source, j.title, j.jd_text],
+        [true, "og", "Principal AI Engineer", "Job Summary. Design the data pipelines."]);
+  check("the employer, from the tab title's owner, marked weak",
+        [j.company, j._prov.weak.includes("company")], ["Litware Bank", true]);
+  check("atsHandoff: the data centre and tenant from the inline config",
+        J.atsHandoff(listing()), { atsHost: "career2.successfactors.eu", tenant: "litwarebk" });
+  check("atsHandoff: a page that says nothing of the kind gives null",
+        J.atsHandoff(pageDoc([node("script", {}, ["var x = 1;"])])), null);
+  check("hasPosting: the listing publishes one; a plain page does not",
+        [J.hasPosting(listing()), J.hasPosting(pageDoc([node("h1", {}, ["Hi"])]))], [true, false]);
+  check("a plain page is not structured",
+        J.read(pageDoc([node("h1", {}, ["Engineer"])]), makeLoc("https://careers.contoso.com/x")) ._prov.structured,
+        false);
+  check("siteOwner: a trailing 'Careers' is the site's name, not the employer's",
+        J.siteOwner("Senior Engineer | Contoso Careers", "Senior Engineer"), "Contoso");
+  check("siteOwner: a page word, no pipe, or the job's own title is no owner",
+        [J.siteOwner("Senior Engineer | Careers", "Senior Engineer"), J.siteOwner("Senior Engineer", null),
+         J.siteOwner("Contoso | Senior Engineer", "Senior Engineer")], [null, null, null]);
+  const onAts = J.read(pageDoc([node("h1", {}, ["Engineer"])], "Engineer | Fabrikam Talent"),
+                       makeLoc("https://jobs.lever.co/fabrikam/53e23908-0da6-47a5-a482-39be676e9ee6"));
+  check("on a hiring system's host the tab title's owner is never the company", onAts.company, null);
+
+  // pickDeparture: which listing the hiring system's first page binds to.
+  const NOW = 1_800_000_000_000;
+  const entry = (url, extra = {}, ago = 60_000) => ({ at: NOW - ago, job: { url, title: "Principal AI Engineer", ...extra } });
+  const csb = entry(LIST, { ats: "successfactors", handoff: { atsHost: "career2.successfactors.eu", tenant: "litwarebk" } });
+  const sfPage = { host: "career2.successfactors.eu", vendor: "successfactors", tenant: "litwarebk" };
+  const pd = (op, own, page = sfPage) => { const r = J.pickDeparture(op, own, page, NOW); return r && [r.via, r.entry.job.url]; };
+  check("same tab: the listing the tab showed last binds", pd(null, [csb]), ["tab", LIST]);
+  check("…refused when the listing hands over to another tenant",
+        pd(null, [csb], { ...sfPage, tenant: "relecloud" }), null);
+  check("…or to another data centre", pd(null, [csb], { ...sfPage, host: "career10.successfactors.com" }), null);
+  check("…or names another vendor",
+        pd(null, [entry(LIST, { ats: "workday" })]), null);
+  check("…and a listing on the hiring system's own host is not a handoff (the keyed stash has it)",
+        pd(null, [entry("https://career2.successfactors.eu/careers?career_ns=job_listing&company=litwarebk")]), null);
+  check("only the MOST RECENT listing is considered: an older one is a guess",
+        pd(null, [entry("https://jobs.fabrikam.com/job/9", { ats: "workday" }), csb]), null);
+  const board = entry("https://www.linkedin.com/jobs/view/4400000001/", { platform: "linkedin" }, 20_000);
+  check("a fresh opener entry (a job board's external click) wins over the tab's own",
+        pd([board], [csb]), ["opener", "https://www.linkedin.com/jobs/view/4400000001/"]);
+  check("…but a stale one does not: the tab's own listing binds",
+        pd([entry("https://www.linkedin.com/jobs/view/4400000001/", {}, 20 * 60_000)], [csb]), ["tab", LIST]);
+  check("nothing remembered: nothing binds", pd(null, []), null);
+
+  // handoffFits: does a submit belong to its tab's binding?
+  const b = { job: { title: "Principal AI Engineer" }, host: "career2.successfactors.eu",
+              atsJobId: "career2.successfactors.eu/litwarebk/51234" };
+  check("handoffFits: same host, same job id", J.handoffFits(b, { host: b.host, atsJobId: b.atsJobId }), true);
+  check("handoffFits: an id on only one side does not refuse",
+        [J.handoffFits({ ...b, atsJobId: null }, { host: b.host, atsJobId: b.atsJobId }),
+         J.handoffFits(b, { host: b.host, atsJobId: null })], [true, true]);
+  check("handoffFits: the tab went on to another job's form",
+        J.handoffFits(b, { host: b.host, atsJobId: "career2.successfactors.eu/litwarebk/51232" }), false);
+  check("handoffFits: another host, or no binding",
+        [J.handoffFits(b, { host: "career10.successfactors.com", atsJobId: null }), J.handoffFits(null, { host: b.host })],
+        [false, false]);
+}
 {
   const at = (href) => makeLoc(href);
   const s = (href, ref) => { const r = J.suggestCompany(at(href), ref); return [r.name, r.site]; };
@@ -1206,6 +1282,33 @@ console.log("\ngeneric.js: SuccessFactors' signed-in form (read live 24 Sep 2026
   check("the tenant an earlier page named reaches the postback form's id, key and ATS id",
         [first.atsJobId(), later.answerFormKey(), later.atsJobId(), later.getJob().platform_job_id],
         Array(4).fill("career2.successfactors.eu/litwarebk/51234"));
+}
+console.log("\ngeneric.js: a listing's own Apply leaves for the application (P2)");
+{
+  // A Career Site Builder listing: a JobPosting, an upload widget of its own
+  // ("match your CV"), the cookie banner's checkboxes, and "Apply now" as
+  // <a role=button>, which says "apply now" to the submit rule. Until P2 the
+  // file input made rule 3 root the page, so that click would file one.
+  const apply = node("a", { role: "button", href: "/talentcommunity/apply/51234/?locale=en_GB" }, ["Apply now"]);
+  const cv = node("input", { type: "file", name: "cvMatch" });
+  const box = (n) => node("input", { type: "checkbox", name: n });
+  const a = loadGeneric([
+    node("div", { itemscope: "", itemtype: "http://schema.org/JobPosting" },
+         [node("span", { itemprop: "description" }, ["The job."])]),
+    node("div", { class: "skills-match" }, [cv]), apply,
+    node("div", { class: "cookie-banner" }, [box("req-cookies"), box("fun-cookies")]),
+  ], "https://jobs.litwarebank.com/job/Principal-AI-Engineer/51234-en_GB");
+  check("a listing with an upload widget has no application root", a.answerFormRoot() === null, true);
+  check("…so its 'Apply now' is not an application", a.isCompletion(apply), false);
+  // Ashby publishes its JobPosting on the application page too: an apply
+  // address keeps that page an application.
+  const submit = button("Submit Application");
+  const pane = node("div", { class: "ashby-job-posting-right-pane" },
+                    [text("name"), text("email"), file("resume"), submit]);
+  const b = loadGeneric([ld({ "@type": "JobPosting", title: "Senior Solutions Architect" }), pane],
+                        "https://jobs.ashbyhq.com/fabrikam/d9b9d44f-0a87-4237-b101-360052373643/application");
+  check("…while a page that publishes one AND has an apply address is still the application",
+        [b.answerFormRoot() === pane, b.isCompletion(submit)], [true, true]);
 }
 
 console.log("\ngeneric.js: what must NOT be an application");

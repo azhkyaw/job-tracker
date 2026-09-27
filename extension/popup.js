@@ -261,12 +261,16 @@ chrome.storage.local.get({ provenance: [] }, ({ provenance }) => {
     // (docs/career-sites.md §8). A link is the happy path and reads plainly;
     // candidates with no link means the titles disagreed, so the submit filed
     // its own record — worth checking once for a duplicate.
+    // "+handoff": bound when the hiring system's first page loaded (§16).
+    const how = { "opener+title": "the tab that opened this one and the title",
+                  "opener+handoff": "the handoff from the tab that opened this one",
+                  "tab+title": "the title", "tab+handoff": "the handoff from the listing" };
     if (p.linked && p.linked.startsWith("opener")) {
       li.append(` — completed the job board's record (matched by ${
-        p.linked === "opener+title" ? "the tab that opened this one and the title" : "the tab that opened this one"})`);
+        how[p.linked] || "the tab that opened this one"})`);
     } else if (p.linked) {
       li.append(` — filed onto the listing this tab showed first (matched by ${
-        p.linked === "tab+title" ? "the title" : "the tab alone"})`);
+        how[p.linked] || "the tab alone"})`);
     } else if (p.candidates) {
       const w = document.createElement("span");
       w.className = "warn";

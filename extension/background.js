@@ -257,9 +257,17 @@ async function stashExternal(tabId, job) {
  * `via` is "opener" / "tab", with "+title" when a title picked it;
  * `candidates` counts what was there, for the provenance line when nothing
  * was chosen. */
-async function takeExternal(openerTabId, ownTabId, title) {
-  const all = await _externalJobs();
+async function takeExternal(openerTabId, ownTabId, title, page) {
   const J = self.__trackerJobPosting;
+  // The tab's HANDOFF first: bound when the hiring system's first page
+  // loaded, seconds after the listing's Apply, and kept for days
+  // (claimHandoff, below). It needs no title to agree: the form's own id
+  // does the checking (jobposting.js:handoffFits).
+  if (page && ownTabId != null) {
+    const b = (await _handoffs())[ownTabId];
+    if (J.handoffFits(b, page)) return { job: b.job, via: `${b.via}+handoff`, candidates: 1 };
+  }
+  const all = await _externalJobs();
   const lists = [["opener", openerTabId], ["tab", ownTabId]]
     .filter(([, id]) => id != null && all[id] && all[id].length);
   const candidates = lists.reduce((n, [, id]) => n + all[id].length, 0);
@@ -273,6 +281,52 @@ async function takeExternal(openerTabId, ownTabId, title) {
   }
   await setLocal({ externalJobs: all });        // persist the prune
   return { job: null, candidates };
+}
+
+/* THE HANDOFF (docs/career-sites.md §16.3 item 2): one binding per tab,
+ * `{at, job, via, host, atsJobId}`, made when a hiring system's page loads
+ * (generic.js:claimHandoff) from the listing the tab, or the tab that opened
+ * it, showed last (jobposting.js:pickDeparture). Days, not the stash's two
+ * hours: a sign-up, an account and a session timeout came between one real
+ * listing and its submit (28 Sep 2026). Cleared when the browser starts,
+ * since Chrome gives restored tabs new ids. */
+const HANDOFF_TTL_MS = 3 * 24 * 60 * 60 * 1000;
+
+async function _handoffs() {
+  const { handoffs = {} } = await new Promise((res) =>
+    chrome.storage.local.get({ handoffs: {} }, res));
+  const now = Date.now();
+  for (const [tab, b] of Object.entries(handoffs)) {
+    if (!b || now - b.at > HANDOFF_TTL_MS) delete handoffs[tab];
+  }
+  return handoffs;
+}
+
+const jobKeyOf = (j) => (j && (j.platform_job_id || j.url)) || null;
+
+async function claimHandoff(tabId, openerTabId, page) {
+  if (tabId == null || !page || !page.host) return;
+  const J = self.__trackerJobPosting;
+  const [all, ext] = [await _handoffs(), await _externalJobs()];
+  const cur = all[tabId];
+  const pick = J.pickDeparture(openerTabId != null ? ext[openerTabId] : null,
+                               ext[tabId], page, Date.now());
+  if (pick) {
+    const same = !!cur && jobKeyOf(cur.job) === jobKeyOf(pick.entry.job);
+    // The same listing still leads this tab's list, but the hiring system now
+    // shows ANOTHER job's id: the tab went on to a second job without a new
+    // listing. Its binding stays the first job's, and handoffFits keeps the
+    // second job's submit off it.
+    if (same && cur.host === page.host && cur.atsJobId && page.atsJobId &&
+        cur.atsJobId !== page.atsJobId) return;
+    all[tabId] = { at: Date.now(), job: pick.entry.job, via: pick.via, host: page.host,
+                   atsJobId: page.atsJobId || (same ? cur.atsJobId : null) || null };
+  } else if (cur && cur.host === page.host && page.atsJobId && !cur.atsJobId) {
+    cur.atsJobId = page.atsJobId;      // a later page of the visit shows the job's id
+  } else {
+    return;
+  }
+  await setLocal({ handoffs: all });
 }
 
 /* ------------------------------------------------ sites enabled by the user
@@ -386,6 +440,8 @@ async function disableSite(host) {
 
 chrome.runtime.onInstalled.addListener(() => { syncSites().catch(() => {}); });
 chrome.runtime.onStartup.addListener(() => { syncSites().catch(() => {}); });
+// Restored tabs get new ids, so no handoff can belong to a tab after a restart.
+chrome.runtime.onStartup.addListener(() => { setLocal({ handoffs: {} }).catch(() => {}); });
 chrome.permissions.onRemoved.addListener(() => { syncSites().catch(() => {}); });
 // The permission prompt can close the popup before its own code runs on, so
 // the grant is completed HERE: the popup notes which host it asked for, and a
@@ -468,8 +524,15 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
 
   if (msg && msg.type === "tracker-take-external") {
     takeExternal(sender.tab && sender.tab.openerTabId, sender.tab && sender.tab.id,
-                 msg.title || null)
+                 msg.title || null, msg.page || null)
       .then((r) => respond(r));
+    return true;
+  }
+
+  // A hiring system's page has loaded in this tab (generic.js:claimHandoff).
+  if (msg && msg.type === "tracker-claim-handoff") {
+    claimHandoff(sender.tab && sender.tab.id, sender.tab && sender.tab.openerTabId, msg.page)
+      .then(() => respond({ ok: true }), () => respond({ ok: false }));
     return true;
   }
 

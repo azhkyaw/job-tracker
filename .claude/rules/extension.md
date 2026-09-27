@@ -1024,3 +1024,23 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   set (`SELECT ats_job_id FROM jobs …`) to the form's own id, also when the
   capture completed a job board's record, whose posting id stays the
   board's.
+- **The handoff (0.18.0, 28 Sep 2026) has run only against tests.** Its
+  rules (`jobposting.js:pickDeparture`, `handoffFits`, `tenantOf`,
+  `atsHandoff`) are tested; the worker's `handoffs` store, `claimHandoff`,
+  and the `tracker-claim-handoff` / `tracker-take-external` plumbing are
+  not. What to read:
+  - after the first hiring-system page loads: the LevelDB (Procedures,
+    above) holds `handoffs[<tab id>]` with the listing's job, `via`
+    "opener" or "tab", and the host; a later page with the job's id fills
+    `atsJobId`;
+  - on the submit: the provenance line reads "matched by the handoff from
+    the listing" (or "from the tab that opened this one"), and the record
+    carries the listing's identity and the form's answers;
+  - the job board path (LinkedIn's external apply) binds only if Chrome
+    sets `openerTabId` on the tab it opens, which is itself unverified;
+  - an employer-branded listing binds only once its site is enabled, and
+    enabling has not yet completed once (docs/career-sites.md §16.1, P3);
+  - SuccessFactors ids now carry the tenant (`<host>/<tenant>/<id>`): one
+    without it on a SuccessFactors host means the visit's earlier pages
+    never named it, i.e. the tab's `sessionStorage` held no
+    `__tracker_ats_tenant`.

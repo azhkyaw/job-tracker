@@ -683,7 +683,7 @@
       .then((r) => ({ job: (r && r.job) || null, tabUrl: (r && r.tabUrl) || null }));
   }
 
-  function withStashedJob(job, completed) {
+  function withStashedJob(job, completed, atsJobId) {
     if (!completed) return Promise.resolve(job);
     try {
       return chrome.runtime.sendMessage({ type: "tracker-take-job", key: jobKey() })
@@ -759,9 +759,11 @@
             // title, company, JD — and brings the form's answers, the vendor
             // and the real submit time to it, instead of starting a second,
             // thinner record (docs/career-sites.md §7-8). The worker decides,
-            // from the browser's own tab records plus a title check.
+            // from the browser's own tab records plus a title check, or from
+            // this tab's HANDOFF, checked by the form's own host and job id (§16).
             const link = adapter.linksOpener
-              ? tell({ type: "tracker-take-external", title: job.title || null })
+              ? tell({ type: "tracker-take-external", title: job.title || null,
+                       page: { host: location.hostname.toLowerCase(), atsJobId: atsJobId || null } })
               : Promise.resolve(null);
             return link.then((r) => {
               let linked = null;
@@ -938,7 +940,7 @@
     // job's listing stash, and on an employer's site opened by a job board,
     // the link to that board's record. The payload's own `completed` flag is
     // untouched — a popup click is not the moment the form was sent.
-    const merged = withStashedJob(job, completed || (explicit && trigger === "apply"));
+    const merged = withStashedJob(job, completed || (explicit && trigger === "apply"), atsJobId);
 
     // A COMPLETED external apply — the submit on the employer's own form — is
     // the evidence the ask-first box exists to wait for, so it writes at once.
