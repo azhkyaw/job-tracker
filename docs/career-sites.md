@@ -836,7 +836,7 @@ for the second.
   2026** (§16.6). Enabling's cause was not the prompt at all: Chrome refused
   every request before showing one.
 - **P4.** Completing a thin record from its listing afterwards; tenant →
-  company names.
+  company names. **Built 28 Sep 2026** (§16.6).
 
 **Open decisions and risks:**
 
@@ -937,6 +937,28 @@ for the second.
     `declarativeContent` CSS rule at priority 100 under the capturing
     rule's 200, the order Chromium's `GetDeclarativeIcon` resolves by.
     JSON-LD pages stay hollow: CSS conditions see only displayed elements.
+- **P4, extension 0.20.1 and 0.21.0:**
+  - **A tenant's name (0.20.1).** A nameless capture whose hiring-system id
+    carries a tenant (`joburl.ats_tenant`) is offered the name another
+    record gave that tenant, as `company_suggestion` in the `/captures`
+    response, which the receipt pre-fills over the page's own guess. Offered,
+    not stored: a tenant is one employer's instance, but the user confirms.
+    SuccessFactors only, the one vendor measured whose form names no
+    employer.
+  - **Completing a thin record (0.21.0), two ways, both exact:**
+    - a Career Site Builder listing proposes `<data centre>/<tenant>/<its
+      own number>` as `ats_job_candidates` (`jobposting.js:atsCandidates`);
+      `upsert_record` joins the ONE job holding it and never stores it, so
+      on a site whose number is not the requisition it matches nothing;
+    - the popup's "Attach this page to an application…" lists the last 30
+      days' records, thin first (`GET /captures/recent`), and the user's
+      pick makes the page a posting of that job
+      (`POST /captures/{id}/listing`, `upsert_record(attach_to_job=…)`). A
+      page that is already another record's posting is refused (409):
+      combining two records stays `merge_jobs`'.
+  - Either way the job takes the listing's company and title only where it
+    holds the placeholders, and the listing's JD is extracted as its own
+    posting's.
 - None of it has run on a real apply; `.claude/rules/extension.md` says what
   to read on the next one.
 

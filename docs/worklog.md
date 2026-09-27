@@ -1012,4 +1012,8 @@ the key to each real case.
    before any prompt, since the popup asked for `*://host/*` and no ONE
    declared pattern contained both schemes. Also SuccessFactors quick apply
    (a note from the job page's Apply, filed by the landing) and the icon's
-   third state (a job page that is not captured). Open: P4.
+   third state (a job page that is not captured). P4 the same day (0.21.0):
+   a thin record completed from its listing afterwards, by a join-only
+   candidate id where the listing's number is the requisition and by the
+   popup's explicit attach everywhere else, and a tenant's known name offered
+   on the next nameless receipt. Open: the first real apply through each.
