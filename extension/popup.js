@@ -88,8 +88,23 @@ document.getElementById("cap").addEventListener("click", () => captureAs("intere
       return;
     }
     await chrome.storage.local.set({ pendingSite: { host: site.host, tabId: tab.id, at: Date.now() } });
-    const granted = await chrome.permissions.request({ origins: [site.pattern] });
-    if (!granted) { note.textContent = "Chrome didn't grant access, so nothing changed."; return; }
+    // Chrome REFUSES a request outside the manifest's optional patterns,
+    // before any prompt, by rejecting this promise. Until 28 Sep 2026 every
+    // request was refused (*://host/* against https:// and http:// declared
+    // apart), and with no catch the popup said nothing at all. Say it.
+    let granted = false;
+    try {
+      granted = await chrome.permissions.request({ origins: [site.pattern] });
+    } catch (e) {
+      await chrome.storage.local.set({ pendingSite: null });
+      note.textContent = `Chrome refused the request: ${(e && e.message) || e}`;
+      return;
+    }
+    if (!granted) {
+      await chrome.storage.local.set({ pendingSite: null });
+      note.textContent = "Chrome didn't grant access, so nothing changed.";
+      return;
+    }
     const r = await chrome.runtime.sendMessage({ type: "tracker-enable-site", host: site.host, tabId: tab.id });
     note.textContent = r && r.ok
       ? "On. This page's job is remembered now; apply as usual."

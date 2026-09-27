@@ -1128,6 +1128,36 @@ console.log("\njobposting.js matchPatternRegex: which pages the icon (and the po
   check("every manifest content-script pattern translates", bad, []);
 }
 
+console.log("\nmanifest: every origin the extension asks Chrome for is one it declared (28 Sep 2026)");
+{
+  // Chromium's rule: ONE declared optional pattern must contain the whole
+  // request, every scheme of it (extensions/common/url_pattern.cc
+  // URLPattern::Contains, applied per pattern by URLPatternSet::ContainsPattern
+  // in permissions_api_helpers.cc). Anything else is refused before any
+  // prompt: "Only permissions specified in the manifest may be requested".
+  // "Always capture on <site>" asked for *://host/*, both schemes, against
+  // https://*/* and http://*/* declared separately, so it never once worked,
+  // and the popup, with no catch, said nothing (docs/career-sites.md §16).
+  const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, "extension/manifest.json"), "utf8"));
+  const parts = (p) => { const m = /^([^:]+):\/\/([^/]+)(\/.*)$/.exec(p); return m && [m[1], m[2], m[3]]; };
+  const schemes = (s) => (s === "*" ? ["http", "https"] : [s]);
+  const hostIn = (o, i) => o === "*" || o === i || (o.startsWith("*.") && (i === o.slice(2) || i.endsWith(o.slice(1))));
+  const pathIn = (o, i) => new RegExp("^" + o.split("*").map((x) => x.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
+    .join(".*") + "$").test(i.replace(/\*$/, ""));
+  const contains = (outer, inner) => {
+    const [os, oh, op] = parts(outer), [is, ih, ip] = parts(inner);
+    return schemes(is).every((s) => schemes(os).includes(s)) && hostIn(oh, ih) && pathIn(op, ip);
+  };
+  check("the containment rule itself: https://*/* does NOT contain *://host/*",
+        contains("https://*/*", "*://careers.contoso.com/*"), false);
+  const declared = (req) => manifest.optional_host_permissions.some((o) => contains(o, req));
+  for (const url of ["https://jobs.litwarebank.com/job/Principal-AI-Engineer/51234-en_GB",
+                     "http://careers.contoso.com/jobs/7", "https://careers.contoso.com/"]) {
+    check(`"Always capture on" for ${url} asks for a declared origin`, declared(J.siteOf(url).pattern), true);
+  }
+  check("…and so does the options page's remote tracker server", declared("https://tracker.contoso.com/*"), true);
+}
+
 /* ------------------------------ adapters/generic.js on an ATS's own pages
  *
  * The application form and its submit, as read LIVE on 24 Sep 2026 from four

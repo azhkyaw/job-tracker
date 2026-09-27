@@ -753,6 +753,28 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
       `OffscreenCanvas`.
     - The icons themselves come from `scripts/make_icons.py`.
 
+- **A requested origin must fit inside ONE declared optional pattern, every
+  scheme of it** (28 Sep 2026: "Always capture on <site>" had never worked
+  once, from its first build on 24 Sep).
+  - **The failure:** the popup asked for `*://host/*` (http AND https)
+    while the manifest declared `https://*/*` and `http://*/*` apart.
+    Chromium checks each requested pattern against each declared one
+    (`URLPatternSet::ContainsPattern` → `URLPattern::Contains`, which needs
+    every scheme of the request in ONE pattern), so the request was
+    "unlisted" and `permissions.request` rejected with "Only permissions
+    specified in the manifest may be requested", before any prompt.
+  - **Why nobody saw it:** the click handler had no catch, so the rejection
+    was unhandled and the popup showed nothing. The `pendingSite` note,
+    written just before, was the only trace: one sat in storage from
+    25 Sep, and `Secure Preferences` held no runtime grant. That pair reads
+    exactly like a user dismissing the prompt, which is why the source was
+    read rather than the user's click assumed.
+  - **Fixed:** the manifest declares the one pattern `*://*/*`; the popup
+    catches the rejection, says it, and clears the note;
+    `tests/test_extension.js` checks every origin the extension requests
+    against the manifest with Chromium's containment rule (red on the old
+    manifest for every site).
+
 ## Known-untested surfaces (verify on first real contact)
 
 - **Extension DOM selectors** (`extension/adapters/*.js`) — best-effort against
@@ -961,6 +983,8 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
     "filed onto the listing this tab showed first", and the record should
     carry the listing's `<host>/<token>` id, company and JD, with the form's
     answers.
+  - **Enabling never got as far as a prompt until 0.18.1** (the gotcha
+    above: Chrome refused every request). So none of what follows has run.
   - **Untested assumptions, in order of doubt:**
     1. That the permission prompt's closing the popup is really handled by
        `permissions.onAdded` (the `pendingSite` note).
