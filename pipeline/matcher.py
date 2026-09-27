@@ -14,12 +14,13 @@ extraction. Outcomes:
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime
 
 from . import config
 from .email_classifier import Extraction, norm_company
-from .ingest import UNKNOWN_TITLE
+from .ingest import UNKNOWN_COMPANY, UNKNOWN_TITLE
 
 # Classification type -> event type. status_update refines via status_detail.
 EVENT_TYPE = {
@@ -78,11 +79,12 @@ WHERE a.user_id = %(user_id)s
 # (two name forms of one agency then compete on the margin), none wrong.
 # On 21 Aug the same change measured +1/-1 — `.claude/rules/matching.md` had
 # asked for a re-measure if suppression grew, and it had.
-_CANDIDATES_SQL = _CANDIDATES_BASE + """(j.company_norm = %(company)s
+_COMPANY_GATE = """(j.company_norm = %(company)s
        OR similarity(j.company_norm, %(company)s) >= %(cmin)s
        OR string_to_array(j.company_norm, ' ') @> string_to_array(%(company)s, ' ')
        OR string_to_array(j.company_norm, ' ') <@ string_to_array(%(company)s, ' '))
 """
+_CANDIDATES_SQL = _CANDIDATES_BASE + _COMPANY_GATE
 
 # Last resort when the company gate above admits NOBODY. Two independent rules,
 # OR'd into ONE query rather than tried in sequence, so the scorer sees every
@@ -195,6 +197,54 @@ _CANDIDATES_RESCUE_SQL = (_CANDIDATES_BASE + """(
                         AND w.word = ANY(string_to_array(%(company)s, ' ')))
       )
 """).replace("__WMIN__", str(int(config.RESCUE_SHARED_WORD_MIN)))
+
+
+# An email that names the job's own id on its hiring system (a SuccessFactors
+# requisition "(51234)", a Workday "R0012345") is that job's, before any name
+# is compared (docs/career-sites.md §16.3 item 4; migration 018). By LOOKUP:
+# the ids of the user's own records are searched for in the mail; a number is
+# never parsed out of it and trusted, because a figure in a letter is not an
+# id. Measured 28 Sep 2026: every SuccessFactors confirmation (3 of 3) and 4
+# of 19 Workday emails carry one; no other vendor's do. It is what separates
+# two records of one employer and one title (a sibling role), where names
+# fail the margin by construction.
+# Two guards keep a coincidence out. The record's company must pass the same
+# gate find_match uses, so a stranger's "reference number 51234" is not
+# another employer's requisition, unless the record has no company to compare
+# (a capture that could not name its employer: the email-side rescue). And
+# exactly ONE record may be named, or the id decides nothing.
+_ATS_ID_SQL = """
+SELECT a.id AS application_id, j.ats_job_id
+FROM applications a
+JOIN jobs j ON j.id = a.job_id
+WHERE a.user_id = %(user_id)s
+  AND j.ats_job_id IS NOT NULL
+  AND (j.company_norm = %(unknown)s OR (%(company)s <> '' AND """ + _COMPANY_GATE + """))
+"""
+
+
+def _ats_token(ats_job_id: str) -> str | None:
+    """The part of an ATS id a letter can print: what follows the host, when
+    it is id-shaped (a digit, four characters at least, no query)."""
+    tok = ats_job_id.rsplit("/", 1)[-1]
+    if len(tok) < 4 or not any(c.isdigit() for c in tok) or any(c in tok for c in "?=&"):
+        return None
+    return tok
+
+
+def match_by_ats_id(conn, user_id, email_row, extraction: Extraction) -> str | None:
+    """The one application whose ATS id this email names, or None."""
+    text = f"{email_row.get('subject') or ''}\n{email_row.get('body_text') or ''}"
+    rows = conn.execute(_ATS_ID_SQL, {
+        "user_id": user_id, "unknown": UNKNOWN_COMPANY,
+        "company": norm_company(extraction.company or ""),
+        "cmin": config.COMPANY_TRGM_MIN}).fetchall()
+    hits = set()
+    for r in rows:
+        tok = _ats_token(r["ats_job_id"])
+        if tok and re.search(rf"(?<![0-9a-z]){re.escape(tok)}(?![0-9a-z])", text, re.IGNORECASE):
+            hits.add(str(r["application_id"]))
+    return hits.pop() if len(hits) == 1 else None
 
 
 @dataclass
@@ -439,7 +489,9 @@ def dispatch(conn, user_id, email_row, classification: str, extraction: Extracti
         # triage; the human decides via the inbound lane's "track as lead".
         result = MatchResult("pending")
     else:
-        result = find_match(conn, user_id, extraction, occurred_at)
+        by_id = match_by_ats_id(conn, user_id, email_row, extraction)
+        result = (MatchResult("auto", by_id, 1.0) if by_id
+                  else find_match(conn, user_id, extraction, occurred_at))
 
         if result.action == "pending" and not result.had_candidates \
                 and classification in _CREATES \

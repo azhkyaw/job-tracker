@@ -337,3 +337,27 @@ route deletes events and may delete an application.
   notes before the search began. The rule that covers every case: an event
   happens when its email arrives; a stated date belongs in the payload.
   Sent mail already follows it (the bullet on sent mail, above).
+- **Mail that names the job's own ATS id is matched on it, before any name
+  is compared** (28 Sep 2026, migration 018; the design is
+  `docs/career-sites.md` §16). `match_by_ats_id` runs first in `dispatch`
+  (never for `recruiter_outreach`, which always goes to triage). It searches
+  the mail for the ids the user's OWN records hold, and never parses a number
+  out of the mail and trusts it: Relecloud's confirmation also carries
+  "5500". Every SuccessFactors confirmation measured prints the requisition,
+  "(51234)", and so do 4 of 19 Workday emails ("R0012345"); no other
+  vendor's mail carries an id. Its guards:
+  - the record must pass the SAME company gate as `find_match`
+    (`_COMPANY_GATE`, one constant since then, so the two cannot drift),
+    except a record still named "unknown company", which the id alone may
+    claim: that is the email-side rescue for a nameless ATS capture;
+  - an email with no company reaches ONLY nameless records, because
+    `string_to_array('', ' ')` is the empty array, which every array
+    contains (`@>`), so an empty name would pass the gate for every record;
+  - exactly one record may be named; two decide nothing and name matching
+    runs as before;
+  - a token is what follows the host, four characters or more, with a digit
+    and no query, so a crumb id and a bare "12" never qualify.
+
+  What it fixes is the case name matching fails by construction: two records
+  of one employer and ONE title (a sibling role, 28 Sep 2026), where the
+  margin can never clear. `match_score` 1.0 marks a match made this way.

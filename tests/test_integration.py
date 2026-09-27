@@ -51,6 +51,11 @@ FAKE_CLASSIFY = {
     "sent-resume-new": Classification(True, "sent_application", 0.9, "stub"),
     "sent-reply-stranger": Classification(True, "sent_reply", 0.9, "stub"),
     "sent-withdrawal": Classification(True, "sent_withdrawal", 0.9, "stub"),
+    # Path 3k: mail that names the job's own id on its hiring system.
+    "litware-invite": Classification(True, "interview_invite", 0.93, "stub"),
+    "litware-both": Classification(True, "interview_invite", 0.93, "stub"),
+    "nameless-confirmation": Classification(True, "confirmation", 0.93, "stub"),
+    "stranger-number": Classification(True, "interview_invite", 0.93, "stub"),
 }
 def _fake_extraction(**kw):
     """Mirror the real extract_email(): raw always carries the full payload."""
@@ -146,6 +151,16 @@ FAKE_EXTRACT["sent-resume-new"] = _fake_extraction(company="Lucerne Publishing",
 FAKE_EXTRACT["sent-reply-stranger"] = _fake_extraction(company="Trey Research",
                                                        role_title="Data Engineer",
                                                        platform="direct")
+# Path 3k. Two records of one employer and one title (a sibling role posted
+# alongside, 28 Sep 2026), a nameless record, and a stranger's mail that
+# happens to contain the same number.
+FAKE_EXTRACT["litware-invite"] = _fake_extraction(company="Litware Bank",
+                                                  role_title="Principal AI Engineer", platform="ats")
+FAKE_EXTRACT["litware-both"] = FAKE_EXTRACT["litware-invite"]
+FAKE_EXTRACT["nameless-confirmation"] = _fake_extraction(company="Contoso", role_title="Staff Engineer",
+                                                         platform="ats")
+FAKE_EXTRACT["stranger-number"] = _fake_extraction(company="Fabrikam",
+                                                   role_title="Principal AI Engineer", platform="direct")
 
 CLASSIFY_CALLS: list[tuple[str, bool]] = []   # (subject, sent) — what the worker asked
 
@@ -635,6 +650,63 @@ with db.connect() as conn:
         conn.execute("SELECT extraction FROM emails WHERE id = %s", (e17,)).fetchone()["extraction"])
     check("...and the rebuilt extraction carries a stated reason too",
           rr17.rejection_reason and rr17.rejection_reason["reason"] == "visa", rr17.rejection_reason)
+
+    print("path 3k: an email that names the job's own id on its hiring system")
+    # By LOOKUP (docs/career-sites.md §16.3 item 4): the ids of the user's own
+    # records are searched for in the mail. Every SuccessFactors confirmation
+    # measured prints the requisition, "(51234)".
+    def _ats_app(company, title, ats_job_id):
+        j = conn.execute("INSERT INTO jobs (user_id, company_norm, title_canonical, ats_job_id) "
+                         "VALUES (%s, %s, %s, %s) RETURNING id",
+                         (user_id, company, title, ats_job_id)).fetchone()
+        conn.execute("INSERT INTO postings (user_id, job_id, platform, captured_via) "
+                     "VALUES (%s, %s, 'other', 'extension')", (user_id, j["id"]))
+        a_ = conn.execute("INSERT INTO applications (user_id, job_id) VALUES (%s, %s) RETURNING id",
+                          (user_id, j["id"])).fetchone()
+        conn.execute("INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+                     "VALUES (%s, %s, 'applied', 'extension', %s, '{}')",
+                     (user_id, a_["id"], NOW - _td(days=1)))
+        return str(a_["id"])
+
+    def _seed_body(key, body, sender):
+        row = conn.execute(
+            "INSERT INTO emails (user_id, gmail_message_id, sender, subject, body_text, received_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+            (user_id, f"gm-{key}", sender, key, body, NOW)).fetchone()
+        db.enqueue(conn, user_id, "classify_email", {"email_id": str(row["id"])})
+        return row["id"]
+
+    want = _ats_app("litware bank", "Principal AI Engineer", "career2.successfactors.eu/51234")
+    sibling = _ats_app("litware bank", "Principal AI Engineer", "career2.successfactors.eu/51232")
+    nameless = _ats_app("unknown company", "Staff Engineer", "career10.successfactors.com/61000")
+    conn.commit()
+    e19 = _seed_body("litware-invite", "Thank you for your interest in Principal AI Engineer (51234). "
+                     "We'd like you to know that we have received your application.",
+                     "careers@litwarebank.example")
+    e20 = _seed_body("litware-both", "About Principal AI Engineer (51234) and Principal AI Engineer "
+                     "(51232): both roles are open.", "careers@litwarebank.example")
+    e21 = _seed_body("nameless-confirmation", "Thank you for your interest in Staff Engineer (61000).",
+                     "noreply@contoso.example")
+    e22 = _seed_body("stranger-number", "Your reference number is 51234. See you on Monday.",
+                     "hr@fabrikam.example")
+    conn.commit()
+    drain(conn)
+    s19, s20, s21, s22 = (email_state(conn, e) for e in (e19, e20, e21, e22))
+    check("the requisition picks one of two same-titled records at one employer (names alone cannot)",
+          s19["triage_state"] == "auto_matched" and str(s19["matched_application_id"]) == want
+          and s19["match_score"] == 1.0, s19)
+    check("...and its event files on that record, not the sibling",
+          conn.execute("SELECT count(*) AS n FROM events WHERE application_id = %s "
+                       "AND source_email_id = %s", (sibling, e19)).fetchone()["n"] == 0)
+    check("mail naming BOTH ids decides nothing by id: names then fail the margin, so triage",
+          s20["triage_state"] == "pending" and s20["matched_application_id"] is None, s20)
+    check("a record the capture could not name is found by its id (the email-side rescue)",
+          s21["triage_state"] == "auto_matched" and str(s21["matched_application_id"]) == nameless, s21)
+    check("...and the confirmation mints no second record",
+          conn.execute("SELECT count(*) AS n FROM jobs WHERE user_id = %s AND title_canonical "
+                       "ILIKE 'staff engineer%%'", (user_id,)).fetchone()["n"] == 1)
+    check("another employer's mail containing the same number is not matched by it",
+          s22["matched_application_id"] is None or str(s22["matched_application_id"]) != want, s22)
 
     print("path 4: failure backoff")
     db.enqueue(conn, user_id, "classify_email",
