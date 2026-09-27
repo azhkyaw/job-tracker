@@ -825,20 +825,31 @@ for the second.
   the column on `jobs` (the author's choice over `postings`), the upsert and
   the email lookup (items 3 and 4). **Built 28 Sep 2026.**
 - **P2.** The handoff binding, the stash gate, the Career Site Builder
-  config reader, and the tenant inside SuccessFactors ids (below).
+  config reader, and the tenant inside SuccessFactors ids. **Built 28 Sep
+  2026** (§16.6). Changed from the plan: no click is watched for the
+  departure. The tab already remembers each listing it shows, and a
+  listing's Apply navigates FROM it, so the departure is the last listing
+  the tab showed on another site (`pickDeparture`). A listing's own Apply
+  is never an application's submit: a page that publishes a JobPosting
+  gets no form root by rule 3 unless its address is an apply flow.
 - **P3.** Fix enabling, the icon's third state, quick apply.
 - **P4.** Completing a thin record from its listing afterwards; tenant →
   company names.
 
 **Open decisions and risks:**
 
-- **The tenant is not in a SuccessFactors id** (`career10.successfactors.com/12345`,
-  pinned in `tests/job_urls.json` before this). Requisitions are per-tenant
-  sequences on a shared host, so two employers on one data centre can
-  share a number and collide under `postings_platform_job_uidx`, the §10
-  failure. P2 adds the tenant, carried to postback pages in
-  `sessionStorage`; stored rows need no rewrite, because no posting holds a
-  SuccessFactors-host id today.
+- **The tenant was not in a SuccessFactors id** (`career10.successfactors.com/12345`,
+  pinned in `tests/job_urls.json` until P2). Requisitions are per-tenant
+  sequences on a shared host, so two employers on one data centre could
+  share a number and collide under `postings_platform_job_uidx` (the §10
+  failure) and, since P1, under `jobs.ats_job_id`. P2 puts it in:
+  `<host>/<tenant>/<id>`. No posting holds a SuccessFactors-host id; the
+  five SuccessFactors `ats_job_id`s backfilled on 28 Sep need the same
+  rewrite, or a new capture will not meet them.
+- **The listing must still be read.** On an employer-branded domain that
+  means the site is enabled, and enabling has never completed once (§16.1
+  link 1): P3. Until then the binding serves the job board path (the
+  opener) and the hiring systems' own listings.
 - **Unverified:** that a Workday review step has fewer than two controls
   (deduced from the logged reason, not seen); the "(N)" suffix beyond three
   tenants; how often a Career Site Builder listing's id differs from the
@@ -876,10 +887,36 @@ for the second.
     an id already held, merge) and `tests/test_integration.py` path 3k (two
     same-titled records at one employer, a nameless record, a stranger's
     mail with the same number).
+  Backfilled with the author's go-ahead on the six real records whose id is
+  proven (a form, an address, or a confirmation's "(N)"); replayed over the
+  469 stored job-related emails, the lookup fires on 5, every one already
+  filed on that record, and claims none wrongly.
+- **P2, extension 0.18.0** (0.17.1 for the tenant alone):
+  - SuccessFactors ids carry the tenant: `jobposting.js:TENANT_PARAM` and
+    `tenantOf`, mirrored in `joburl.generic_id`. The postback form gets it
+    as `pageId`'s hint from `generic.js`, which keeps the tenant an earlier
+    page's address named in the hiring system's own `sessionStorage`.
+    `stripRequisition` reads an id's last segment.
+  - A page is a listing when it publishes a JobPosting (`_prov.structured`),
+    which is what `stashListing` now asks; an employer's own site gives a
+    weak company from its tab title's owner (`siteOwner`); a Career Site
+    Builder listing adds where it hands over (`atsHandoff`: data centre and
+    tenant from its inline config).
+  - The handoff: each hiring-system page in a top frame sends
+    `tracker-claim-handoff`; the worker binds the tab (`handoffs`, three
+    days, cleared at browser start) to `pickDeparture`'s listing: the
+    opener's last entry when fresh (15 minutes), else the tab's own last one
+    on another host, never an older one, and never one that names another
+    data centre, tenant or vendor. A later page of the same visit adds the
+    job's id; a page showing ANOTHER job's id under the same listing does
+    not rebind. At the submit, `takeExternal` tries the binding first,
+    checked by `handoffFits` (same host; the same job id where both know
+    it); the provenance line says "the handoff".
+  - The pure rules are tested, and each guard mutated out turns its test red
+    (the listing root, the tenant, most-recent-only, the same-host
+    exclusion, the job id). The worker's store and the messages are not.
 - None of it has run on a real apply; `.claude/rules/extension.md` says what
-  to read on the next one. The real records whose ATS id is known (the
-  28 Sep application, the §16.2 Workday and SuccessFactors ones) hold none
-  until a backfill, which is the author's call.
+  to read on the next one.
 
 ## 17. Sources
 

@@ -1002,4 +1002,8 @@ the key to each real case.
    carrying it, the email lookup `matcher.match_by_ats_id` ahead of name
    matching, and 0.17.0 sending it. Found on the way: a worktree's suite
    cannot see a NEW migration, because the container mounts the main tree's
-   `migrations/` (CLAUDE.md). Open: P2-P4.
+   `migrations/` (CLAUDE.md). P2 the same day (0.18.0): the handoff bound
+   when the hiring system's first page loads, to the last listing the tab
+   (or its opener) showed, instead of watching the Apply click; a listing
+   is a page that publishes a JobPosting; SuccessFactors ids carry their
+   tenant. Open: P3-P4.
