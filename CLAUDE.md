@@ -116,7 +116,10 @@ An invariant keeps its RULE here and its case history in the rule file.
 - `pipeline/ingest.py` — the only place job/posting/application rows are created
 - `pipeline/matcher.py` — matches an email to an application and files its event:
   an employer's outcome for mail received, what the USER did for mail they
-  sent (`EVENT_TYPE`'s `sent_*` rows, migration 016 — never an employer's outcome)
+  sent (`EVENT_TYPE`'s `sent_*` rows, migration 016 — never an employer's outcome).
+  First, by the job's own id on its hiring system when the mail names exactly
+  one (`match_by_ats_id`, migration 018: by lookup, behind the same company
+  gate), then by company and title
 - `pipeline/mailbox.py` — mail-ingest orchestrator shared by IMAP + Gmail API;
   `body_from_parts()` is the ONE decision of which MIME part is the body
   (the HTML alternative, since 23 Sep 2026 — `.claude/rules/mail-ingest.md`
@@ -356,7 +359,8 @@ An invariant keeps its RULE here and its case history in the rule file.
    deleting — `application_answers` is UNIQUE per (application, question_norm,
    occurrence), so the loser's copy of a question the winner already answered
    is dropped, not moved; that drop matches on question_norm ALONE, so a loser
-   with more repeat entries can't splice its spares into the winner's list).
+   with more repeat entries can't splice its spares into the winner's list;
+   the job's ATS id, migration 018, moves to a winner without one).
    `pipeline/ingest.py:upsert_record` is its sibling on the write side — the
    ONLY place job/posting/application records are *created* from a capture
    (extension `/captures` and manual entry both call it); it owns the
@@ -573,6 +577,11 @@ web/UI, LLM, database) moved VERBATIM into `.claude/rules/` — see Docs map →
   Delete the JUNCTION before `git worktree remove`
   (`[IO.Directory]::Delete($j, $false)`): a recursive delete that follows it
   empties the real `.venv`.
+  **A NEW migration is invisible to a worktree's suite run** (28 Sep 2026):
+  the Docker container mounts the MAIN tree's `./migrations` read-only, so
+  test.ps1 dies with `psql: error: /migrations/0NN_x.sql: No such file`.
+  Copy the file into the main tree's `migrations/` for the run and delete it
+  after; left there, it blocks the merge as an untracked file.
   **A hunk two issues both rewrote needs its own text at EVERY stage it
   exists in** (25 Sep 2026, three commits). The builder there fell back to
   HEAD's text for any stage missing from a hand-written hunk, so it built
@@ -702,7 +711,7 @@ The dated register behind each item, tasks 1-35 with their measurements, is
   queue as the author confirms them. Four `follow_up_sent` are on record: one filed
   by hand, three recovered from follow-ups the user EMAILED, which since
   migration 016 file themselves (task 16). (worklog task 4)
-- **Extension, next real Easy Apply:** verify the current build (0.16.0 on
+- **Extension, next real Easy Apply:** verify the current build (0.17.0 on
   28 Sep) is live on BOTH machines and the tab was opened after the
   reload; read `doc_source` and the sweep
   line. JobStreet still owes one clean submit with the race fix and salary
@@ -722,9 +731,10 @@ The dated register behind each item, tasks 1-35 with their measurements, is
   answers, so the link moves from the tab to the job's own id on the ATS,
   bound at the handoff and upserted on by the server. Built: P0 (a Workday
   review step's "Submit", 0.15.1) and P1's extension half (the id read off
-  the page when a SuccessFactors address lost it, 0.16.0). Open: P1's
-  server half (the id on `jobs`, the email lookup; the column's home is
-  the author's call), then P2-P4 in §16.5.
+  the page when a SuccessFactors address lost it, 0.16.0), then P1's server
+  half the same day (`jobs.ats_job_id`, migration 018, the author's choice
+  of home; the upsert on it; the email lookup; 0.17.0 sends it). Open: P2-P4
+  in §16.5.
 - **Release blockers:** LICENSE (Apache-2.0 recommended), split the extension
   into its own repo, decide whether CLAUDE.md ships; `audit_names.py --history`
   is the pre-publish check. (task 3)

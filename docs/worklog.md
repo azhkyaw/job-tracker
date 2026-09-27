@@ -993,5 +993,13 @@ the key to each real case.
    stored on the job and upserted on by the server, and looked up in email.
    Built the same day, on a branch while the application was still open:
    P0, a review step's "Submit" (0.15.1), and P1's extension half, the id
-   read off the page when the address lost it (0.16.0). Open: P1's server
-   half and P2-P4.
+   read off the page when the address lost it (0.16.0). The application was
+   then sent and captured (22 answers, 6 withheld, the first textarea ever
+   stored), and repaired from the listing through `/edit`, snapshot first
+   (`2026-09-28-sf-sc-identity.json`). P1's server half followed, with the
+   column's home on `jobs` by the author's choice: migration 018
+   (`jobs.ats_job_id`), the upsert on it in `upsert_record`, `merge_jobs`
+   carrying it, the email lookup `matcher.match_by_ats_id` ahead of name
+   matching, and 0.17.0 sending it. Found on the way: a worktree's suite
+   cannot see a NEW migration, because the container mounts the main tree's
+   `migrations/` (CLAUDE.md). Open: P2-P4.

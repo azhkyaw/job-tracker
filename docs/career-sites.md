@@ -5,8 +5,7 @@
 24 Sep 2026, all as recommended. Built the same day: the redaction in §11
 and phases A, B and C (§12). Awaiting a real apply through each to verify.
 **Revised 28 Sep 2026 (§16):** the link from a listing to its ATS form moves
-from the tab to the job's own id on the ATS; P0 and the extension half of
-P1 are built.
+from the tab to the job's own id on the ATS; P0 and P1 are built.
 **Date:** 24 September 2026
 **Scope:** What it takes for the extension to capture a job, and the
 application made for it, on an employer's own career site or its applicant
@@ -822,9 +821,9 @@ for the second.
   visible password field, a submit-worded control is the submit. The
   existing wizard test put "Submit" beside inputs, which a real review step
   does not. **Built 28 Sep 2026** (§16.6).
-- **P1. The job's ATS id, on both sides.** Extension: §16.3 item 1. **Built
-  28 Sep 2026.** Server, still open: the column on `jobs`, the upsert, the
-  email lookup (items 3 and 4).
+- **P1. The job's ATS id, on both sides.** Extension: §16.3 item 1. Server:
+  the column on `jobs` (the author's choice over `postings`), the upsert and
+  the email lookup (items 3 and 4). **Built 28 Sep 2026.**
 - **P2.** The handoff binding, the stash gate, the Career Site Builder
   config reader, and the tenant inside SuccessFactors ids (below).
 - **P3.** Fix enabling, the icon's third state, quick apply.
@@ -859,8 +858,28 @@ for the second.
   Python mirror are unchanged. A page-derived id stores the address without
   its query, since a crumb is session state and not the job's address. Each
   guard (the ATS host, the fallback) mutated out turns exactly one test red.
-- Neither has run on a real apply; `.claude/rules/extension.md` says what to
-  read on the next one.
+- **P1, server, migration 018 and extension 0.17.0:**
+  - `jobs.ats_job_id`, unique per user. `generic.js:atsJobId()` is the
+    page's own id on the vendor's host, never a crumb; `capture.js` reads it
+    in the submit's own tick and sends it BESIDE the identity, because a
+    link to a job board's record replaces the identity.
+  - `ingest.upsert_record`: a new ad whose ATS id a job holds joins that
+    job, whichever arrived first, and replaces only an "unknown company"
+    placeholder with its name. Otherwise the id lands on the capture's job,
+    unless another job holds it: then nothing moves and nothing merges.
+  - `dedup.merge_jobs` carries the loser's id to a winner without one.
+  - `matcher.match_by_ats_id`, before `find_match`: the one application
+    whose ATS id the mail names, behind the same company gate (the gate is
+    now one constant, `_COMPANY_GATE`), or a nameless record by its id
+    alone. Two ids named decide nothing.
+  - Tested in `tests/test_captures.py` (both orders, a linked board record,
+    an id already held, merge) and `tests/test_integration.py` path 3k (two
+    same-titled records at one employer, a nameless record, a stranger's
+    mail with the same number).
+- None of it has run on a real apply; `.claude/rules/extension.md` says what
+  to read on the next one. The real records whose ATS id is known (the
+  28 Sep application, the §16.2 Workday and SuccessFactors ones) hold none
+  until a backfill, which is the author's call.
 
 ## 17. Sources
 
