@@ -251,8 +251,13 @@ def _phrase(f) -> str:
                 {"declined": "you declined", "went_quiet": "they went quiet"}.get(
                     f.get("closed_as"), "withdrawn"))
     else:
+        # A lead is awaiting your call only until you reply (analytics.
+        # awaiting_you_sql, fetched per application so this cannot disagree
+        # with the /inbound pin); after that it waits on them. A fixture
+        # without the column reads as the older rule.
+        lead = "awaiting your call" if f.get("awaiting_you", True) else "you replied"
         text = {"interview_invite": "interviewing", "engaged": "they reached out",
-                "viewed": "viewed", "interested": "awaiting your call"}.get(s, "applied")
+                "viewed": "viewed", "interested": lead}.get(s, "applied")
     if f["silent_days"] is not None and s not in CLOSED:
         n = f["silent_days"]
         text += f", quiet {n} {_plural(n, 'day')}"

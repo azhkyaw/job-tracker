@@ -191,6 +191,12 @@ def _event_label(e) -> str:
         return "You applied again"
     if e["type"] == "withdrawn" and p.get("closed") in _CLOSE_KINDS:
         return _CLOSE_KINDS[p["closed"]]
+    # A reply of yours, filed by hand (mark_replied) or sent by email, which
+    # the matcher files as a note: analytics.reply_sql's note branch. `sent`
+    # is the detail page's join to the email; a caller without it still
+    # names a hand-filed reply.
+    if e["type"] == "note" and (p.get("reply") or e.get("sent")):
+        return "You replied"
     return EVENT_LABELS.get(e["type"], e["type"])
 
 
@@ -302,7 +308,8 @@ def _funnel(conn, user_id, inbound: bool | None = None) -> list[dict]:
 # inbound record lives there and none on `/`, so on `/` this term is a constant
 # and the ORDER BY reads as plain "newest first". Kept in the one shared ORDER BY
 # rather than forked per page — two ORDER BYs is how the two pages would drift.
-_LEADS_FIRST = "(a.origin = 'inbound' AND s.status = 'interested') DESC"
+_AWAITING = analytics.awaiting_you_sql("a", "s.status")
+_LEADS_FIRST = f"{_AWAITING} DESC"
 
 # Every time-based sort needs the same two tiebreakers. A date typed into a form
 # has no time-of-day, so `local_date_to_utc` anchors it at local noon — which
@@ -499,6 +506,9 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
                    -- How a closed approach ended, when you closed it
                    -- (close_approach): declined, or they went quiet.
                    wd.closed AS closed_as, wd.why AS close_why,
+                   -- Awaiting your call: what the pin sorts by, so the divider
+                   -- marks exactly the rows the pin put above it.
+                   {_AWAITING} AS awaiting_you,
                    -- What the JD says about who may be hired (jd_extract_v2),
                    -- off the same extraction /analytics compares on: a grey
                    -- tag on the role line, its own sentence as the title.
@@ -600,7 +610,7 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
             # Flagged before _display() rewrites the status into a human label:
             # the template needs to know which rows _LEADS_FIRST pinned, and it
             # shouldn't have to re-derive that from display text.
-            r["lead"] = r["origin"] == "inbound" and r["status"] == "interested"
+            r["lead"] = r["awaiting_you"]
             r["status"] = _display(r["status"])
 
         # One query for every event on the page, grouped in Python — the trace
@@ -623,9 +633,9 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
         # invite on the timeline, not the current status, since a thread that
         # went to interview and then closed still went to interview.
         inbound_summary = conn.execute(
-            """
+            f"""
             SELECT count(*) AS approaches,
-                   count(*) FILTER (WHERE s.status = 'interested') AS awaiting,
+                   count(*) FILTER (WHERE {_AWAITING}) AS awaiting,
                    count(*) FILTER (WHERE EXISTS (
                        SELECT 1 FROM events e
                         WHERE e.application_id = a.id
@@ -1198,9 +1208,13 @@ def application_detail(request: Request, app_id: str, saved: str | None = None,
     user = _login_user(request)
     with db.connect_scoped(user["id"]) as conn:
         a = _get_application(conn, app_id)
+        # `sent`: the event came from mail you sent (emails.sent_by_user),
+        # which is how an emailed reply is known for one (_event_label).
         events = conn.execute(
-            "SELECT id, type, source, occurred_at, payload FROM events "
-            "WHERE application_id = %s ORDER BY occurred_at DESC", (a["id"],)).fetchall()
+            "SELECT e.id, e.type, e.source, e.occurred_at, e.payload, "
+            "       COALESCE(m.sent_by_user, false) AS sent "
+            "FROM events e LEFT JOIN emails m ON m.id = e.source_email_id "
+            "WHERE e.application_id = %s ORDER BY e.occurred_at DESC", (a["id"],)).fetchall()
         postings = conn.execute(
             "SELECT platform, url, title, captured_via, captured_at, location, "
             "       posted_label, reposted, ats, jd_text, "
@@ -1808,6 +1822,9 @@ def edit_event(
                 for k in ("superseded_by", "closed", "why"):
                     if k in e["payload"]:
                         payload[k] = e["payload"][k]
+            # And a reply (mark_replied) that stays a note stays a reply.
+            if type == e["type"] == "note" and e["payload"].get("reply"):
+                payload["reply"] = True
             conn.execute(
                 "UPDATE events SET type = %s, occurred_at = %s, payload = %s WHERE id = %s",
                 (type, occurred_at, Json(payload), e["id"]))
@@ -1870,6 +1887,70 @@ def mark_reapplied(request: Request, app_id: str, later_id: str = Form(""),
     return RedirectResponse(dest, status_code=303)
 
 
+def _on_the_thread(conn, a, occurred_at, tz):
+    """Where a hand-filed move on an approach sits in time -> (instant, error).
+
+    None stays None (the insert's now()). A bare date gets two guards: never
+    on a day before the thread began (a reply or a close before the recruiter
+    wrote is incoherent), and on the same local day as the thread's latest
+    event, just after it rather than at the local noon a bare date anchors
+    to — which would sort "You replied" above the approach it answers when
+    that approach came in the same afternoon (the shape that left 4 closed
+    records drawn open on 28 Sep 2026; trace.closing)."""
+    if occurred_at is None:
+        return None, None
+    span = conn.execute("SELECT min(occurred_at) AS first, max(occurred_at) AS last "
+                        "FROM events WHERE application_id = %s", (a["id"],)).fetchone()
+    if span["first"] is None:
+        return occurred_at, None
+    day = occurred_at.astimezone(tz).date()
+    if day < span["first"].astimezone(tz).date():
+        return None, ("That is before the recruiter approached you, on "
+                      f"{span['first'].astimezone(tz).strftime('%d %b %Y')}.")
+    if day == span["last"].astimezone(tz).date() and occurred_at <= span["last"]:
+        return span["last"] + timedelta(seconds=1), None
+    return occurred_at, None
+
+
+@app.post("/applications/{app_id}/replied")
+def mark_replied(request: Request, app_id: str, channel: str = Form(""),
+                 occurred_on: str = Form(""), redirect_to: str = Form("")):
+    """You answered a recruiter's approach (28 Sep 2026). A `note` with
+    `payload.reply` — the event type an emailed reply already files — for the
+    replies no ingest path sees: a LinkedIn message, WhatsApp, a call.
+
+    What it changes is whose move it is (analytics.awaiting_you_sql): the lead
+    leaves "Awaiting your call" and the nav pill, its trace runs from your
+    reply (a hollow dot, the heat of a wait on them), and REMINDER_DAYS of
+    silence later it is in /follow-ups with a "They went quiet" beside
+    "Followed up". Open leads only: once the thread has moved, a reply is one
+    note among many and the timeline form files it. Dated like close_approach
+    (_on_the_thread); undo is deleting it from the timeline."""
+    from psycopg.types.json import Json
+    user = _login_user(request)
+    tz = request.state.tz
+    occurred_at, err = _parse_occurred_on(occurred_on, tz)
+    if err:
+        return _event_error(app_id, err)
+    payload = {"reply": True}
+    if channel in _EVENT_CHANNELS:
+        payload["channel"] = channel
+    with db.connect_scoped(user["id"]) as conn, conn.transaction():
+        a = _get_application(conn, app_id)
+        if a["origin"] != "inbound" or a["status"] != "interested":
+            return _event_error(app_id, "“I replied” is for an approach nobody has moved on "
+                                        "yet. Record it on the timeline as a note instead.")
+        occurred_at, err = _on_the_thread(conn, a, occurred_at, tz)
+        if err:
+            return _event_error(app_id, err)
+        conn.execute(
+            "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+            "VALUES (%s, %s, 'note', 'manual', COALESCE(%s, now()), %s)",
+            (a["user_id"], a["id"], occurred_at, Json(payload)))
+    dest = redirect_to if redirect_to in ("/inbound",) else f"/applications/{app_id}"
+    return RedirectResponse(dest, status_code=303)
+
+
 @app.post("/applications/{app_id}/close")
 def close_approach(request: Request, app_id: str, action: str = Form(""),
                    why: str = Form(""), occurred_on: str = Form(""),
@@ -1908,15 +1989,9 @@ def close_approach(request: Request, app_id: str, action: str = Form(""),
         if conn.execute("SELECT 1 FROM events WHERE application_id = %s AND type = ANY(%s)",
                         (a["id"], sorted(trace.TERMINAL))).fetchone():
             return _event_error(app_id, "This thread is already closed.")
-        span = conn.execute("SELECT min(occurred_at) AS first, max(occurred_at) AS last "
-                            "FROM events WHERE application_id = %s", (a["id"],)).fetchone()
-        if occurred_at is not None and span["first"] is not None:
-            day = occurred_at.astimezone(tz).date()
-            if day < span["first"].astimezone(tz).date():
-                return _event_error(app_id, "That is before the recruiter approached you, on "
-                                    f"{span['first'].astimezone(tz).strftime('%d %b %Y')}.")
-            if day == span["last"].astimezone(tz).date() and occurred_at <= span["last"]:
-                occurred_at = span["last"] + timedelta(seconds=1)
+        occurred_at, err = _on_the_thread(conn, a, occurred_at, tz)
+        if err:
+            return _event_error(app_id, err)
         conn.execute(
             "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
             "VALUES (%s, %s, 'withdrawn', 'manual', COALESCE(%s, now()), %s)",
@@ -2854,6 +2929,7 @@ def follow_ups_page(request: Request):
         return templates.TemplateResponse(
             request=request, name="follow_ups.html",
             context={"reminders": reminders, "again_n": len(again),
+                     "replied_n": sum(1 for r in reminders if r["applied_at"] is None),
                      "reminder_days": config.REMINDER_DAYS,
                      "pending": _pending_count(conn),
                      "follow_ups": analytics.reminder_count(conn, user["id"])})

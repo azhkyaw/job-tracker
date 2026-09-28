@@ -14,9 +14,10 @@
    of the query, so the page shortens as you work it. #}
 <h1>Needs follow-up</h1>
 {% if reminders %}
-<p class="lede"><b>{{ reminders | length }}</b> applied more than <b>{{ reminder_days }}</b> days ago
-  with no reply and nothing sent, oldest first. Marking one as followed up records it
-  on the thread and clears it from here.</p>
+<p class="lede"><b>{{ reminders | length }}</b> waiting more than <b>{{ reminder_days }}</b> days,
+  oldest first: applications with no reply and nothing sent{% if replied_n %}, and
+  <b>{{ replied_n }}</b> approach{{ '' if replied_n == 1 else 'es' }} you answered that went quiet{% endif %}.
+  Marking one as followed up records it on the thread and clears it from here.</p>
 {% if again_n %}
 <p class="lede"><b>{{ again_n }}</b> of them look like an earlier application to a role
   you applied to again. The reply will come to the later one, so each is marked
@@ -38,6 +39,18 @@
       <input type="hidden" name="later_id" value="{{ r.again.id }}">
       <input type="hidden" name="redirect_to" value="/follow-ups">
       <button class="small" title="Close this one: the thread moved to the later application">Same role, close</button>
+    </form>
+    {%- endif %}
+    {#- A lead you answered (analytics.reminders' second kind): the wait is
+        since your reply, and besides chasing it you can close it — a
+        follow-up only resets its clock, so this is how it leaves for good
+        (web.py, close_approach). The same row shape as the suggestion above. #}
+    {%- if r.applied_at is none and r.replied_at %}
+    <p class="fu-again">You replied to their approach on {{ r.replied_at | day }}, nothing since</p>
+    <form method="post" action="/applications/{{ r.id }}/close" class="fu-again-do">
+      <input type="hidden" name="action" value="quiet">
+      <input type="hidden" name="redirect_to" value="/follow-ups">
+      <button class="small" title="Close it: they stopped answering">They went quiet</button>
     </form>
     {%- endif %}
     <form method="post" action="/applications/{{ r.id }}/events">

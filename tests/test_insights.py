@@ -224,6 +224,27 @@ _open = {"id": "open"}
 trace.build([_open], {"open": [{"type": "recruiter_outreach", "occurred_at": ago(2)}]}, NOW, 10)
 check("an open approach still draws its live tail (the guard is the close, not the type)",
       _open["tail"] is not None and _open["cap"] is None and _open["live"] is True)
+print("facts: an approach in the words the /inbound row uses (28 Sep 2026)")
+_waiting = app(status="interested", origin="inbound", awaiting_you=True)
+_answered = app(status="interested", origin="inbound", awaiting_you=False)
+_declined = app(status="withdrawn", origin="inbound")
+_quiet = app(status="withdrawn", origin="inbound")
+_fp = {f["id"]: f for f in facts_of([_waiting, _answered, _declined, _quiet], [
+    ev(_waiting, "recruiter_outreach", ago(3)),
+    ev(_answered, "recruiter_outreach", ago(9)), ev(_answered, "note", ago(8), source="manual"),
+    ev(_declined, "recruiter_outreach", ago(9)),
+    ev(_declined, "withdrawn", ago(8), source="manual", closed_as="declined"),
+    ev(_quiet, "recruiter_outreach", ago(30)),
+    ev(_quiet, "withdrawn", ago(2), source="manual", closed_as="went_quiet")])}
+check("a lead is awaiting your call until you reply, then it is one you answered",
+      insights._phrase(_fp[_waiting["id"]]).startswith("awaiting your call")
+      and insights._phrase(_fp[_answered["id"]]).startswith("you replied"),
+      [insights._phrase(_fp[x["id"]]) for x in (_waiting, _answered)])
+check("an approach you closed says how, not “withdrawn”",
+      insights._phrase(_fp[_declined["id"]]) == "you declined"
+      and insights._phrase(_fp[_quiet["id"]]) == "they went quiet"
+      and _fp[_quiet["id"]]["tone"] == "withdrawn",
+      [insights._phrase(_fp[x["id"]]) for x in (_declined, _quiet)])
 check("closing() names the LATEST close when a thread has two",
       trace.closing([{"type": "rejected", "occurred_at": ago(9)},
                      {"type": "withdrawn", "occurred_at": ago(3)},

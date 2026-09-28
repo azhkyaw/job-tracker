@@ -128,7 +128,10 @@ An invariant keeps its RULE here and its case history in the rule file.
 - `pipeline/trace.py` — pure timeline/axis geometry for list + detail pages
 - `pipeline/analytics.py` — the counts the LIST pages show (summary,
   rejection reasons and endings, reminders), `reapplications` (the follow-up
-  queue's "you applied again" suggestion; `web.mark_reapplied` files it), and
+  queue's "you applied again" suggestion; `web.mark_reapplied` files it),
+  `awaiting_you_sql` (the ONE "awaiting your call" rule for an inbound lead:
+  no reply of yours since they last wrote, `reply_sql`/`theirs_sql`; the pin,
+  the pill, the lede and the queue's lead rows all read it, 28 Sep 2026), and
   `facts()`, the one fetch `/analytics` is drawn from. "How it ended"
   (`rejected_how`) derives LinkedIn's automatic knockout from the timeline:
   a LinkedIn letter inside `SCREEN_HOURS` of the submit is a

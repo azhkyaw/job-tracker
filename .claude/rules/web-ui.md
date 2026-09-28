@@ -91,7 +91,8 @@ is a private artifact, linked from the memory file
    explicit sort choice (`leads_pinned` in the context): **inbound leads
    awaiting a decision** (`_LEADS_FIRST` — `origin='inbound' AND
    status='interested'`, gated on status because origin is immutable, so a lead
-   you pursued must not stay pinned forever) lead the list under a `.tl-sep`
+   you pursued must not stay pinned forever; and since 28 Sep 2026 not replied
+   to since they last wrote, `analytics.awaiting_you_sql`, rule 17) lead the list under a `.tl-sep`
    label, since they have no applied event and every time-based sort was
    ranking them by a number that measures nothing — **on `/inbound` only,
    since 24 Sep 2026 (rule 17)**: no row on `/` can be one, so the term is a
@@ -144,6 +145,14 @@ is a private artifact, linked from the memory file
    `analytics.reminders()` and `reminder_count()` share one `_REMINDER_WHERE`
    for a reason — two copies would let the nav badge promise a different number
    of rows than the page it links to.
+   **Since 28 Sep 2026 the queue has a second kind of row: a lead you replied
+   to** (rule 17's "whose move it is"), queued once your latest move is
+   REMINDER_DAYS old with nothing from them since, waiting from that reply
+   (`replied_at`, `applied_at` NULL). Its row adds "You replied to their
+   approach on …" and a "They went quiet" button beside "Followed up". Unlike
+   an application it does not leave for good on a follow-up, which only
+   resets its clock: a lead has a close for silence, an application does not,
+   so the queue keeps asking until a response or that close.
 9b. **How you applied is on the row, in GREY** (21 Aug 2026): `on-platform` /
    `employer site`, read from the applied event's own `payload.external` — the
    same event the date comes from, so the two can't describe different
@@ -469,11 +478,26 @@ is a private artifact, linked from the memory file
       quiet"; the row keeps the status word `withdrawn` (rule 15) and adds a
       grey `declined` / `went quiet` tag, the why in its title; /analytics'
       squares say the same (`insights._phrase`, off `facts`' `closed_as`).
-      Inbound only, refused on a closed thread, and dated so it is
-      never before the approach, and just after a same-day
+      Inbound only, refused on a closed thread, and dated through
+      `_on_the_thread`: never before the approach, and just after a same-day
       event instead of at the noon a bare date anchors to. Undo is deleting
       the event; the edit route carries `closed`/`why` across like
       `superseded_by`.
+    - **"I replied" makes the wait theirs** (`web.mark_replied`, open leads
+      only): a `note` with `payload.reply` and the channel, the type an
+      emailed reply already files. `analytics.reply_sql` is the ONE
+      definition of your move on such a thread (that note, a note or
+      follow-up from mail you sent, a hand-filed follow-up) and
+      `theirs_sql` of theirs (an approach, a note from mail they sent);
+      `awaiting_you_sql` = still `interested` and no reply of yours since
+      they last wrote. The pin (`_LEADS_FIRST`), the row's `lead` flag, the
+      nav pill (`lead_count`), the lede's "awaiting your call" and
+      /analytics' phrase all read that one expression, so a replied lead
+      leaves the pin and the pill together, and returns to both if they
+      write again. Its trace needs nothing: the reply is an `_OWN` event, so
+      the tail runs from it in the heat of a wait on them. Both replies
+      read "You replied" on the timeline (the detail query joins
+      `emails.sent_by_user`).
 
 18. **`/analytics` is a report, read top to bottom** (25 Sep 2026). It has
     the numbers, every application as a square by week, where every record
@@ -577,9 +601,9 @@ detail page's own select, scoped to that posting (decided 28 Jul 2026).
   latest TERMINAL event wherever it sits, used by both. It equals "the status
   is closed" by construction, since every TERMINAL type outranks every other
   in `application_status` (migration 013). The timeline's ORDER of a
-  same-day hand-filed event is a separate, smaller matter: a close
-  filed from the approach panel is placed after the day's last event
-  (`web.close_approach`); the timeline form does not yet.
+  same-day hand-filed event is a separate, smaller matter: the two new
+  approach routes place theirs after the day's last event
+  (`web._on_the_thread`); the timeline form does not yet.
 
 - **A top-level `{% set %}` in the PARENT template shadows the child's render
   context in every block.** `base.html` set `q = queue_alert()` for the stall

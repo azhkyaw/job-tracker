@@ -1049,3 +1049,43 @@ the key to each real case.
    the same vendor, minutes apart, in triage's duplicate band with the
    BOARD record as the winner (triage's merge keeps the older record, the
    wrong one here).
+
+38. **Inbound approaches: whose move it is, and closing one yourself**
+   (28 Sep 2026). Asked how to handle a recruiter who goes quiet after a
+   reply, and an approach that is not a fit. Measured first, over the 29
+   inbound records: all 9 open leads (6 to 66 days old) held one event, the
+   approach, because a reply on LinkedIn or WhatsApp reaches no ingest path
+   and an emailed reply files a status-less `note`; so every lead sat under
+   "Awaiting your call" and in the nav pill, and none could reach
+   `/follow-ups`, which required an `applied` event. The only close was "I
+   withdrew", worded for an application never made. And, found on the way,
+   9 of the 15 rejected inbound records drew an OPEN tail, 4 of them blue,
+   since the trace capped a row only when its last event was terminal (a
+   recruiter writing again after dropping you; a rejection filed by hand for
+   today, anchored at noon, sorting before that afternoon's approach; two
+   hand-filed events tying on one noon). Built, in three parts, each with
+   its own full suite run:
+   - **The trace** (`trace.closing`): a thread ends at its latest close,
+     wherever it sits, for the list and `/analytics` alike; equal to "the
+     status is closed" by migration 013's precedence. The old rule, run on
+     the three real shapes, reproduced the blue tails. On the day: 0 of 15
+     drawn open.
+   - **Close this approach** (`web.close_approach`): "Not for me" (optional
+     why, `_DECLINE_WHY`) and "They went quiet", both `withdrawn` +
+     `payload.closed`, worded "You declined" / "They went quiet" with a grey
+     tag on the row; inbound only, one close per thread, dated so it never
+     precedes the approach or a same-day event (`_on_the_thread`); undo by
+     deleting it.
+   - **I replied** (`web.mark_replied`): a `note` with `payload.reply`.
+     `analytics.reply_sql` / `theirs_sql` / `awaiting_you_sql` define whose
+     move it is once, for the pin, the pill, the lede, `/analytics` and a new
+     kind of `/follow-ups` row: a lead you answered, silent REMINDER_DAYS
+     since, with "They went quiet" beside "Followed up" (a follow-up resets
+     its clock rather than retiring it). Emailed replies count through
+     `emails.sent_by_user`, and both read "You replied".
+   40 new checks (7 in `test_insights`, 33 in `test_web`), and the old
+   "closed is closed" check now asserts no silence on a closed row. Nothing moved on the
+   author's records by itself: the 9 leads stay awaiting until their replies
+   or closes are recorded, which is the author's to do from each lead's page.
+   Not built: placing a same-day event from the general timeline form after
+   the day's last event (the trace no longer depends on it).

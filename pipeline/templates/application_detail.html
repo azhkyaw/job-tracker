@@ -111,6 +111,24 @@
    anyone by (web.py, close_approach): it is not for you, or they stopped
    answering. One form, a button each, the way the email re-file form has
    one — no JS, so the why-select is simply ignored by "They went quiet". #}
+{#- Your reply to a lead nobody has moved on yet (web.py, mark_replied): the
+    next move is theirs from then on, so it leaves "Awaiting your call" and
+    waits on them — and REMINDER_DAYS of silence later, it is in /follow-ups.
+    An emailed reply files itself; this is for LinkedIn, WhatsApp, a call. #}
+{% if a.origin == 'inbound' and status == 'interested' %}
+<form method="post" action="/applications/{{ a.id }}/replied" class="record">
+  <span class="lab">Answered them?</span>
+  <select name="channel" aria-label="How you replied">
+    <option value="">How you replied</option>
+    {% for value, label in event_channels.items() %}
+    <option value="{{ value }}">{{ label }}</option>
+    {% endfor %}
+  </select>
+  <input type="date" name="occurred_on" max="{{ today }}" aria-label="When you replied"
+         title="When you replied. Leave blank for today">
+  <button class="primary">I replied</button>
+</form>
+{% endif %}
 {% if a.origin == 'inbound' and status not in ('rejected', 'withdrawn', 'offer') %}
 <form method="post" action="/applications/{{ a.id }}/close" class="record">
   <span class="lab">Close this approach:</span>

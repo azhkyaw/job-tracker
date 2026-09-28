@@ -2759,4 +2759,104 @@ _c = _closes(_sd)
 check("a close dated the same day as the thread's latest event sorts just after it, not at noon",
       len(_c) == 1 and _c[0]["occurred_at"] == _late + timedelta(seconds=1), _c)
 
+print("inbound: “I replied” moves the wait to them (28 Sep 2026)")
+
+
+def _queue(user_id):
+    with db.connect() as conn:
+        rows = {str(x["id"]): x for x in analytics.reminders(conn, user_id)}
+        return rows, analytics.reminder_count(conn, user_id)
+
+
+_rep = _new_lead("Reply Lead Co", "2026-09-01")
+with db.connect() as conn:
+    _uid = conn.execute("SELECT user_id FROM applications WHERE id = %s::uuid", (_rep,)).fetchone()["user_id"]
+_st, _l0 = _state(_rep)
+r = client.get(f"/applications/{_rep}")
+check("an open lead offers “I replied”",
+      f'action="/applications/{_rep}/replied"' in r.text and _st == "interested", r.status_code)
+r = client.post(f"/applications/{_rep}/replied", data={"channel": "linkedin", "occurred_on": "2026-09-03"})
+with db.connect() as conn:
+    _n = conn.execute("SELECT id, source, payload FROM events WHERE application_id = %s::uuid "
+                      "AND type = 'note'", (_rep,)).fetchall()
+_st, _l1 = _state(_rep)
+check("it files a note by hand, marked as your reply, with how",
+      r.status_code == 303 and len(_n) == 1 and _n[0]["source"] == "manual"
+      and _n[0]["payload"] == {"reply": True, "channel": "linkedin"}, _n)
+check("...which leaves the status alone and moves the wait to them: off the pin, out of the pill",
+      _st == "interested" and _l1 == _l0 - 1, (_st, _l0, _l1))
+r = client.get(f"/applications/{_rep}")
+check("its timeline says “You replied”, by LinkedIn message",
+      "You replied" in r.text and "LinkedIn message" in r.text, r.status_code)
+_i = client.get("/inbound").text
+_m = re.search(r"<b>(\d+)</b> awaiting your call", _i)
+_nav = _i.split('href="/inbound"')[1].split("</a>")[0]
+check("/inbound lists it below the pin, and its lede and nav pill both count what the pin holds",
+      _i.index('<div class="tl-sep">Underway or closed</div>') < _i.index("Reply Lead Co")
+      and _m is not None and int(_m.group(1)) == _l1 and f'class="pill">{_l1}<' in _nav,
+      (_m and _m.group(1), _l1, _nav))
+
+r = client.post(f"/applications/{_rep}/events/{_n[0]['id']}/edit", data={
+    "type": "note", "occurred_on": "2026-09-04", "channel": "whatsapp"})
+with db.connect() as conn:
+    _p = conn.execute("SELECT payload FROM events WHERE id = %s", (_n[0]["id"],)).fetchone()["payload"]
+check("editing the reply keeps it a reply", r.status_code == 303
+      and _p == {"reply": True, "channel": "whatsapp"}, _p)
+
+with db.connect() as conn, conn.transaction():
+    conn.execute(
+        "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+        "VALUES (%s, %s::uuid, 'recruiter_outreach', 'manual', %s, '{}')",
+        (_uid, _rep, datetime(2026, 9, 5, 4, tzinfo=timezone.utc)))
+check("when the recruiter writes again, the next move is yours again", _state(_rep)[1] == _l0)
+
+# A reply you EMAILED: the matcher files it as a plain note from a sent email.
+with db.connect() as conn, conn.transaction():
+    _em = conn.execute(
+        """INSERT INTO emails (user_id, gmail_message_id, sender, subject, received_at,
+                               classification, triage_state, sent_by_user, matched_application_id)
+           VALUES (%s, 'gm-reply-lead', 'me@example.com', 'Re: an opportunity', %s,
+                   'sent_reply', 'auto_matched', true, %s::uuid)
+           ON CONFLICT (user_id, gmail_message_id) DO UPDATE SET sent_by_user = true
+           RETURNING id""",
+        (_uid, datetime(2026, 9, 6, 4, tzinfo=timezone.utc), _rep)).fetchone()["id"]
+    conn.execute(
+        "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload, "
+        "source_email_id) VALUES (%s, %s::uuid, 'note', 'email', %s, '{}', %s)",
+        (_uid, _rep, datetime(2026, 9, 6, 4, tzinfo=timezone.utc), _em))
+check("an emailed reply counts the same: the wait is theirs again", _state(_rep)[1] == _l1)
+check("...and reads “You replied” too", client.get(f"/applications/{_rep}").text.count("You replied") == 2)
+
+_rows, _cnt = _queue(_uid)
+check("REMINDER_DAYS after your reply, with nothing since, it is in the follow-up queue",
+      _rep in _rows and _rows[_rep]["applied_at"] is None and _rows[_rep]["days_waiting"] >= 10
+      and _cnt == len(_rows), (_rows.get(_rep), _cnt, len(_rows)))
+_fu = client.get("/follow-ups").text
+_frow = _fu.split("Reply Lead Co", 1)[1].split('class="fu-row"')[0]
+check("its row says when you replied, beside “They went quiet” and “Followed up”",
+      "You replied to their approach on" in _frow and 'value="quiet"' in _frow
+      and "Followed up" in _frow and "approach you answered that went quiet" in _fu, _frow[:600])
+r = client.post(f"/applications/{_rep}/events", data={"type": "follow_up_sent",
+                                                      "redirect_to": "/follow-ups"})
+check("“Followed up” is your move too: it clears the row and restarts the clock",
+      r.headers["location"] == "/follow-ups" and _rep not in _queue(_uid)[0] and _state(_rep)[1] == _l1)
+
+_old = _new_lead("Reply Quiet Co", "2026-08-10")
+client.post(f"/applications/{_old}/replied", data={"occurred_on": "2026-08-12"})
+check("an answered lead long silent is queued...", _old in _queue(_uid)[0])
+r = client.post(f"/applications/{_old}/close", data={"action": "quiet", "redirect_to": "/follow-ups"})
+check("...and “They went quiet” from the queue closes it and clears the row",
+      r.headers["location"] == "/follow-ups" and _state(_old)[0] == "withdrawn"
+      and _old not in _queue(_uid)[0], r.headers.get("location"))
+
+_fresh = _new_lead("Reply Fresh Co", _today)
+client.post(f"/applications/{_fresh}/replied", data={})
+check("a reply younger than REMINDER_DAYS is not queued yet", _fresh not in _queue(_uid)[0])
+r = client.post(f"/applications/{manual_app_1}/replied", data={})
+check("“I replied” is refused on your own application",
+      "event_error=" in r.headers.get("location", ""), r.headers.get("location"))
+r = client.post(f"/applications/{_qui}/replied", data={})
+check("...and on a closed approach", "event_error=" in r.headers.get("location", ""),
+      r.headers.get("location"))
+
 print("\nALL WEB PATHS PASS")

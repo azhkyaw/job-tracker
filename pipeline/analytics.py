@@ -293,38 +293,105 @@ def rejection_ends(conn, user_id, inbound: bool | None = None):
 # copies of this predicate is the same trap `_RESPONSE_TYPES` documents above,
 # and here it would be worse than a stale list: the badge would promise a
 # different number of rows than the page it links to.
-_REMINDER_WHERE = """
+def reply_sql(e: str) -> str:
+    """Event `e` is YOUR move on a thread someone else started (28 Sep 2026):
+    the fact that turns a lead's wait from yours into theirs. It reaches the
+    record three ways, and this is the one definition of all three:
+      - a reply you filed by hand (web.mark_replied: a `note` with
+        `payload.reply`), for replies no ingest path sees — a LinkedIn
+        message, WhatsApp, a call;
+      - mail you SENT, filed on the thread (matcher.EVENT_TYPE: a reply files
+        a `note`, a follow-up `follow_up_sent`), marked on the email itself
+        (`emails.sent_by_user`, migration 016) rather than on the event;
+      - a follow-up filed by hand ("I followed up").
+    A note to self is none of these. On 28 Sep 2026 all 9 open leads had no
+    reply recorded at all, from 6 to 66 days after the approach."""
+    return (f"({e}.type = 'follow_up_sent' OR ({e}.type = 'note' AND ({e}.payload ? 'reply' "
+            f"OR EXISTS (SELECT 1 FROM emails rm WHERE rm.id = {e}.source_email_id "
+            f"AND rm.sent_by_user))))")
+
+
+def theirs_sql(e: str) -> str:
+    """Event `e` is the RECRUITER writing on a lead: an approach, or a message
+    of theirs filed as a note (a received email the classifier read as a
+    status update). Their other moves — viewed, engaged, an invitation, a
+    rejection — move the status past `interested`, so a lead never needs
+    them here."""
+    return (f"({e}.type = 'recruiter_outreach' OR ({e}.type = 'note' AND EXISTS ("
+            f"SELECT 1 FROM emails tm WHERE tm.id = {e}.source_email_id "
+            f"AND NOT tm.sent_by_user)))")
+
+
+def awaiting_you_sql(a: str, status: str) -> str:
+    """An inbound lead whose next move is YOURS: still `interested` (nothing
+    has moved or closed it), and no reply of yours since the recruiter last
+    wrote. ONE expression for everything that says "awaiting your call" — the
+    pin (web._LEADS_FIRST), the nav pill (lead_count), the /inbound lede and
+    /analytics' squares — so a count and the rows it names cannot disagree.
+    Until 28 Sep 2026 it was status alone, so a lead you had answered still
+    claimed the next move was yours while you waited on them."""
+    return (f"({a}.origin = 'inbound' AND {status} = 'interested' AND NOT EXISTS ("
+            f"SELECT 1 FROM events yr WHERE yr.application_id = {a}.id AND {reply_sql('yr')} "
+            f"AND yr.occurred_at >= COALESCE((SELECT max(ty.occurred_at) FROM events ty "
+            f"WHERE ty.application_id = {a}.id AND {theirs_sql('ty')}), '-infinity')))")
+
+
+# The latest move of yours on a thread, for the follow-up queue's lead rows.
+_LAST_REPLY = f"""(SELECT max(r.occurred_at) FROM events r
+                    WHERE r.application_id = a.id AND {reply_sql('r')})"""
+
+# Two kinds of row, one queue (28 Sep 2026). An application: applied over
+# REMINDER_DAYS ago with no response and nothing sent — unchanged, and it
+# leaves for good once followed up. A lead you REPLIED to: your latest move
+# over REMINDER_DAYS old and nothing from them since. A lead leaves by a
+# response, or by you closing it ("They went quiet", web.close_approach),
+# and a follow-up only resets its clock: a thread you can close is asked
+# about again, where an application, which has no such close, is left to run.
+_REMINDER_WHERE = f"""
         WHERE a.user_id = %(user_id)s
-          AND EXISTS (SELECT 1 FROM events e
-                      WHERE e.application_id = a.id AND e.type = 'applied'
-                        AND e.occurred_at < now() - make_interval(days => %(days)s))
-          AND NOT EXISTS (SELECT 1 FROM events e
-                          WHERE e.application_id = a.id
-                            AND e.type IN ('viewed','engaged','interview_invite','rejected',
-                                           'offer','withdrawn','follow_up_sent'))
+          AND ((EXISTS (SELECT 1 FROM events e
+                        WHERE e.application_id = a.id AND e.type = 'applied'
+                          AND e.occurred_at < now() - make_interval(days => %(days)s))
+                AND NOT EXISTS (SELECT 1 FROM events e
+                                WHERE e.application_id = a.id
+                                  AND e.type IN ('viewed','engaged','interview_invite','rejected',
+                                                 'offer','withdrawn','follow_up_sent')))
+            OR (a.origin = 'inbound'
+                AND EXISTS (SELECT 1 FROM application_status ls
+                            WHERE ls.application_id = a.id AND ls.status = 'interested')
+                AND {_LAST_REPLY} < now() - make_interval(days => %(days)s)
+                AND NOT EXISTS (SELECT 1 FROM events t
+                                WHERE t.application_id = a.id AND {theirs_sql('t')}
+                                  AND t.occurred_at > {_LAST_REPLY})))
 """
 
 
 def reminders(conn, user_id):
-    """Applied > REMINDER_DAYS ago, no response, no follow-up, not withdrawn."""
+    """Applied > REMINDER_DAYS ago, no response, no follow-up, not withdrawn;
+    and leads you replied to over REMINDER_DAYS ago that have heard nothing
+    since (`replied_at` set, `applied_at` NULL — _REMINDER_WHERE has both)."""
     return conn.execute(f"""
-        SELECT a.id, j.title_canonical,
-               COALESCE(
-                 (SELECT p.company_raw FROM postings p
-                   WHERE p.job_id = a.job_id AND p.company_raw IS NOT NULL
-                   ORDER BY p.captured_at DESC LIMIT 1),
-                 j.company_norm) AS company_display,
-               (SELECT min(occurred_at) FROM events e
-                 WHERE e.application_id = a.id AND e.type = 'applied') AS applied_at,
-               -- How long they've been sitting on it. The list can't reuse its
+        SELECT q.*,
+               -- How long they've been sitting on it: since you applied, or
+               -- for a lead since your latest reply. The list can't reuse its
                -- own silent_days here: this runs as its own query, and the
                -- number is the whole reason a row is in this block.
-               (SELECT date_part('day', now() - min(occurred_at))::int FROM events e
-                 WHERE e.application_id = a.id AND e.type = 'applied') AS days_waiting
-        FROM applications a
-        JOIN jobs j ON j.id = a.job_id
-        {_REMINDER_WHERE}
-        ORDER BY applied_at
+               date_part('day', now() - COALESCE(q.applied_at, q.replied_at))::int AS days_waiting
+        FROM (
+          SELECT a.id, a.origin, j.title_canonical,
+                 COALESCE(
+                   (SELECT p.company_raw FROM postings p
+                     WHERE p.job_id = a.job_id AND p.company_raw IS NOT NULL
+                     ORDER BY p.captured_at DESC LIMIT 1),
+                   j.company_norm) AS company_display,
+                 (SELECT min(occurred_at) FROM events e
+                   WHERE e.application_id = a.id AND e.type = 'applied') AS applied_at,
+                 {_LAST_REPLY} AS replied_at
+          FROM applications a
+          JOIN jobs j ON j.id = a.job_id
+          {_REMINDER_WHERE}
+        ) q
+        ORDER BY COALESCE(q.applied_at, q.replied_at)
     """, {"user_id": user_id, "days": config.REMINDER_DAYS}).fetchall()
 
 
@@ -413,18 +480,18 @@ def reminder_count(conn, user_id) -> int:
 
 
 def lead_count(conn, user_id) -> int:
-    """Inbound approaches the user has not acted on yet, for the nav badge on
-    `/inbound` — the same predicate as `web._LEADS_FIRST` pins by (24 Sep
-    2026). Gated on status, not origin alone, for the same reason the pin is:
-    origin is immutable, so a lead the user pursued would otherwise count as
-    "awaiting your call" forever. A plain pill, not an amber one: the wait
-    here is on the user, and amber is reserved for time passing unanswered
-    on the other side (UI rule 1)."""
-    return conn.execute("""
+    """Inbound approaches awaiting the user's call, for the nav badge on
+    `/inbound` — `awaiting_you_sql`, the predicate `web._LEADS_FIRST` pins by
+    (24 Sep 2026; replies count since 28 Sep). Gated on status, not origin
+    alone, for the same reason the pin is: origin is immutable, so a lead the
+    user pursued would otherwise count as "awaiting your call" forever. A
+    plain pill, not an amber one: the wait here is on the user, and amber is
+    reserved for time passing unanswered on the other side (UI rule 1)."""
+    return conn.execute(f"""
         SELECT count(*) AS n
         FROM applications a
         JOIN application_status s ON s.application_id = a.id
-        WHERE a.user_id = %s AND a.origin = 'inbound' AND s.status = 'interested'
+        WHERE a.user_id = %s AND {awaiting_you_sql('a', 's.status')}
     """, (user_id,)).fetchone()["n"]
 
 
@@ -464,6 +531,9 @@ def facts(conn, user_id) -> tuple[list[dict], list[dict]]:
     from an ATS's. `external` is only ever set on an `applied` event."""
     apps = conn.execute("""
         SELECT a.id, a.origin, a.resume_file, s.status,
+               -- Awaiting your call: the pin's own predicate, so a square
+               -- says what the /inbound row says.
+               @AWAITING@ AS awaiting_you,
                j.company_norm, j.title_canonical,
                COALESCE(pc.company_raw, j.company_norm) AS company_display,
                p.platform, p.ats, p.posted_label, p.reposted,
@@ -490,6 +560,7 @@ def facts(conn, user_id) -> tuple[list[dict], list[dict]]:
         @LATEST_EXTRACTION@
         WHERE a.user_id = %(user_id)s
     """.replace("@SCREEN@", screen_sql("a.id")).replace("@LATEST_EXTRACTION@", LATEST_EXTRACTION)
+       .replace("@AWAITING@", awaiting_you_sql("a", "s.status"))
        .replace("@FORM_VISA@", answers.form_visa_sql("a.id"))
        .replace("@VISA_GROUP@", jd_visa_group_sql("x.visa_signal")),
         {"user_id": user_id}).fetchall()
