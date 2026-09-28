@@ -454,6 +454,26 @@ is a private artifact, linked from the memory file
     `recruiter_outreach` had been kept OUT of `_MANUAL_EVENTS` since the
     lead lane shipped, on "only a human creates a lead"; filing it is a
     human's statement, so the principle is kept and the exclusion is not.
+    **Closing an approach yourself, and whose move it is** (28 Sep 2026).
+    Asked how to handle a recruiter who goes quiet after you reply, and an
+    approach you do not want. On the day all 9 open leads (6 to 66 days old)
+    had exactly one event, the approach: a reply on LinkedIn or WhatsApp
+    reaches no ingest path, and an emailed one files a `note`, which moves no
+    status, so every lead claimed the next move was the user's.
+    - **Two closes, one type** (`web.close_approach`, the detail page's
+      "Close this approach" on any open inbound record): "Not for me", with
+      an optional why (`_DECLINE_WHY`), and "They went quiet". Both file
+      `withdrawn` with `payload.closed` = `declined` / `went_quiet` (and
+      `why`): rule 12's costing and rule 9c's precedent, a qualifier on an
+      existing type. `_event_label` words them "You declined" / "They went
+      quiet"; the row keeps the status word `withdrawn` (rule 15) and adds a
+      grey `declined` / `went quiet` tag, the why in its title; /analytics'
+      squares say the same (`insights._phrase`, off `facts`' `closed_as`).
+      Inbound only, refused on a closed thread, and dated so it is
+      never before the approach, and just after a same-day
+      event instead of at the noon a bare date anchors to. Undo is deleting
+      the event; the edit route carries `closed`/`why` across like
+      `superseded_by`.
 
 18. **`/analytics` is a report, read top to bottom** (25 Sep 2026). It has
     the numbers, every application as a square by week, where every record
@@ -557,8 +577,9 @@ detail page's own select, scoped to that posting (decided 28 Jul 2026).
   latest TERMINAL event wherever it sits, used by both. It equals "the status
   is closed" by construction, since every TERMINAL type outranks every other
   in `application_status` (migration 013). The timeline's ORDER of a
-  same-day hand-filed event is a separate, smaller matter, not fixed
-  here.
+  same-day hand-filed event is a separate, smaller matter: a close
+  filed from the approach panel is placed after the day's last event
+  (`web.close_approach`); the timeline form does not yet.
 
 - **A top-level `{% set %}` in the PARENT template shadows the child's render
   context in every block.** `base.html` set `q = queue_alert()` for the stall

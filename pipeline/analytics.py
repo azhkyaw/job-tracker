@@ -499,6 +499,7 @@ def facts(conn, user_id) -> tuple[list[dict], list[dict]]:
                     THEN (e.payload->>'external')::bool END  AS external,
                e.payload->>'reason'                          AS reason,
                (e.payload ? 'superseded_by')                 AS superseded,
+               e.payload->>'closed'                          AS closed_as,
                em.extraction->>'platform'                    AS mail_platform
         FROM events e
         JOIN applications a ON a.id = e.application_id

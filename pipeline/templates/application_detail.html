@@ -48,6 +48,9 @@
         {%- if e.payload.get('superseded_by') %}
         <small><a href="/applications/{{ e.payload['superseded_by'] }}">see the later application</a></small>
         {%- endif %}
+        {%- if e.type == 'withdrawn' and e.payload.get('why') %}
+        <small>{{ decline_why.get(e.payload['why'], e.payload['why']) }}</small>
+        {%- endif %}
         {#- The day the email named, when it is still ahead of the day it
             arrived — the interview an invitation is for. The event itself
             stays on the arrival day (matcher._event_time). #}
@@ -103,6 +106,25 @@
    it moves the record back (web.py, `_take_origin`). #}
 {% if event_error %}
 <div class="note" style="--c:var(--rejected);margin-top:.8rem"><strong>Not recorded.</strong> {{ event_error }}</div>
+{% endif %}
+{# An open approach a recruiter started ends one of two ways nobody rejects
+   anyone by (web.py, close_approach): it is not for you, or they stopped
+   answering. One form, a button each, the way the email re-file form has
+   one — no JS, so the why-select is simply ignored by "They went quiet". #}
+{% if a.origin == 'inbound' and status not in ('rejected', 'withdrawn', 'offer') %}
+<form method="post" action="/applications/{{ a.id }}/close" class="record">
+  <span class="lab">Close this approach:</span>
+  <select name="why" aria-label="Why it is not for you">
+    <option value="">Not for me, because…</option>
+    {% for value, label in decline_why.items() %}
+    <option value="{{ value }}">{{ label }}</option>
+    {% endfor %}
+  </select>
+  <button name="action" value="decline">Not for me</button>
+  <button name="action" value="quiet">They went quiet</button>
+  <input type="date" name="occurred_on" max="{{ today }}" aria-label="When you closed it"
+         title="When. Leave blank for today">
+</form>
 {% endif %}
 <form method="post" action="/applications/{{ a.id }}/events" class="record">
   <span class="lab">Record what happened:</span>

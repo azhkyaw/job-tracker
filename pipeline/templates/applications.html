@@ -274,6 +274,11 @@
             the JD's tag: say where a claim comes from). #}
         {%- if r.status == 'rejected' and r.reject_reason %}<span class="tag"
               title="rejected, {{ event_reasons.get(r.reject_reason, r.reject_reason) }}{% if r.reject_quote %}. The email: {{ r.reject_quote }}{% endif %}">{{ r.reject_reason | replace('_', ' ') }}</span>{% endif %}
+        {#- How an approach you closed ended (close_approach): the status word
+            stays `withdrawn`, the legend's and the filter's word (rule 15),
+            and the tag says which kind of close, in grey like the reason. #}
+        {%- if r.status == 'withdrawn' and r.closed_as in ('declined', 'went_quiet') %}<span class="tag"
+              title="{{ 'You declined' if r.closed_as == 'declined' else 'They went quiet' }}{% if r.close_why %}: {{ decline_why.get(r.close_why, r.close_why) }}{% endif %}">{{ 'declined' if r.closed_as == 'declined' else 'went quiet' }}</span>{% endif %}
         {#- How it closed, when the record itself says: LinkedIn's automatic
             rejection of a failed must-have question (analytics.screen_sql).
             Beside the reason, never instead of it — one is what the timeline

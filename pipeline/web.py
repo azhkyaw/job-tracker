@@ -183,10 +183,14 @@ EVENT_LABELS = {
 
 def _event_label(e) -> str:
     """What one event is called on a page: EVENT_LABELS, except a withdrawal
-    filed because you applied to the same role again (mark_reapplied) — you
-    did not withdraw anything, the thread moved, and the words say so."""
-    if e["type"] == "withdrawn" and (e["payload"] or {}).get("superseded_by"):
+    that says more than "you withdrew" — filed because you applied to the same
+    role again (mark_reapplied), or an approach you closed (close_approach):
+    you declined it, or they went quiet. The words say which."""
+    p = e["payload"] or {}
+    if e["type"] == "withdrawn" and p.get("superseded_by"):
         return "You applied again"
+    if e["type"] == "withdrawn" and p.get("closed") in _CLOSE_KINDS:
+        return _CLOSE_KINDS[p["closed"]]
     return EVENT_LABELS.get(e["type"], e["type"])
 
 
@@ -492,6 +496,9 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
                    -- key the timeline writes, read here so the row can wear it.
                    rr.reason AS reject_reason,
                    rr.reason_quote AS reject_quote,
+                   -- How a closed approach ended, when you closed it
+                   -- (close_approach): declined, or they went quiet.
+                   wd.closed AS closed_as, wd.why AS close_why,
                    -- What the JD says about who may be hired (jd_extract_v2),
                    -- off the same extraction /analytics compares on: a grey
                    -- tag on the role line, its own sentence as the title.
@@ -555,6 +562,14 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
                         e.occurred_at DESC, e.created_at DESC
                LIMIT 1
             ) rr ON true
+            -- The newest withdrawal: the one the status reads, when it is one.
+            LEFT JOIN LATERAL (
+              SELECT e.payload->>'closed' AS closed, e.payload->>'why' AS why
+                FROM events e
+               WHERE e.application_id = a.id AND e.type = 'withdrawn'
+               ORDER BY e.occurred_at DESC, e.created_at DESC
+               LIMIT 1
+            ) wd ON true
             {analytics.LATEST_EXTRACTION}
             {answers.form_visa_evidence_sql("a.id")}
             WHERE a.user_id = %(user_id)s
@@ -654,6 +669,7 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
             "reasons": (_reason_rows(analytics.rejection_reasons(conn, user_id, is_inbound))
                         if status == "rejected" else []),
             "event_reasons": _EVENT_REASONS,
+            "decline_why": _DECLINE_WHY,
             "how": how,
             # Always, not only with rejected selected: these ride on the
             # legend's rejected entry as the at-rest glance, over the same
@@ -846,6 +862,31 @@ _EVENT_CHANNELS = {
     "linkedin":  "LinkedIn message",
     "in_person": "in person",
     "other":     "other",
+}
+
+# Closing an approach yourself (28 Sep 2026): the two ways a thread a recruiter
+# started ends with nobody rejecting anyone — you decided it is not for you, or
+# they stopped answering. Both file `withdrawn` (you ended it) with
+# `payload.closed` saying which: a qualifier on an existing type, the costing
+# web-ui rule 12 made for a visa reason on `rejected` and rule 9c for a
+# re-application on `withdrawn`. `withdrawn` already ends the trace, leaves the
+# pin and the nav pill, and counts as no reply. Until this, "I withdrew" was
+# the only close, worded for an application that was never made, with nowhere
+# to say why; on the day, 9 leads of 6 to 66 days sat under "Awaiting your
+# call". The words are what `_event_label` shows for each.
+_CLOSE_KINDS = {"declined": "You declined", "went_quiet": "They went quiet"}
+
+# Why an approach was not for you, when you say (`payload.why`). A closed
+# vocabulary for the same reason as `_EVENT_REASONS`: so the answers can be
+# counted. Optional — a decline needs no reason.
+_DECLINE_WHY = {
+    "experience": "not my experience or skills",
+    "seniority":  "the wrong seniority",
+    "salary":     "the pay",
+    "location":   "location or work mode",
+    "company":    "the company or its domain",
+    "terms":      "contract or agency terms",
+    "other":      "something else",
 }
 
 
@@ -1219,6 +1260,7 @@ def application_detail(request: Request, app_id: str, saved: str | None = None,
             "manual_events": _MANUAL_EVENTS,
             "event_reasons": _EVENT_REASONS,
             "event_channels": _EVENT_CHANNELS,
+            "decline_why": _DECLINE_WHY,
             "today": datetime.now(request.state.tz).strftime("%Y-%m-%d"),
         })
 
@@ -1759,10 +1801,13 @@ def edit_event(
                 _give_back_origin(conn, a, e["payload"])
             elif is_approach and not was_approach:
                 _take_origin(conn, a, payload)
-            # Same reason for a close by re-application (mark_reapplied): a
-            # withdrawal that stays one keeps its link to the later record.
-            if type == e["type"] == "withdrawn" and "superseded_by" in e["payload"]:
-                payload["superseded_by"] = e["payload"]["superseded_by"]
+            # Same reason for a close by re-application (mark_reapplied) and a
+            # closed approach (close_approach): a withdrawal that stays one
+            # keeps its link to the later record, and what kind of close it was.
+            if type == e["type"] == "withdrawn":
+                for k in ("superseded_by", "closed", "why"):
+                    if k in e["payload"]:
+                        payload[k] = e["payload"][k]
             conn.execute(
                 "UPDATE events SET type = %s, occurred_at = %s, payload = %s WHERE id = %s",
                 (type, occurred_at, Json(payload), e["id"]))
@@ -1822,6 +1867,61 @@ def mark_reapplied(request: Request, app_id: str, later_id: str = Form(""),
             "VALUES (%s, %s, 'withdrawn', 'manual', %s, %s)",
             (a["user_id"], a["id"], later_at, Json({"superseded_by": str(later["id"])})))
     dest = redirect_to if redirect_to in ("/", "/follow-ups") else f"/applications/{app_id}"
+    return RedirectResponse(dest, status_code=303)
+
+
+@app.post("/applications/{app_id}/close")
+def close_approach(request: Request, app_id: str, action: str = Form(""),
+                   why: str = Form(""), occurred_on: str = Form(""),
+                   redirect_to: str = Form("")):
+    """Close an approach a recruiter started, yourself (28 Sep 2026): "Not for
+    me" (`action=decline`, with an optional `why` from `_DECLINE_WHY`) or
+    "They went quiet" (`action=quiet`). Files `withdrawn` with
+    `payload.closed` — see `_CLOSE_KINDS` for why no new type.
+
+    Inbound only: on an application you started, "I withdrew" on the timeline
+    already says the right thing. Refused on a thread already closed, since a
+    second close would only argue with the first about when it ended. Dated
+    like the timeline's events (blank is now), with two guards a bare date
+    needs: never before the approach, and on the same local day as the
+    thread's latest event, just after it rather than at the noon a bare date
+    anchors to, which could sort it above that afternoon's email. Undo is
+    deleting the event from the timeline, like any hand-filed one."""
+    from psycopg.types.json import Json
+    user = _login_user(request)
+    tz = request.state.tz
+    kind = {"decline": "declined", "quiet": "went_quiet"}.get(action)
+    if kind is None:
+        raise HTTPException(400, "unknown close")
+    occurred_at, err = _parse_occurred_on(occurred_on, tz)
+    if err:
+        return _event_error(app_id, err)
+    payload = {"closed": kind}
+    if kind == "declined" and why in _DECLINE_WHY:
+        payload["why"] = why
+
+    with db.connect_scoped(user["id"]) as conn, conn.transaction():
+        a = _get_application(conn, app_id)
+        if a["origin"] != "inbound":
+            return _event_error(app_id, "Only an approach a recruiter started closes this "
+                                        "way. For your own application, record “I withdrew”.")
+        if conn.execute("SELECT 1 FROM events WHERE application_id = %s AND type = ANY(%s)",
+                        (a["id"], sorted(trace.TERMINAL))).fetchone():
+            return _event_error(app_id, "This thread is already closed.")
+        span = conn.execute("SELECT min(occurred_at) AS first, max(occurred_at) AS last "
+                            "FROM events WHERE application_id = %s", (a["id"],)).fetchone()
+        if occurred_at is not None and span["first"] is not None:
+            day = occurred_at.astimezone(tz).date()
+            if day < span["first"].astimezone(tz).date():
+                return _event_error(app_id, "That is before the recruiter approached you, on "
+                                    f"{span['first'].astimezone(tz).strftime('%d %b %Y')}.")
+            if day == span["last"].astimezone(tz).date() and occurred_at <= span["last"]:
+                occurred_at = span["last"] + timedelta(seconds=1)
+        conn.execute(
+            "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+            "VALUES (%s, %s, 'withdrawn', 'manual', COALESCE(%s, now()), %s)",
+            (a["user_id"], a["id"], occurred_at, Json(payload)))
+    dest = redirect_to if redirect_to in ("/inbound", "/follow-ups") else f"/applications/{app_id}"
     return RedirectResponse(dest, status_code=303)
 
 

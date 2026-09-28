@@ -2645,4 +2645,118 @@ check("...which names what was added and opens as an approach again",
       "Approach Run Co" in r.text and 'value="recruiter" selected' in r.text
       and _appr_val == "2026-08-07" and _appl_val == "", (_appr_val, _appl_val))
 
+print("inbound: closing an approach yourself (28 Sep 2026)")
+
+
+def _new_lead(company, approach_date):
+    r = client.post("/applications/new", data={
+        "company": company, "title": "Platform Engineer", "platform": "other",
+        "started_by": "recruiter", "approach_date": approach_date, "applied_date": "",
+        "after": "view"})
+    assert r.status_code == 303, r.text[:300]
+    return r.headers["location"].rsplit("/", 1)[1]
+
+
+def _closes(app_id):
+    with db.connect() as conn:
+        return conn.execute(
+            "SELECT id, source, occurred_at, payload FROM events WHERE application_id = %s::uuid "
+            "AND type = 'withdrawn' ORDER BY occurred_at", (app_id,)).fetchall()
+
+
+def _state(app_id):
+    with db.connect() as conn:
+        s = conn.execute("SELECT s.status, a.user_id FROM application_status s "
+                         "JOIN applications a ON a.id = s.application_id "
+                         "WHERE s.application_id = %s::uuid", (app_id,)).fetchone()
+        return s["status"], analytics.lead_count(conn, s["user_id"])
+
+
+_dec = _new_lead("Close Decline Co", "2026-08-20")
+_st, _leads0 = _state(_dec)
+r = client.get(f"/applications/{_dec}")
+check("an open approach offers the close: not for me, or they went quiet",
+      f'action="/applications/{_dec}/close"' in r.text and 'value="decline"' in r.text
+      and 'value="quiet"' in r.text and _st == "interested", r.status_code)
+r = client.post(f"/applications/{_dec}/close", data={"action": "decline", "why": "experience"})
+_c = _closes(_dec)
+_st, _leads1 = _state(_dec)
+check("“Not for me” files ONE withdrawal, by hand, saying declined and why",
+      r.status_code == 303 and r.headers["location"] == f"/applications/{_dec}"
+      and len(_c) == 1 and _c[0]["source"] == "manual"
+      and _c[0]["payload"] == {"closed": "declined", "why": "experience"}, _c)
+check("...which closes it: withdrawn, off the pin and out of the nav pill",
+      _st == "withdrawn" and _leads1 == _leads0 - 1, (_st, _leads0, _leads1))
+r = client.get(f"/applications/{_dec}")
+check("its timeline says “You declined” and why, and the close form is gone",
+      "You declined" in r.text and "not my experience or skills" in r.text
+      and f'action="/applications/{_dec}/close"' not in r.text and "You withdrew" not in r.text,
+      r.status_code)
+r = client.get("/inbound")
+_row = r.text.split("Close Decline Co", 1)[1].split("</a>")[0]
+check("/inbound wears it as a grey tag beside the status word, with why as its title",
+      ">withdrawn</span>" in _row and ">declined</span>" in _row
+      and "You declined: not my experience or skills" in _row, _row[-400:])
+
+r = client.post(f"/applications/{_dec}/events/{_c[0]['id']}/edit", data={
+    "type": "withdrawn", "occurred_on": "2026-08-22"})
+_c2 = _closes(_dec)
+check("editing its date keeps what kind of close it was, and why",
+      r.status_code == 303 and _c2[0]["payload"] == {"closed": "declined", "why": "experience"}
+      and _c2[0]["occurred_at"].date().isoformat() == "2026-08-22", _c2)
+r = client.post(f"/applications/{_dec}/close", data={"action": "quiet"})
+check("a closed thread refuses a second close",
+      "event_error=" in r.headers.get("location", "") and len(_closes(_dec)) == 1,
+      r.headers.get("location"))
+r = client.post(f"/applications/{_dec}/events/{_c[0]['id']}/delete")
+_st, _leads2 = _state(_dec)
+check("deleting it is the undo: an open lead again, pinned and counted",
+      r.status_code == 303 and not _closes(_dec) and _st == "interested" and _leads2 == _leads0,
+      (_st, _leads2))
+
+_qui = _new_lead("Close Quiet Co", "2026-08-21")
+r = client.post(f"/applications/{_qui}/close", data={
+    "action": "quiet", "why": "experience", "redirect_to": "/inbound"})
+_c = _closes(_qui)
+check("“They went quiet” files the other kind, and a stray why is not kept",
+      r.status_code == 303 and r.headers["location"] == "/inbound"
+      and len(_c) == 1 and _c[0]["payload"] == {"closed": "went_quiet"}, _c)
+check("...worded so on its page and tagged so on /inbound",
+      "They went quiet" in client.get(f"/applications/{_qui}").text
+      and ">went quiet</span>" in client.get("/inbound").text.split("Close Quiet Co", 1)[1].split("</a>")[0])
+
+_bad = _new_lead("Close Guard Co", "2026-08-21")
+r = client.post(f"/applications/{_bad}/close", data={"action": "decline", "occurred_on": "2026-08-01"})
+check("a close dated before the approach is refused",
+      "event_error=" in r.headers.get("location", "") and not _closes(_bad), r.headers.get("location"))
+r = client.post(f"/applications/{_bad}/close", data={"action": "decline",
+                                                     "redirect_to": "https://example.com/"})
+check("an unknown redirect_to lands on the record, never off-site",
+      r.headers["location"] == f"/applications/{_bad}", r.headers["location"])
+r = client.post(f"/applications/{_bad}/close", data={"action": "delete"})
+check("an unknown action is refused", r.status_code == 400, r.status_code)
+r = client.post(f"/applications/{manual_app_1}/close", data={"action": "decline"})
+check("an application you started is not closed this way (“I withdrew” is its words)",
+      "event_error=" in r.headers.get("location", "") and not _closes(manual_app_1),
+      r.headers.get("location"))
+check("...and its page offers no such form",
+      f'action="/applications/{manual_app_1}/close"' not in client.get(f"/applications/{manual_app_1}").text)
+
+# Same-day placement: a bare date anchors at local noon, which would sort the
+# close above an approach that came in later that day.
+with db.connect() as conn:
+    _tz = conn.execute("SELECT timezone FROM users ORDER BY created_at LIMIT 1").fetchone()["timezone"]
+from zoneinfo import ZoneInfo                                  # noqa: E402
+_today = datetime.now(ZoneInfo(_tz or "UTC")).date().isoformat()
+_sd = _new_lead("Close Sameday Co", _today)
+with db.connect() as conn, conn.transaction():
+    # The approach arrived at 23:00 local — after the noon a bare date means.
+    _late = datetime.now(ZoneInfo(_tz or "UTC")).replace(hour=23, minute=0, second=0, microsecond=0)
+    conn.execute("UPDATE events SET occurred_at = %s WHERE application_id = %s::uuid "
+                 "AND type = 'recruiter_outreach'", (_late, _sd))
+r = client.post(f"/applications/{_sd}/close", data={"action": "decline", "occurred_on": _today})
+_c = _closes(_sd)
+check("a close dated the same day as the thread's latest event sorts just after it, not at noon",
+      len(_c) == 1 and _c[0]["occurred_at"] == _late + timedelta(seconds=1), _c)
+
 print("\nALL WEB PATHS PASS")

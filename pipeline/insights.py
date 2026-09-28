@@ -204,6 +204,9 @@ def build_facts(apps, events, now: datetime, reminder_days: int) -> list[dict]:
         ended = first(CLOSED)
         f["ended_at"] = ended["occurred_at"] if ended else None
         f["superseded"] = any(e["type"] == "withdrawn" and e["superseded"] for e in evs)
+        # An approach you closed yourself (web.close_approach): which kind.
+        f["closed_as"] = next((e.get("closed_as") for e in reversed(evs)
+                               if e["type"] == "withdrawn" and e.get("closed_as")), None)
 
         start = f["start"]
         f["age"] = days(now - start) if start else None
@@ -244,7 +247,9 @@ def _phrase(f) -> str:
         else:
             text = "rejected"
     elif s == "withdrawn":
-        text = "you applied again" if f["superseded"] else "withdrawn"
+        text = ("you applied again" if f["superseded"] else
+                {"declined": "you declined", "went_quiet": "they went quiet"}.get(
+                    f.get("closed_as"), "withdrawn"))
     else:
         text = {"interview_invite": "interviewing", "engaged": "they reached out",
                 "viewed": "viewed", "interested": "awaiting your call"}.get(s, "applied")
