@@ -38,6 +38,10 @@ _SEGMENT_IDS = (
     re.compile(r"^([0-9]+)$"),
     re.compile(r"^((?=[a-z0-9]*[0-9])(?=[a-z0-9]*[a-z])[a-z0-9]{8,40})$"),
 )
+# jobposting.js:APPLY_SEGMENTS: where a job's address turns into its apply
+# flow. The id is looked for before it; the flow's tail (Oracle's
+# `…/job/2087/apply/section/1`) only when nothing before it is id-shaped.
+_APPLY_SEGMENTS = ("apply", "application")
 
 
 # jobposting.js:TENANT_PARAM: a hiring system serving many employers from one
@@ -88,7 +92,8 @@ def generic_id(url: str | None) -> str | None:
             token = hit.lower()
             break
     segs = [s for s in (unquote(x).lower() for x in parts.path.split("/")) if s]
-    for seg in reversed(segs):
+    cut = next((i for i, s in enumerate(segs) if s in _APPLY_SEGMENTS), len(segs))
+    for seg in [*reversed(segs[:cut]), *reversed(segs[cut + 1:])]:
         if token:
             break
         for rx in _SEGMENT_IDS:

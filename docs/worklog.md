@@ -1017,3 +1017,35 @@ the key to each real case.
    candidate id where the listing's number is the requisition and by the
    popup's explicit attach everywhere else, and a tenant's known name offered
    on the next nameless receipt. Open: the first real apply through each.
+
+37. **The first LinkedIn → ATS apply to keep its answers, filed twice**
+   (28 Sep 2026, extension 0.21.1). An employer on Oracle Recruiting Cloud:
+   the form captured 29 answers, the first of §16.2's 55-strong path to
+   keep any, but as its own record ("Work Summary" at "<employer> Career
+   Site"), beside the LinkedIn record the popover filed 10 s later. Read
+   from the extension's LevelDB rather than guessed: the handoff had bound
+   the tab `via: "opener"` with the job's id `…/2087` (which also settles
+   that LinkedIn's external apply sets `openerTabId`), and the submit read
+   its own id off `…/job/2087/apply/section/1` as `…/1`. `handoffFits`
+   refused the binding on `2087 ≠ 1`, and the title fallback failed on the
+   section heading. One cause: `idFrom` took the LAST id-shaped segment,
+   and an apply flow's tail can hold a number. Fixed as a rule on both
+   sides (`jobposting.js:idFrom`, `joburl.generic_id`): the id is looked
+   for before the first `apply`/`application` segment, the tail only when
+   nothing precedes it (JazzHR). Red on the old code with the real
+   signature (`/1`, and `/3` for a third section, which shows the answers
+   would also have keyed per section); 305 extension checks, the 38 shared
+   URL cases and all nine suites green; an in-place `reverse()` mutation,
+   written and then caught before it ran, turns five fallback cases red.
+   Of the 19 postings on platform `other`, this was the only one with a
+   segment after `/apply`. Repaired with the author's go-ahead, snapshot
+   first (`2026-09-28-oracle-handoff-twins.json`): `/edit` on the form's
+   record, the ATS id set, `merge_jobs` keeping the LinkedIn record (JD,
+   board id) and gaining the answers, the popover's duplicate `applied`
+   removed, the submit's instant restored to the microsecond. Offered, not
+   built: the form page's weaker reads (a section heading as the title, a
+   tab title's "Career Site" as the company) yielding to an exact stash,
+   and a server-side detector putting a board record and an ATS capture of
+   the same vendor, minutes apart, in triage's duplicate band with the
+   BOARD record as the winner (triage's merge keeps the older record, the
+   wrong one here).

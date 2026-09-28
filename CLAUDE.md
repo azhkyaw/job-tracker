@@ -711,7 +711,7 @@ The dated register behind each item, tasks 1-35 with their measurements, is
   queue as the author confirms them. Four `follow_up_sent` are on record: one filed
   by hand, three recovered from follow-ups the user EMAILED, which since
   migration 016 file themselves (task 16). (worklog task 4)
-- **Extension, next real Easy Apply:** verify the current build (0.21.0 on
+- **Extension, next real Easy Apply:** verify the current build (0.21.1 on
   28 Sep) is live on BOTH machines and the tab was opened after the
   reload; read `doc_source` and the sweep
   line. JobStreet still owes one clean submit with the race fix and salary
@@ -742,7 +742,11 @@ The dated register behind each item, tasks 1-35 with their measurements, is
   third state marks a job page that is not captured; then P4 (0.21.0): a
   thin record completed from its listing (a join-only candidate id, or the
   popup's explicit attach) and a tenant's known name offered on the
-  receipt. Open: the first real apply through each piece.
+  receipt. The first real LinkedIn → ATS apply (Oracle, 28 Sep) bound the
+  handoff through the opener but split into two records, because the form's
+  `…/apply/section/1` read as the job's id; fixed in 0.21.1 and the pair
+  merged (task 37, which also lists two follow-ups offered, not built).
+  Open: the first real apply through each piece.
 - **Release blockers:** LICENSE (Apache-2.0 recommended), split the extension
   into its own repo, decide whether CLAUDE.md ships; `audit_names.py --history`
   is the pre-publish check. (task 3)

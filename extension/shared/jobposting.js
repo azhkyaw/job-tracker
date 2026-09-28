@@ -97,7 +97,14 @@
   //  2. the LAST id-shaped path segment: a UUID (Lever, Ashby), a slug ending
   //     in 32 hex (MyCareersFuture), a slug ending _REQID (Workday), digits
   //     then a slug (SmartRecruiters, Teamtailor), a bare number (most), or an
-  //     opaque 8-40 character code of letters AND digits (Workable, JazzHR);
+  //     opaque 8-40 character code of letters AND digits (Workable, JazzHR).
+  //     "Last" within the JOB's part of the path: an apply flow is the job's
+  //     address plus `/apply` or `/application` plus the flow's own state, and
+  //     that state can look like an id. Oracle's form is `…/job/2087/apply/
+  //     section/1`, which read as job 1, so its answers keyed per section and
+  //     the handoff bound to 2087 was refused at the submit (28 Sep 2026). The
+  //     tail is searched only when the part before it has no id, which is
+  //     where JazzHR keeps its own (`/apply/<id>/<slug>`);
   //  3. otherwise the whole path PLUS the non-tracking query. The query is not
   //     decoration there: a generic page carrying its job in a parameter this
   //     list does not know (an embed's ?for=…&token=…) would otherwise give
@@ -116,6 +123,12 @@
     /^(\d+)$/,
     /^((?=[a-z0-9]*\d)(?=[a-z0-9]*[a-z])[a-z0-9]{8,40})$/,
   ];
+
+  // The path segment where a job's address turns into its apply flow
+  // (Lever's …/apply, Ashby's …/application, Workday's …/apply/…). ONE list:
+  // idFrom stops looking for the id there, and generic.js's apply-flow test
+  // is built from it.
+  const APPLY_SEGMENTS = ["apply", "application"];
 
   function decodeSegment(s) {
     try { return decodeURIComponent(s); } catch (e) { return s; }
@@ -155,9 +168,16 @@
     }
     const segs = u.pathname.split("/").map(decodeSegment)
       .map((s) => s.toLowerCase()).filter(Boolean);
-    for (let i = segs.length - 1; i >= 0 && !token; i--) {
+    // The job's part of the path, newest segment first, then the apply
+    // flow's tail (rule 2 above).
+    const cut = segs.findIndex((s) => APPLY_SEGMENTS.includes(s));
+    const head = cut < 0 ? segs : segs.slice(0, cut);
+    const tail = cut < 0 ? [] : segs.slice(cut + 1);
+    // Copied before reversing: `head` may BE `segs`, which the fallback joins.
+    for (const seg of [...head].reverse().concat([...tail].reverse())) {
+      if (token) break;
       for (const rx of SEGMENT_IDS) {
-        const m = rx.exec(segs[i]);
+        const m = rx.exec(seg);
         if (m) { token = m[1]; by = "segment"; break; }
       }
     }
@@ -789,6 +809,6 @@
   (typeof window !== "undefined" ? window : self).__trackerJobPosting =
     { read, idFrom, pageId, tenantOf, atsHandoff, atsCandidates, hasPosting, siteOwner, pickDeparture,
       handoffFits, quickApplies, quickApplySent, atsOfUrl, vendorOf, htmlToText, sameJob,
-      pickListed, siteOf,
+      pickListed, siteOf, APPLY_SEGMENTS,
       matchPatternRegex, stripRequisition, suggestCompany };
 })();

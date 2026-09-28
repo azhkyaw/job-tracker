@@ -782,6 +782,38 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
     against the manifest with Chromium's containment rule (red on the old
     manifest for every site).
 
+- **An apply flow's own tail can look like the job's id, and one wrong id
+  broke two links at once** (28 Sep 2026, the first LinkedIn → ATS apply
+  ever to keep its answers; extension 0.21.1).
+  - **What happened:** an employer on Oracle Recruiting Cloud. The handoff
+    bound the new tab correctly (`via: "opener"`, `atsJobId …/2087`), and
+    the submit captured all 29 answers. But the form sits at
+    `…/job/2087/apply/section/1`, and `idFrom` took the LAST id-shaped
+    segment, the section number: the page's id was `…/1`.
+  - **What that broke:** `handoffFits` refused the binding (both sides knew
+    an id and they differed, `2087 ≠ 1`); the keyed stash missed
+    (`exact: false`); and the title fallback failed too, since the form's
+    only `<h1>` was the section heading "Work Summary". So the submit filed
+    its own record, and the LinkedIn popover answered 10 s later filed a
+    second. On a multi-section form each section would also have keyed its
+    answers apart (`…/1`, `…/3`).
+  - **Fixed as a rule, not an Oracle entry:** `idFrom` (and
+    `joburl.generic_id`) look for the id in the part of the path BEFORE the
+    first `apply`/`application` segment (`jobposting.js:APPLY_SEGMENTS`,
+    which `generic.js:APPLY_PATH` is now built from), and in the tail only
+    when that part has none, which is where JazzHR keeps its id
+    (`/apply/<id>/<slug>`). No stored posting changed id but this one.
+  - **How it was found:** the provenance, handoffs and failures buffers,
+    read from the LevelDB (Procedures above). The handoff had worked, which
+    no guess would have said.
+  - **Repaired** by `/edit` on the form's record (the job page's address),
+    the ATS id set, `merge_jobs` keeping the LinkedIn record, and the
+    popover's duplicate `applied` event removed. Snapshot first
+    (`2026-09-28-oracle-handoff-twins.json`); `/edit` truncates the applied
+    time to HH:MM, so the exact instant was restored FROM THE SNAPSHOT: a
+    re-run that reads the live row after a first `/edit` restores the
+    truncated value.
+
 ## Known-untested surfaces (verify on first real contact)
 
 - **Extension DOM selectors** (`extension/adapters/*.js`) — best-effort against
@@ -956,9 +988,9 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
     the live apply pages of Ashby, Workable and Greenhouse. Each picked the
     right root and exactly one submit button. Lever was read as fetched HTML.
   - **Not verified, in order of doubt:**
-    1. Whether LinkedIn's external button sets `openerTabId` on the tab it
-       opens (it resolves the destination server-side and may open the tab
-       in a way that leaves none).
+    1. ~~Whether LinkedIn's external button sets `openerTabId` on the tab it
+       opens~~ — **it does** (28 Sep 2026: the handoff bound `via: "opener"`
+       on a real LinkedIn → Oracle apply; the gotcha above).
     2. Workday, whose form sits behind a candidate sign-in and was never
        seen. The wizard rule — a Workday step with no file input is still the
        application, by its `/apply` address — is reasoned. SuccessFactors WAS
@@ -1076,8 +1108,11 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   - on the submit: the provenance line reads "matched by the handoff from
     the listing" (or "from the tab that opened this one"), and the record
     carries the listing's identity and the form's answers;
-  - the job board path (LinkedIn's external apply) binds only if Chrome
-    sets `openerTabId` on the tab it opens, which is itself unverified;
+  - the job board path (LinkedIn's external apply) binds through
+    `openerTabId`, which Chrome DOES set there: seen live once (28 Sep 2026,
+    `via: "opener"` with the right `atsJobId`), when the submit's own id was
+    what failed (the gotcha above, fixed in 0.21.1). The submit taking the
+    binding is still to be seen;
   - an employer-branded listing binds only once its site is enabled, and
     enabling has not yet completed once (docs/career-sites.md §16.1, P3);
   - SuccessFactors ids now carry the tenant (`<host>/<tenant>/<id>`): one

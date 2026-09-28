@@ -636,7 +636,8 @@ All four were taken by the author on 24 Sep 2026, each as recommended.
 
 - The SuccessFactors form after sign-in: title, requisition id, whether the
   submit navigates.
-- Whether LinkedIn's external button sets `openerTabId`.
+- ~~Whether LinkedIn's external button sets `openerTabId`.~~ It does: seen
+  on a real LinkedIn → Oracle apply, 28 Sep 2026 (§16.6).
 - iCIMS (WAF CAPTCHA) and Taleo (no live posting reached).
 - Client-rendered JSON-LD on Workable, Oracle Recruiting Cloud,
   MyCareersFuture, BambooHR and Eightfold: known from bundle code only, never
@@ -959,8 +960,21 @@ for the second.
   - Either way the job takes the listing's company and title only where it
     holds the placeholders, and the listing's JD is extracted as its own
     posting's.
-- None of it has run on a real apply; `.claude/rules/extension.md` says what
-  to read on the next one.
+- **The first real run, and the fix it needed (0.21.1, 28 Sep 2026).** A
+  LinkedIn → Oracle Recruiting Cloud apply, the first of the §16.2 path to
+  keep its answers (29). The handoff bound as designed, through the
+  opener, with the job's id (`…/job/2087` → `<host>/2087`). The submit then
+  read its own id from `…/job/2087/apply/section/1` as `<host>/1`, so
+  `handoffFits` refused the binding and the form filed a second record
+  beside the LinkedIn one. `idFrom` and `joburl.generic_id` now look for
+  the id before the first `apply`/`application` segment, and in the flow's
+  tail only when nothing before it is id-shaped (JazzHR's `/apply/<id>`).
+  §16.3 item 1 assumed every vendor keeps the id in the URL "through the
+  whole flow"; Oracle keeps it, followed by a number that is not. The pair
+  was merged onto the LinkedIn record (`.claude/rules/extension.md` has the
+  repair). Still unseen: a submit that takes the binding.
+- Nothing else has run on a real apply; `.claude/rules/extension.md` says
+  what to read on the next one.
 
 ## 17. Sources
 

@@ -46,8 +46,9 @@
 
   // An apply flow by its address: Workday's …/apply/…, Ashby's /application,
   // a SuccessFactors career site's career_ns=job_application. Needed for the
-  // steps of a wizard that carry no file input of their own.
-  const APPLY_PATH = /(^|\/)(apply|application)(\/|$)/i;
+  // steps of a wizard that carry no file input of their own. The words are
+  // jobposting.js's, where idFrom stops looking for the job's id.
+  const APPLY_PATH = new RegExp(`(^|/)(${J.APPLY_SEGMENTS.join("|")})(/|$)`, "i");
   const applyFlowAt = (loc) => APPLY_PATH.test(loc.pathname || "") ||
     /career_ns=job_application/i.test(loc.search || "");
   const rendered = (el) => !el.getClientRects || el.getClientRects().length > 0;
@@ -238,9 +239,11 @@
     answerFormRoot() {
       return applicationRoot(document, location);
     },
-    // The listing and its apply page share an id on every vendor measured
-    // (/apply, /application and Workday's /apply/… suffixes are not ids), so
-    // the answers store and the listing's stash both survive the move. The
+    // The listing and its apply page share an id: idFrom looks for it before
+    // the /apply or /application segment, since what follows is the flow's
+    // own state (Workday's /apply/autofillWithResume, Oracle's
+    // /apply/section/1 — which read as job 1 until 28 Sep 2026), so the
+    // answers store and the listing's stash both survive the move. The
     // PAGE's id, not the address's: SuccessFactors' form address is a session
     // crumb after any postback, and a sign-in mid-form (28 Sep 2026) would
     // otherwise start both over (jobposting.js:pageId).
