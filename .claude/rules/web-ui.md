@@ -746,3 +746,12 @@ detail page's own select, scoped to that posting (decided 28 Jul 2026).
   paper; the first draft's amber failed at 4.25 and was darkened to
   `#9A5705`). Nobody has seen the APP itself render the new CSS without Dark
   Reader in the way. Check this before putting screenshots in a README.
+- **The approach panel and `/follow-ups`' lead rows (28 Sep 2026, rule 17)**
+  were rendered through TestClient against the real dev DB (every page 200,
+  the forms present on an open lead and absent on a closed one) and never
+  looked at. Both reuse existing classes rather than new CSS: two stacked
+  `.record` forms above the timeline form, and the lead row's second line
+  borrows the re-application suggestion's `.fu-again` / `.fu-again-do`
+  grid. What to look at on first sight: whether three `.record` forms in a
+  row read as one panel or as clutter, and whether "They went quiet" sits
+  where "Same role, close" does.

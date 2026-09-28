@@ -70,7 +70,7 @@ and design records; the code and `migrations/` win where they disagree.
   uv-managed Python, the Neon dev DB.
 - `docs/monetization.md` — superseded, retained for its Gmail
   restricted-scope compliance analysis.
-- `docs/worklog.md` — the dated task register (tasks 1-35 with their
+- `docs/worklog.md` — the dated task register (tasks 1-38 with their
   measurements); what is still open is summarised under "Open work" below.
 
 **Path-scoped rules.** Dated case history that only matters when touching
@@ -350,7 +350,12 @@ An invariant keeps its RULE here and its case history in the rule file.
    the rejection email itself STATES the reason, the pipeline files it
    (`email_classifier.rejection_reason`, quoted verbatim or none, marked
    `payload.reason_source = 'email'` with its quote); otherwise the reason is
-   the user's annotation, and the why-select overrides either.
+   the user's annotation, and the why-select overrides either. The same rule
+   on the other close: an inbound approach YOU end ("Not for me", "They went
+   quiet") is `withdrawn` + `payload.closed` (+ `why`), never a type of its
+   own, and your reply to a recruiter is a `note` + `payload.reply` whose
+   effect (whose move it is) is DERIVED, `analytics.awaiting_you_sql`
+   (28 Sep 2026; web-ui.md rule 17).
    **`engaged`** (a person reaching out, no next step yet) ranks strictly
    between `viewed` — `matcher.py`'s passive, auto-detected signal only —
    and `interview_invite`, in gapped precedence values. **A visa rejection
@@ -555,6 +560,10 @@ web/UI, LLM, database) moved VERBATIM into `.claude/rules/` — see Docs map →
   was true. Count bytes in Python instead, `blob.count(b"\r")` over
   `git cat-file blob <commit>:<path>`, and run it against a CRLF control
   file too, to prove the check can see one.
+  **Git Bash's `sed -i` rewrites a whole CRLF file as LF** (28 Sep 2026: a
+  one-token `sed` on `tests/test_web.py`). Uniformly LF, so the diff stayed
+  the right size and git only warned "LF will be replaced by CRLF"; but it is
+  why that warning appears, and the Edit tool then keeps LF in that file.
 - **`set -e` does not stop a chain inside Claude Code's Bash tool.** The
   harness wraps the command in a context where bash ignores `-e` (the same
   rule that disables it inside `&&`/`||` lists), so a failing `uv run python
@@ -593,6 +602,14 @@ web/UI, LLM, database) moved VERBATIM into `.claude/rules/` — see Docs map →
   be that issue's lines only. Read its REMOVED lines; a file the last issue
   never touched that still shows as modified is exactly this. Amend the
   earlier commit while it is unpushed.
+  **Cheaper when the issues are built one after another** (28 Sep 2026,
+  three commits): run the full suite after each issue and copy its touched
+  files aside (`stageN/`) before starting the next. The builder then takes
+  each intermediate commit's CODE from its snapshot and cuts back only the
+  shared docs (asserted anchors, and no stage naming a helper a later stage
+  added), and a byte comparison of each commit's blobs with its snapshot,
+  LF-normalised, proves it is exactly what that suite run tested: no
+  worktree run needed.
 - **Windows: `uvicorn --reload`'s process tree outlives a single `taskkill`.**
   The PID `netstat`/`Get-NetTCPConnection` reports often isn't the real
   root — cross-check via `Get-CimInstance Win32_Process -Filter
@@ -701,10 +718,13 @@ Detail lives with each family's rule file; this is the index.
 - **UI** (`.claude/rules/web-ui.md`): the palette has never been seen on a real
   screen without Dark Reader in the way — neither the 28 Jul one nor the
   23 Sep redraw's, whose light theme is verified numerically only. (task 13)
+  The approach panel ("Answered them?", "Close this approach") and
+  `/follow-ups`' lead rows (28 Sep, task 38) were rendered through
+  TestClient against real data only, never looked at.
 
-## Open work (as of 25 Sep 2026)
+## Open work (as of 28 Sep 2026)
 
-The dated register behind each item, tasks 1-35 with their measurements, is
+The dated register behind each item, tasks 1-38 with their measurements, is
 `docs/worklog.md`; read the matching entry before acting on one.
 
 - **Follow-up drafting** on an age-capped queue: cap `/follow-ups` near 21
@@ -791,6 +811,12 @@ The dated register behind each item, tasks 1-35 with their measurements, is
   two resume emails recovered from `not_job_related` sit in triage (neither
   names a company, so the matcher could not place them). The misfiled 23 Sep
   follow-up was re-filed on 24 Sep (task 22).
+- **The 9 open inbound leads are the author's clicks too** (task 38, 28 Sep):
+  each lead's page now takes "I replied" (then it waits on them and, silent
+  `REMINDER_DAYS` later, reaches `/follow-ups`) or a close ("Not for me",
+  "They went quiet"). None had a reply on record, 6 to 66 days after the
+  approach, so all 9 still read "Awaiting your call". Not built: placing a
+  same-day event from the general timeline form after the day's last event.
 - **The 24 Sep data audit's leftovers are the author's clicks, not code**
   (tasks 19-21): 15 rows marked on `/follow-ups` as an earlier application
   to a role applied to again, each with "Same role, close" (the studio's
