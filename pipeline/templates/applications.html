@@ -169,10 +169,14 @@
   <span class="aside">
     {% if page == 'inbound' %}
     {# The inbound page's nudge: approaches still sitting in triage's inbound
-       lane, the only door a row on this page comes through. Not amber — the
+       lane, the door every emailed approach comes through. Not amber — the
        wait there is on the user, and --age means unanswered by someone else
        (UI rule 1). #}
     {% if triage_inbound %}<a href="/triage?lane=inbound">{{ triage_inbound }} to sort in triage</a>{% endif %}
+    {# The other door onto this page (28 Sep 2026): an approach no email
+       carried — a call, a WhatsApp message. The same form as the record's
+       link, opened as an approach (see manual_entry_form). #}
+    <a href="/applications/new?started_by=recruiter">Add one by hand</a>
     {% else %}
     {# The queue moved to its own page (21 Aug 2026); this is the nudge that
        replaces 15 rows of it sitting above the first trace. Amber only when
@@ -290,7 +294,9 @@
   <a href="{{ list_url(status=status, sort=sort, visa='', form='') }}">See every {{ noun }}</a>.</p>
 {% elif page == 'inbound' %}
 <p class="empty">No approaches yet. A recruiter's email lands in
-<a href="/triage?lane=inbound">triage's inbound lane</a> first; “Track as lead” files it here.</p>
+<a href="/triage?lane=inbound">triage's inbound lane</a> first; “Track as lead” files it here.<br>
+A call or a message that never reached your inbox?
+<a href="/applications/new?started_by=recruiter">Add one by hand</a>.</p>
 {% else %}
 <p class="empty">No applications yet. Run the backfill, then process the queue:<br>
 <code>python -m pipeline.cli backfill &amp;&amp; python -m pipeline.cli work --once</code><br>

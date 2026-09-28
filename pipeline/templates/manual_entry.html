@@ -1,11 +1,25 @@
 {% extends "base.html" %}
-{% block title %}add application — tracker{% endblock %}
-{% block nav_apps %}active{% endblock %}
+{#- Two framings of one form (28 Sep 2026): opened from /inbound it is an
+    approach (`/applications/new?started_by=recruiter`), otherwise an
+    application. Keyed on `form.started_by`, the field that decides which page
+    the record lands on, so the heading and the lit nav entry name where it
+    will go, even on a re-render after the select was changed. #}
+{% set approach = form.started_by == 'recruiter' %}
+{% block title %}{{ 'add approach' if approach else 'add application' }} — tracker{% endblock %}
+{% block nav_apps %}{{ 'active' if not approach }}{% endblock %}
+{% block nav_inbound %}{{ 'active' if approach }}{% endblock %}
 {% block content %}
+{% if approach %}
+<h1>Add a recruiter's approach</h1>
+<p class="lede" style="margin-top:-.4rem">For approaches that never reached your inbox:
+  a call, a WhatsApp or LinkedIn message, a word in person. If you haven't applied yet,
+  leave the applied date blank and it waits on Inbound under “Awaiting your call”.</p>
+{% else %}
 <h1>Add a past application</h1>
 <p class="lede" style="margin-top:-.4rem">For applications the extension and Gmail can't reach:
   made before this system existed, or where the posting or the extension failed. An
   approximate date is fine; it helps future emails match this record automatically.</p>
+{% endif %}
 
 {% if added %}
 <div class="note" style="--c:var(--offer)">

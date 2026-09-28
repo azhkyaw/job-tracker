@@ -2589,4 +2589,60 @@ r = client.post("/applications/new", data={
 check("under “I applied” the applied date is still required",
       r.status_code == 400 and "valid applied date" in r.text, r.status_code)
 
+print("inbound: adding one by hand from the page")
+# /inbound's door onto the same form (28 Sep 2026), opened as an approach. The
+# assertion that matters is the BLANK applied date: the form pre-fills it with
+# today, and a lead saved as-is from that default would be an application.
+r = client.get("/inbound")
+check("/inbound offers “Add one by hand”, opened as an approach",
+      '<a href="/applications/new?started_by=recruiter">Add one by hand</a>' in r.text,
+      r.status_code)
+check("...while the record's own link still opens it as an application",
+      '<a href="/applications/new">Add one by hand</a>' in client.get("/").text)
+
+
+def _date_input(html, name):
+    """(value, max) of a date input — max is the form's own `today`."""
+    m = re.search(rf'name="{name}" value="([^"]*)" max="([^"]*)"', html)
+    return m.groups() if m else (None, None)
+
+
+r = client.get("/applications/new?started_by=recruiter")
+_appr_val, _today = _date_input(r.text, "approach_date")
+_appl_val, _ = _date_input(r.text, "applied_date")
+check("opened from /inbound the form is an approach: selected, dated today, Inbound lit",
+      r.status_code == 200 and 'value="recruiter" selected' in r.text
+      and _appr_val == _today and "Add a recruiter's approach" in r.text
+      and 'href="/inbound" class="active"' in r.text and 'href="/" class="active"' not in r.text,
+      (r.status_code, _appr_val, _today))
+check("...and its applied date starts BLANK, so a lead saved as-is invents no application",
+      _appl_val == "", _appl_val)
+
+r = client.get("/applications/new")
+_appr_val, _ = _date_input(r.text, "approach_date")
+_appl_val, _today = _date_input(r.text, "applied_date")
+check("opened plainly it is still an application: “I applied”, dated today, Applications lit",
+      'value="me" selected' in r.text and _appl_val == _today and _appr_val == ""
+      and "Add a past application" in r.text and 'href="/" class="active"' in r.text,
+      (_appl_val, _appr_val))
+r = client.get("/applications/new?started_by=bogus")
+check("an unknown started_by opens it as an application",
+      'value="me" selected' in r.text and "Add a past application" in r.text)
+
+r = client.post("/applications/new", data={
+    "company": "Approach Run Co", "title": "Platform Engineer", "platform": "linkedin",
+    "started_by": "recruiter", "approach_date": "2026-08-07", "applied_date": "",
+    "after": "another"})
+_loc = r.headers.get("location", "")
+check("“Save and add another” on an approach keeps the next form an approach, "
+      "carrying the approach's date and NOT an applied one",
+      r.status_code == 303 and "started_by=recruiter" in _loc
+      and "approach_date=2026-08-07" in _loc and not re.search(r"[?&]date=", _loc), _loc)
+r = client.get(_loc)
+_appr_val, _ = _date_input(r.text, "approach_date")
+_appl_val, _ = _date_input(r.text, "applied_date")
+check("...which names what was added and opens as an approach again",
+      "Approach Run Co" in r.text and 'value="recruiter" selected' in r.text
+      and _appr_val == "2026-08-07" and _appl_val == "", (_appr_val, _appl_val))
+
 print("\nALL WEB PATHS PASS")

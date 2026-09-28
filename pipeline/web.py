@@ -620,8 +620,9 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
             WHERE a.user_id = %s AND a.origin = 'inbound'
             """, (user_id,)).fetchone() if is_inbound else None
         # The inbound page's nudge, where the record's is the follow-up
-        # count: approaches still sitting in triage's inbound lane, which is
-        # the only door a record on this page comes through ("Track as lead").
+        # count: approaches still sitting in triage's inbound lane, the door an
+        # EMAILED approach comes through ("Track as lead"); one that never
+        # reached the inbox comes by hand, the page's "Add one by hand".
         # RLS-scoped like _pending_count, which deliberately leaves these out.
         triage_inbound = conn.execute(
             "SELECT count(*) AS n FROM emails WHERE triage_state = 'pending' "
@@ -872,8 +873,17 @@ def _manual_ctx(conn, user, tz, *, form, error=None, added=None, merged=False):
 def manual_entry_form(request: Request, company: str = "", title: str = "",
                        url: str = "", platform: str = "linkedin", location: str = "",
                        added: str | None = None, merged: str | None = None,
-                       date: str | None = None):
+                       date: str | None = None, started_by: str = "me",
+                       approach_date: str | None = None):
+    """`started_by=recruiter` is the form as `/inbound`'s "Add one by hand"
+    opens it (28 Sep 2026): the same form and the same POST, framed as an
+    approach. What changes is which date starts filled in. Here that is the
+    approach's, and the applied date starts BLANK, because a pre-filled one
+    would file an `applied` event today on every lead added from that page.
+    A lead the user forgot to date is visible (it sits under "Awaiting your
+    call"); an application nobody made is not."""
     user = _login_user(request)
+    recruiter_first = started_by == "recruiter"
     tz = request.state.tz
     with db.connect_scoped(user["id"]) as conn:
         added_info = None
@@ -893,13 +903,16 @@ def manual_entry_form(request: Request, company: str = "", title: str = "",
                     """, (added,)).fetchone()
             except psycopg.errors.InvalidTextRepresentation:
                 added_info = None
+        today = datetime.now(tz).strftime("%Y-%m-%d")
         form = {"company": company, "title": title, "url": url,
                 "platform": platform or "linkedin", "location": location,
-                "applied_date": date or datetime.now(tz).strftime("%Y-%m-%d"),
+                "applied_date": "" if recruiter_first else (date or today),
                 "applied_time": "", "outcome": "", "outcome_date": "",
                 "outcome_time": "", "jd_text": "", "note": "",
                 "external": "", "confirm": "",
-                "started_by": "me", "approach_date": "", "approach_channel": ""}
+                "started_by": "recruiter" if recruiter_first else "me",
+                "approach_date": (approach_date or today) if recruiter_first else "",
+                "approach_channel": ""}
         return templates.TemplateResponse(
             request=request, name="manual_entry.html",
             context=_manual_ctx(conn, user, tz, form=form,
@@ -1126,7 +1139,12 @@ def manual_entry_create(
             merged = r["application_existed"]
 
     if after == "another":
-        qs = f"added={app_id}&platform={platform}&date={applied_date}"
+        qs = f"added={app_id}&platform={platform}"
+        # The next blank form keeps the mode it was filled in: a run of
+        # approaches stays approaches, carrying the approach's date. The applied
+        # date is NOT carried under `recruiter` (see manual_entry_form).
+        qs += (f"&started_by=recruiter&approach_date={approach_d.isoformat()}" if recruiter_first
+               else f"&date={applied_date}")
         if merged:
             qs += "&merged=1"
         return RedirectResponse(f"/applications/new?{qs}", status_code=303)
