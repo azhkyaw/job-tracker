@@ -195,8 +195,41 @@ check("a long silence is a wait with the list's heat",
       and ff[old_wait["id"]]["heat"] == trace.heat(40, 10) > 0)
 check("the user moved last: not live, however fresh",
       ff[mine_last["id"]]["tone"] == "wait" and not trace.live("follow_up_sent", 2, 10))
-check("closed is closed, even with a note after it",
-      ff[closed_note["id"]]["tone"] == "rejected" and ff[closed_note["id"]]["silent_days"] == 1)
+check("closed is closed, even with a note after it: no silence is counted",
+      ff[closed_note["id"]]["tone"] == "rejected" and ff[closed_note["id"]]["silent_days"] is None
+      and ff[closed_note["id"]]["heat"] == 0 and ff[closed_note["id"]]["live"] is False,
+      ff[closed_note["id"]])
+
+print("trace: a thread ends at its close, whatever arrives after it (28 Sep 2026)")
+# The three real shapes on /inbound: a note after a close; a recruiter writing
+# again after dropping you; a rejection filed by hand for today, anchored at
+# local noon BEFORE that afternoon's approach email. Each drew an open tail —
+# blue when fresh — on a record whose status read rejected.
+_shapes = {
+    "note after": [("applied", ago(30)), ("rejected", ago(20)), ("note", ago(1))],
+    "they wrote again": [("recruiter_outreach", ago(9)), ("rejected", ago(8)),
+                         ("recruiter_outreach", ago(2))],
+    "same-day, by hand": [("rejected", ago(0.3)), ("recruiter_outreach", ago(0.1))],
+}
+for name, seq in _shapes.items():
+    r = {"id": name}
+    trace.build([r], {name: [{"type": t, "occurred_at": at} for t, at in seq]}, NOW, 10)
+    close_at = max(at for t, at in seq if t in trace.TERMINAL)
+    check(f"{name}: capped at the close, no tail, not live, no heat, every event still drawn",
+          r["cap"] is not None and r["tail"] is None and r["live"] is False
+          and r["heat"] == 0 and r["silent_days"] is None and len(r["pts"]) == len(seq)
+          and trace.closing([{"type": t, "occurred_at": at} for t, at in seq])["occurred_at"] == close_at,
+          {k: r[k] for k in ("cap", "tail", "live", "heat", "silent_days")})
+_open = {"id": "open"}
+trace.build([_open], {"open": [{"type": "recruiter_outreach", "occurred_at": ago(2)}]}, NOW, 10)
+check("an open approach still draws its live tail (the guard is the close, not the type)",
+      _open["tail"] is not None and _open["cap"] is None and _open["live"] is True)
+check("closing() names the LATEST close when a thread has two",
+      trace.closing([{"type": "rejected", "occurred_at": ago(9)},
+                     {"type": "withdrawn", "occurred_at": ago(3)},
+                     {"type": "note", "occurred_at": ago(1)}])["type"] == "withdrawn"
+      and trace.closing([{"type": "applied", "occurred_at": ago(3)}]) is None
+      and trace.closing([]) is None)
 check("trace.build sets the same `live` the template now reads",
       trace.build([{"id": "x"}], {"x": [{"type": "viewed", "occurred_at": ago(2)}]}, NOW, 10) is not None)
 row = {"id": "x"}

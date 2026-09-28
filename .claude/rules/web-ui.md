@@ -543,6 +543,23 @@ detail page's own select, scoped to that posting (decided 28 Jul 2026).
 
 ## Gotchas learned the hard way
 
+- **A thread ends at its close, not at its last event** (28 Sep 2026).
+  `trace.build` capped a row only when its LAST event was terminal, so
+  anything after a close reopened the drawing: a note on a rejection, a
+  recruiter writing again after dropping you, and a rejection filed by hand
+  for today (anchored at local noon) sorting before that afternoon's
+  approach email, or tying with a same-date hand-filed approach. 9 of the 15
+  rejected inbound records drew an open tail, 4 of them BLUE (fresh, someone
+  else moved last) on a closed thread. `/analytics` had seen it and patched
+  its own colour in `insights` ("a note filed on a rejection draws a tail on
+  the list"), pinning `silent_days == 1` on a closed row in its test; the
+  list never got the fix. `trace.closing(evs)` is now the one answer, the
+  latest TERMINAL event wherever it sits, used by both. It equals "the status
+  is closed" by construction, since every TERMINAL type outranks every other
+  in `application_status` (migration 013). The timeline's ORDER of a
+  same-day hand-filed event is a separate, smaller matter, not fixed
+  here.
+
 - **A top-level `{% set %}` in the PARENT template shadows the child's render
   context in every block.** `base.html` set `q = queue_alert()` for the stall
   band (8 Sep 2026), and from that moment the list's search box rendered

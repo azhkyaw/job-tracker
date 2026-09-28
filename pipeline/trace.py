@@ -19,6 +19,23 @@ from datetime import datetime, timedelta
 # waiting tail to today. Nothing is pending after these.
 TERMINAL = {"rejected", "offer", "withdrawn"}
 
+
+def closing(evs):
+    """The event that ended the thread — its latest TERMINAL event — or None.
+
+    Not "the last event, if it is terminal": things arrive after a close. A
+    note filed on a rejection; a recruiter writing again after dropping you;
+    and a rejection filed by hand for today, which a bare date anchors at
+    local noon, BEFORE the approach email that came in that afternoon. On
+    28 Sep 2026 9 of the 15 rejected inbound records ended on such an event
+    and drew an open tail, four of them blue as if someone were engaged. The
+    status never wavered: every TERMINAL type outranks every other in
+    `application_status`'s precedence (migration 013), so a thread has a
+    closing event exactly when its status is closed, and the trace and the
+    status word now say the same thing. `evs` oldest-first, as build() takes
+    them."""
+    return next((e for e in reversed(evs) if e["type"] in TERMINAL), None)
+
 # event type -> status colour token in base.html
 _ROLE = {
     "applied": "applied",
@@ -109,19 +126,19 @@ def build(rows, events_by_app, now: datetime, reminder_days: int) -> dict:
                 "hollow": e["type"] in _OWN and e["type"] != "applied",
                 "label": f'{e["type"].replace("_", " ")} {e["occurred_at"]:%d %b %Y}',
             })
-        if evs:
+        end = closing(evs)
+        if end:
+            cap = _pct(x(end["occurred_at"]))
+        elif evs:
             last = evs[-1]
-            if last["type"] in TERMINAL:
-                cap = _pct(x(last["occurred_at"]))
-            else:
-                days = (now - last["occurred_at"]).days
-                silent = max(days, 0)
-                tail = {"a": _pct(x(last["occurred_at"])), "b": "100%",
-                        "aging": silent >= reminder_days,
-                        "role": role(last["type"])}
+            days = (now - last["occurred_at"]).days
+            silent = max(days, 0)
+            tail = {"a": _pct(x(last["occurred_at"])), "b": "100%",
+                    "aging": silent >= reminder_days,
+                    "role": role(last["type"])}
         r["pts"], r["tail"], r["cap"], r["silent_days"] = pts, tail, cap, silent
         r["heat"] = heat(silent, reminder_days)
-        r["live"] = live(evs[-1]["type"] if evs else None, silent, reminder_days)
+        r["live"] = live(evs[-1]["type"] if evs and not end else None, silent, reminder_days)
         r["trace_label"] = _describe(r, silent)
 
     return {"t0": t0, "t1": t1, "ticks": _ticks(t0, t1, span, x),
