@@ -144,6 +144,23 @@
          title="When. Leave blank for today">
 </form>
 {% endif %}
+{#- Your own application after a round (29 Sep 2026): an interview, or a person
+    getting in touch, put the next move on them, and when they never make it
+    you close the thread as gone quiet — never "I withdrew" or "They rejected
+    me", which both say something that did not happen. The note is yours (how
+    it went, what you heard last); the timeline shows it. /follow-ups asks
+    about the same threads after REMINDER_DAYS of silence. `a.status`, the
+    derived status itself: `status` here is its display word ("interviewing"). #}
+{% if a.origin != 'inbound' and a.status in ('engaged', 'interview_invite') %}
+<form method="post" action="/applications/{{ a.id }}/close" class="record">
+  <span class="lab">Heard nothing since?</span>
+  <input type="text" name="note" placeholder="A note for yourself, if any" aria-label="A note for yourself"
+         style="width:14rem">
+  <input type="date" name="occurred_on" max="{{ today }}" aria-label="When you closed it"
+         title="When. Leave blank for today">
+  <button name="action" value="quiet">They went quiet</button>
+</form>
+{% endif %}
 <form method="post" action="/applications/{{ a.id }}/events" class="record">
   <span class="lab">Record what happened:</span>
   <select name="type" aria-label="What happened">

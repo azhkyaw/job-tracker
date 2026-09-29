@@ -15,7 +15,9 @@
 <h1>Needs follow-up</h1>
 {% if reminders %}
 <p class="lede"><b>{{ reminders | length }}</b> waiting more than <b>{{ reminder_days }}</b> days,
-  oldest first: applications with no reply and nothing sent{% if replied_n %}, and
+  oldest first: applications with no reply and nothing sent{% if round_n %},
+  <b>{{ round_n }}</b> thread{{ '' if round_n == 1 else 's' }} gone quiet after an interview or a person
+  getting in touch{% endif %}{% if replied_n %}, and
   <b>{{ replied_n }}</b> approach{{ '' if replied_n == 1 else 'es' }} you answered that went quiet{% endif %}.
   Marking one as followed up records it on the thread and clears it from here.</p>
 {% if again_n %}
@@ -45,12 +47,25 @@
         since your reply, and besides chasing it you can close it — a
         follow-up only resets its clock, so this is how it leaves for good
         (web.py, close_approach). The same row shape as the suggestion above. #}
-    {%- if r.applied_at is none and r.replied_at %}
+    {%- if r.kind == 'lead' %}
     <p class="fu-again">You replied to their approach on {{ r.replied_at | day }}, nothing since</p>
     <form method="post" action="/applications/{{ r.id }}/close" class="fu-again-do">
       <input type="hidden" name="action" value="quiet">
       <input type="hidden" name="redirect_to" value="/follow-ups">
       <button class="small" title="Close it: they stopped answering">They went quiet</button>
+    </form>
+    {%- endif %}
+    {#- A round gone quiet (analytics.reminders' third kind, 29 Sep 2026): an
+        interview or a person getting in touch put the next move on them, and
+        nothing has moved since. It says what moved last and when, since the
+        wait runs from that, and closes the same way a lead does. A
+        follow-up resets its clock; the close is how it leaves for good. #}
+    {%- if r.kind == 'round' %}
+    <p class="fu-again">{{ r.moved_words }} {{ r.moved_at | day }}, nothing since</p>
+    <form method="post" action="/applications/{{ r.id }}/close" class="fu-again-do">
+      <input type="hidden" name="action" value="quiet">
+      <input type="hidden" name="redirect_to" value="/follow-ups">
+      <button class="small" title="Close it: they stopped answering after the round">They went quiet</button>
     </form>
     {%- endif %}
     <form method="post" action="/applications/{{ r.id }}/events">
@@ -66,7 +81,8 @@
 </div>
 {% else %}
 <p class="empty">Nothing is waiting on you. Every application either got a
-reply, was followed up, or is younger than {{ reminder_days }} days.
-<a href="/">Back to the applications</a>.</p>
+reply, was followed up, or is younger than {{ reminder_days }} days, and every
+thread an interview or a person opened has moved within {{ reminder_days }} days
+or is closed. <a href="/">Back to the applications</a>.</p>
 {% endif %}
 {% endblock %}

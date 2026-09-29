@@ -340,13 +340,42 @@ def awaiting_you_sql(a: str, status: str) -> str:
 _LAST_REPLY = f"""(SELECT max(r.occurred_at) FROM events r
                     WHERE r.application_id = a.id AND {reply_sql('r')})"""
 
-# Two kinds of row, one queue (28 Sep 2026). An application: applied over
-# REMINDER_DAYS ago with no response and nothing sent — unchanged, and it
-# leaves for good once followed up. A lead you REPLIED to: your latest move
-# over REMINDER_DAYS old and nothing from them since. A lead leaves by a
-# response, or by you closing it ("They went quiet", web.close_approach),
-# and a follow-up only resets its clock: a thread you can close is asked
-# about again, where an application, which has no such close, is left to run.
+
+def move_sql(e: str) -> str:
+    """Event `e` is a MOVE on the thread, by either side: anything but a note
+    to self. A note counts only as your reply (reply_sql) or their message
+    (theirs_sql). A note you filed for yourself ("the panel seemed keen")
+    must not reset the wait it is a note about."""
+    return f"({e}.type <> 'note' OR {reply_sql(e)} OR {theirs_sql(e)})"
+
+
+# The thread's latest move, whoever made it: what a round's wait runs from.
+_LAST_MOVE = f"""(SELECT max(m.occurred_at) FROM events m
+                   WHERE m.application_id = a.id AND {move_sql('m')})"""
+
+# The statuses of a thread a round has opened and nothing has closed: an
+# interview invitation, or a person engaging (ROUND_EVENTS without `offer`,
+# which is terminal). The next move is theirs, which is exactly why the first
+# kind of queue row below leaves such a thread alone.
+OPEN_ROUND = ("engaged", "interview_invite")
+_OPEN_ROUND = _sql_list(OPEN_ROUND)
+
+# Three kinds of row, one queue. An application: applied over REMINDER_DAYS
+# ago with no response and nothing sent. It leaves for good once followed up.
+# A lead you REPLIED to (28 Sep 2026): your latest move over REMINDER_DAYS old
+# and nothing from them since. A ROUND gone quiet (29 Sep 2026): a thread an
+# interview or a person opened, whose latest move by either side is over
+# REMINDER_DAYS old. Asked about it, the author put it as interviews that are
+# "ignored after chasing them for status", or went badly and never got an
+# answer; none of them could reach this queue, since any response kept a
+# record out, and none could be closed truthfully ("I withdrew" and "They
+# rejected me" both say something that did not happen). On the day, 8 such
+# threads were open, 2 silent 19 and 20 days. A lead and a round leave by
+# a response, or by you closing them ("They went quiet", web.close_approach),
+# and a follow-up only resets their clock: a thread you can close is asked
+# about again, where a never-answered application, which has no such close,
+# is left to run. Never closed for you: answers after a round have come 18
+# and 22 days later (6 measured).
 _REMINDER_WHERE = f"""
         WHERE a.user_id = %(user_id)s
           AND ((EXISTS (SELECT 1 FROM events e
@@ -362,23 +391,35 @@ _REMINDER_WHERE = f"""
                 AND {_LAST_REPLY} < now() - make_interval(days => %(days)s)
                 AND NOT EXISTS (SELECT 1 FROM events t
                                 WHERE t.application_id = a.id AND {theirs_sql('t')}
-                                  AND t.occurred_at > {_LAST_REPLY})))
+                                  AND t.occurred_at > {_LAST_REPLY}))
+            OR (EXISTS (SELECT 1 FROM application_status rs
+                        WHERE rs.application_id = a.id AND rs.status IN {_OPEN_ROUND})
+                AND {_LAST_MOVE} < now() - make_interval(days => %(days)s)))
 """
 
 
 def reminders(conn, user_id):
-    """Applied > REMINDER_DAYS ago, no response, no follow-up, not withdrawn;
-    and leads you replied to over REMINDER_DAYS ago that have heard nothing
-    since (`replied_at` set, `applied_at` NULL — _REMINDER_WHERE has both)."""
+    """The follow-up queue's rows, oldest wait first, each with its `kind`
+    (_REMINDER_WHERE has all three): `unanswered`, applied > REMINDER_DAYS
+    ago with no response and nothing sent; `lead`, an approach you replied to
+    that has heard nothing since (`replied_at` set, `applied_at` NULL); and
+    `round`, a thread an interview or a person opened whose latest move
+    (`moved_at`, and `moved_as`: what it was) is > REMINDER_DAYS old."""
+    wait = (f"CASE WHEN q.status IN {_OPEN_ROUND} THEN q.moved_at "
+            f"ELSE COALESCE(q.applied_at, q.replied_at) END")
     return conn.execute(f"""
         SELECT q.*,
-               -- How long they've been sitting on it: since you applied, or
-               -- for a lead since your latest reply. The list can't reuse its
-               -- own silent_days here: this runs as its own query, and the
-               -- number is the whole reason a row is in this block.
-               date_part('day', now() - COALESCE(q.applied_at, q.replied_at))::int AS days_waiting
+               CASE WHEN q.status IN {_OPEN_ROUND} THEN 'round'
+                    WHEN q.applied_at IS NULL THEN 'lead'
+                    ELSE 'unanswered' END AS kind,
+               -- How long they've been sitting on it: since you applied, for
+               -- a lead since your latest reply, for a round since the
+               -- thread's latest move. The list can't reuse its own
+               -- silent_days here: this runs as its own query, and the number
+               -- is the whole reason a row is in this block.
+               date_part('day', now() - {wait})::int AS days_waiting
         FROM (
-          SELECT a.id, a.origin, j.title_canonical,
+          SELECT a.id, a.origin, j.title_canonical, s.status,
                  COALESCE(
                    (SELECT p.company_raw FROM postings p
                      WHERE p.job_id = a.job_id AND p.company_raw IS NOT NULL
@@ -386,12 +427,24 @@ def reminders(conn, user_id):
                    j.company_norm) AS company_display,
                  (SELECT min(occurred_at) FROM events e
                    WHERE e.application_id = a.id AND e.type = 'applied') AS applied_at,
-                 {_LAST_REPLY} AS replied_at
+                 {_LAST_REPLY} AS replied_at,
+                 {_LAST_MOVE} AS moved_at,
+                 -- What that latest move was, for the row's own words: a
+                 -- follow-up or a reply of yours, a message of theirs, or the
+                 -- event itself (the invitation, a person getting in touch).
+                 (SELECT CASE WHEN m.type = 'follow_up_sent' THEN 'followed_up'
+                              WHEN m.type = 'note' AND {reply_sql('m')} THEN 'replied'
+                              WHEN m.type = 'note' THEN 'wrote'
+                              ELSE m.type END
+                    FROM events m
+                   WHERE m.application_id = a.id AND {move_sql('m')}
+                   ORDER BY m.occurred_at DESC, m.created_at DESC LIMIT 1) AS moved_as
           FROM applications a
           JOIN jobs j ON j.id = a.job_id
+          JOIN application_status s ON s.application_id = a.id
           {_REMINDER_WHERE}
         ) q
-        ORDER BY COALESCE(q.applied_at, q.replied_at)
+        ORDER BY {wait}
     """, {"user_id": user_id, "days": config.REMINDER_DAYS}).fetchall()
 
 
@@ -436,6 +489,11 @@ def reapplications(conn, user_id) -> dict:
             {_REMINDER_WHERE}
               AND j.company_norm <> %(unknown_company)s
               AND j.title_canonical <> %(unknown_title)s
+              -- Not a thread they answered (a round gone quiet, 29 Sep 2026):
+              -- the reason to close an older record, that the employer
+              -- answers the newer one, is false there by construction.
+              AND NOT EXISTS (SELECT 1 FROM events x WHERE x.application_id = a.id
+                              AND x.type IN {ROUND_TYPES})
         )
         SELECT q.id AS old_id, n.id, n.applied_at, n.title_canonical,
                (SELECT string_agg(p.jd_text, ' ') FROM postings p

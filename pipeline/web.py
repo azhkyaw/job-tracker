@@ -886,6 +886,18 @@ _EVENT_CHANNELS = {
 # call". The words are what `_event_label` shows for each.
 _CLOSE_KINDS = {"declined": "You declined", "went_quiet": "They went quiet"}
 
+# How a round gone quiet names its latest move on /follow-ups (29 Sep 2026),
+# off analytics.reminders' `moved_as`: whoever moved last, the row says so,
+# since the wait it shows runs from that move. Any other event reads as its
+# EVENT_LABELS name.
+_MOVED_AS = {
+    "followed_up":      "You followed up on",
+    "replied":          "You replied on",
+    "wrote":            "They wrote on",
+    "interview_invite": "They invited you to interview on",
+    "engaged":          "They got in touch on",
+}
+
 # Why an approach was not for you, when you say (`payload.why`). A closed
 # vocabulary for the same reason as `_EVENT_REASONS`: so the answers can be
 # counted. Optional — a decline needs no reason.
@@ -1888,15 +1900,16 @@ def mark_reapplied(request: Request, app_id: str, later_id: str = Form(""),
 
 
 def _on_the_thread(conn, a, occurred_at, tz):
-    """Where a hand-filed move on an approach sits in time -> (instant, error).
+    """Where a hand-filed move on a thread sits in time -> (instant, error).
 
     None stays None (the insert's now()). A bare date gets two guards: never
     on a day before the thread began (a reply or a close before the recruiter
-    wrote is incoherent), and on the same local day as the thread's latest
-    event, just after it rather than at the local noon a bare date anchors
-    to — which would sort "You replied" above the approach it answers when
-    that approach came in the same afternoon (the shape that left 4 closed
-    records drawn open on 28 Sep 2026; trace.closing)."""
+    wrote, or before you applied, is incoherent), and on the same local day
+    as the thread's latest event, just after it rather than at the local noon
+    a bare date anchors to — which would sort "You replied" above the
+    approach it answers when that approach came in the same afternoon (the
+    shape that left 4 closed records drawn open on 28 Sep 2026;
+    trace.closing)."""
     if occurred_at is None:
         return None, None
     span = conn.execute("SELECT min(occurred_at) AS first, max(occurred_at) AS last "
@@ -1905,7 +1918,9 @@ def _on_the_thread(conn, a, occurred_at, tz):
         return occurred_at, None
     day = occurred_at.astimezone(tz).date()
     if day < span["first"].astimezone(tz).date():
-        return None, ("That is before the recruiter approached you, on "
+        began = ("the recruiter approached you" if a["origin"] == "inbound"
+                 else "this thread began")
+        return None, (f"That is before {began}, on "
                       f"{span['first'].astimezone(tz).strftime('%d %b %Y')}.")
     if day == span["last"].astimezone(tz).date() and occurred_at <= span["last"]:
         return span["last"] + timedelta(seconds=1), None
@@ -1953,21 +1968,28 @@ def mark_replied(request: Request, app_id: str, channel: str = Form(""),
 
 @app.post("/applications/{app_id}/close")
 def close_approach(request: Request, app_id: str, action: str = Form(""),
-                   why: str = Form(""), occurred_on: str = Form(""),
+                   why: str = Form(""), note: str = Form(""), occurred_on: str = Form(""),
                    redirect_to: str = Form("")):
-    """Close an approach a recruiter started, yourself (28 Sep 2026): "Not for
-    me" (`action=decline`, with an optional `why` from `_DECLINE_WHY`) or
-    "They went quiet" (`action=quiet`). Files `withdrawn` with
-    `payload.closed` — see `_CLOSE_KINDS` for why no new type.
+    """Close a thread yourself, where nobody rejected anyone. On an approach a
+    recruiter started (28 Sep 2026): "Not for me" (`action=decline`, with an
+    optional `why` from `_DECLINE_WHY`) or "They went quiet"
+    (`action=quiet`). On your own application (29 Sep 2026): "They went
+    quiet" only, and only after a ROUND (analytics.ROUND_EVENTS: an
+    interview, or a person engaging), which put the next move on them; an
+    interview that went badly and never got an answer closes the same way,
+    when you decide. Never before a round: an application nobody answered
+    waits in the follow-up queue, and "I withdrew" says the rest. Files
+    `withdrawn` with `payload.closed` (see `_CLOSE_KINDS` for why no new
+    type), and `payload.note` when you add one: your own words on it, shown
+    on the timeline like any event's note.
 
-    Inbound only: on an application you started, "I withdrew" on the timeline
-    already says the right thing. Refused on a thread already closed, since a
-    second close would only argue with the first about when it ended. Dated
-    like the timeline's events (blank is now), with two guards a bare date
-    needs: never before the approach, and on the same local day as the
-    thread's latest event, just after it rather than at the noon a bare date
-    anchors to, which could sort it above that afternoon's email. Undo is
-    deleting the event from the timeline, like any hand-filed one."""
+    Refused on a thread already closed, since a second close would only
+    argue with the first about when it ended. Dated like the timeline's
+    events (blank is now), with two guards a bare date needs: never before
+    the thread began, and on the same local day as its latest event, just
+    after it rather than at the noon a bare date anchors to, which could
+    sort it above that afternoon's email. Undo is deleting the event from
+    the timeline, like any hand-filed one."""
     from psycopg.types.json import Json
     user = _login_user(request)
     tz = request.state.tz
@@ -1980,12 +2002,20 @@ def close_approach(request: Request, app_id: str, action: str = Form(""),
     payload = {"closed": kind}
     if kind == "declined" and why in _DECLINE_WHY:
         payload["why"] = why
+    if note.strip():
+        payload["note"] = note.strip()
 
     with db.connect_scoped(user["id"]) as conn, conn.transaction():
         a = _get_application(conn, app_id)
         if a["origin"] != "inbound":
-            return _event_error(app_id, "Only an approach a recruiter started closes this "
-                                        "way. For your own application, record “I withdrew”.")
+            if kind != "went_quiet":
+                return _event_error(app_id, "“Not for me” closes an approach a recruiter started. "
+                                            "For your own application, record “I withdrew”.")
+            if not conn.execute("SELECT 1 FROM events WHERE application_id = %s AND type = ANY(%s)",
+                                (a["id"], list(analytics.ROUND_EVENTS))).fetchone():
+                return _event_error(app_id, "“They went quiet” closes an application after an "
+                                            "interview or a person getting in touch. One nobody "
+                                            "has answered waits in Needs follow-up.")
         if conn.execute("SELECT 1 FROM events WHERE application_id = %s AND type = ANY(%s)",
                         (a["id"], sorted(trace.TERMINAL))).fetchone():
             return _event_error(app_id, "This thread is already closed.")
@@ -2926,10 +2956,16 @@ def follow_ups_page(request: Request):
         for r in reminders:
             r["heat"] = trace.heat(r["days_waiting"], config.REMINDER_DAYS)
             r["again"] = again.get(r["id"])
+            # A round gone quiet says what its latest move was, whoever made
+            # it, since that is what the wait runs from.
+            if r["kind"] == "round":
+                r["moved_words"] = _MOVED_AS.get(
+                    r["moved_as"], f"{EVENT_LABELS.get(r['moved_as'], 'Last heard')} on")
         return templates.TemplateResponse(
             request=request, name="follow_ups.html",
             context={"reminders": reminders, "again_n": len(again),
-                     "replied_n": sum(1 for r in reminders if r["applied_at"] is None),
+                     "replied_n": sum(1 for r in reminders if r["kind"] == "lead"),
+                     "round_n": sum(1 for r in reminders if r["kind"] == "round"),
                      "reminder_days": config.REMINDER_DAYS,
                      "pending": _pending_count(conn),
                      "follow_ups": analytics.reminder_count(conn, user["id"])})

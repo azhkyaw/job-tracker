@@ -153,6 +153,21 @@ is a private artifact, linked from the memory file
    an application it does not leave for good on a follow-up, which only
    resets its clock: a lead has a close for silence, an application does not,
    so the queue keeps asking until a response or that close.
+   **Since 29 Sep 2026 a third kind: a round gone quiet.** A thread an
+   interview or a person engaging opened (status `interview_invite` /
+   `engaged`, `analytics.OPEN_ROUND`) whose latest MOVE, by either side, is
+   REMINDER_DAYS old. Asked about "interviews ignored after chasing them",
+   the gap was total: any response kept a record out of this queue, so the
+   one kind of thread the author most wanted to chase could never be
+   queued, and nothing closed it truthfully. A move is `analytics.move_sql`:
+   anything but a note to self (your reply and their message count, "the
+   panel seemed keen" does not), so the wait runs from the right event. The
+   row names what moved last ("They invited you to interview on …", "You
+   followed up on …"; `web._MOVED_AS`) beside "They went quiet" and
+   "Followed up", and like a lead a follow-up resets its clock. Never closed
+   for the user: on the day, answers after a round had come up to 22 days
+   later. The "you applied again" suggestion (9c) skips these rows: an
+   older record the employer answered is not a repost's leftover.
 9b. **How you applied is on the row, in GREY** (21 Aug 2026): `on-platform` /
    `employer site`, read from the applied event's own `payload.external` — the
    same event the date comes from, so the two can't describe different
@@ -483,6 +498,21 @@ is a private artifact, linked from the memory file
       event instead of at the noon a bare date anchors to. Undo is deleting
       the event; the edit route carries `closed`/`why` across like
       `superseded_by`.
+    - **Your own application closes the same way, after a round**
+      (29 Sep 2026): "They went quiet" only (never "Not for me", which is an
+      approach's; "I withdrew" stays the application's own), and only once
+      an interview or a person getting in touch has happened
+      (`analytics.ROUND_EVENTS`). Before a round, a silent application is
+      the never-answered kind and waits in `/follow-ups`. The detail page
+      asks "Heard nothing since?" on an open round, with an optional note
+      (`payload.note`, shown on the timeline like any event's), so an
+      interview that went badly is closed in the user's own words. It files
+      the same `withdrawn` + `closed: went_quiet`, so the grey tag, the
+      timeline's "They went quiet" and `/analytics`' words needed nothing
+      new; none of them had ever tested origin. `/analytics` keeps it
+      answered (the round was the answer) and not rejected.
+      A template trap found on the way: on the detail page `status` is the
+      DISPLAY word (`_display()`, "interviewing"), so compare `a.status`.
     - **"I replied" makes the wait theirs** (`web.mark_replied`, open leads
       only): a `note` with `payload.reply` and the channel, the type an
       emailed reply already files. `analytics.reply_sql` is the ONE
@@ -755,3 +785,10 @@ detail page's own select, scoped to that posting (decided 28 Jul 2026).
   grid. What to look at on first sight: whether three `.record` forms in a
   row read as one panel or as clutter, and whether "They went quiet" sits
   where "Same role, close" does.
+- **`/follow-ups`' round rows and "Heard nothing since?" (29 Sep 2026, rule 9
+  and rule 17)** were rendered through TestClient against the real dev DB
+  (2 round rows, both reading "They invited you to interview on …, nothing
+  since" with both buttons; 5 of 5 open-round applications offering the
+  close; the inbound round record offering its own close instead) and never
+  looked at. The form is one more `.record` row with a text input for the
+  note; what to look at is whether its placeholder reads as optional.

@@ -1135,3 +1135,32 @@ the key to each real case.
    form read back first and asserted equal to the record). The profile-
    prefilled answers are lost for good. The disk-reading procedure is
    `job-tracker-snapshots/tools/session_answers.py`.
+
+40. **Interview threads that go quiet** (29 Sep 2026). Asked how the list
+   handles an interview "ignored after chasing them for status", or one that
+   went badly and was never answered. It did not: the row read
+   "interviewing" forever (its tail warming through the heat), `/follow-ups`
+   never asked about it (any response kept a record out of the queue), and
+   nothing closed it truthfully ("They went quiet" was inbound-only; "I
+   withdrew" and "They rejected me" both say what did not happen, and a
+   rejection would count as an answer on `/analytics`). Measured first: 15
+   records ever had a round, 7 rejected, 8 open, 2 of those silent 19 and 20
+   days; the 6 rounds that were answered took 0, 5, 12, 13, 18 and 22 days
+   after the last round, which is why nothing closes by itself. Built, the
+   28 Sep lead design extended rather than a new one:
+   - `/follow-ups` gains a third kind of row, a ROUND gone quiet: status
+     `interview_invite` / `engaged` (`analytics.OPEN_ROUND`) and the latest
+     MOVE by either side (`move_sql`: anything but a note to self)
+     REMINDER_DAYS old. The row names what moved last (`web._MOVED_AS`),
+     carries "They went quiet" beside "Followed up", and a follow-up resets
+     its clock. `reapplications` skips such rows.
+   - `close_approach` accepts your own application for "They went quiet"
+     after a round (never "Not for me", never before a round), with an
+     optional `payload.note`; the detail page asks "Heard nothing since?".
+     Same `withdrawn` + `closed: went_quiet`, so the tag, the timeline and
+     `/analytics` needed nothing.
+   20 new checks in `test_web`, dates relative to today; on the old code the
+   first goes red with the real signature (the silent interview not in the
+   queue, the badge and rows still agreeing). Rendered read-only against the
+   dev DB: the 2 threads appear as the first round rows, 5 of 5 open-round
+   applications offer the close, and the inbound round offers its own.

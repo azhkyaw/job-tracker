@@ -353,7 +353,10 @@ An invariant keeps its RULE here and its case history in the rule file.
    the user's annotation, and the why-select overrides either. The same rule
    on the other close: an inbound approach YOU end ("Not for me", "They went
    quiet") is `withdrawn` + `payload.closed` (+ `why`), never a type of its
-   own, and your reply to a recruiter is a `note` + `payload.reply` whose
+   own, and so is your own application gone quiet after a ROUND ("They went
+   quiet" only, never before an interview or a person engaging, 29 Sep
+   2026; never "rejected", which would count as an answer). Your reply to a
+   recruiter is a `note` + `payload.reply` whose
    effect (whose move it is) is DERIVED, `analytics.awaiting_you_sql`
    (28 Sep 2026; web-ui.md rule 17).
    **`engaged`** (a person reaching out, no next step yet) ranks strictly
@@ -722,12 +725,13 @@ Detail lives with each family's rule file; this is the index.
   screen without Dark Reader in the way — neither the 28 Jul one nor the
   23 Sep redraw's, whose light theme is verified numerically only. (task 13)
   The approach panel ("Answered them?", "Close this approach") and
-  `/follow-ups`' lead rows (28 Sep, task 38) were rendered through
-  TestClient against real data only, never looked at.
+  `/follow-ups`' lead rows (28 Sep, task 38), and its round rows and the
+  detail page's "Heard nothing since?" (29 Sep, task 40), were rendered
+  through TestClient against real data only, never looked at.
 
 ## Open work (as of 29 Sep 2026)
 
-The dated register behind each item, tasks 1-39 with their measurements, is
+The dated register behind each item, tasks 1-40 with their measurements, is
 `docs/worklog.md`; read the matching entry before acting on one.
 
 - **Follow-up drafting** on an age-capped queue: cap `/follow-ups` near 21
@@ -827,6 +831,13 @@ The dated register behind each item, tasks 1-39 with their measurements, is
   "They went quiet"). None had a reply on record, 6 to 66 days after the
   approach, so all 9 still read "Awaiting your call". Not built: placing a
   same-day event from the general timeline form after the day's last event.
+- **Two interview threads gone quiet are the author's clicks** (task 40,
+  29 Sep): silent 19 and 20 days after the invitation, they are the first
+  round rows in `/follow-ups`: "Followed up" to chase (the clock restarts)
+  or "They went quiet" to close. Six other open rounds are younger than
+  `REMINDER_DAYS`. Not built, a separate decision: letting a never-answered
+  application close as "went quiet" too, which would thin the 170-row
+  unanswered queue.
 - **The 24 Sep data audit's leftovers are the author's clicks, not code**
   (tasks 19-21): 15 rows marked on `/follow-ups` as an earlier application
   to a role applied to again, each with "Same role, close" (the studio's

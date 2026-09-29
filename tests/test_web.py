@@ -2859,4 +2859,128 @@ r = client.post(f"/applications/{_qui}/replied", data={})
 check("...and on a closed approach", "event_error=" in r.headers.get("location", ""),
       r.headers.get("location"))
 
+print("your own application: an interview thread gone quiet (29 Sep 2026)")
+# Asked how to handle interviews "ignored after chasing them for status", or
+# that went badly and never got an answer. None could reach /follow-ups (any
+# response kept a record out) and none could be closed truthfully. Dates are
+# relative to today, so the waits are real.
+from urllib.parse import unquote_plus                          # noqa: E402
+
+
+def _ago(n):
+    return (datetime.now(ZoneInfo(_tz or "UTC")).date() - timedelta(days=n)).isoformat()
+
+
+def _new_app(company, applied_days_ago):
+    r = client.post("/applications/new", data={
+        "company": company, "title": "Platform Engineer", "platform": "other",
+        "applied_date": _ago(applied_days_ago), "after": "view"})
+    assert r.status_code == 303, r.text[:300]
+    return r.headers["location"].rsplit("/", 1)[1]
+
+
+def _row_on(page, company):
+    return client.get(page).text.split(company, 1)[1].split('class="fu-row"')[0]
+
+
+_rnd = _new_app("Round Quiet Co", 30)
+client.post(f"/applications/{_rnd}/events", data={"type": "interview_invite", "occurred_on": _ago(20)})
+_rows, _cnt = _queue(_uid)
+check("an interview silent 20 days is queued as a round, and the nav badge counts it",
+      _rnd in _rows and _rows[_rnd]["kind"] == "round" and 19 <= _rows[_rnd]["days_waiting"] <= 20
+      and _cnt == len(_rows), (_rows.get(_rnd), _cnt, len(_rows)))
+_fu = client.get("/follow-ups").text
+_frow = _row_on("/follow-ups", "Round Quiet Co")
+check("its row says they invited you and when, beside “They went quiet” and “Followed up”",
+      "They invited you to interview on" in _frow and 'value="quiet"' in _frow
+      and "Followed up" in _frow and "gone quiet after an interview" in _fu
+      and "Same role, close" not in _frow, _frow[:600])
+check("its page offers the close: “Heard nothing since?”",
+      "Heard nothing since?" in client.get(f"/applications/{_rnd}").text)
+
+client.post(f"/applications/{_rnd}/events", data={"type": "note", "note": "the panel seemed keen",
+                                                  "occurred_on": _ago(2)})
+_rows = _queue(_uid)[0]
+check("a note to self is not a move: the wait still runs from the invitation",
+      _rnd in _rows and 19 <= _rows[_rnd]["days_waiting"] <= 20, _rows.get(_rnd))
+client.post(f"/applications/{_rnd}/events", data={"type": "follow_up_sent", "occurred_on": _ago(12)})
+_rows = _queue(_uid)[0]
+check("chased 12 days ago and silent since: still queued, waiting from the follow-up",
+      _rnd in _rows and _rows[_rnd]["moved_as"] == "followed_up"
+      and 11 <= _rows[_rnd]["days_waiting"] <= 12, _rows.get(_rnd))
+check("...and its row says so", "You followed up on" in _row_on("/follow-ups", "Round Quiet Co"))
+r = client.post(f"/applications/{_rnd}/events", data={"type": "follow_up_sent",
+                                                      "redirect_to": "/follow-ups"})
+check("“Followed up” today restarts the clock: the row leaves, the thread stays open",
+      r.headers["location"] == "/follow-ups" and _rnd not in _queue(_uid)[0]
+      and _state(_rnd)[0] == "interview_invite", r.headers.get("location"))
+
+_rq = _new_app("Round Close Co", 25)
+client.post(f"/applications/{_rq}/events", data={"type": "interview_invite", "occurred_on": _ago(15)})
+check("another round, silent 15 days, is queued", _rq in _queue(_uid)[0])
+r = client.post(f"/applications/{_rq}/close", data={
+    "action": "quiet", "note": "the system design round went badly", "redirect_to": "/follow-ups"})
+_c = _closes(_rq)
+check("“They went quiet” closes your own application after a round: one withdrawal, by hand, "
+      "with your note",
+      r.headers["location"] == "/follow-ups" and len(_c) == 1 and _c[0]["source"] == "manual"
+      and _c[0]["payload"] == {"closed": "went_quiet", "note": "the system design round went badly"}, _c)
+check("...which ends it: withdrawn, and out of the queue",
+      _state(_rq)[0] == "withdrawn" and _rq not in _queue(_uid)[0], _state(_rq))
+r = client.get(f"/applications/{_rq}")
+check("its timeline says “They went quiet” with your note, never “You withdrew”, and the form is gone",
+      "They went quiet" in r.text and "the system design round went badly" in r.text
+      and "Heard nothing since?" not in r.text and "You withdrew" not in r.text, r.status_code)
+_row = client.get("/").text.split("Round Close Co", 1)[1].split("</a>")[0]
+check("the list wears it as a grey “went quiet” tag beside the status word",
+      ">withdrawn</span>" in _row and ">went quiet</span>" in _row, _row[-400:])
+r = client.post(f"/applications/{_rq}/close", data={"action": "quiet"})
+check("a closed thread refuses a second close",
+      "event_error=" in r.headers.get("location", "") and len(_closes(_rq)) == 1)
+
+_nr = _new_app("Round Guard Co", 20)
+r = client.post(f"/applications/{_nr}/close", data={"action": "quiet"})
+check("an application nobody answered is not closed as gone quiet (it waits in the queue)",
+      "event_error=" in r.headers.get("location", "") and not _closes(_nr)
+      and "Needs follow-up" in unquote_plus(r.headers.get("location", "")), r.headers.get("location"))
+check("...and its page offers no such form",
+      "Heard nothing since?" not in client.get(f"/applications/{_nr}").text)
+client.post(f"/applications/{_nr}/events", data={"type": "engaged", "occurred_on": _ago(5)})
+check("a person getting in touch is a round too, but 5 days of silence is not queued yet",
+      _state(_nr)[0] == "engaged" and _nr not in _queue(_uid)[0]
+      and "Heard nothing since?" in client.get(f"/applications/{_nr}").text)
+r = client.post(f"/applications/{_nr}/close", data={"action": "decline"})
+check("“Not for me” stays an approach's close, even after a round",
+      "event_error=" in r.headers.get("location", "") and not _closes(_nr), r.headers.get("location"))
+r = client.post(f"/applications/{_nr}/close", data={"action": "quiet", "occurred_on": _ago(25)})
+check("a close dated before the thread began is refused, in an application's own words",
+      "this thread began" in unquote_plus(r.headers.get("location", "")) and not _closes(_nr),
+      r.headers.get("location"))
+
+_ir = _new_lead("Round Inbound Co", _ago(30))
+client.post(f"/applications/{_ir}/events", data={"type": "interview_invite", "occurred_on": _ago(14)})
+_rows = _queue(_uid)[0]
+check("an approach that reached an interview and went quiet is queued as a round, not a lead",
+      _ir in _rows and _rows[_ir]["kind"] == "round", _rows.get(_ir))
+
+# The "you applied again" suggestion is for a record the employer never
+# answered: an older record they DID answer is not closed as a repost. The
+# control, the same pair without the invitation, is offered.
+with db.connect() as conn, conn.transaction():
+    # (_seed_app, above: manual entry would take the second of a pair for the
+    # same job.)
+    _ra = _seed_app(conn, "roundagainco", "Platform Engineer", 40)
+    conn.execute("INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+                 "VALUES (%s, %s, 'interview_invite', 'manual', now() - interval '30 days', '{}')",
+                 (user_id, _ra))
+    _seed_app(conn, "roundagainco", "Platform Engineer", 5)
+    _rc = _seed_app(conn, "roundagainctrl", "Platform Engineer", 40)
+    _seed_app(conn, "roundagainctrl", "Platform Engineer", 5)
+with db.connect() as conn:
+    _again = analytics.reapplications(conn, user_id)
+    _rows = {x["id"]: x for x in analytics.reminders(conn, user_id)}
+check("a round gone quiet is never offered as “you applied again”; the unanswered control is",
+      _ra in _rows and _rows[_ra]["kind"] == "round" and _ra not in _again and _rc in _again,
+      (_ra in _rows, _ra in _again, _rc in _again))
+
 print("\nALL WEB PATHS PASS")
