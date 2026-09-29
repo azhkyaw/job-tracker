@@ -664,6 +664,24 @@
             textareaSeen: 0, noLabelMax: 0, kept: Object.keys(items).length,
             last: null, noRootHint: stats && stats.noRootHint };
     },
+    /* A store this page did not fill: an EARLIER page's form, still holding
+     * answers no capture took (take() clears the store). capture.js reports
+     * it once, from the next page, so a submit no rule recognised leaves a
+     * line in the popup instead of nothing: on 29 Sep 2026 a SuccessFactors
+     * Submit read as nothing, and its 13 answers were found only by reading
+     * this tab's sessionStorage off disk. The answers stay where they are,
+     * marked so the report is not repeated; the next form's save() replaces
+     * the record. Read at load, before any sweep on this page can do that. */
+    leftover() {
+      try {
+        const rec = JSON.parse(sessionStorage.getItem(KEY) || "null");
+        if (!rec || rec.reported || rec.key === formKey()) return null;
+        const n = Object.keys(rec.items || {}).length;
+        if (!n || !(Date.now() - rec.at <= MAX_AGE_MS)) return null;
+        sessionStorage.setItem(KEY, JSON.stringify({ ...rec, reported: true }));
+        return { at: rec.at, answers: n };
+      } catch (e) { return null; }
+    },
     take() {
       try { sweep(); } catch (e) {}
       const out = Object.values(items)

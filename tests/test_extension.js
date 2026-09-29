@@ -484,7 +484,10 @@ function sweepStepsOf(steps) {
   return sandbox.window.__trackerAnswers.take();
 }
 
-function loadAnswers(first) {
+// `storage`: a sessionStorage stand-in holding what an EARLIER page of the
+// tab's visit left (memoryStorage, below); by default an empty one that only
+// records writes.
+function loadAnswers(first, storage = undefined) {
   let root = first;
   const listeners = {};
   const writes = [];        // every value handed to sessionStorage, in order
@@ -503,7 +506,7 @@ function loadAnswers(first) {
     console,
     setTimeout: () => 0,
     CSS: { escape: (s) => s },
-    sessionStorage: { getItem: () => null, setItem(k, v) { writes.push(v); }, removeItem() {} },
+    sessionStorage: storage || { getItem: () => null, setItem(k, v) { writes.push(v); }, removeItem() {} },
     document: doc,
     location: { href: "https://www.linkedin.com/jobs/view/1/" },
   };
@@ -708,6 +711,33 @@ console.log("\nanswers.js isSensitive: one list with pipeline/answers.py:is_sens
   check("the real value was never written to sessionStorage",
         sandbox._writes.length > 0 && sandbox._writes.every((w) => !w.includes("Female")),
         true);
+}
+
+console.log("\nanswers.js leftover: a form the visit left with answers no capture took (29 Sep 2026)");
+{
+  // The shape of the real loss: a form keyed by its requisition, 13 answers,
+  // and the next page (the candidate's profile) keyed by something else. The
+  // loader's adapter keys every page "1".
+  const KEY = "__tracker_form_answers";
+  const items = (n) => Object.fromEntries(Array.from({ length: n }, (_, i) =>
+    [`q${i}#0`, { question: `Q${i}`, answer: "a", type: "text", i }]));
+  const left = (rec) => {
+    const s = memoryStorage();
+    if (rec) s.setItem(KEY, JSON.stringify(rec));
+    return [s, loadAnswers(node("div"), s).window.__trackerAnswers];
+  };
+  const [s, a] = left({ key: "career4.successfactors.com/sf1001/61234", at: Date.now() - 60_000, items: items(13) });
+  const got = a.leftover();
+  check("another form's unsent answers are reported, with their count", got && got.answers, 13);
+  check("…once: the store is marked", a.leftover(), null);
+  check("…and the answers stay where they were, for a repair",
+        Object.keys(JSON.parse(s.getItem(KEY)).items).length, 13);
+  check("this page's own form is not a leftover",
+        left({ key: "1", at: Date.now(), items: items(3) })[1].leftover(), null);
+  check("an empty store, or one past the two-hour window, is not either",
+        [left({ key: "x", at: Date.now(), items: {} })[1].leftover(),
+         left({ key: "x", at: Date.now() - 3 * 3600_000, items: items(2) })[1].leftover(),
+         left(null)[1].leftover()], [null, null, null]);
 }
 
 /* ------------------------------------ shared/jobposting.js: any job page

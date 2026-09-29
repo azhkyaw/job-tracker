@@ -319,6 +319,11 @@
     landedCompletion(now = Date.now()) {
       return landedCompletion(now);
     },
+    // A candidate sign-in in view: it interrupts a form rather than ending
+    // it, so capture.js does not report the form's answers as left unsent.
+    signInInView() {
+      return passwordsIn(document).some(rendered);
+    },
     // Pure forms of the rules, for tests/test_extension.js.
     applicationRoot,
     isSubmitControl,

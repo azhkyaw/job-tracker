@@ -1089,3 +1089,49 @@ the key to each real case.
    or closes are recorded, which is the author's to do from each lead's page.
    Not built: placing a same-day event from the general timeline form after
    the day's last event (the trace no longer depends on it).
+
+39. **A SuccessFactors submit the extension could not see** (29 Sep 2026,
+   extension 0.22.0). A LinkedIn → SuccessFactors apply reached the tracker
+   only through LinkedIn's popover: no answers, no ATS id, the popover's
+   time. Every buffer was read before anything was guessed. The handoff had
+   bound the tab (`via: "opener"`, with the ATS id), and then nothing: no
+   capture, no sweep, and no near miss after 17:53. Chrome's history put
+   the form open for 15 minutes and the send at ~18:03, and the tab's
+   sessionStorage, read OFF DISK (its older entries sit in snappy-compressed
+   tables, where a grep finds nothing), still held `__tracker_form_answers`:
+   13 answers, never taken. Then the live form was read, read-only, in a
+   fresh tab. It is SuccessFactors' newer candidate experience, built from
+   UI5 web components. `form#careerform`'s light DOM held 26 controls, all
+   `type=hidden`; the 22 real fields are `<ui5-input>`s with their input in
+   an open shadow root; "Submit" is a `<ui5-button>` whose inner `<button>`
+   holds only a `<slot>`. Running `generic.js`'s own rules against that DOM:
+   zero controls, so no root, so no sweep (the 13 were the TYPED fields,
+   through answers.js's edit backstop; every field prefilled from the
+   candidate's profile was lost), and a Submit whose label read as "", so
+   not even a near miss. The requisition was printed nowhere; it sits in
+   `<meta name="jobRequisitionId">` and a hidden `career_job_req_id`, so the
+   store was keyed by the session crumb. Built, as rules rather than a
+   SuccessFactors entry:
+   - `generic.js` descends into open shadow roots for every query
+     (`deepAll`) and steps out of them to the host on every walk up (`up`,
+     `closestDeep`), as answers.js already did; a control's label is its
+     text, else its SLOTTED text, else its value, else its `aria-label`.
+     Rule 2 then roots the form by its Submit, whatever the address says.
+   - `jobposting.js:pageId` reads a requisition from a field NAMED as one
+     (`meta`/`input` matching `REQ_FIELD`) before the printed "(N)"; two
+     that disagree give nothing, a bare `id` field is never read.
+   - The silent case now leaves a line: `answers.js:leftover()` finds an
+     earlier page's store that no capture took, and `capture.js` reports
+     it once from the next page (hiring systems only, never with a sign-in
+     in view), leaving the answers in place for a repair.
+   15 new checks (320 extension checks in all, all nine suites green); the
+   fixture reproduces the measured structure, and on the old code 5 of its
+   10 go red with the real signatures (root `null`, the Submit not a
+   submit, the key the crumb), while the scope guards stay green either
+   way. Repaired with the author's go-ahead, snapshot first
+   (`job-tracker-snapshots/2026-09-29-sf-candidate-experience-repair.json`):
+   the 13 answers, `ats`, and the ATS id through `POST /captures` without
+   `completed`, the applied time moved to 18:03 through `/edit` (the edit
+   form read back first and asserted equal to the record). The profile-
+   prefilled answers are lost for good. The disk-reading procedure is
+   `job-tracker-snapshots/tools/session_answers.py`.

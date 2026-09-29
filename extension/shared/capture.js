@@ -1154,4 +1154,31 @@
       proceed(landed.job, "apply", adapter.platform === "other", null, true, false, landed.atsJobId);
     }
   });
+
+  /* A form the visit LEFT holding answers that no capture took
+   * (answers.js:leftover): its submit was not recognised, or the form was
+   * abandoned. On 29 Sep 2026 a SuccessFactors Submit read as nothing, so the
+   * capture never ran and no near miss was logged either: the loss left no
+   * line anywhere. Reported once, as a failure, from the next page of the
+   * visit. Hiring systems only (the generic adapter; a job board's own flows
+   * have their hooks), and not while a sign-in is in view, which interrupts
+   * a form rather than ending it. Runs after the quick-apply landing above,
+   * whose capture takes the store first. Top frame only. */
+  frameKnown.then((top) => {
+    if (!top || adapter.platform !== "other") return;
+    const answers = window.__trackerAnswers;
+    if (!answers || !answers.leftover) return;
+    try { if (adapter.signInInView && adapter.signInInView()) return; } catch (e) { return; }
+    const left = answers.leftover();
+    if (!left) return;
+    tell({
+      type: "tracker-capture-failure",
+      detail: {
+        platform: adapter.platform, at: Date.now(), url: location.origin + location.pathname,
+        leftAt: left.at, answers: left.answers,
+        error: `A form was left holding ${left.answers} answer${left.answers === 1 ? "" : "s"} ` +
+               "that no capture took: if that application was sent, its submit was not recognised",
+      },
+    });
+  });
 })();

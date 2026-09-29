@@ -709,7 +709,10 @@ Detail lives with each family's rule file; this is the index.
   on a real apply — read `doc_source` and the "Recent form sweeps" line on the
   next Easy Apply; `getRecruiter()` has one card of evidence; textareas have
   never been stored; Indeed has never been exercised; 0.10.1's `normKey` is
-  proven in `tests/test_extension.js` only, never on a live wizard.
+  proven in `tests/test_extension.js` only, never on a live wizard; 0.22.0's
+  reading of web-component forms (open shadow roots, slotted labels) and its
+  "form left holding answers" report have met a live form only as rules
+  evaluated in the page, never through a real submit.
 - **Mail** (`.claude/rules/mail-ingest.md`): IMAP verified on a real inbox
   28 Jul 2026; the web IMAP connect form, Gmail web OAuth and the full `-m 12`
   window are not.
@@ -722,9 +725,9 @@ Detail lives with each family's rule file; this is the index.
   `/follow-ups`' lead rows (28 Sep, task 38) were rendered through
   TestClient against real data only, never looked at.
 
-## Open work (as of 28 Sep 2026)
+## Open work (as of 29 Sep 2026)
 
-The dated register behind each item, tasks 1-38 with their measurements, is
+The dated register behind each item, tasks 1-39 with their measurements, is
 `docs/worklog.md`; read the matching entry before acting on one.
 
 - **Follow-up drafting** on an age-capped queue: cap `/follow-ups` near 21
@@ -734,8 +737,8 @@ The dated register behind each item, tasks 1-38 with their measurements, is
   queue as the author confirms them. Four `follow_up_sent` are on record: one filed
   by hand, three recovered from follow-ups the user EMAILED, which since
   migration 016 file themselves (task 16). (worklog task 4)
-- **Extension, next real Easy Apply:** verify the current build (0.21.1 on
-  28 Sep) is live on BOTH machines and the tab was opened after the
+- **Extension, next real Easy Apply:** verify the current build (0.22.0 on
+  29 Sep) is live on BOTH machines and the tab was opened after the
   reload; read `doc_source` and the sweep
   line. JobStreet still owes one clean submit with the race fix and salary
   capture together. (tasks 5, 18)
@@ -769,6 +772,13 @@ The dated register behind each item, tasks 1-38 with their measurements, is
   handoff through the opener but split into two records, because the form's
   `…/apply/section/1` read as the job's id; fixed in 0.21.1 and the pair
   merged (task 37, which also lists two follow-ups offered, not built).
+  The second (SuccessFactors, 29 Sep) was never seen at its submit: that
+  tenant's form is built from web components (UI5; inputs and the Submit's
+  button in open shadow roots, the label slotted), which `generic.js` could
+  not read at all, silently. 0.22.0 reads through open shadow roots, takes
+  the requisition from the page's named field, and reports a form left
+  holding untaken answers; the record was repaired from the tab's on-disk
+  sessionStorage (task 39).
   Open: the first real apply through each piece.
 - **Release blockers:** LICENSE (Apache-2.0 recommended), split the extension
   into its own repo, decide whether CLAUDE.md ships; `audit_names.py --history`

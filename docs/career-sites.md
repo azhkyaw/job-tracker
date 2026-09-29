@@ -973,6 +973,22 @@ for the second.
   whole flow"; Oracle keeps it, followed by a number that is not. The pair
   was merged onto the LinkedIn record (`.claude/rules/extension.md` has the
   repair). Still unseen: a submit that takes the binding.
+- **The second real run: a form built from web components (0.22.0,
+  29 Sep 2026).** A LinkedIn → SuccessFactors apply bound its handoff through
+  the opener, with the ATS id, and then the submit was never seen. The
+  tenant serves SuccessFactors' newer candidate experience, UI5 web
+  components throughout: every field's input and the Submit's `<button>`
+  sit in open shadow roots, the form's light DOM holds only hidden inputs,
+  and the Submit's label is slotted in from its host. §4's survey and §16's
+  design had only ever met forms in the light DOM, so `generic.js` found no
+  controls, no root and no submit, silently. It now reads through open
+  shadow roots and slotted labels, `pageId` reads the requisition from the
+  page's `jobRequisitionId` / `career_job_req_id` fields (this UI prints it
+  nowhere), and a form left holding answers no capture took is reported
+  from the next page (worklog task 39). SuccessFactors serves two UIs, per
+  tenant: the 24 Sep tenant's form was the classic one
+  (`<span role=button>Apply</span>`, light DOM), so both must keep working,
+  and `tests/test_extension.js` holds one fixture of each.
 - Nothing else has run on a real apply; `.claude/rules/extension.md` says
   what to read on the next one.
 

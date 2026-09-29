@@ -80,6 +80,31 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   deliberately NOT covered — it is an IIFE that installs listeners and calls
   `chrome.runtime.*` on load, so harnessing it costs more than the bugs it
   would catch; the adapter is where the layout knowledge lives.
+- **Recovering a form's answers when its submit was missed** (29 Sep 2026).
+  Until a capture takes them, answers.js keeps them in the HIRING SYSTEM's
+  sessionStorage (`__tracker_form_answers`, per tab and origin), and Chrome
+  persists that at `<profile>/Session Storage/`. Its older entries sit in
+  snappy-COMPRESSED `.ldb` tables, so a byte search finds nothing there; the
+  extension's own storage is a different LevelDB. Copy the directory's
+  `*.log` and `*.ldb`, then run
+  `job-tracker-snapshots/tools/session_answers.py <copy> <origin part>` (question
+  keys and counts only; `--json` writes the values, outside the repo). Its
+  positive control is `__tracker_ats_tenant`, which generic.js writes on
+  every SuccessFactors page: if that is found and the store is not, there
+  was no store. Repair through `POST /captures` (TestClient, the bearer
+  check patched for the one call) with the record's own platform id, the
+  answers, `ats` and `ats_job_id`, and WITHOUT `completed`, which would
+  stamp the repair's time; then `/edit` for the applied time, reading the
+  edit form back and asserting it equals the record first. A later sweep on
+  a page of the same origin overwrites the store, so copy it early.
+- **Checking a rule against a LIVE page without sending anything**
+  (29 Sep 2026). `generic.js`'s rules take the document and address as
+  parameters, so paste them verbatim into claude-in-chrome's javascript_tool
+  (stubbing only what they use from jobposting.js) and evaluate them on the
+  real DOM, with a fake `loc` for an address the tab does not have. Open an
+  application form by its address in a fresh tab, never through a job
+  page's "Apply": on SuccessFactors that button can SEND a quick
+  application (0.19.0). Type nothing and click nothing, and close the tab.
 
 ## Gotchas learned the hard way
 
@@ -814,6 +839,50 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
     re-run that reads the live row after a first `/edit` restores the
     truncated value.
 
+- **An ATS form built from web components was invisible, and its loss was
+  silent** (29 Sep 2026, the second real LinkedIn → ATS apply; extension
+  0.22.0).
+  - **What the page is:** SuccessFactors' newer candidate experience, UI5
+    web components throughout (`ui5-input-xweb-*`, `ui5-button-xweb-*`).
+    `form#careerform`'s LIGHT DOM holds 26 controls, every one
+    `type=hidden`; each of the 22 real fields is a `<ui5-input>` with its
+    `<input>` in an OPEN shadow root; "Submit" is a `<ui5-button>` whose
+    inner `<button role=button aria-label="Submit">` holds only a `<slot>`.
+    Two SuccessFactors UIs are live, per tenant: the 24 Sep one (above) is
+    the classic, light-DOM form.
+  - **What `generic.js` saw:** zero answerable controls, so
+    `applicationRoot()` returned null at its first line; the inner button's
+    `textContent` is "" (the word is the host's, slotted), and the host is
+    neither a BUTTON nor `role=button`. So: no sweep, no capture, AND no
+    near miss, because the near-miss logger only fires for a control that
+    already looks like a submit. The 13 answers that existed came from
+    answers.js's change/input backstop, i.e. only the fields the candidate
+    TYPED; every field prefilled from the SuccessFactors profile was lost.
+    Same failure class as LinkedIn's shadow-root modal (3 Aug) and its
+    `<dialog>` (2 Sep): a container the reader did not recognise, silently.
+  - **Fixed as rules:** every `generic.js` query descends into open shadow
+    roots (`deepAll`) and every walk up steps out to the host (`up`,
+    `closestDeep`), which answers.js had done since August; a control's
+    label is its text, else its slotted text, else its value, else its
+    `aria-label`. Rule 2 then finds the form by its Submit on ANY address,
+    including the crumb-only one the tab really had. The page prints no
+    requisition, so `pageId` also reads one from a field NAMED as one
+    (`<meta name="jobRequisitionId">`, hidden `career_job_req_id`).
+  - **The silence, answered:** a form left holding answers that no capture
+    took is now reported from the next page (`answers.js:leftover()`,
+    `capture.js`), once, on hiring systems only and never with a sign-in in
+    view. A form that continues is not a leftover: the classic
+    SuccessFactors form postbacks and signs in mid-form with the store
+    (correctly) still full, and across its postbacks the store's key, the
+    requisition read off the page, stays the same, while a sign-in in view
+    suppresses the report. A page BETWEEN steps that has a different key and
+    no password field would still report falsely; none has been seen.
+  - **How it was found:** the extension's buffers showed a bound handoff and
+    then nothing; Chrome's History put the form's 15 minutes and the send;
+    the tab's session storage, read off disk (Procedures), held the
+    untaken store; and the rules were then run, read-only, against the
+    live form (Procedures). Nothing was guessed before those four reads.
+
 ## Known-untested surfaces (verify on first real contact)
 
 - **Extension DOM selectors** (`extension/adapters/*.js`) — best-effort against
@@ -1148,3 +1217,26 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
     candidate id) instead of filing a second one;
   - the next nameless SuccessFactors submit on a tenant already named
     opens its receipt with that name filled in.
+- **Web-component forms (0.22.0, 29 Sep 2026) have run only against the
+  tests' fake shadow DOM and, as rules, against the live form's DOM** (the
+  rules evaluated read-only in the page; the extension itself has not run
+  the new code on a real apply). Neither `capture.js`'s path from an inner
+  shadow `<button>` to the capture nor the leftover report is tested. What
+  to read on the next candidate-experience apply:
+  - a capture at the Submit, `completed`, carrying the PREFILLED fields
+    (last name, email) as well as the typed ones: the sweep now reaches
+    the UI5 inputs, and their labels resolve through answers.js's
+    `labelFor` the way the backstop's did (the typed answers were labelled
+    right, so the path is the same, but a prefilled field has never been
+    swept);
+  - `jobs.ats_job_id` = `career4.successfactors.com/<tenant>/<requisition>`
+    and no `_s.crb` in the answers' key;
+  - no "A form was left holding N answers" line in the popup's failures.
+    That line appearing after a submit means the Submit was STILL not
+    recognised (read the page's button shape again); appearing after a
+    form left unsent is the report working.
+  - Closed shadow roots stay unreadable to every rule here. answers.js's
+    comment says its edit backstop reaches them through
+    `composedPath()[0]`; that has never been checked on a real closed root.
+    A vendor that closes its components would show as a form with no root
+    and, at most, typed answers.
