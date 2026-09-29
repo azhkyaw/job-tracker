@@ -216,8 +216,28 @@
    * (generic.js keeps it in the hiring system's own sessionStorage), since
    * the postback address has lost the tenant too. Without it the id is
    * `<host>/<id>`, which still keys the form but cannot tell two employers
-   * on one host apart. */
+   * on one host apart.
+   * The page may also STATE the requisition in a field named for one, and
+   * that is read first: SuccessFactors' candidate experience (29 Sep 2026)
+   * prints no "(51234)" anywhere, its title being "Career Opportunities: <job>
+   * (Singapore)", but carries <meta name="jobRequisitionId"> and a hidden
+   * <input name="career_job_req_id">. By NAME only, and only names that say
+   * requisition: ID_PARAMS' bare "id" or "job" names too many unrelated
+   * hidden fields to trust on a page. Two such fields that disagree give
+   * nothing. */
   const PRINTED_REQ = /\((\d{3,9})\)\s*$/;
+  const REQ_FIELD = /^(?:career_)?(?:job_?)?req(?:uisition)?_?id$/i;
+  const REQ_VALUE = /^(?=[^\d]*\d)[a-z0-9_-]{3,40}$/i;
+
+  function namedReq(doc) {
+    const seen = new Set();
+    for (const el of doc.querySelectorAll("meta[name], input[name]")) {
+      if (!REQ_FIELD.test(el.getAttribute("name") || "")) continue;
+      const v = String((el.tagName === "META" ? el.getAttribute("content") : el.value) || "").trim();
+      if (REQ_VALUE.test(v)) seen.add(v.toLowerCase());
+    }
+    return seen.size === 1 ? [...seen][0] : null;
+  }
 
   function pageId(doc, loc, hints) {
     const id = idFrom(loc.href);
@@ -225,13 +245,14 @@
     const h1 = doc.querySelector("h1");
     const printed = [h1 && h1.textContent, doc.title]
       .map((t) => PRINTED_REQ.exec(str(t) || "")).find(Boolean);
-    if (!printed) return id;
+    const req = namedReq(doc) || (printed && printed[1]);
+    if (!req) return id;
     const u = new URL(loc.href);
     const hinted = hints && hints.tenant && TENANT_SHAPE.test(hints.tenant) ? hints.tenant.toLowerCase() : null;
     const tenant = tenantOf(loc.href) || hinted;
     return {
       platform_job_id: `${u.hostname.toLowerCase().replace(/^www\./, "")}/` +
-                       (tenant ? `${tenant}/` : "") + printed[1],
+                       (tenant ? `${tenant}/` : "") + req,
       url: u.origin + u.pathname,
       by: "page",
     };

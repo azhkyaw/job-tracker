@@ -1414,6 +1414,20 @@ console.log("\ngeneric.js: SuccessFactors' candidate experience, built from web 
   const bRoot = b.answerFormRoot();
   check("the same on the form's first address",
         [bRoot && bRoot.getAttribute("id"), b.isCompletion(q.submit)], ["careerform", true]);
+  // The requisition from the page's named fields, the tenant from the visit.
+  const visit = memoryStorage();
+  loadGeneric([], "https://career4.successfactors.com/career?company=SF1001&career_ns=job_application" +
+                  "&career_job_req_id=61234", "", visit).atsJobId();   // the page keeps the tenant
+  const c = loadGeneric(page().kids, CRUMB, T, visit);
+  check("the id is the page's requisition field, not the crumb and not the title's '(Singapore)'",
+        [c.answerFormKey(), c.atsJobId(), c.getJob().platform_job_id],
+        Array(3).fill("career4.successfactors.com/sf1001/61234"));
+  check("…the one the first address names", b.atsJobId(), "career4.successfactors.com/sf1001/61234");
+  check("two requisition fields that disagree name nothing",
+        loadGeneric([node("meta", { name: "jobRequisitionId", content: "61234" }),
+                     hidden("career_job_req_id", "70001")], CRUMB, T).atsJobId(), null);
+  check("a hidden field merely named 'id' is not a requisition",
+        loadGeneric([hidden("id", "61234")], CRUMB, T).atsJobId(), null);
 }
 
 console.log("\ngeneric.js: a listing's own Apply leaves for the application (P2)");
