@@ -488,6 +488,9 @@
     if (!href) return null;
     try {
       const u = new URL(href, loc.href);
+      // A canonical that downgrades the page it sits on is kept at the page's
+      // own https: Greenhouse's job boards print `http://` (29 Sep 2026).
+      if (u.protocol === "http:" && /^https:/i.test(loc.href || "")) u.protocol = "https:";
       // Only this site's own canonical: some point at a different host (an
       // aggregator's copy), and a url must describe the page actually read.
       return u.hostname.replace(/^www\./, "") === (loc.hostname || "").replace(/^www\./, "")
@@ -542,8 +545,17 @@
       job._prov.title_source = h1t ? "h1" : og ? "og" : job.title ? "doctitle" : null;
       if (job.title) job._prov.weak.push("title");
     }
+    // A hiring system's page with no JobPosting still lays the job out: its
+    // own description and location, where the vendor table knows where.
+    const dom = listingDom(doc, job.ats);
+    if (!job.jd_text && dom.jd_text) job.jd_text = dom.jd_text;
+    if (!job.location && dom.location) job.location = dom.location;
     if (!job.company) {
       job.company = meta(doc, 'meta[property="og:site_name"]');
+      if (job.company) job._prov.weak.push("company");
+    }
+    if (!job.company) {
+      job.company = titleEmployer(doc.title, job.title);
       if (job.company) job._prov.weak.push("company");
     }
     // Last, on an employer's OWN site only: the tab title's "… | <site>" is
@@ -586,6 +598,49 @@
    * own title, not a word that names the page rather than the owner, and a
    * trailing "Careers"/"Jobs" is the site's name, not the employer's. */
   const NOT_OWNER = /^(careers?|jobs?|job details|job search|search jobs|home|apply|opportunities)$/i;
+
+  /* The employer a tab title names right AFTER the job's own title: "Job
+   * Application for <title> at <company>", every page of Greenhouse's job
+   * boards (read live 29 Sep 2026), which publish no JobPosting and no
+   * og:site_name, so this was the one place such a page named its employer
+   * as text. Anchored on the job's title, so an " at " inside a title
+   * ("Engineer at Scale") is never taken for one, and read on any site: it
+   * names the employer outright, where siteOwner() below guesses from a
+   * site's name and is kept off hiring systems. Weak, like siteOwner. */
+  function titleEmployer(tabTitle, jobTitle) {
+    const t = str(tabTitle), j = str(jobTitle);
+    if (!t || !j) return null;
+    const i = t.toLowerCase().indexOf(j.toLowerCase());
+    if (i < 0) return null;
+    const m = /^\s+at\s+(.+)$/i.exec(t.slice(i + j.length));
+    const who = m ? str(m[1].split(/\s+[|–—-]\s+/)[0]) : null;
+    if (!who || who.length > 60 || !/\p{L}/u.test(who) || NOT_OWNER.test(who)) return null;
+    return who;
+  }
+
+  /* Where a hiring system lays out a job on its OWN page, for the pages that
+   * publish no JobPosting: the description and the location, by selector,
+   * per vendor, in the one vendor table's spirit (SUBMIT_HOOKS in generic.js
+   * is the same kind of entry). Measured, not guessed: Greenhouse's
+   * job-boards page, 29 Sep 2026 (`.job__description`, 4.5k chars;
+   * `.job__location`). A selector that finds nothing reads nothing. */
+  const LISTING_DOM = {
+    greenhouse: { jd_text: ".job__description", location: ".job__location" },
+  };
+
+  function listingDom(doc, vendor) {
+    const sel = LISTING_DOM[vendor];
+    if (!sel) return {};
+    const grab = (s, asText) => {
+      const el = doc.querySelector(s);
+      if (!el) return null;
+      // innerHTML keeps the paragraphs htmlToText turns into lines; a fake
+      // DOM in the tests has only textContent.
+      const raw = el.innerHTML != null ? el.innerHTML : el.textContent;
+      return asText ? (htmlToText(raw || "") || null) : str(raw);
+    };
+    return { jd_text: grab(sel.jd_text, true), location: grab(sel.location, false) };
+  }
 
   function siteOwner(tabTitle, jobTitle) {
     const parts = (tabTitle || "").split(/\s+\|\s+/);

@@ -883,6 +883,40 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
     untaken store; and the rules were then run, read-only, against the
     live form (Procedures). Nothing was guessed before those four reads.
 
+- **Greenhouse's newer job-board page gave a capture with no employer, no
+  JD, no location, no country and no resume** (29 Sep 2026, the first real
+  submit on `job-boards.greenhouse.io`; extension 0.23.0). The submit and
+  the root worked (the 24 Sep read held); what failed was READING, five
+  ways, each measured on the live page (read-only, nothing typed):
+  - **The listing:** no JSON-LD and no `og:site_name`, so no company, JD or
+    location from structured data. The employer is in the tab title only
+    ("Job Application for <title> at <company>") and a logo's alt; the JD
+    and location sit in `.job__description` / `.job__location`.
+    `jobposting.js:titleEmployer` takes what follows " at " right after the
+    job's OWN title (weak, and never an " at " inside the title);
+    `LISTING_DOM` holds the vendor's two selectors, read only when no
+    JobPosting filled the field. The canonical link says `http://` on an
+    https page; `canonicalUrl` keeps https.
+  - **Country, a react-select:** its `<input role="combobox">` is EMPTIED
+    after each pick and the choice drawn in `.select__single-value`; with
+    nothing picked, a placeholder the input names in `aria-describedby`.
+    `valueOf` read `el.value` only, so the field counted as "no value"
+    (the sweep's `noValue: 2` said so before the page was opened).
+    `answers.js:shownChoice` reads the nearest ancestor's text, leaving out
+    the input and what `aria-describedby` names, never climbing into a
+    container that holds the question.
+  - **Resume, a file input:** `valueOf` returned null for every file field
+    (on purpose: the browser reports `C:\fakepath\…`), and the input's only
+    `<label for>` is its "Attach" button's; the question, "Resume/CV*", is
+    the `role="group"` around it. A file field now answers with
+    `files[0].name` under its group's name, and `pipeline/answers.py`
+    promotes a file field under a "Resume…" heading to `resume_file` (any
+    extension; a path never).
+  - Repaired by hand the same day: the company, JD and location read off
+    the page and written through `/edit` (the edit form read back first,
+    the applied instant restored after it); the country and the resume file
+    were not guessed.
+
 ## Known-untested surfaces (verify on first real contact)
 
 - **Extension DOM selectors** (`extension/adapters/*.js`) — best-effort against
@@ -1240,3 +1274,13 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
     `composedPath()[0]`; that has never been checked on a real closed root.
     A vendor that closes its components would show as a form with no root
     and, at most, typed answers.
+- **Greenhouse job-board reading (0.23.0, 29 Sep 2026) was measured on the
+  live page with an EMPTY form**: nothing was typed or picked there, so
+  react-select's chosen-value element (`.select__single-value`) and a
+  chosen file are react-select's and the platform's documented behaviour,
+  modelled in the tests, not seen. What to read on the next Greenhouse
+  job-board submit: the record names its employer and carries the JD and
+  location; its answers include the country picked; `resume_file` is the
+  file uploaded, with no "Resume/CV*" row among the answers. A combobox
+  answer that reads as a label or a placeholder means `shownChoice` climbed
+  into the wrong container.

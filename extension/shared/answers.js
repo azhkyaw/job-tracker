@@ -304,6 +304,16 @@
       const t = kept.join(" ").trim();
       if (t) return t;
     }
+    // A file field is named by its GROUP: the only <label for> a styled
+    // upload widget has is its own button's ("Attach"), while the question,
+    // "Resume/CV*", names the role="group" around it (Greenhouse's job
+    // boards, read live 29 Sep 2026) — or a fieldset's legend.
+    if ((el.type || "").toLowerCase() === "file") {
+      const g = closestDeep(el, "[role='group'],fieldset");
+      const named = g && (g.tagName === "FIELDSET"
+        ? labelText(g.querySelector("legend")) : ariaName(g));
+      if (named) return named;
+    }
     if (el.id && root.querySelector) {
       const l = root.querySelector(`label[for="${CSS.escape(el.id)}"]`);
       if (l && labelText(l)) return labelText(l);
@@ -384,12 +394,55 @@
 
   // Placeholder options ("Select an option") are the absence of an answer, not
   // an answer — recording them would fill the bank with noise.
-  const PLACEHOLDER = /^(select an option|please select|choose(\.\.\.| an option)?|-+|—)$/i;
+  const PLACEHOLDER = /^(select an option|select(\.\.\.|…)|please select|choose(\.\.\.| an option)?|-+|—)$/i;
+
+  /* The choice a combobox SHOWS rather than holds. React-select, on
+   * Greenhouse's job boards (read live 29 Sep 2026): its <input
+   * role="combobox"> is emptied after every pick and the chosen option is
+   * drawn in a sibling <div class="select__single-value">; with nothing
+   * picked, a placeholder that the input names in aria-describedby. So: the
+   * text of the nearest ancestor that has any, leaving out the input and
+   * whatever its aria-describedby names (the placeholder, the error), at
+   * most three levels up, and never a container that holds the question (a
+   * <label>, or what aria-labelledby names), whose text would come back as
+   * the question's own answer. */
+  function shownChoice(el) {
+    const ids = (a) => (el.getAttribute(a) || "").split(/\s+/).filter(Boolean);
+    const skip = new Set(ids("aria-describedby"));
+    const question = ids("aria-labelledby")
+      .map((id) => document.getElementById(id)).filter(Boolean);
+    const holds = (n, q) => { for (let x = q; x; x = x.parentElement) if (x === n) return true; return false; };
+    const own = (n) => {
+      let out = "";
+      for (const c of n.childNodes) {
+        if (c.nodeType === 3) { out += c.textContent; continue; }
+        if (c.nodeType !== 1 || c === el || c.getAttribute("aria-hidden") === "true") continue;
+        if (skip.has(c.getAttribute("id"))) continue;
+        out += " " + own(c);
+      }
+      return out;
+    };
+    for (let n = el.parentElement, hops = 0; n && hops < 3; n = n.parentElement, hops++) {
+      if (n.tagName === "LABEL" || (n.querySelector && n.querySelector("label")) ||
+          question.some((q) => holds(n, q))) return null;
+      const t = own(n).replace(/\s+/g, " ").trim();
+      if (t) return PLACEHOLDER.test(t) ? null : t.slice(0, MAX_ANSWER);
+    }
+    return null;
+  }
 
   function valueOf(el) {
     const tag = el.tagName;
     const type = (el.type || "").toLowerCase();
-    if (["file", "hidden", "submit", "button", "reset", "image", "password"]
+    // A file field answers with the NAME of the file chosen, never its path
+    // (the browser reports C:\fakepath\…): which resume went with the
+    // application, where the form uploads one rather than picking it
+    // (Greenhouse's job boards, 29 Sep 2026; pipeline/answers.py promotes it).
+    if (type === "file") {
+      const names = [...(el.files || [])].map((f) => f && f.name).filter(Boolean);
+      return names.length ? names.join(", ").slice(0, MAX_ANSWER) : null;
+    }
+    if (["hidden", "submit", "button", "reset", "image", "password"]
         .includes(type)) return null;
     if (type === "checkbox") return el.checked ? "Yes" : "No";
     if (tag === "SELECT") {
@@ -398,7 +451,8 @@
       return v && !PLACEHOLDER.test(v) ? v : null;
     }
     const v = (el.value || "").trim();
-    return v || null;
+    if (v) return v;
+    return el.getAttribute && el.getAttribute("role") === "combobox" ? shownChoice(el) : null;
   }
 
   function kindOf(el) {

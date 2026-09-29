@@ -715,7 +715,10 @@ Detail lives with each family's rule file; this is the index.
   proven in `tests/test_extension.js` only, never on a live wizard; 0.22.0's
   reading of web-component forms (open shadow roots, slotted labels) and its
   "form left holding answers" report have met a live form only as rules
-  evaluated in the page, never through a real submit.
+  evaluated in the page, never through a real submit; 0.23.0's Greenhouse
+  job-board reading (a combobox's shown choice, a file field's name) was
+  measured on the live page with the form EMPTY, so the picked-value shapes
+  are modelled, not seen.
 - **Mail** (`.claude/rules/mail-ingest.md`): IMAP verified on a real inbox
   28 Jul 2026; the web IMAP connect form, Gmail web OAuth and the full `-m 12`
   window are not.
@@ -731,7 +734,7 @@ Detail lives with each family's rule file; this is the index.
 
 ## Open work (as of 29 Sep 2026)
 
-The dated register behind each item, tasks 1-40 with their measurements, is
+The dated register behind each item, tasks 1-41 with their measurements, is
 `docs/worklog.md`; read the matching entry before acting on one.
 
 - **Follow-up drafting** on an age-capped queue: cap `/follow-ups` near 21
@@ -741,7 +744,7 @@ The dated register behind each item, tasks 1-40 with their measurements, is
   queue as the author confirms them. Four `follow_up_sent` are on record: one filed
   by hand, three recovered from follow-ups the user EMAILED, which since
   migration 016 file themselves (task 16). (worklog task 4)
-- **Extension, next real Easy Apply:** verify the current build (0.22.0 on
+- **Extension, next real Easy Apply:** verify the current build (0.23.0 on
   29 Sep) is live on BOTH machines and the tab was opened after the
   reload; read `doc_source` and the sweep
   line. JobStreet still owes one clean submit with the race fix and salary
@@ -782,7 +785,14 @@ The dated register behind each item, tasks 1-40 with their measurements, is
   not read at all, silently. 0.22.0 reads through open shadow roots, takes
   the requisition from the page's named field, and reports a form left
   holding untaken answers; the record was repaired from the tab's on-disk
-  sessionStorage (task 39).
+  sessionStorage (task 39). The third (a direct Greenhouse job-board
+  apply, 29 Sep) captured at its submit but read almost nothing: that page
+  has no JobPosting, a react-select country and a resume upload named only
+  by its group. 0.23.0 reads the tab title's "… at <company>", the vendor's
+  JD and location blocks, a combobox's shown choice and a file field's
+  name (promoted to `resume_file`); the record's employer, JD and location
+  were repaired from the page; its country and resume file are left out, by
+  the author's choice (task 41).
   Open: the first real apply through each piece.
 - **Release blockers:** LICENSE (Apache-2.0 recommended), split the extension
   into its own repo, decide whether CLAUDE.md ships; `audit_names.py --history`

@@ -989,6 +989,18 @@ for the second.
   tenant: the 24 Sep tenant's form was the classic one
   (`<span role=button>Apply</span>`, light DOM), so both must keep working,
   and `tests/test_extension.js` holds one fixture of each.
+- **The third: Greenhouse's newer job-board page (0.23.0, 29 Sep 2026).** A
+  direct apply on `job-boards.greenhouse.io`: the form rule and the submit
+  held, as §4's 24 Sep read said they would, but the record came out with no
+  employer, JD or location, and without the country and the resume. That
+  page publishes no JobPosting (§5's reader had nothing to read), draws its
+  country as a react-select, and uploads its resume through a file input
+  named only by its group. The reader now takes the employer from the tab
+  title's "… at <company>", the JD and location from the vendor's page
+  blocks (`LISTING_DOM`), a combobox's shown choice, and a file field's
+  name, promoted to `resume_file` (worklog task 41). §4 measured the FORM
+  on four vendors; this was the first measurement of what a listing without
+  structured data costs.
 - Nothing else has run on a real apply; `.claude/rules/extension.md` says
   what to read on the next one.
 

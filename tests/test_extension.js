@@ -651,6 +651,60 @@ console.log("\nanswers.js sweep: the rebuilt Easy Apply's control shapes (measur
         sweepOf(proper), [{ question: "Do you have a valid work pass?", answer: "Yes", type: "radio" }]);
 }
 
+console.log("\nanswers.js sweep: Greenhouse's job-board form (read live 29 Sep 2026)");
+{
+  // Country: a react-select. Its <input role="combobox"> is emptied after a
+  // pick; the choice is drawn in .select__single-value, and with nothing
+  // picked a placeholder the input names in aria-describedby shows instead.
+  // Beside it, react-select's own required input: no id, no label. The
+  // question's <label> sits outside the select's container.
+  const country = (picked) => node("div", { class: "field-wrapper" }, [
+    node("label", { id: "country-label", for: "country" }, ["Country*"]),
+    node("div", { class: "select__container" }, [
+      node("div", { class: "select__control" }, [
+        node("div", { class: "select__value-container" }, [
+          picked ? node("div", { class: "select__single-value" }, [picked])
+                 : node("div", { class: "select__placeholder", id: "react-select-country-placeholder" },
+                        ["Select..."]),
+          node("div", { class: "select__input-container" }, [
+            node("input", { id: "country", role: "combobox", type: "text", class: "select__input",
+                            "aria-labelledby": "country-label",
+                            "aria-describedby": "react-select-country-placeholder country-error" }),
+          ]),
+        ]),
+        node("div", { class: "select__indicators" }, [node("span", { class: "select__indicator-separator" })]),
+      ]),
+      node("input", { type: "text", required: "" }),
+    ]),
+  ]);
+  check("a react-select answers with the option it shows, under its label",
+        sweepOf(country("Singapore")), [{ question: "Country*", answer: "Singapore", type: "text" }]);
+  check("…and nothing when only its placeholder shows", sweepOf(country(null)), []);
+  // Resume: <input type=file class="visually-hidden">, whose only <label for>
+  // is the "Attach" button's, inside <div role="group"
+  // aria-labelledby="upload-label-resume"> named "Resume/CV*".
+  const upload = (file) => {
+    const input = node("input", { type: "file", id: "resume", class: "visually-hidden",
+                                  accept: ".pdf,.doc,.docx,.txt,.rtf" });
+    if (file) input.files = [{ name: file }];
+    return node("div", { class: "file-upload", role: "group", "aria-labelledby": "upload-label-resume" }, [
+      node("div", { class: "label", id: "upload-label-resume" }, ["Resume/CV*"]),
+      node("div", { class: "file-upload__wrapper" }, [
+        node("div", { class: "button-container" }, [
+          node("div", { class: "secondary-button" }, [
+            node("div", {}, [node("button", { class: "btn" }, ["Attach"]),
+                             node("label", { class: "visually-hidden", for: "resume" }, ["Attach"]), input]),
+          ]),
+        ]),
+      ]),
+    ]);
+  };
+  check("a file field answers with the file's name, under its group's name (not 'Attach')",
+        sweepOf(upload("Jane-Doe_resume.pdf")),
+        [{ question: "Resume/CV*", answer: "Jane-Doe_resume.pdf", type: "file" }]);
+  check("…and nothing before a file is chosen", sweepOf(upload(null)), []);
+}
+
 console.log("\nanswers.js normKey: one rule with pipeline/answers.py:norm_question");
 {
   // The same list tests/test_captures.py holds the server to. Until 24 Sep 2026
@@ -1233,6 +1287,39 @@ console.log("\nmanifest: every origin the extension asks Chrome for is one it de
     check(`"Always capture on" for ${url} asks for a declared origin`, declared(J.siteOf(url).pattern), true);
   }
   check("…and so does the options page's remote tracker server", declared("https://tracker.contoso.com/*"), true);
+}
+
+console.log("\njobposting.js read: a Greenhouse job-board page with no JobPosting (read live 29 Sep 2026)");
+{
+  // No JSON-LD, no og:site_name; the employer only in the tab title ("Job
+  // Application for <title> at <company>") and a logo's alt; the JD and the
+  // location in .job__description / .job__location; a canonical in http://.
+  const GH = "https://job-boards.greenhouse.io/contoso/jobs/4377390009";
+  const page = (title, h1 = "Senior Platform Engineer") => pageDoc([
+    node("link", { rel: "canonical", href: GH.replace("https:", "http:") }),
+    node("img", { alt: "Contoso Logo" }),
+    node("h1", {}, [h1]),
+    node("div", { class: "job__location" }, ["Singapore"]),
+    node("div", { class: "job__description body" }, [
+      node("p", {}, ["Contoso builds payment rails for the region."]),
+      node("ul", {}, [node("li", {}, ["Own the ledger service in Go."])]),
+    ]),
+    node("form", { id: "application-form" }, [node("input", { type: "text", id: "first_name" })]),
+  ], title);
+  const job = J.read(page("Job Application for Senior Platform Engineer at Contoso"), makeLoc(GH));
+  check("the employer from the tab title, right after the job's own title (weak)",
+        [job.company, job._prov.weak.includes("company")], ["Contoso", true]);
+  check("the description and location from the page's own blocks",
+        [/payment rails/.test(job.jd_text || "") && /ledger service/.test(job.jd_text || ""), job.location],
+        [true, "Singapore"]);
+  check("an http:// canonical on an https page keeps https; the id is unchanged",
+        [job.url, job.platform_job_id, job.ats], [GH, "job-boards.greenhouse.io/4377390009", "greenhouse"]);
+  check("an ' at ' inside the job's own title is not the employer",
+        J.read(page("Job Application for Engineer at Scale at Contoso", "Engineer at Scale"), makeLoc(GH)).company,
+        "Contoso");
+  check("no ' at <company>' after the title, or a tab title without the job's title: no employer",
+        [J.read(page("Job Application for Senior Platform Engineer"), makeLoc(GH)).company,
+         J.read(page("Careers at Contoso"), makeLoc(GH)).company], [null, null]);
 }
 
 /* ------------------------------ adapters/generic.js on an ATS's own pages

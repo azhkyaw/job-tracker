@@ -65,6 +65,9 @@ _RESUME_RE = re.compile(r"^\s*(?:de)?select\s+resume\s+(.+?)\s*$", re.I)
 # a genuine "Resume link" question answered with a URL is a question.
 _RESUME_HEAD = re.compile(r"^resume\b")
 _RESUME_FILE = re.compile(r"^[^/\\:]+\.(?:pdf|docx?)$", re.I)
+# A resume UPLOAD's answer: the file's own name, never a path (see
+# _is_resume_pick).
+_UPLOADED_FILE = re.compile(r"^[^/\\:]+\.[a-z0-9]{2,5}$", re.I)
 
 # The rest are LinkedIn UI toggles, answered by ticking a box rather than by
 # saying anything. "Follow <employer>" is the worst of them: the employer's
@@ -113,12 +116,20 @@ def is_sensitive(question: str) -> bool:
 
 
 def _is_resume_pick(question: str, answer: str | None, field_type: str | None) -> bool:
-    """Either layout's resume picker — see _RESUME_RE and _RESUME_HEAD."""
+    """Either layout's resume picker — see _RESUME_RE and _RESUME_HEAD — or a
+    resume UPLOAD (29 Sep 2026): a file field under a "Resume…" heading, whose
+    answer the extension sends as the chosen file's name (answers.js:valueOf;
+    Greenhouse's job boards, "Resume/CV*"). A file field's answer is a file
+    name by construction, so any extension counts there (it accepts .txt and
+    .rtf too); a radio's must still be a bare document name."""
     if _RESUME_RE.match(question or ""):
         return True
-    return (field_type in (None, "radio")
-            and bool(_RESUME_HEAD.match(norm_question(question)))
-            and bool(_RESUME_FILE.match((answer or "").strip())))
+    if not _RESUME_HEAD.match(norm_question(question)):
+        return False
+    answer = (answer or "").strip()
+    if field_type == "file":
+        return bool(_UPLOADED_FILE.match(answer))
+    return field_type in (None, "radio") and bool(_RESUME_FILE.match(answer))
 
 
 def _control_kind(question: str, answer: str | None = None,

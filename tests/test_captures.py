@@ -314,6 +314,18 @@ check("resume: last pick wins",
 check("resume: a 'Resume link' question answered with a URL is a question",
       resume_file([{"question": "Resume link", "answer": "https://x.example/cv.pdf",
                     "type": "text"}]) is None)
+# A resume UPLOAD (Greenhouse's job boards, read live 29 Sep 2026): a file
+# field in a role="group" named "Resume/CV*", which the extension now sends as
+# the chosen file's name. Any extension there (the field accepts txt and rtf),
+# never a path, and only under a resume heading.
+check("resume: an upload under 'Resume/CV*' is the resume, whatever its extension",
+      [resume_file([{"question": "Resume/CV*", "answer": f, "type": "file"}])
+       for f in ("Jane-Doe_resume.pdf", "Jane-Doe_resume.txt")]
+      == ["Jane-Doe_resume.pdf", "Jane-Doe_resume.txt"])
+check("resume: another upload (a cover letter), or a path, is not",
+      [resume_file([{"question": "Cover Letter", "answer": "cover.pdf", "type": "file"}]),
+       resume_file([{"question": "Resume/CV*", "answer": "C:\\fakepath\\cv.pdf", "type": "file"}])]
+      == [None, None])
 check("clean drops the picker on both layouts and keeps the real question",
       [r["question"] for r in clean([
           {"question": "Deselect resume Contoso-resume.pdf",
@@ -321,7 +333,9 @@ check("clean drops the picker on both layouts and keeps the real question",
           {"question": "Resume*", "answer": "Contoso-resume-AI.pdf", "type": "radio"},
           {"question": "Mark job as a top choice", "answer": "No", "type": "checkbox"},
           {"question": "Resume link", "answer": "https://x.example/cv.pdf",
-           "type": "text"}])] == ["Resume link"])
+           "type": "text"},
+          {"question": "Resume/CV*", "answer": "Jane-Doe_resume.pdf", "type": "file"}])]
+      == ["Resume link"])
 # A captcha's hidden response field inside an ATS's application form (Lever's
 # hCaptcha, measured 24 Sep 2026) — the extension skips it as machinery, and
 # this is the second line, should one ever arrive.

@@ -1164,3 +1164,42 @@ the key to each real case.
    queue, the badge and rows still agreeing). Rendered read-only against the
    dev DB: the 2 threads appear as the first round rows, 5 of 5 open-round
    applications offer the close, and the inbound round offers its own.
+
+41. **A Greenhouse job-board capture that read almost nothing** (29 Sep
+   2026, extension 0.23.0). A direct apply on `job-boards.greenhouse.io`
+   filed "unknown company" with no JD, no location, 5 answers and no resume.
+   The capture itself was right: the provenance showed the submit on the
+   page, and the sweep found the form (8 controls, 5 kept, 2 "no value").
+   The live page (read-only, nothing typed) showed why, five ways: no
+   JobPosting and no `og:site_name`, the employer only in the tab title
+   ("Job Application for <title> at <company>"), the JD and location in the
+   vendor's own blocks, the country a react-select whose input is emptied
+   after a pick, and the resume a file input (ignored by design) whose only
+   label is its "Attach" button, its question on the enclosing
+   `role="group"`. The form has no custom questions, so those two were the
+   only answers lost. Fixed as rules: `titleEmployer` (anchored on the job's
+   own title, weak), `LISTING_DOM` (per-vendor selectors, only where no
+   JobPosting filled the field), `canonicalUrl` keeping https,
+   `answers.js:shownChoice` for a combobox (skipping what its
+   `aria-describedby` names, never climbing into the question), a file
+   field's name under its group's name, and `answers.py` promoting a
+   "Resume…" upload to `resume_file`. 9 new extension checks (329) and 2 in
+   `test_captures`; on the old code 6 go red with the record's own
+   signature, the guards green either way. Repaired the same day, snapshot
+   first (`2026-09-29-greenhouse-listing-repair.json`): the employer, JD
+   (through the extension's own `htmlToText`) and location from the page,
+   through `/edit`, the URL to https (same id), the applied instant
+   restored after `/edit` truncated it. The country and the resume file
+   were not guessed, and the author chose not to add them.
+   That evening the same job was filed twice: the Greenhouse page had been
+   opened with no opener (not by LinkedIn's Apply; nothing recorded a
+   LinkedIn click) and submitted at 20:20, and at 21:04 LinkedIn's Apply for
+   the same job opened it again, its handoff binding WITH the ATS id, and
+   the popover answered 3 s later filed a LinkedIn record. The reverse of
+   the order the handoff was built for (§16): the popover's capture does not
+   send the ATS id its tab's handoff had just learned, which the server
+   would have joined on (migration 018). Merged at the author's request
+   through `merge_jobs`, the board record kept as in task 37, the popover's
+   duplicate `applied` removed so the record keeps the real submit's time;
+   snapshot `2026-09-29-greenhouse-linkedin-twins.json`. Offered and
+   declined by the author: the popover capture sending that ATS id.
