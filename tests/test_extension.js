@@ -429,6 +429,41 @@ function node(tag, attrs = {}, kids = []) {
   return n;
 }
 
+/* An OPEN shadow root on `host`, as SuccessFactors' candidate experience
+ * builds its form from UI5 web components (read live 29 Sep 2026). Like the
+ * platform: the root's top-level children have no parentElement, every node
+ * inside answers getRootNode() with the root, the root's .host is the
+ * element, the host's own children stay its light DOM (its textContent), and
+ * a <slot> reports those children as its assigned nodes. */
+function attachShadow(host, kids) {
+  const root = {
+    nodeType: 11,
+    host,
+    childNodes: [],
+    get children() { return this.childNodes.filter((c) => c.nodeType === 1); },
+    querySelectorAll(sel) {
+      const out = [];
+      const walk = (x) => { for (const c of x.children) { if (matches(c, sel)) out.push(c); walk(c); } };
+      walk(this);
+      return out;
+    },
+    querySelector(sel) { return this.querySelectorAll(sel)[0] || null; },
+    getElementById(id) { return this.querySelectorAll("*").find((x) => x.getAttribute("id") === id) || null; },
+  };
+  const own = (x) => {
+    x.getRootNode = () => root;
+    if (x.tagName === "SLOT") x.assignedNodes = () => host.childNodes;
+    for (const c of x.children) own(c);
+  };
+  for (const k of kids) {
+    const c = typeof k === "string" ? { nodeType: 3, textContent: k } : k;
+    root.childNodes.push(c);
+    if (c.nodeType === 1) own(c);
+  }
+  host.shadowRoot = root;
+  return host;
+}
+
 /* Load answers.js over a fake document whose <body> holds `root`, with an
  * adapter that hands that root back as the apply form. Returns take()'s
  * output: what the sweep would send with the capture. */
@@ -1326,6 +1361,61 @@ console.log("\ngeneric.js: SuccessFactors' signed-in form (read live 24 Sep 2026
         [first.atsJobId(), later.answerFormKey(), later.atsJobId(), later.getJob().platform_job_id],
         Array(4).fill("career2.successfactors.eu/litwarebk/51234"));
 }
+console.log("\ngeneric.js: SuccessFactors' candidate experience, built from web components (read live 29 Sep 2026)");
+{
+  // A real application was lost here: form#careerform's light DOM held 26
+  // controls, EVERY one type=hidden; the 22 fields a person fills were
+  // <ui5-input>s with their <input> in an open shadow root; "Submit" was a
+  // <ui5-button> whose inner <button role=button> held only a <slot>, with
+  // aria-label "Submit" ("Browse Browse" on the upload widget's). The page
+  // prints no requisition: its title ends "(Singapore)", and the number sits
+  // in <meta name="jobRequisitionId"> and a hidden career_job_req_id input.
+  // The tab's address after the first postback carried only the crumb.
+  const hidden = (name, value) => node("input", { type: "hidden", name, ...(value ? { value } : {}) });
+  const uiInput = () => attachShadow(node("ui5-input-xweb-dynamic-content"), [node("input", { type: "text" })]);
+  const uiButton = (label, aria) => {
+    const inner = node("button", { role: "button", ...(aria ? { "aria-label": aria } : {}) }, [node("slot")]);
+    const host = attachShadow(node("ui5-button-xweb-candidate-experience", {}, label ? [label] : []), [inner]);
+    return [host, inner];
+  };
+  // One page per load: a fake node has one parent, like a real one.
+  const page = () => {
+    const [, submit] = uiButton("Submit", "Submit");
+    const [, close] = uiButton("Close", "Close");
+    const [, browse] = uiButton("Browse", "Browse Browse");
+    const [, icon] = uiButton("", null);
+    const kids = [
+      node("meta", { name: "jobRequisitionId", content: "61234" }),
+      node("form", { id: "careerform", name: "careerform" }, [
+        hidden("career_job_req_id", "61234"), hidden("_s.crb", "x"), hidden("clientId"),
+        node("div", {}, [uiInput(), uiInput(), uiInput(), uiInput(), uiInput(), uiInput()]),
+        node("div", {}, [browse, icon]),
+        node("div", { class: "footer" }, [submit, close]),
+      ]),
+    ];
+    return { kids, submit, close, browse, icon };
+  };
+  const T = "Career Opportunities: Senior AI Engineer (Singapore)";
+  const CRUMB = "https://career4.successfactors.com/portalcareer?_s.crb=x";
+  const FIRST = "https://career4.successfactors.com/portalcareer?company=SF1001&career_ns=job_application" +
+                "&career_job_req_id=61234&_s.crb=x";
+  const p = page();
+  const a = loadGeneric(p.kids, CRUMB, T, memoryStorage());
+  const root = a.answerFormRoot();
+  check("root is form#careerform, whose light DOM holds only hidden controls",
+        root && root.getAttribute("id"), "careerform");
+  check("the Submit's label is slotted in from its host", a.label && a.label(p.submit), "Submit");
+  check("its inner <button> is the submit, on the crumb-only address", a.isCompletion(p.submit), true);
+  check("…and no near miss", a.nearMiss(p.submit), null);
+  check("Close, Browse and an icon-only button are not",
+        [a.isCompletion(p.close), a.isCompletion(p.browse), a.isCompletion(p.icon)], [false, false, false]);
+  const q = page();
+  const b = loadGeneric(q.kids, FIRST, T, memoryStorage());
+  const bRoot = b.answerFormRoot();
+  check("the same on the form's first address",
+        [bRoot && bRoot.getAttribute("id"), b.isCompletion(q.submit)], ["careerform", true]);
+}
+
 console.log("\ngeneric.js: a listing's own Apply leaves for the application (P2)");
 {
   // A Career Site Builder listing: a JobPosting, an upload widget of its own

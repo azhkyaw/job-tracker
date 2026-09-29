@@ -17,28 +17,62 @@
  * never asks for a password, and it is sent by a control that says so. One
  * of the four (Ashby) has no <form> element at all, which is why the root is
  * found by what it contains rather than by its tag. Workday and
- * SuccessFactors put the form behind a candidate sign-in and are UNVERIFIED —
- * the same rules are expected to hold there (see .claude/rules/extension.md).
+ * SuccessFactors put the form behind a candidate sign-in. SuccessFactors'
+ * newer candidate experience (29 Sep 2026) builds it from web components, so
+ * "contains" means through open shadow roots (deepAll, below); see
+ * .claude/rules/extension.md.
  */
 (() => {
   const J = window.__trackerJobPosting;
+
+  /* Open shadow roots are part of the page. SuccessFactors' candidate
+   * experience (read live 29 Sep 2026) builds the application from UI5 web
+   * components: form#careerform holds 26 controls, every one type=hidden,
+   * while the 22 fields a person fills are <ui5-input>s whose <input> sits in
+   * an open shadow root, and its "Submit" is a <ui5-button> whose inner
+   * <button> shows a slotted label. Read at the light DOM, that page had no
+   * controls at all: no root, so no sweep (only TYPED answers survived,
+   * through answers.js's edit backstop), and a Submit that read as nothing,
+   * so not even a near miss was logged. A real application was lost to it.
+   * So every query below descends into open roots and every walk up steps
+   * out of one to its host, as answers.js's collect() and closestDeep()
+   * already did. A closed root stays unreadable, as the platform intends. */
+  function deepAll(root, sel) {
+    const out = [...root.querySelectorAll(sel)];
+    for (const el of root.querySelectorAll("*")) {
+      if (el.shadowRoot) out.push(...deepAll(el.shadowRoot, sel));
+    }
+    return out;
+  }
+
+  // The parent, stepping out of a shadow root to its host.
+  function up(x) {
+    if (x.parentElement) return x.parentElement;
+    const r = x.getRootNode ? x.getRootNode() : null;
+    return r && r !== x && r.host ? r.host : null;
+  }
+
+  function closestDeep(el, sel) {
+    for (let x = el; x; x = up(x)) if (x.matches && x.matches(sel)) return x;
+    return null;
+  }
 
   // Controls that hold an answer — not buttons, not a search box.
   const SKIP_TYPES = ["hidden", "submit", "button", "reset", "image", "search"];
   const answerable = (el) => el.tagName !== "INPUT" ||
     !SKIP_TYPES.includes((el.getAttribute("type") || "text").toLowerCase());
-  const controlsIn = (root) =>
-    [...root.querySelectorAll("input, select, textarea")].filter(answerable);
-  const hasPassword = (root) => root.querySelectorAll("input[type='password']").length > 0;
+  const controlsIn = (root) => deepAll(root, "input, select, textarea").filter(answerable);
+  const passwordsIn = (root) => deepAll(root, "input[type='password']");
+  const hasPassword = (root) => passwordsIn(root).length > 0;
   const isFile = (el) => (el.getAttribute("type") || "").toLowerCase() === "file";
 
   function inside(node, ancestor) {
-    for (let x = node; x; x = x.parentElement) if (x === ancestor) return true;
+    for (let x = node; x; x = up(x)) if (x === ancestor) return true;
     return false;
   }
 
   function commonAncestor(nodes) {
-    for (let a = nodes[0].parentElement; a; a = a.parentElement) {
+    for (let a = up(nodes[0]); a; a = up(a)) {
       if (nodes.every((n) => inside(n, a))) return a;
     }
     return null;
@@ -85,7 +119,7 @@
     if (all.length < 2) return null;
     const files = all.filter(isFile);
     for (const f of files) {
-      const form = f.closest("form");
+      const form = closestDeep(f, "form");
       if (form && !hasPassword(form)) return form;
     }
     // A form that SAYS it sends an application, with the fields of one. The
@@ -95,10 +129,12 @@
     // postback (a Save, an upload, the register step), and a real application
     // was missed exactly there. Five fields at least, so a job-alert or
     // sign-up form (one to three, measured on the four other vendors) is not
-    // taken for one.
-    for (const b of doc.querySelectorAll("button, input, [role='button']")) {
+    // taken for one. The candidate experience's form (29 Sep 2026) is found
+    // here too, through its Submit's slotted label: its address need not say
+    // "application" either.
+    for (const b of deepAll(doc, "button, input, [role='button']")) {
       if (!submitWorded(b)) continue;
-      const form = b.closest("form");
+      const form = closestDeep(b, "form");
       if (form && !hasPassword(form) && controlsIn(form).length >= MIN_FORM_FIELDS) return form;
     }
     // Rule 3 needs an address that says "application", or a file input on a
@@ -127,8 +163,18 @@
   // posts through script, past hCaptcha) and Workable's data-ui="apply-button".
   const SUBMIT_HOOKS = ["#btn-submit", "[data-ui='apply-button']"];
   const INVISIBLE = /[­​-‏⁠-⁤﻿]/g;
-  const label = (el) => (el.textContent || el.value || "")
-    .replace(INVISIBLE, "").replace(/\s+/g, " ").trim();
+  const clean = (s) => String(s || "").replace(INVISIBLE, "").replace(/\s+/g, " ").trim();
+  // The text a web component shows THROUGH a control: its inner <button>
+  // holds only a <slot>, and the words are the host's own children.
+  const slotted = (el) => (el.querySelectorAll ? [...el.querySelectorAll("slot")] : [])
+    .map((s) => (s.assignedNodes ? s.assignedNodes({ flatten: true }) : [])
+      .map((n) => n.textContent || "").join(" "))
+    .join(" ");
+  // What a control says: its own text, else what is slotted into it
+  // (<ui5-button>Submit</ui5-button>, 29 Sep 2026), else an input's value,
+  // else its accessible name.
+  const label = (el) => clean(el.textContent) || clean(slotted(el)) || clean(el.value) ||
+    clean(el.getAttribute && el.getAttribute("aria-label"));
 
   const MIN_FORM_FIELDS = 5;
 
@@ -158,7 +204,7 @@
    * Earlier steps' answers are already in answers.js's store. */
   function reviewStep(doc, loc) {
     if (!applyFlowAt(loc)) return false;
-    return ![...doc.querySelectorAll("input[type='password']")].some(rendered);
+    return !passwordsIn(doc).some(rendered);
   }
 
   function isSubmitControl(el, doc, loc) {
@@ -194,7 +240,7 @@
 
   function quickApplyStart(el, doc = document, loc = location, now = Date.now()) {
     if (!J.quickApplies(loc.href) || !submitWorded(el) || applicationRoot(doc, loc)) return null;
-    if ([...doc.querySelectorAll("input[type='password']")].some(rendered)) return null;
+    if (passwordsIn(doc).some(rendered)) return null;
     const id = J.pageId(doc, loc, hints());
     const job = J.read(doc, loc, hints());
     if (!job || !id || id.by === "path") return null;
@@ -277,6 +323,7 @@
     applicationRoot,
     isSubmitControl,
     quickApplyStart,
+    label,
   };
   window.__trackerAdapter = adapter;
 
