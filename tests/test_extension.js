@@ -434,7 +434,10 @@ function node(tag, attrs = {}, kids = []) {
  * platform: the root's top-level children have no parentElement, every node
  * inside answers getRootNode() with the root, the root's .host is the
  * element, the host's own children stay its light DOM (its textContent), and
- * a <slot> reports those children as its assigned nodes. */
+ * a <slot> reports those children as its assigned nodes: a named slot the
+ * ones whose slot attribute names it, the default slot the rest, and each
+ * assigned element knows its slot (assignedSlot), as SmartRecruiters' radio
+ * group needs (30 Sep 2026). */
 function attachShadow(host, kids) {
   const root = {
     nodeType: 11,
@@ -452,7 +455,12 @@ function attachShadow(host, kids) {
   };
   const own = (x) => {
     x.getRootNode = () => root;
-    if (x.tagName === "SLOT") x.assignedNodes = () => host.childNodes;
+    if (x.tagName === "SLOT") {
+      const name = x.getAttribute("name") || "";
+      x.assignedNodes = () => host.childNodes.filter((c) =>
+        (c.nodeType === 1 ? c.getAttribute("slot") || "" : "") === name);
+      for (const c of x.assignedNodes()) if (c.nodeType === 1) c.assignedSlot = x;
+    }
     for (const c of x.children) own(c);
   };
   for (const k of kids) {
@@ -486,8 +494,8 @@ function sweepStepsOf(steps) {
 
 // `storage`: a sessionStorage stand-in holding what an EARLIER page of the
 // tab's visit left (memoryStorage, below); by default an empty one that only
-// records writes.
-function loadAnswers(first, storage = undefined) {
+// records writes. `noRoot`: the adapter finds no application on the page.
+function loadAnswers(first, storage = undefined, { noRoot = false } = {}) {
   let root = first;
   const listeners = {};
   const writes = [];        // every value handed to sessionStorage, in order
@@ -512,7 +520,7 @@ function loadAnswers(first, storage = undefined) {
   };
   sandbox.window = {
     document: doc, location: sandbox.location,
-    __trackerAdapter: { answerFormRoot: () => root, answerFormKey: () => "1" },
+    __trackerAdapter: { answerFormRoot: () => (noRoot ? null : root), answerFormKey: () => "1" },
   };
   sandbox.window.top = sandbox.window;
   vm.createContext(sandbox);
@@ -767,6 +775,57 @@ console.log("\nanswers.js sweep: Greenhouse's job-board form (read live 29 Sep 2
   check("…and nothing before a file is chosen", sweepOf(upload(null)), []);
 }
 
+console.log("\nanswers.js sweep: a SmartRecruiters screening step, drawn by web components (read live 30 Sep 2026)");
+{
+  // The screening step of a LinkedIn → SmartRecruiters apply, placeholder
+  // names, the structure the measured one. Every question's words are
+  // SLOTTED into its label: <spl-textarea>'s own <label for> holds a <slot>
+  // and a "*", so read alone it says "*", which keys as nothing, and the row
+  // was dropped. The Yes/No questions have no native control at all:
+  // <spl-radio role="radio" aria-checked label="Yes">, slotted into the
+  // <fieldset role="radiogroup" aria-labelledby> inside <spl-radio-group>,
+  // whose label holds the question through a named slot.
+  const Q1 = "Are you legally authorized to work in the country that you are applying to?";
+  const Q2 = "Will you now or in the future require sponsorship for employment?";
+  const Q3 = "Are you related to a current employee? If yes, please specify.";
+  const textarea = (id, question, value) => attachShadow(
+    node("spl-textarea", { id, name: id }, [node("span", { slot: "label" }, [question])]),
+    [node("label", { id: `${id}-label`, for: `${id}-in` }, [node("slot", { name: "label" }), "*"]),
+     node("textarea", { id: `${id}-in`, ...(value ? { value } : {}) })]);
+  const radio = (label, on, attrs = {}) => attachShadow(
+    node("spl-radio", { label, role: "radio", "aria-checked": on ? "true" : "false",
+                        value: label === "Yes" ? "1" : "0", ...attrs }),
+    [node("div", { class: "circle" }), node("label", {}, [label])]);
+  const group = (id, question, picked) => attachShadow(
+    node("spl-radio-group", { id }, [node("span", { slot: "label" }, [question]),
+                                     radio("Yes", picked === "Yes"), radio("No", picked === "No")]),
+    [node("fieldset", { role: "radiogroup", "aria-labelledby": `${id}-label` }, [
+      node("label", { id: `${id}-label`, for: id }, [node("slot", { name: "label" })]),
+      node("slot"),
+    ])]);
+  const step = (a, b) => node("div", {}, [group("g1", Q1, a), group("g2", Q2, b), textarea("q3", Q3, "No")]);
+  check("a slotted label reads as its question, and radios with no <input> as their group's answer",
+        sweepOf(step("No", "Yes")),
+        [{ question: `${Q3}*`, answer: "No", type: "textarea" },
+         { question: Q1, answer: "No", type: "radio" },
+         { question: Q2, answer: "Yes", type: "radio" }]);
+  check("…a drawn group with nothing picked records nothing", sweepOf(step(null, null)),
+        [{ question: `${Q3}*`, answer: "No", type: "textarea" }]);
+  // An option whose only name is the question itself is the capture artefact
+  // of 25-29 Sep (the question stored as its own answer), never an answer.
+  const named = node("div", { role: "radiogroup", "aria-label": Q2 }, [
+    node("div", { role: "radio", "aria-checked": "true", "aria-label": Q2 }),
+    node("div", { role: "radio", "aria-checked": "false", "aria-label": Q2 })]);
+  check("…and an option named only by the question is not its answer", sweepOf(node("div", {}, [named])), []);
+  // A drawn checkbox or switch answers like a native one.
+  const box = (on) => node("div", { role: "checkbox", "aria-checked": on ? "true" : "false",
+                                    "aria-label": "Keep me informed about future roles" });
+  check("a drawn checkbox answers Yes/No under its own name",
+        [sweepOf(node("div", {}, [box(true)])), sweepOf(node("div", {}, [box(false)]))],
+        [[{ question: "Keep me informed about future roles", answer: "Yes", type: "checkbox" }],
+         [{ question: "Keep me informed about future roles", answer: "No", type: "checkbox" }]]);
+}
+
 console.log("\nanswers.js normKey: one rule with pipeline/answers.py:norm_question");
 {
   // The same list tests/test_captures.py holds the server to. Until 24 Sep 2026
@@ -854,6 +913,26 @@ console.log("\nanswers.js leftover: a form the visit left with answers no captur
         [left({ key: "x", at: Date.now(), items: {} })[1].leftover(),
          left({ key: "x", at: Date.now() - 3 * 3600_000, items: items(2) })[1].leftover(),
          left(null)[1].leftover()], [null, null, null]);
+}
+
+console.log("\nanswers.js store: whether a sweep ever found the form (30 Sep 2026)");
+{
+  // generic.js reads the mark: a later wizard step at an address that never
+  // says "apply" continues a form an earlier step's sweep found.
+  const KEY = "__tracker_form_answers";
+  const s = memoryStorage();
+  const a = loadAnswers(node("div", {}, [node("label", { for: "fn" }, ["First name"]),
+                                         node("input", { type: "text", id: "fn", value: "Jane" })]), s);
+  for (const fn of a._listeners.click) fn({});
+  check("a sweep that found the form marks the store", JSON.parse(s.getItem(KEY)).rooted, true);
+  // The edit backstop on a page with no application: a job-alert box.
+  const t = memoryStorage();
+  const box = node("input", { type: "text", id: "em", value: "jane@contoso.com" });
+  const b = loadAnswers(node("div", {}, [node("label", { for: "em" }, ["Email"]), box]), t, { noRoot: true });
+  for (const fn of b._listeners.input) fn({ composedPath: () => [box] });
+  const rec = JSON.parse(t.getItem(KEY));
+  check("…an answer only the backstop kept, on a page with no form, does not",
+        [!!rec, rec && rec.rooted], [true, false]);
 }
 
 /* ------------------------------------ shared/jobposting.js: any job page
@@ -1783,6 +1862,81 @@ console.log("\ngeneric.js: a wizard's last step, which shows the answers as text
   const c = loadGeneric([node("h1", {}, ["Senior AI Engineer (170001)"]), apply],
                         "https://career2.successfactors.eu/careers?company=SF1001");
   check("a job page's 'Apply' (no apply address): still not an application", c.isCompletion(apply), false);
+}
+
+console.log("\ngeneric.js: a later step at an address that never says 'apply' (SmartRecruiters, 30 Sep 2026)");
+{
+  // A LinkedIn → SmartRecruiters apply, read live before its submit
+  // (placeholder names). Step 1 had the resume's file input, so rule 3 found
+  // it and its 26 answers were swept. Step 2, the screening questions, has
+  // no <form>, no file input, and an address ending /screening: no rule
+  // found it, and its web-component "Submit" (a slotted label, read right)
+  // was turned down with "no application form found on this page". What
+  // says it is the application is the visit itself: the answers store holds
+  // this form's key, marked by a sweep that found its root.
+  const SR = "https://jobs.smartrecruiters.com/oneclick-ui/company/Contoso/publication/" +
+             "7c1e5a90-2b4d-4f6e-9a3b-0d5e8f1c2a47/screening";
+  const FORM_KEY = "jobs.smartrecruiters.com/7c1e5a90-2b4d-4f6e-9a3b-0d5e8f1c2a47";
+  const splButton = (label) => {
+    const inner = node("button", { type: "button" }, [node("slot")]);
+    return [attachShadow(node("spl-button", {}, [label]), [inner]), inner];
+  };
+  const page = (extra = []) => {
+    const [backHost, back] = splButton("Back");
+    const [submitHost, submit] = splButton("Submit");
+    const questions = attachShadow(node("sr-screening-questions-form"), [
+      node("input", { type: "text", id: "q1", role: "combobox" }),
+      node("textarea", { id: "q2" }), node("textarea", { id: "q3" })]);
+    const step = node("div", {}, [
+      questions, node("spl-checkbox", {}, [node("input", { type: "checkbox", id: "consent" })]),
+      node("div", { class: "nav" }, [backHost, submitHost])]);
+    return { kids: [...extra, node("main", {}, [step])], step, back, submit };
+  };
+  const store = (rec) => {
+    const s = memoryStorage();
+    if (rec) s.setItem("__tracker_form_answers", JSON.stringify(rec));
+    return s;
+  };
+  const earlier = { "first name#0": { question: "First name", answer: "Jane", type: "text", i: 0 } };
+  const at = (rec, extra) => { const p = page(extra); return [p, loadGeneric(p.kids, SR, "", store(rec))]; };
+
+  const [p0, a0] = at(null);
+  check("the step's own key is the publication's, the one step 1 kept its answers under",
+        a0.answerFormKey(), FORM_KEY);
+  check("with nothing from an earlier step: no root, and the Submit is the live near miss",
+        [a0.answerFormRoot() === null, a0.isCompletion(p0.submit), a0.nearMiss(p0.submit)],
+        [true, false, "no application form found on this page"]);
+  const [p1, a1] = at({ key: FORM_KEY, at: Date.now() - 6 * 60_000, items: earlier, rooted: true });
+  check("continuing a form an earlier step's sweep found: the step is the root",
+        a1.answerFormRoot() === p1.step, true);
+  check("…its Submit sends the application, with no near miss, and Back does not",
+        [a1.isCompletion(p1.submit), a1.nearMiss(p1.submit), a1.isCompletion(p1.back)], [true, null, false]);
+  // Never on the word of a store alone.
+  const refused = [
+    ["answers only the backstop kept (a box typed into, no form found)",
+     { key: FORM_KEY, at: Date.now(), items: earlier, rooted: false }],
+    ["another form's answers", { key: "jobs.smartrecruiters.com/6000000001200727", at: Date.now(),
+                                 items: earlier, rooted: true }],
+    ["answers past the store's two hours", { key: FORM_KEY, at: Date.now() - 3 * 3600_000,
+                                             items: earlier, rooted: true }],
+    ["an empty store", { key: FORM_KEY, at: Date.now(), items: {}, rooted: true }],
+  ];
+  for (const [why, rec] of refused) {
+    const [p, a] = at(rec);
+    check(`no root from ${why}`, [a.answerFormRoot() === null, a.isCompletion(p.submit)], [true, false]);
+  }
+  // A listing is never an application's later step: its own "Apply" only
+  // leaves for one (the P2 rule above).
+  const [p2, a2] = at({ key: FORM_KEY, at: Date.now(), items: earlier, rooted: true },
+                      [ld({ "@type": "JobPosting", title: "Senior AI Engineer" })]);
+  check("…nor on a page that publishes a JobPosting", [a2.answerFormRoot() === null, a2.isCompletion(p2.submit)],
+        [true, false]);
+  // A continuing form's last step may show its answers as text, with no
+  // controls at all: its Submit sends, as on an apply address.
+  const [submitHost, submit] = splButton("Submit");
+  const review = loadGeneric([node("div", {}, [node("p", {}, ["First name: Jane"])]), submitHost], SR, "",
+                             store({ key: FORM_KEY, at: Date.now(), items: earlier, rooted: true }));
+  check("…and a controlless last step of it sends too", review.isCompletion(submit), true);
 }
 
 console.log("\ngeneric.js getJob: a listing proposes its hiring system's id (P4)");

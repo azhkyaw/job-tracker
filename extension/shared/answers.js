@@ -59,24 +59,32 @@
     } catch (e) { return String(location.href); }
   };
 
-  function load() {
+  function loadRec() {
     try {
       const raw = sessionStorage.getItem(KEY);
-      if (!raw) return {};
+      if (!raw) return null;
       const rec = JSON.parse(raw);
-      if (rec.key !== formKey() || Date.now() - rec.at > MAX_AGE_MS) return {};
-      return rec.items || {};
-    } catch (e) { return {}; }
+      if (rec.key !== formKey() || Date.now() - rec.at > MAX_AGE_MS) return null;
+      return rec;
+    } catch (e) { return null; }
   }
 
+  // `rooted`: a sweep of THIS form found its root, on this page or an earlier
+  // one. adapters/generic.js reads it (formContinues): a later wizard step
+  // whose address never says "apply" and which has no file input
+  // (SmartRecruiters' /screening, 30 Sep 2026) continues a form found before.
+  // Answers the edit backstop kept on a page with no form never set it, so a
+  // job-alert box typed into does not make the next "Submit" an application.
   function save(items) {
     try {
       sessionStorage.setItem(KEY, JSON.stringify(
-        { key: formKey(), at: Date.now(), items }));
+        { key: formKey(), at: Date.now(), items, rooted }));
     } catch (e) { /* private mode / quota — in-memory still works this step */ }
   }
 
-  let items = load();     // "question_norm#occurrence" -> {question, answer, type, i}
+  const rec0 = loadRec();
+  let items = (rec0 && rec0.items) || {};  // "question_norm#occurrence" -> {question, answer, type, i}
+  let rooted = !!(rec0 && rec0.rooted);
   let seq = Object.keys(items).length;
   let key = formKey();
   let stats = null;       // per-sweep diagnostics, read by take()
@@ -89,6 +97,7 @@
     if (k === key) return;
     key = k;
     items = {};
+    rooted = false;
     seq = 0;
     stats = null;
   }
@@ -188,16 +197,26 @@
    * textContent's (a visually-hidden span still HAS rects — that is exactly
    * how it differs from a hidden one); and fall back to the raw text when
    * skipping leaves nothing, so a label whose only content is aria-hidden with
-   * no visually-hidden twin still resolves instead of coming back empty. */
+   * no visually-hidden twin still resolves instead of coming back empty.
+   *
+   * And it reads the FLAT tree, as assistive tech does: a shadow host's own
+   * shadow root rather than its light children, and a <slot>'s assigned
+   * nodes (or its fallback) rather than its empty self. A slot has no box of
+   * its own (display: contents), so the rects guard skips it. SmartRecruiters'
+   * screening step (30 Sep 2026) slots every question's words into its
+   * label: <label for><slot name="label"></slot>*</label>, read alone as "*",
+   * which keys as nothing, and every answer on the step was dropped. */
   function labelText(node) {
     if (!node) return "";
+    const kids = (n) => (n.tagName === "SLOT" && n.assignedNodes
+      ? n.assignedNodes({ flatten: true }) : (n.shadowRoot || n).childNodes);
     const walk = (n) => {
       let out = "";
-      for (const c of n.childNodes) {
+      for (const c of kids(n)) {
         if (c.nodeType === 3) { out += c.textContent; continue; }
         if (c.nodeType !== 1) continue;
         if (c.getAttribute("aria-hidden") === "true") continue;
-        if (c.getClientRects && c.getClientRects().length === 0) continue;
+        if (c.tagName !== "SLOT" && c.getClientRects && c.getClientRects().length === 0) continue;
         out += " " + walk(c);
       }
       return out;
@@ -257,11 +276,11 @@
     return null;
   }
 
-  function collect(root, out) {
+  function collect(root, out, sel = "input,select,textarea") {
     if (!root || !root.querySelectorAll) return out;
-    for (const el of root.querySelectorAll("input,select,textarea")) out.push(el);
+    for (const el of root.querySelectorAll(sel)) out.push(el);
     for (const el of root.querySelectorAll("*")) {
-      if (el.shadowRoot) collect(el.shadowRoot, out);   // open roots only
+      if (el.shadowRoot) collect(el.shadowRoot, out, sel);   // open roots only
     }
     return out;
   }
@@ -432,6 +451,45 @@
     let row = null;
     for (let n = el.parentElement; n && !theirs.has(n); n = n.parentElement) row = n;
     return (row && labelText(row)) || null;
+  }
+
+  /* Controls the page DRAWS: role="radio", "checkbox" or "switch" on an
+   * element with no native control in it or in its shadow root, its state in
+   * aria-checked. SmartRecruiters' screening step (read live 30 Sep 2026) asks
+   * its Yes/No questions so: <spl-radio role="radio" aria-checked
+   * label="Yes">, slotted into the <fieldset role="radiogroup"
+   * aria-labelledby> inside <spl-radio-group>. collect() takes native
+   * controls only, so both visa questions on that step were invisible. An
+   * ARIA wrapper AROUND a native input (the rebuilt Easy Apply's) is not one:
+   * its input answers, and labelFor() reads the wrapper for its name. */
+  const DRAWN = "[role='radio'],[role='checkbox'],[role='switch']";
+  function drawn(root) {
+    return collect(root, [], DRAWN).filter((el) => el.tagName !== "INPUT" &&
+      !collect(el, []).length && !(el.shadowRoot && collect(el.shadowRoot, []).length));
+  }
+
+  // The parent in the FLAT tree: a slotted element's slot, else its parent,
+  // else the host of the shadow root it tops. A drawn radio's group is its
+  // ancestor there, not in the light DOM, where the group is a host whose
+  // fieldset the radio is slotted into.
+  const flatParent = (n) => n.assignedSlot || n.parentElement ||
+    ((n.getRootNode && n.getRootNode()) || {}).host || null;
+  function flatClosest(el, sel) {
+    for (let x = flatParent(el); x; x = flatParent(x)) if (x.matches && x.matches(sel)) return x;
+    return null;
+  }
+
+  /* A drawn radio group's question and answer. The question is the group's
+   * own name, else its legend, else the block before it. The answer is the
+   * checked option's shown text, else its own name, and never the question
+   * itself: an option named only by its group's question is the artefact of
+   * 25-29 Sep 2026, the question stored as its own answer. */
+  function drawnGroup(group, members) {
+    const legend = group.querySelector && group.querySelector("legend");
+    const question = ariaName(group) || (legend && labelText(legend)) || precedingText(group) || null;
+    const on = members.find((m) => m.getAttribute("aria-checked") === "true");
+    const answer = on ? (labelText(on) || ariaName(on)) : null;
+    return { question, answer: answer && answer !== question ? answer : null };
   }
 
   // Placeholder options ("Select an option") are the absence of an answer, not
@@ -623,6 +681,7 @@
       bump({ noRoot: 1, hint: noRootHint() });
       return;
     }
+    rooted = true;
 
     const controls = collect(root, []);
     const radioGroups = new Map();     // name -> its member inputs, in order
@@ -638,7 +697,7 @@
       return i;
     };
     const seen = { controls: controls.length, kept: 0, disabled: 0,
-                   noLabel: 0, noValue: 0, textarea: 0 };
+                   noLabel: 0, noValue: 0, textarea: 0, drawn: 0 };
 
     for (const el of controls) {
       if (el.tagName === "TEXTAREA") seen.textarea++;
@@ -668,6 +727,31 @@
       const g = radioGroup(members);
       if (g.question && g.answer) {
         record(g.question, g.answer, "radio", next(g.question));
+        seen.kept++;
+      }
+    }
+    // Drawn controls (drawn(), above): a radio read with its group, a
+    // checkbox or switch on its own, answering as a native checkbox does.
+    const drawnGroups = new Map();     // group element -> its drawn radios
+    for (const el of drawn(root)) {
+      seen.drawn++;
+      if (el.getAttribute("aria-disabled") === "true") { seen.disabled++; continue; }
+      if (el.getAttribute("role") === "radio") {
+        const g = flatClosest(el, "[role='radiogroup'],fieldset") || flatParent(el);
+        if (!g) continue;
+        if (!drawnGroups.has(g)) drawnGroups.set(g, []);
+        drawnGroups.get(g).push(el);
+        continue;
+      }
+      const question = ariaName(el) || labelText(el) || null;
+      if (!question) { seen.noLabel++; continue; }
+      record(question, el.getAttribute("aria-checked") === "true" ? "Yes" : "No", "checkbox", next(question));
+      seen.kept++;
+    }
+    for (const [g, members] of drawnGroups) {
+      const r = drawnGroup(g, members);
+      if (r.question && r.answer) {
+        record(r.question, r.answer, "radio", next(r.question));
         seen.kept++;
       }
     }
@@ -782,6 +866,7 @@
         .sort((a, b) => a.i - b.i)
         .map(({ question, answer, type }) => ({ question, answer, type }));
       items = {};
+      rooted = false;
       seq = 0;
       stats = null;
       try { sessionStorage.removeItem(KEY); } catch (e) {}

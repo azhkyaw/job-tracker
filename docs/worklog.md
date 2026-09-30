@@ -1235,3 +1235,22 @@ the key to each real case.
    day, against 12 and 9 on 25 Sep). The other 26, including one "legally
    authorized to work in Singapore", keep the question with the broken
    answer.
+
+43. **An ATS wizard's later step that nothing recognised** (30 Sep 2026,
+   extension 0.24.0). Asked, before submitting a LinkedIn → SmartRecruiters
+   apply, to make sure capture worked. Checked live with the extension's own
+   rules pasted into the page, nothing typed or sent. Step 1 had been swept
+   (26 answers in the tab's store, keyed by the publication id), but on
+   step 2, the screening questions, `applicationRoot()` found no root (no
+   `<form>`, no file input, an address ending `/screening`) and turned the
+   Submit down. Two more gaps sat behind it: the Yes/No questions (work
+   authorisation, sponsorship) are `role="radio"` custom elements with no
+   `<input>`, and every question's label is slotted, so it read as `*`. The
+   author chose to hold the submit for a fix. Three rules
+   (`.claude/rules/extension.md`): a later step of a form an earlier sweep
+   found (the store's new `rooted` mark), drawn ARIA controls, and
+   flat-tree labels. 16 new extension checks (349), red on the old code
+   with the live signature (the step swept nothing), and all nine suites
+   green. The submit came from a second tab that LinkedIn's Apply opened at
+   12:04, so the new code swept step 1 afresh. It stored 37 answers, the
+   visa radios and the slotted questions among them.

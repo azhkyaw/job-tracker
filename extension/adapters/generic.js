@@ -87,6 +87,32 @@
     /career_ns=job_application/i.test(loc.search || "");
   const rendered = (el) => !el.getClientRects || el.getClientRects().length > 0;
 
+  /* A later step of a form this visit already found. SmartRecruiters' apply
+   * (read live 30 Sep 2026) keeps its resume on step 1, where rule 3 found
+   * the form, and asks its screening questions on step 2, at an address
+   * ending /screening with no <form> and no file input: nothing said
+   * "application" there, and its Submit was turned down. What does say so is
+   * the visit: shared/answers.js keeps the form's answers in this tab's
+   * sessionStorage under the form's key (answerFormKey, here the publication
+   * id both steps share), marked `rooted` by a sweep that found the form's
+   * root. Answers its edit backstop kept on a page with no form never carry
+   * the mark, and the store lasts as long as answers.js keeps it. */
+  const ANSWERS_KEY = "__tracker_form_answers";
+  const ANSWERS_MAX_AGE_MS = 2 * 60 * 60 * 1000;     // answers.js:MAX_AGE_MS
+  function formContinues(doc, loc) {
+    try {
+      const rec = JSON.parse(sessionStorage.getItem(ANSWERS_KEY) || "null");
+      if (!rec || !rec.rooted || !Object.keys(rec.items || {}).length) return false;
+      if (!(Date.now() - rec.at <= ANSWERS_MAX_AGE_MS)) return false;
+      const id = J.pageId(doc, loc, hints());
+      return rec.key === (id ? id.platform_job_id : loc.href);
+    } catch (e) { return false; }     // no storage: a test, or storage blocked
+  }
+  // An application's flow: its address says so, or the page continues a form
+  // found on an earlier step, unless it is a LISTING, whose own "Apply" only
+  // leaves for one (rule 3's P2 guard, below).
+  const inFlow = (doc, loc) => applyFlowAt(loc) || (!J.hasPosting(doc) && formContinues(doc, loc));
+
   // The employer an earlier page of this visit named in its address
   // (SuccessFactors' `?company=`), kept in the hiring system's OWN
   // sessionStorage for the pages whose address has lost it: the form after a
@@ -110,10 +136,11 @@
    *  2. a <form> with the fields of an application and a control inside it
    *     that says it sends one (SuccessFactors, whose address cannot be
    *     trusted — see below);
-   *  3. on a page with a file input or an apply-flow address, the nearest
+   *  3. on a page with a file input or in an application's flow (inFlow:
+   *     its address, or a later step of a form found before), the nearest
    *     container of every VISIBLE answerable control (Ashby's
    *     `ashby-job-posting-right-pane`: all 21 visible controls; a Workday
-   *     wizard step). */
+   *     wizard step; SmartRecruiters' screening step). */
   function applicationRoot(doc, loc) {
     const all = controlsIn(doc);
     if (all.length < 2) return null;
@@ -143,7 +170,7 @@
     // your CV", 28 Sep 2026) would otherwise become an "application" whose
     // root holds the page's own <a role=button>Apply now</a>, and the click
     // that only LEAVES for the application would file one.
-    if (!applyFlowAt(loc) && (!files.length || J.hasPosting(doc))) return null;
+    if (!inFlow(doc, loc) && (!files.length || J.hasPosting(doc))) return null;
     // The controls a person can SEE decide the container. Measured live on
     // Ashby: 21 controls sit in its form pane and the 22nd is reCAPTCHA's
     // hidden response field, portalled to <body> — counting it made the whole
@@ -201,9 +228,10 @@
    * that says it is the application, a page with no root and no password
    * field IN VIEW is that step. A sign-in on the same address shows its
    * password and stays refused; one left in the DOM, closed, does not count.
-   * Earlier steps' answers are already in answers.js's store. */
+   * Earlier steps' answers are already in answers.js's store. A later step of
+   * a form found before (inFlow) counts as the flow too. */
   function reviewStep(doc, loc) {
-    if (!applyFlowAt(loc)) return false;
+    if (!inFlow(doc, loc)) return false;
     return !passwordsIn(doc).some(rendered);
   }
 

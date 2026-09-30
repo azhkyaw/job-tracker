@@ -963,6 +963,49 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
     the applied instant restored after it); the country and the resume file
     were not guessed.
 
+- **An ATS wizard's later step had no root, and its web-component questions
+  read as nothing** (30 Sep 2026, a LinkedIn → SmartRecruiters apply checked
+  live BEFORE its submit; extension 0.24.0).
+  - **Step 1 worked by luck:** its resume upload is a file input, and rule 3
+    roots any page that holds one and is not a listing, so its 26 answers
+    were swept. Step 2 (`…/publication/<UUID>/screening`) has no `<form>`,
+    no file input and no "apply" in its address: `applicationRoot()` found
+    nothing, and the Submit (whose slotted label read right) was turned down
+    with "no application form found on this page".
+  - **Its Yes/No questions had no native control:** `<spl-radio
+    role="radio" aria-checked label="Yes">`, slotted into the `<fieldset
+    role="radiogroup" aria-labelledby>` inside `<spl-radio-group>`'s shadow
+    root. `collect()` takes `input, select, textarea` only, so both visa
+    questions (authorised to work, sponsorship) were invisible even with a
+    root.
+  - **Every label was slotted:** `<spl-textarea>`'s own `<label for>` holds
+    `<slot name="label">` and a `*`. Read as `*`, it keys as nothing, and
+    `record()` drops the row without a trace. The years combobox resolved to
+    no label at all.
+  - **Fixed as three rules:**
+    - `generic.js:formContinues()`: a page that is not a listing, whose
+      answers store holds THIS form's key marked `rooted` (a sweep found
+      the root on an earlier step), continues that form. `inFlow` feeds
+      rule 3 and `reviewStep`. The mark is what keeps the edit backstop's
+      answers (a job-alert box typed into) from making the next "Submit"
+      an application.
+    - `answers.js:drawn()`: role `radio`/`checkbox`/`switch` with no native
+      control inside, its state in `aria-checked`. A radio is read with its
+      group, found up the FLAT tree (`assignedSlot`), and an option named
+      only by the question is never its answer.
+    - `answers.js:labelText()` reads the flat tree: a host's shadow root, a
+      slot's assigned nodes. A slot has no box (`display: contents`), so it
+      skips the rects guard.
+  - **How it was found:** the rules pasted into `javascript_tool` against
+    the live page (Procedures), each new rule run there before any code was
+    written. The tests are red on the old code with the live signature: the
+    step sweeps `[]`.
+  - **Verified on the real submit:** 37 answers, the drawn radios as
+    Yes/No, the slotted questions whole, `drawn: 4` on the sweep line.
+  - **Once, across the upgrade:** a store written before 0.24.0 carries no
+    mark, so a form in flight continues only after an earlier step is swept
+    again by the new code.
+
 ## Known-untested surfaces (verify on first real contact)
 
 - **Extension DOM selectors** (`extension/adapters/*.js`) — best-effort against
@@ -1337,3 +1380,12 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   file uploaded, with no "Resume/CV*" row among the answers. A combobox
   answer that reads as a label or a placeholder means `shownChoice` climbed
   into the wrong container.
+- **Continuing a form, drawn controls and flat-tree labels (0.24.0, 30 Sep
+  2026) have met ONE real submit**, a SmartRecruiters screening step, where
+  drawn radios, slotted labels and the continued form all read right. Drawn
+  checkboxes and switches are modelled in tests only. Flat-tree reading
+  changes every label a sweep reads: a label holding a shadow host now reads
+  what the host renders, not its light children. No such label had been
+  seen, and the suite's labels read as before. What to read on the next ATS
+  wizard whose later step has no file input: the sweep line's `drawn`
+  count, and that step's answers on the record.
