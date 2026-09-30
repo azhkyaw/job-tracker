@@ -298,7 +298,7 @@ which makes this the hard part.
 
 | Shape | Vendors | Mechanism |
 |---|---|---|
-| Apply page on the same site, same tab | Lever, Ashby, Workable, Personio, Workday | The existing keyed stash (`background.js:stashPendingJob`), keyed on the id in the URL. **SmartRecruiters is the exception**: its apply-page UUID is not the job URL's id, so its key must come from the listing, which contains both |
+| Apply page on the same site, same tab | Lever, Ashby, Workable, Personio, Workday | The existing keyed stash (`background.js:stashPendingJob`), keyed on the id in the URL. **SmartRecruiters is the exception**: its apply-page UUID is not the job URL's id, so its key must come from the listing, which contains both. Since 0.24.1 (30 Sep 2026) the handoff learns the form's id as the same job's second one, from the form page's referrer (`jobposting.js:learnsAlias`) |
 | Different site, same tab | SuccessFactors → career{N}, Phenom → Workday, Careers@Gov → an agency's ATS | A **declared handoff** (below) |
 | New tab | LinkedIn "Apply on company website"; any listing link with `target=_blank` | **`sender.tab.openerTabId`** (below) |
 

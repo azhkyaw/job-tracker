@@ -70,7 +70,7 @@ and design records; the code and `migrations/` win where they disagree.
   uv-managed Python, the Neon dev DB.
 - `docs/monetization.md` — superseded, retained for its Gmail
   restricted-scope compliance analysis.
-- `docs/worklog.md` — the dated task register (tasks 1-43 with their
+- `docs/worklog.md` — the dated task register (tasks 1-44 with their
   measurements); what is still open is summarised under "Open work" below.
 
 **Path-scoped rules.** Dated case history that only matters when touching
@@ -723,7 +723,8 @@ Detail lives with each family's rule file; this is the index.
   on the input itself) was measured on a live wizard and discarded, never
   submitted; 0.24.0's drawn checkboxes and switches are modelled in tests
   only (its drawn radios, flat-tree labels and continued form met one real
-  SmartRecruiters submit).
+  SmartRecruiters submit); 0.24.1's handoff learning a job's second id has
+  run only against tests.
 - **Mail** (`.claude/rules/mail-ingest.md`): IMAP verified on a real inbox
   28 Jul 2026; the web IMAP connect form, Gmail web OAuth and the full `-m 12`
   window are not.
@@ -739,7 +740,7 @@ Detail lives with each family's rule file; this is the index.
 
 ## Open work (as of 30 Sep 2026)
 
-The dated register behind each item, tasks 1-43 with their measurements, is
+The dated register behind each item, tasks 1-44 with their measurements, is
 `docs/worklog.md`; read the matching entry before acting on one.
 
 - **Follow-up drafting** on an age-capped queue: cap `/follow-ups` near 21
@@ -749,7 +750,7 @@ The dated register behind each item, tasks 1-43 with their measurements, is
   queue as the author confirms them. Four `follow_up_sent` are on record: one filed
   by hand, three recovered from follow-ups the user EMAILED, which since
   migration 016 file themselves (task 16). (worklog task 4)
-- **Extension, next real Easy Apply:** verify the current build (0.24.0 on
+- **Extension, next real Easy Apply:** verify the current build (0.24.1 on
   30 Sep) is live on BOTH machines and the tab was opened after the
   reload; read `doc_source` and the sweep line, and check that the radio
   rows read Yes/No, not the question (task 42). JobStreet still owes one
@@ -800,7 +801,10 @@ The dated register behind each item, tasks 1-43 with their measurements, is
   the author's choice (task 41). The fourth (LinkedIn → SmartRecruiters,
   30 Sep) was checked live before its submit: its screening step had no
   root, radios with no `<input>` and slotted labels, all fixed in 0.24.0
-  and read right by the submit (task 43).
+  and read right by the submit (task 43). It was still filed twice: the
+  handoff held the listing's id and the form sent its own; 0.24.1 learns
+  the second id from the form's referrer, and the twins were merged
+  (task 44).
   Open: the first real apply through each piece.
 - **Release blockers:** LICENSE (Apache-2.0 recommended), split the extension
   into its own repo, decide whether CLAUDE.md ships; `audit_names.py --history`

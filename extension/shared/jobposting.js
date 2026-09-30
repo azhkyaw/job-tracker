@@ -840,10 +840,33 @@
 
   /* Does a submit belong to its tab's handoff? The same hiring system's host,
    * and, when both sides know it, the same job id on it: a tab that went on
-   * to another job's form must not file that job onto the listing. */
+   * to another job's form must not file that job onto the listing. An id the
+   * binding LEARNED (learnsAlias, below) fits only when the submit's page
+   * title is the bound job's too, since that id came from where the page was
+   * reached from, not from the listing itself. */
+  const knowsId = (b, id) => !!id && (b.atsJobId === id || (b.aliases || []).includes(id));
+
   function handoffFits(binding, page) {
     if (!binding || !binding.job || binding.host !== page.host) return false;
-    return !binding.atsJobId || !page.atsJobId || binding.atsJobId === page.atsJobId;
+    if (!binding.atsJobId || !page.atsJobId || binding.atsJobId === page.atsJobId) return true;
+    return (binding.aliases || []).includes(page.atsJobId) &&
+      !!page.title && sameJob(binding.job.title, page.title);
+  }
+
+  /* One job, two ids on one host. SmartRecruiters' listing is
+   * /<Co>/<number>-<slug> and its form /oneclick-ui/…/publication/<UUID>
+   * (docs/career-sites.md §4.2), so the binding the listing made held the
+   * number and the form's submit sent the UUID. handoffFits read that as
+   * another job's form, and a real LinkedIn → SmartRecruiters apply was filed
+   * twice (30 Sep 2026). The form page's referrer names the listing (measured
+   * live: its full address, no referrer policy on the site), so a page on the
+   * binding's host, reached from a page whose id the binding knows, that is
+   * NOT itself a listing, is the same job under its second id. A listing is
+   * excluded because a similar job's listing, reached the same way, is
+   * another job. */
+  function learnsAlias(b, page) {
+    return !!(b && b.job && page && b.host === page.host && b.atsJobId && page.atsJobId &&
+      !page.listing && !knowsId(b, page.atsJobId) && knowsId(b, page.fromId));
   }
 
   /* The site an "Always capture on this site" click enables: one host, both
@@ -884,7 +907,7 @@
   // rule exists once; `window` in a page, where the two are the same object.
   (typeof window !== "undefined" ? window : self).__trackerJobPosting =
     { read, idFrom, pageId, tenantOf, atsHandoff, atsCandidates, hasPosting, siteOwner, pickDeparture,
-      handoffFits, quickApplies, quickApplySent, atsOfUrl, vendorOf, htmlToText, sameJob,
+      handoffFits, learnsAlias, knowsId, quickApplies, quickApplySent, atsOfUrl, vendorOf, htmlToText, sameJob,
       pickListed, siteOf, APPLY_SEGMENTS,
       matchPatternRegex, stripRequisition, suggestCompany };
 })();

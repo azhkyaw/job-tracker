@@ -1340,6 +1340,39 @@ console.log("\njobposting.js: the handoff from a listing to its hiring system (P
         [J.handoffFits(b, { host: "career10.successfactors.com", atsJobId: null }), J.handoffFits(null, { host: b.host })],
         [false, false]);
 
+  // One job, two ids on one host (SmartRecruiters, 30 Sep 2026): the listing
+  // is …/744000100000042 and its form the publication UUID. The live submit's
+  // binding held the first, the form sent the second, the binding was refused
+  // and the job was filed twice. The form page was reached FROM the listing
+  // (its referrer, measured live) and is no listing itself.
+  const SRH = "jobs.smartrecruiters.com";
+  const LISTING = `${SRH}/744000100000042`, FORM = `${SRH}/7c1e5a90-2b4d-4f6e-9a3b-0d5e8f1c2a47`;
+  const sr = { job: { title: "GenAI Engineer" }, host: SRH, atsJobId: LISTING };
+  const formPage = { host: SRH, atsJobId: FORM, fromId: LISTING, listing: false };
+  check("the live submit, refused: the form's own id against the listing's",
+        J.handoffFits(sr, { host: SRH, atsJobId: FORM, title: "GenAI Engineer" }), false);
+  check("learnsAlias: a form reached from the bound listing is the same job under a second id",
+        J.learnsAlias(sr, formPage), true);
+  check("…not a LISTING reached from it: a similar job's page is another job",
+        J.learnsAlias(sr, { ...formPage, listing: true }), false);
+  check("…not a page reached from a page the binding does not know, or from nowhere",
+        [J.learnsAlias(sr, { ...formPage, fromId: `${SRH}/744000100000099` }),
+         J.learnsAlias(sr, { ...formPage, fromId: null })], [false, false]);
+  check("…not on another host, not an id it already knows, not with no binding",
+        [J.learnsAlias(sr, { ...formPage, host: "jobs.lever.co" }),
+         J.learnsAlias(sr, { ...formPage, atsJobId: LISTING }), J.learnsAlias(null, formPage)],
+        [false, false, false]);
+  const learned = { ...sr, aliases: [FORM] };
+  check("handoffFits: the learned id fits when the form's title is the job's",
+        J.handoffFits(learned, { host: SRH, atsJobId: FORM, title: "GenAI Engineer" }), true);
+  check("…and not under another title, or none: an alias fits only where the title agrees",
+        [J.handoffFits(learned, { host: SRH, atsJobId: FORM, title: "Senior Data Engineer" }),
+         J.handoffFits(learned, { host: SRH, atsJobId: FORM, title: null })], [false, false]);
+  check("…a third id still refuses, and the listing's own id still fits with no title",
+        [J.handoffFits(learned, { host: SRH, atsJobId: `${SRH}/0badf00d-0000-4000-8000-000000000000`,
+                                  title: "GenAI Engineer" }),
+         J.handoffFits(learned, { host: SRH, atsJobId: LISTING })], [false, true]);
+
   // atsCandidates (P4): what a listing BELIEVES its hiring system holds, for
   // the server to look up and never store.
   const h = { atsHost: "career2.successfactors.eu", tenant: "litwarebk" };
@@ -1903,6 +1936,16 @@ console.log("\ngeneric.js: a later step at an address that never says 'apply' (S
   const [p0, a0] = at(null);
   check("the step's own key is the publication's, the one step 1 kept its answers under",
         a0.answerFormKey(), FORM_KEY);
+  // Where the form was reached from, for the handoff to learn its second id
+  // (jobposting.js:learnsAlias): the referrer, measured live as the listing's
+  // full address, and only on this host.
+  const came = (referrer) => a0.arrivedFrom && a0.arrivedFrom({ referrer }, makeLoc(SR));
+  check("arrivedFrom: the listing the form was reached from, by its own id",
+        came("https://jobs.smartrecruiters.com/Contoso/744000100000042-genai-engineer"),
+        "jobs.smartrecruiters.com/744000100000042");
+  check("…nothing from another host, from no referrer, or from a page with no id",
+        [came("https://www.linkedin.com/"), came(""), came("https://jobs.smartrecruiters.com/Contoso")],
+        [null, null, null]);
   check("with nothing from an earlier step: no root, and the Submit is the live near miss",
         [a0.answerFormRoot() === null, a0.isCompletion(p0.submit), a0.nearMiss(p0.submit)],
         [true, false, "no application form found on this page"]);

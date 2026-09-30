@@ -265,7 +265,7 @@ async function takeExternal(openerTabId, ownTabId, title, page) {
   // does the checking (jobposting.js:handoffFits).
   if (page && ownTabId != null) {
     const b = (await _handoffs())[ownTabId];
-    if (J.handoffFits(b, page)) return { job: b.job, via: `${b.via}+handoff`, candidates: 1 };
+    if (J.handoffFits(b, { ...page, title })) return { job: b.job, via: `${b.via}+handoff`, candidates: 1 };
   }
   const all = await _externalJobs();
   const lists = [["opener", openerTabId], ["tab", ownTabId]]
@@ -309,6 +309,14 @@ async function claimHandoff(tabId, openerTabId, page) {
   const J = self.__trackerJobPosting;
   const [all, ext] = [await _handoffs(), await _externalJobs()];
   const cur = all[tabId];
+  // The same job under a second id, on a page reached from one the binding
+  // knows (a SmartRecruiters listing's form, 30 Sep 2026): learned, and the
+  // binding otherwise left as it was (jobposting.js:learnsAlias).
+  if (J.learnsAlias(cur, page)) {
+    cur.aliases = [...(cur.aliases || []), page.atsJobId];
+    await setLocal({ handoffs: all });
+    return;
+  }
   const pick = J.pickDeparture(openerTabId != null ? ext[openerTabId] : null,
                                ext[tabId], page, Date.now());
   if (pick) {
@@ -318,9 +326,10 @@ async function claimHandoff(tabId, openerTabId, page) {
     // listing. Its binding stays the first job's, and handoffFits keeps the
     // second job's submit off it.
     if (same && cur.host === page.host && cur.atsJobId && page.atsJobId &&
-        cur.atsJobId !== page.atsJobId) return;
+        !J.knowsId(cur, page.atsJobId)) return;
     all[tabId] = { at: Date.now(), job: pick.entry.job, via: pick.via, host: page.host,
-                   atsJobId: page.atsJobId || (same ? cur.atsJobId : null) || null };
+                   atsJobId: (same && cur.atsJobId) || page.atsJobId || null,
+                   ...(same && cur.aliases ? { aliases: cur.aliases } : {}) };
   } else if (cur && cur.host === page.host && page.atsJobId && !cur.atsJobId) {
     cur.atsJobId = page.atsJobId;      // a later page of the visit shows the job's id
   } else {

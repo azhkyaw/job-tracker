@@ -128,6 +128,18 @@
   }
   const hints = () => ({ tenant: tenantHint() });
 
+  // The job id of the page this one was reached from, on THIS host only: the
+  // referrer. SmartRecruiters' form page names its listing so (measured live
+  // 30 Sep 2026), and the listing's id is the one the handoff holds. An
+  // address with no id of its own (a board's index) names nothing.
+  function arrivedFrom(doc, loc) {
+    let r;
+    try { r = new URL(doc.referrer); } catch (e) { return null; }
+    if (r.hostname.toLowerCase() !== String(loc.hostname || "").toLowerCase()) return null;
+    const id = J.idFrom(r.href);
+    return id && id.by !== "path" ? id.platform_job_id : null;
+  }
+
   /* The element holding the application's answerable controls, or null when
    * this page has none. Never a container that also holds a password field:
    * that is a candidate sign-in, and its username is not an answer. In order:
@@ -354,6 +366,7 @@
     },
     // Pure forms of the rules, for tests/test_extension.js.
     applicationRoot,
+    arrivedFrom,
     isSubmitControl,
     quickApplyStart,
     label,
@@ -434,12 +447,16 @@
    * heading shows it. Only on a hiring system's own host. */
   function claimHandoff() {
     if (!J.atsOfUrl(location.href) || window !== window.top) return;
-    let atsJobId = null;
+    let atsJobId = null, fromId = null, listing = false;
     try { atsJobId = adapter.atsJobId(); } catch (e) { atsJobId = null; }
+    // Where this page was reached from, and whether it is a listing: how the
+    // worker tells a job's second id from another job's (learnsAlias).
+    try { fromId = arrivedFrom(document, location); } catch (e) { fromId = null; }
+    try { listing = J.hasPosting(document); } catch (e) { listing = false; }
     try {
       chrome.runtime.sendMessage({ type: "tracker-claim-handoff", page: {
         host: location.hostname.toLowerCase(), vendor: J.atsOfUrl(location.href),
-        tenant: tenantHint(), atsJobId } }).catch(() => {});
+        tenant: tenantHint(), atsJobId, fromId, listing } }).catch(() => {});
     } catch (e) { /* no extension context: a test, or a reloaded extension */ }
   }
   if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id) claimHandoff();

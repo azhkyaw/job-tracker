@@ -1254,3 +1254,29 @@ the key to each real case.
    green. The submit came from a second tab that LinkedIn's Apply opened at
    12:04, so the new code swept step 1 afresh. It stored 37 answers, the
    visa radios and the slotted questions among them.
+
+44. **The same apply, filed twice** (30 Sep 2026, extension 0.24.1). The
+   submit captured all 37 answers but filed under the SmartRecruiters
+   listing's identity, and the LinkedIn popover, answered 15 s later, filed
+   the board's record. The provenance buffer said why. The handoff, bound
+   through the opener at the tab's first page, held the listing's number,
+   while the form sent its publication UUID, and `handoffFits` refuses two
+   differing ids as another job's form. The fallback then saw no opener tab
+   (`linked: "tab+title"`, `candidates: 1`), so the title matched only the
+   tab's own listing. Why Chrome gave no `openerTabId` at the submit is not
+   established. A prediction made before the submit, that the title
+   fallback would still link the record, rested on that unchecked opener
+   id. Repaired with the author's go-ahead, snapshot first
+   (`2026-09-30-smartrecruiters-linkedin-twins.json`), a dry run and every
+   precondition asserted: `merge_jobs` keeping the LinkedIn record (now two
+   postings, 37 answers, the form's ATS id), and the popover's duplicate
+   `applied` removed so the record keeps the submit's instant. The author
+   chose the mechanism fix, `learnsAlias`: a page reached, by its referrer,
+   from one the binding knows, and not a listing, is the same job under a
+   second id; an alias fits only where the submit's title agrees. The
+   referrer and the form's lack of a JobPosting were measured live before
+   building. 10 new extension checks (359), the live submit's refusal among
+   them, and all nine suites green. Offered and not chosen: task 37's
+   triage twin detector. This was the third board-plus-ATS twin in three
+   days (tasks 37, 41, 44). Seen, not acted on: step 1's upload is labelled
+   "Choose a file or drop it here", so `resume_file` stayed empty.

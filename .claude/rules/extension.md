@@ -1006,6 +1006,34 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
     mark, so a form in flight continues only after an earlier step is swept
     again by the new code.
 
+- **One job, two ids on one host: the handoff refused its own job, and the
+  apply was filed twice** (30 Sep 2026, the same apply; extension 0.24.1).
+  - **What happened:** SmartRecruiters' listing is `/<Co>/<number>-<slug>`
+    and its form `/oneclick-ui/…/publication/<UUID>`
+    (`docs/career-sites.md` §4.2; §7 had predicted it). The handoff bound
+    on the listing held the number, the submit sent the UUID, and
+    `handoffFits` read that as another job's form. The fallback then got no
+    `openerTabId` from Chrome at the submit (provenance `linked:
+    "tab+title"`, `candidates: 1`), though the tab's first page had one.
+    Why is NOT established. So the capture filed under the SmartRecruiters
+    listing, and the LinkedIn popover, answered 15 s later, filed the
+    board's twin.
+  - **Fixed as a rule:** `jobposting.js:learnsAlias()`. A page on the
+    binding's host, reached from a page whose id the binding knows (its
+    `document.referrer`, `generic.js:arrivedFrom`), that is not itself a
+    listing, is the same job under a second id; the worker adds it to the
+    binding's `aliases`. `handoffFits` accepts an alias only when the
+    submit page's title is the bound job's (`sameJob`).
+  - **Two guards, because a wrong alias is a silent wrong merge:** a
+    listing never becomes an alias (a similar job's listing is reached the
+    same way), and the title must agree at the submit.
+  - **Measured live before building:** the form's first page has
+    `document.referrer` = the listing's full address (no referrer policy
+    anywhere on the site), neither form route publishes a JobPosting, and
+    its `<h1>` is the job's title.
+  - **Repaired:** merged keeping the LinkedIn record, the popover's
+    `applied` removed (worklog task 44).
+
 ## Known-untested surfaces (verify on first real contact)
 
 - **Extension DOM selectors** (`extension/adapters/*.js`) — best-effort against
@@ -1389,3 +1417,11 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   seen, and the suite's labels read as before. What to read on the next ATS
   wizard whose later step has no file input: the sweep line's `drawn`
   count, and that step's answers on the record.
+- **The handoff's learned second id (0.24.1, 30 Sep 2026) has run only
+  against tests.** Its inputs were measured live (the referrer, no
+  JobPosting on the form); `background.js`'s `claimHandoff` wiring is not
+  tested. What to read on the next LinkedIn → SmartRecruiters apply: the
+  LevelDB's `handoffs[<tab>]` holds `aliases: ["<host>/<UUID>"]`, the
+  provenance line says `…+handoff`, and there is one record, not two, even
+  with the popover answered. No `aliases` means the form's page load
+  carried no referrer or read as a listing.
