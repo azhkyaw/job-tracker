@@ -595,6 +595,10 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   then close and **Discard** — never Save/Submit. Found and verified the
   shadow-root bug this way (3 Aug 2026) without a single real application
   created or harmed in the process.
+  **Open it from the job's own `/jobs/view/<id>/` page, not from the classic
+  search results** (30 Sep 2026): on the same job, the classic search pane
+  opened the old textbook modal and the job's page opened the current
+  `<dialog>` wizard. A probe run from search would have shown nothing wrong.
 - **`document.querySelector` never descends into a shadow root, open or
   closed — and LinkedIn wraps the ENTIRE Easy Apply modal in one when it's
   opened from the standalone `/jobs/view/<id>/` page, silently losing every
@@ -704,6 +708,48 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   <employer>" checkbox's new label — if it has lost its "to stay up to date"
   tail, `_CONTROL_NORM_RES`'s anchored rule misses it and a dead singleton row
   lands in the bank per employer.
+
+- **Then the wrapper went too, and every radio saved its question as its
+  answer for five days** (25-29 Sep 2026, found 30 Sep from one record the
+  author pointed at; extension 0.23.1).
+  - **What changed:** LinkedIn dropped the `<div role="radio">` wrapper and
+    put the `aria-label` on the native input itself. The input's
+    `<label for>` is still empty. On a Yes/No question every input's label
+    is the QUESTION, and "Yes"/"No" is a `<p>` in a sibling `<div>`. On the
+    resume picker each input's label is its FILENAME, as before.
+  - **Why it read wrong:** with no wrapper, `radioOption()` fell through to
+    `labelFor()`, which skips the empty `<label for>` and returns the
+    input's own `aria-label`. The question came from the `<p>` before the
+    group. The signature is exact: the question ends in `*`, and the answer
+    is the same text without it.
+  - **The damage:** 33 of 33 LinkedIn radio rows from 25 Sep on, across 16
+    applications, and 0 of the 114 captured before (2 Aug on). Eight were
+    sponsorship or work-authorisation questions (7 applications), which
+    `/analytics` then counts as "asked" rather than "needs".
+  - **Seen on 25 Sep and not traced:** `answers.py`'s sponsorship rule was
+    written that day to ignore "an answer that is the question's own text
+    (a capture artefact)". Designing around an artefact without finding its
+    cause cost four more days of answers.
+  - **Why the classic search page didn't show it:** the classic job search
+    still opens the textbook modal (`<fieldset>`, a real `<label for>`
+    "Yes"), which reads correctly. The standalone `/jobs/view/<id>/` page
+    opens the new one. LinkedIn's banner says classic search is being
+    retired, so assume the new layout.
+  - **Fixed as a rule, not a selector:** `radioGroup()` reads a group from
+    all its members at once. A name that EVERY member carries names the
+    group, so it becomes the question, and the answer is the checked
+    member's own row (its largest ancestor holding no other member). Names
+    that differ (filenames, and the Yes/No text of every earlier layout)
+    stay the options. Two resume cards live held the same file, so a
+    repeated name is not a shared one; only a name on every member is.
+  - **Proven** in `tests/test_extension.js`, whose fixture reproduces the
+    live markup and gives the real record's exact signature on the old
+    code. **Not yet seen through a real submit.** On the next Easy Apply,
+    check that the radio rows read Yes/No.
+  - **Where it was measured:** a live Easy Apply opened from the job's own
+    page, stepped through with Next, read with `javascript_tool`, then
+    closed with **Discard** (30 Sep). The tab froze at the questions step
+    (screenshots timed out), but the DOM probes still answered.
 
 - **A captcha's hidden response field reads as a question, and its token as
   the answer** (found 24 Sep 2026, before it cost anything).
@@ -983,10 +1029,17 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   leaks across the whole 178-row bank.
   **And the whole sweep was dead on the rebuilt `<dialog>` Easy Apply from
   about 18 Aug to 2 Sep 2026** — see the `<dialog>` gotcha. Extension 0.9.0's
-  wrapper-aware sweep is UNVERIFIED on a real apply. What to read on the next
-  Easy Apply, in the popup's "Recent form sweeps": a `N kept of M controls`
-  line instead of `no apply form found`, radio rows among the answers, and a
-  `resume_file` on the record — the three things that have been missing.
+  wrapper-aware sweep then worked on real applies: every LinkedIn radio row
+  captured 3-24 Sep reads Yes/No, and 35 of the 50 LinkedIn captures in that
+  window carry both answers and a `resume_file` (the rest include
+  LinkedIn → employer-site applies, whose form is not Easy Apply). That was
+  measured from the data on 30 Sep; which layout each row came from is not
+  on record.
+  **From 25 Sep the wrapper was gone, and every radio saved its question as
+  its answer** (the gotcha after the `<dialog>` one). 0.23.1's
+  `radioGroup()` is UNVERIFIED on a real submit: on the next Easy Apply,
+  the radio rows on the record must read Yes/No, not the question, and
+  `resume_file` must still be a bare filename.
 - **The whole capture-identity rescue chain — `tracker-whoami`/`isTopFrame`,
   the frame-0 ask, `jobFromUrl` off the tab URL, the TTL prune on read, the
   keyed-vs-guess ranking — is UNVERIFIED against a real apply** (built 18 and

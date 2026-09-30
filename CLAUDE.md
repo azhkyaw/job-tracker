@@ -70,7 +70,7 @@ and design records; the code and `migrations/` win where they disagree.
   uv-managed Python, the Neon dev DB.
 - `docs/monetization.md` — superseded, retained for its Gmail
   restricted-scope compliance analysis.
-- `docs/worklog.md` — the dated task register (tasks 1-38 with their
+- `docs/worklog.md` — the dated task register (tasks 1-42 with their
   measurements); what is still open is summarised under "Open work" below.
 
 **Path-scoped rules.** Dated case history that only matters when touching
@@ -718,7 +718,9 @@ Detail lives with each family's rule file; this is the index.
   evaluated in the page, never through a real submit; 0.23.0's Greenhouse
   job-board reading (a combobox's shown choice, a file field's name) was
   measured on the live page with the form EMPTY, so the picked-value shapes
-  are modelled, not seen.
+  are modelled, not seen; 0.23.1's `radioGroup()` (Easy Apply radios named
+  on the input itself) was measured on a live wizard and discarded, never
+  submitted.
 - **Mail** (`.claude/rules/mail-ingest.md`): IMAP verified on a real inbox
   28 Jul 2026; the web IMAP connect form, Gmail web OAuth and the full `-m 12`
   window are not.
@@ -732,9 +734,9 @@ Detail lives with each family's rule file; this is the index.
   detail page's "Heard nothing since?" (29 Sep, task 40), were rendered
   through TestClient against real data only, never looked at.
 
-## Open work (as of 29 Sep 2026)
+## Open work (as of 30 Sep 2026)
 
-The dated register behind each item, tasks 1-41 with their measurements, is
+The dated register behind each item, tasks 1-42 with their measurements, is
 `docs/worklog.md`; read the matching entry before acting on one.
 
 - **Follow-up drafting** on an age-capped queue: cap `/follow-ups` near 21
@@ -744,11 +746,11 @@ The dated register behind each item, tasks 1-41 with their measurements, is
   queue as the author confirms them. Four `follow_up_sent` are on record: one filed
   by hand, three recovered from follow-ups the user EMAILED, which since
   migration 016 file themselves (task 16). (worklog task 4)
-- **Extension, next real Easy Apply:** verify the current build (0.23.0 on
-  29 Sep) is live on BOTH machines and the tab was opened after the
-  reload; read `doc_source` and the sweep
-  line. JobStreet still owes one clean submit with the race fix and salary
-  capture together. (tasks 5, 18)
+- **Extension, next real Easy Apply:** verify the current build (0.23.1 on
+  30 Sep) is live on BOTH machines and the tab was opened after the
+  reload; read `doc_source` and the sweep line, and check that the radio
+  rows read Yes/No, not the question (task 42). JobStreet still owes one
+  clean submit with the race fix and salary capture together. (tasks 5, 18)
 - **Employer career sites** (`docs/career-sites.md`; phases A-C built
   24 Sep 2026, their history in worklog tasks 24-30). One live
   SuccessFactors submit has been captured (task 30). Still NOT run live: the

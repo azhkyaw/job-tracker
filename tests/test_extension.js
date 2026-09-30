@@ -651,6 +651,68 @@ console.log("\nanswers.js sweep: the rebuilt Easy Apply's control shapes (measur
         sweepOf(proper), [{ question: "Do you have a valid work pass?", answer: "Yes", type: "radio" }]);
 }
 
+console.log("\nanswers.js sweep: the name moved onto the input (in use by 25 Sep, measured live 30 Sep 2026)");
+{
+  // No role="radio" wrapper any more. The native input carries the aria-label
+  // itself, and on a Yes/No question that label is the QUESTION on every
+  // option, while "Yes"/"No" is a <p> in a sibling <div>. Its <label for> is
+  // still empty. Read one input at a time, the question came back as its own
+  // answer on every radio from 25 to 29 Sep.
+  const question = "Have you completed the following level of education: Bachelor's Degree?";
+  const option = (id, shown, on) => node("div", {}, [
+    node("div", {}, [
+      node("div", {}, [
+        node("input", { type: "radio", name: "radio-group-rr", id, "aria-label": question,
+                        ...(on ? { checked: true } : {}) }),
+        node("label", { for: id }),
+      ]),
+      node("div", {}, [node("p", {}, [shown])]),
+    ]),
+  ]);
+  const yesNo = (picked) => node("div", {}, [
+    node("p", {}, [question + "*"]),
+    node("fieldset", { role: "radiogroup", "aria-describedby": "error-message-rr" }, [
+      node("div", {}, [
+        option("rs", "Yes", picked === "Yes"),
+        option("rt", "No", picked === "No"),
+      ]),
+    ]),
+  ]);
+  check("Yes/No on the input: the label every option shares is the question, the row is the answer",
+        sweepOf(yesNo("Yes")), [{ question, answer: "Yes", type: "radio" }]);
+  check("Yes/No on the input: the other option", sweepOf(yesNo("No")),
+        [{ question, answer: "No", type: "radio" }]);
+  check("Yes/No on the input: nothing picked, nothing recorded", sweepOf(yesNo(null)), []);
+
+  // The resume picker on the same wizard: each input's aria-label is its
+  // FILENAME, and the card around it reads "PDF<file><date>". Two cards may
+  // hold the same file (they did, live), so one repeated name is not a shared
+  // one; only a name on EVERY member is.
+  const card = (id, file, day, on) => node("div", {}, [
+    node("div", {}, ["PDF"]),
+    node("div", {}, [node("p", {}, [file]), node("p", {}, [day])]),
+    node("div", {}, [
+      node("input", { type: "radio", name: "radio-group-r10", id, "aria-label": file,
+                      ...(on ? { checked: true } : {}) }),
+      node("label", { for: id }),
+    ]),
+  ]);
+  const resumeStep = node("div", {}, [
+    node("div", {}, [
+      node("p", {}, ["Resume*"]),
+      node("p", {}, ["Select or upload a resume in DOC, DOCX, or PDF format that is less than 2MB"]),
+    ]),
+    node("fieldset", { role: "radiogroup" }, [
+      card("c1", "Contoso-resume-AI-engineer.pdf", "9/29/2026", false),
+      card("c2", "Contoso-resume-AI-engineer.pdf", "9/29/2026", false),
+      card("c3", "Contoso-resume-dotnet-engineer.pdf", "9/28/2026", true),
+    ]),
+  ]);
+  check("resume card on the input: the filename stays the answer, not the card's text",
+        sweepOf(resumeStep),
+        [{ question: "Resume*", answer: "Contoso-resume-dotnet-engineer.pdf", type: "radio" }]);
+}
+
 console.log("\nanswers.js sweep: Greenhouse's job-board form (read live 29 Sep 2026)");
 {
   // Country: a react-select. Its <input role="combobox"> is emptied after a

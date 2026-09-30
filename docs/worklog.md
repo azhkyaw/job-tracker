@@ -1203,3 +1203,35 @@ the key to each real case.
    duplicate `applied` removed so the record keeps the real submit's time;
    snapshot `2026-09-29-greenhouse-linkedin-twins.json`. Offered and
    declined by the author: the popover capture sending that ATS id.
+
+42. **Every LinkedIn radio saved its question as its answer** (found 30 Sep
+   2026 from one record the author pointed at, extension 0.23.1). The record
+   read "Are you comfortable working in an onsite setting?*" answered "Are
+   you comfortable working in an onsite setting?". The dev DB showed the
+   extent: all 33 LinkedIn radio rows captured 25-29 Sep, across 16
+   applications, and none of the 114 before. The radio code had not changed
+   since 0.9.0 (2 Sep), so the cause was on LinkedIn's side. A live Easy
+   Apply (opened from the job's own page, read with `javascript_tool`,
+   closed with Discard) showed it. The `role="radio"` wrapper is gone and the
+   native input carries the `aria-label` itself: the QUESTION on every
+   Yes/No option, the FILENAME on each resume card. `radioOption()` fell
+   through to the input's own label. The classic search page still opens
+   the textbook modal, which reads correctly. Fixed as a rule over the whole
+   group (`answers.js:radioGroup()`): a name every member shares is the
+   question, and the answer is the checked member's row. Four new extension
+   checks (333 in all); on the old code the two Yes/No checks fail with the
+   record's exact signature. Eight of the 33 rows are sponsorship or
+   work-authorisation questions (7 applications), so those sit in
+   `/analytics`' "asked" bucket; the author's earlier answer to "require
+   sponsorship" was Yes 27 of 27 times. The artefact was seen on 25 Sep,
+   when the sponsorship rule was written to ignore it, and not traced.
+   LinkedIn's applied-job page shows only the resume, not the answers, so
+   the real answers cannot be read back from anywhere. Repaired by the
+   author's choice, snapshot first (`2026-09-30-radio-question-as-answer.json`,
+   all 33 rows): the 7 "require sponsorship" rows set to the Yes the author
+   stated, each UPDATE guarded on its old value. Those 7 applications moved
+   from "asked" to "needs", and the one LinkedIn rejected by its 72-hour
+   letter moved from a form screen to a sponsorship screen (14 and 10 on the
+   day, against 12 and 9 on 25 Sep). The other 26, including one "legally
+   authorized to work in Singapore", keep the question with the broken
+   answer.

@@ -32,7 +32,9 @@
  *     <label for> is EMPTY; labelFor() reads the wrapper the way assistive
  *     tech would, and radioOption()/radioQuestion() sort out which of the
  *     wrapper's name and its visible text is the question and which the answer
- *     — LinkedIn uses them both ways round on the same wizard.
+ *     — LinkedIn uses them both ways round on the same wizard. By 25 Sep the
+ *     wrapper was gone and the name sat on the input itself, still both ways
+ *     round; radioGroup() tells them apart by reading the whole group at once.
  *
  * The store is mirrored into sessionStorage so a step that reloads the modal
  * iframe doesn't reset it (same origin + same tab = same store, whichever
@@ -359,7 +361,9 @@
    * legend, else the group's own name, else the wrapper's name when that is
    * not the option just read, else the block before the group. Every step
    * falls through to the classic path, which is what keeps the old modal
-   * correct — it has no wrappers, so none of the new steps fire. */
+   * correct — it has no wrappers, so none of the new steps fire. The third
+   * layout, with the name on the input itself, only the whole group can read:
+   * radioGroup(), below. */
   function radioOption(el) {
     const w = closestDeep(el, "[role='radio']");
     if (w && w !== el) {
@@ -371,7 +375,7 @@
     return labelFor(el) || el.value || null;
   }
 
-  function radioQuestion(el, option) {
+  function radioQuestion(el, option, shared) {
     const fs = closestDeep(el, "fieldset");
     const legend = fs && fs.querySelector("legend");
     if (legend && labelText(legend)) return labelText(legend);
@@ -380,6 +384,7 @@
       const own = ariaName(group);
       if (own) return own;
     }
+    if (shared) return shared;
     const w = closestDeep(el, "[role='radio']");
     if (w && w !== el) {
       const own = ariaName(w);
@@ -390,6 +395,43 @@
       if (before) return before;
     }
     return labelFor(el);
+  }
+
+  /* One radio GROUP's question and answer, read from every member at once.
+   *
+   * By 25 Sep 2026 LinkedIn had dropped the role="radio" wrapper and moved the
+   * name onto the native input, still meaning two things (measured live
+   * 30 Sep): on a Yes/No question every input's aria-label is the QUESTION and
+   * "Yes"/"No" is a <p> in a sibling <div>; on the resume picker each input's
+   * aria-label is its FILENAME. One member alone cannot say which it holds, and
+   * radioOption() read the question as the answer on every radio for five
+   * days (33 answers, 16 applications). The group can: a name EVERY member
+   * carries names the group, not an option, so it is the question, and the
+   * option is the checked member's own row. Names that differ (filenames,
+   * or the Yes/No text of every earlier layout) are options, as before. */
+  function radioGroup(members) {
+    const names = members.map(radioOption);
+    const shared = members.length > 1 && names[0] &&
+      names.every((n) => n === names[0]) ? names[0] : null;
+    const on = members.findIndex((m) => m.checked);
+    const question = radioQuestion(members[0], shared ? null : names[0], shared);
+    if (on === -1) return { question, answer: null };
+    // No row text means no answer, never the input's value: a radio with no
+    // value attribute reports "on".
+    const answer = shared ? optionRow(members[on], members) : (names[on] || members[on].value);
+    return { question, answer };
+  }
+
+  // The visible text of a member's own row: its largest ancestor that holds
+  // no other member of the group.
+  function optionRow(el, members) {
+    const theirs = new Set();
+    for (const m of members) {
+      if (m !== el) for (let n = m.parentElement; n; n = n.parentElement) theirs.add(n);
+    }
+    let row = null;
+    for (let n = el.parentElement; n && !theirs.has(n); n = n.parentElement) row = n;
+    return (row && labelText(row)) || null;
   }
 
   // Placeholder options ("Select an option") are the absence of an answer, not
@@ -583,7 +625,7 @@
     }
 
     const controls = collect(root, []);
-    const radioGroups = new Map();     // name -> {question, answer}
+    const radioGroups = new Map();     // name -> its member inputs, in order
     // Occurrence counter, reset per sweep so re-sweeping one step lands on the
     // same keys and overwrites rather than appending (see record()). Fields
     // from an EARLIER wizard step keep whatever keys they were given — this
@@ -602,16 +644,13 @@
       if (el.tagName === "TEXTAREA") seen.textarea++;
       if (el.disabled) { seen.disabled++; continue; }
       if ((el.type || "").toLowerCase() === "radio") {
-        // One entry per GROUP, keyed by name: the question from the group, the
-        // answer from whichever member is checked — see radioOption() for the
-        // two layouts this has to read.
+        // One entry per GROUP, keyed by name, read once every member is in
+        // hand: radioGroup() needs them all to tell the question from the
+        // options.
         const name = el.name || labelFor(el) || "";
         if (!name) continue;
-        const option = radioOption(el);
-        const g = radioGroups.get(name) || { question: null, answer: null };
-        if (!g.question) g.question = radioQuestion(el, option);
-        if (el.checked) g.answer = option || el.value;
-        radioGroups.set(name, g);
+        if (!radioGroups.has(name)) radioGroups.set(name, []);
+        radioGroups.get(name).push(el);
         continue;
       }
       const question = labelFor(el);
@@ -625,7 +664,8 @@
       record(question, answer, kindOf(el), next(question));
       seen.kept++;
     }
-    for (const g of radioGroups.values()) {
+    for (const members of radioGroups.values()) {
+      const g = radioGroup(members);
       if (g.question && g.answer) {
         record(g.question, g.answer, "radio", next(g.question));
         seen.kept++;

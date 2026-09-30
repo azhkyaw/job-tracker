@@ -404,10 +404,11 @@ ORDER BY aa.question_norm, aa.captured_at DESC, aa.occurrence
 #
 # Authorisation is tested first because its wording can contain the other's
 # ("authorized to work ... without requiring ... any visa sponsorship"). An
-# answer that is the question's own text (a capture artefact) matches
-# neither. The patterns use only what Python's `re` and Postgres' regex agree
-# on, so the SQL below and the function are one rule, held together over every
-# real wording by tests/sponsorship_answers.json.
+# answer that is the question's own text matches neither: every LinkedIn
+# radio captured 25-29 Sep 2026 is one (extension 0.23.1 fixed the cause,
+# .claude/rules/extension.md). The patterns use only what Python's `re` and
+# Postgres' regex agree on, so the SQL below and the function are one rule,
+# held together over every real wording by tests/sponsorship_answers.json.
 SPONSOR_AUTH_Q = (r"authori[sz]ed to work|right to work|able to work legally"
                   r"|(legally|lawfully) (able|eligible|entitled|permitted|allowed) to work")
 SPONSOR_NEED_Q = (r"(^| )(require|requires|required|need|needs)( [a-z ]*)? "
