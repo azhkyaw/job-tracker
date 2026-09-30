@@ -618,6 +618,15 @@ web/UI, LLM, database) moved VERBATIM into `.claude/rules/` — see Docs map →
   added), and a byte comparison of each commit's blobs with its snapshot,
   LF-normalised, proves it is exactly what that suite run tested: no
   worktree run needed.
+  **When the tree also holds the author's own uncommitted work** (30 Sep
+  2026): build a file both touch (CLAUDE.md) from HEAD plus your asserted
+  edits, never from the working tree, and the proof that the commits sum
+  to what was tested becomes "only the author's hunks stay unstaged". To
+  land the branch, `git switch master` refuses (that file differs between
+  the commits and is modified); `git fetch . <branch>:master` fast-forwards
+  the ref, refusing anything else, and the switch then touches nothing. A
+  worktree run's per-suite log (`$TEMP/<suite>.log`, overwritten each run)
+  says which tree it tested, by its check count.
 - **Windows: `uvicorn --reload`'s process tree outlives a single `taskkill`.**
   The PID `netstat`/`Get-NetTCPConnection` reports often isn't the real
   root — cross-check via `Get-CimInstance Win32_Process -Filter
@@ -660,7 +669,12 @@ web/UI, LLM, database) moved VERBATIM into `.claude/rules/` — see Docs map →
   base64 and cookie-looking output and truncates at ~1,000 chars; Dark Reader
   may be neutralising colours. Probes and workarounds: `.claude/rules/extension.md`
   (tab freeze, output blocks, safe adapter testing) and `.claude/rules/web-ui.md`
-  (Dark Reader, verifying an authenticated page).
+  (Dark Reader, verifying an authenticated page). Two plain limits (30 Sep
+  2026): the tool reaches only its own tab group, so a tab the author
+  already has open (a half-filled form) is out of reach until they drag it
+  into the "Claude" group, where it keeps its state; and `javascript_tool`
+  awaits a top-level `await`, not a promise an async IIFE returns (that
+  comes back as `{}`).
 
 ## Environment
 
@@ -812,7 +826,9 @@ The dated register behind each item, tasks 1-44 with their measurements, is
   (task 44).
   Open: the first real apply through each piece.
 - **Release blockers:** LICENSE (Apache-2.0 recommended), split the extension
-  into its own repo, decide whether CLAUDE.md ships; `audit_names.py --history`
+  into its own repo, decide whether CLAUDE.md ships, and whether
+  `docs/monetization-review.md` does (its §3 is the author's own work-pass
+  situation, and the history keeps it once pushed); `audit_names.py --history`
   is the pre-publish check. (task 3)
 - **vLLM lab** (`docs/vllm-lab.md`): blocked at its §2 on the billing-account
   project limit and the L4 quota, both the author's to clear by hand; no
