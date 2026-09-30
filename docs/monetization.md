@@ -4,6 +4,9 @@
 **Status:** Superseded by `docs/open-source.md` (26 Jul 2026) — kept as
 reasoning history, not a plan. §2's compliance analysis is what made the
 open-source argument concrete and remains valid if the direction ever reverses.
+Re-examined with current facts on 30 Sep 2026 in
+`docs/monetization-review.md`, which replaces §2's costs, §3's prices and
+§8's estimates and adds the question this document never asked.
 **Date:** 26 July 2026
 **Scope:** What it would take to charge for this system, and what to build if
 we do. Supersedes design doc §12 Phase 4 ("Productization"), which assumed

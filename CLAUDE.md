@@ -70,6 +70,11 @@ and design records; the code and `migrations/` win where they disagree.
   uv-managed Python, the Neon dev DB.
 - `docs/monetization.md` — superseded, retained for its Gmail
   restricted-scope compliance analysis.
+- `docs/monetization-review.md` — whether and how this could earn money,
+  re-examined 30 Sep 2026 with sources and with unit costs measured on
+  this install. Read its §3 first: the author's right to earn in Singapore
+  decides the rest. Confirms `docs/open-source.md` and says what would
+  reopen the question.
 - `docs/worklog.md` — the dated task register (tasks 1-44 with their
   measurements); what is still open is summarised under "Open work" below.
 
