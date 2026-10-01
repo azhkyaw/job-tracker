@@ -295,6 +295,104 @@ console.log("\ngetJob(): a stale detail pane on the split search layout");
   check("agreeing pane: title_source is the class selector, not the card", h._prov.title_source, "class");
 }
 
+console.log("\ngetJob(): the pane names its own job (/jobs/search-results/, read live 2 Oct 2026)");
+{
+  // On /jobs/search-results/ no element carries a job id as an attribute, so
+  // the card guard above can never fire there. Three real Easy Apply captures
+  // on 30 Sep were each filed as the job the pane still showed ("Northwind Labs · AI
+  // Engineer", applied to two weeks before), each under the right
+  // currentJobId and with no JD. The pane names its own job twice, measured
+  // on three live panes: its description's container is
+  // JobDetails_AboutTheJob_<id>, and its top card links to /jobs/view/<id>
+  // (three links, and no other job's id anywhere in the document).
+  const APPLIED = "4466100001", SHOWN = "4362000002";
+  const SR = (id) => `https://www.linkedin.com/jobs/search-results/?currentJobId=${id}&keywords=AI%20Engineer`;
+  const nodeDoc = (kids, title = "") => {
+    const body = node("body", {}, kids);
+    return { title, body, querySelector: (s) => body.querySelector(s), querySelectorAll: (s) => body.querySelectorAll(s) };
+  };
+  const topCard = (ids, company, title, where) => node("div", {}, [
+    node("p", {}, [company]),
+    node("p", {}, [node("a", { href: `https://www.linkedin.com/jobs/view/${ids[0]}/` }, [title])]),
+    node("p", {}, [node("span", {}, [where]), node("span", {}, ["·"]), node("span", {}, ["2 weeks ago"])]),
+    ...ids.map((i) => node("a", { href: `/jobs/view/${i}/?trk=share` }, ["Share"])),
+  ]);
+  const pane = (ids, company, title, where, { jd = true } = {}) => node("div", {}, [node("div", {}, [
+    topCard(ids, company, title, where),
+    ...(jd ? [node("div", { id: `JobDetails_AboutTheJob_${ids[0]}` }, [`About the job ${company} is hiring.`])] : []),
+  ])]);
+  // The results list: cards with text and no job id, as measured.
+  const list = () => node("ul", {}, [node("li", {}, [node("div", {}, ["AI Engineer"]), node("div", {}, ["Northwind Labs"])])]);
+  const read = (kids, href, title) =>
+    loadAdapter({ ownDoc: nodeDoc(kids, title), ownLoc: makeLoc(href) }).window.__trackerAdapter.getJob();
+  const pick = (j) => [j.platform_job_id, j.company, j.title, j.jd_text, j.location];
+
+  const ok = read([list(), pane([APPLIED], "Fabrikam", "Generative AI Engineer", "Central Region, Singapore")],
+                  SR(APPLIED), "Generative AI Engineer | Fabrikam | LinkedIn");
+  check("a pane naming the URL's job is read as it stands",
+        [...pick(ok), ok._prov.stale_pane],
+        [APPLIED, "Fabrikam", "Generative AI Engineer", "About the job Fabrikam is hiring.",
+         "Central Region, Singapore", undefined]);
+  const stale = read([list(), pane([SHOWN], "Northwind Labs", "AI Engineer", "Singapore, Singapore")], SR(APPLIED), "");
+  check("the 30 Sep shape: a pane naming ANOTHER job gives none of its content, only the URL's id",
+        pick(stale), [APPLIED, null, null, null, null]);
+  check("…and says so", stale._prov.stale_pane, { url: APPLIED, shown: "AI Engineer", card: null, named: SHOWN });
+  check("…also with no description to name it, by the top card's links alone (30 Sep had none)",
+        pick(read([list(), pane([SHOWN], "Northwind Labs", "AI Engineer", "Singapore, Singapore", { jd: false })], SR(APPLIED), "")),
+        [APPLIED, null, null, null, null]);
+  check("a box naming two jobs decides nothing: left as read",
+        pick(read([pane([SHOWN, "4400000009"], "Northwind Labs", "AI Engineer", "Singapore, Singapore", { jd: false })], SR(APPLIED), ""))
+          .slice(0, 3), [APPLIED, "Northwind Labs", "AI Engineer"]);
+  const VIEW = `https://www.linkedin.com/jobs/view/${APPLIED}/`;
+  check("a job's own page (no currentJobId) is never second-guessed by the links around it",
+        pick(read([pane(["4400000009"], "Fabrikam", "Generative AI Engineer", "Central Region, Singapore", { jd: false })], VIEW, ""))
+          .slice(0, 3), [APPLIED, "Fabrikam", "Generative AI Engineer"]);
+  // The geometry of 30 Sep: the Easy Apply in the preload frame, the top a
+  // search page. With the top's stale pane dropped, the frame's own read wins.
+  const s = loadAdapter({
+    ownDoc: nodeDoc([pane([APPLIED], "Fabrikam", "Generative AI Engineer", "Central Region, Singapore")]),
+    ownLoc: makeLoc(PRELOAD),
+    topDoc: nodeDoc([list(), pane([SHOWN], "Northwind Labs", "AI Engineer", "Singapore, Singapore")]),
+    topLoc: makeLoc(SR(APPLIED)),
+  });
+  const g = s.window.__trackerAdapter.getJob();
+  check("preload frame under a stale top: this frame's job, the top's id",
+        [g.platform_job_id, g.company, g.title, g._prov.doc_source], [APPLIED, "Fabrikam", "Generative AI Engineer", "self"]);
+  // The other way round, which fits 30 Sep's log better (the capture in the
+  // preload frame, no stale_pane recorded): the STALE pane is in the preload
+  // frame, whose own address names no job, so no guard ran, and the read
+  // borrowed the top's id unchecked. Checked now against the id it borrows.
+  const shellTop = nodeDoc([node("nav", {}, ["Jobs"])]);
+  const p = loadAdapter({
+    ownDoc: nodeDoc([list(), pane([SHOWN], "Northwind Labs", "AI Engineer", "Singapore, Singapore", { jd: false })]),
+    ownLoc: makeLoc(PRELOAD), topDoc: shellTop, topLoc: makeLoc(SR(APPLIED)),
+  }).window.__trackerAdapter.getJob();
+  check("a stale pane IN the preload frame, the top a shell: the borrowed id, none of the other job",
+        [p.platform_job_id, p.company, p.title, p.jd_text], [APPLIED, null, null, null]);
+  check("…and the breadcrumb survives the fall back to the top's read",
+        p._prov.stale_pane, { url: APPLIED, shown: "AI Engineer", card: null, named: SHOWN });
+}
+{
+  // The classic search page's card guard in the same geometry: the results
+  // card for the borrowed id re-sources title and company.
+  const REAL_ID = "4426471965";
+  const card = { tagName: "DIV", querySelector: (s) => (
+    { "a.job-card-container__link": el("AI Agent EngineerAI Agent Engineer"),
+      ".artdeco-entity-lockup__subtitle": el("Northwind Labs") })[s.split(",")[0].trim()] || null };
+  const preloadDoc = makeDoc({ sel: {
+    ".job-details-jobs-unified-top-card__job-title": "Full Stack Engineer, AI systems",
+    ".job-details-jobs-unified-top-card__company-name a": "Contoso Markets",
+    "#job-details": "About the job\nAbout Contoso Markets",
+    [`[data-occludable-job-id="${REAL_ID}"]`]: card,
+  } });
+  const j = loadAdapter({ ownDoc: preloadDoc, ownLoc: makeLoc(PRELOAD), topDoc: shellPage(),
+                          topLoc: makeLoc(`https://www.linkedin.com/jobs/search/?currentJobId=${REAL_ID}`) })
+    .window.__trackerAdapter.getJob();
+  check("classic search in the preload frame: the card for the borrowed id re-sources the job",
+        [j.platform_job_id, j.title, j.company, j.jd_text, j._prov.title_source],
+        [REAL_ID, "AI Agent Engineer", "Northwind Labs", null, "card"]);
+}
+
 console.log("\njobFromUrl(): last-resort identity off the tab URL");
 {
   const s = loadAdapter({ ownDoc: shellPage(), ownLoc: makeLoc(COLLECTIONS) });
@@ -343,6 +441,23 @@ console.log("\nanswerFormRoot(): where the screening-question sweep reads from")
   const s3 = loadAdapter({ ownDoc: shellPage(), ownLoc: makeLoc(COLLECTIONS) });
   check("top frame, nothing dialog-like: null, never the page",
         s3.window.__trackerAdapter.answerFormRoot(), null);
+  // A SUBFRAME took its first <form>, assuming a subframe is the modal's
+  // own iframe. The preload frame is a whole page, where a search page's
+  // filter form can come first: "Filter results by: Date posted" / "Any
+  // time" was stored as an answer by all three 30 Sep captures, each made in
+  // that frame, and by two on 8 Sep, the first stale-pane day (its frames are
+  // not on record). The modal wins wherever it is.
+  const filter = el("Filter results by: Date posted");
+  const modal = el("Apply to Northwind Labs");
+  const s4 = loadAdapter({ ownDoc: makeDoc({ sel: { form: filter, ".jobs-easy-apply-modal": modal } }),
+                           ownLoc: makeLoc(PRELOAD), topDoc: shellPage(), topLoc: makeLoc(COLLECTIONS) });
+  check("subframe holding a page: the Easy Apply modal, not the page's first form",
+        s4.window.__trackerAdapter.answerFormRoot() === modal, true);
+  const wizard = el("");
+  const s5 = loadAdapter({ ownDoc: makeDoc({ sel: { form: wizard } }),
+                           ownLoc: makeLoc(PRELOAD), topDoc: jobPage(), topLoc: makeLoc(COLLECTIONS) });
+  check("subframe that IS the modal (no dialog in it): its form, as before",
+        s5.window.__trackerAdapter.answerFormRoot() === wizard, true);
 }
 
 /* ------------------------------------------ a fake DOM for shared/answers.js
@@ -356,9 +471,25 @@ console.log("\nanswerFormRoot(): where the screening-question sweep reads from")
 
 const ANSWERS_SRC = fs.readFileSync(path.join(ROOT, "extension/shared/answers.js"), "utf8");
 
+// A selector list; each selector a compound, or compounds joined by the
+// DESCENDANT combinator (linkedin.js's "…company-name a"), split on spaces
+// outside brackets. No other combinator.
 function matches(node, sel) {
   return sel.split(",").some((s) => {
-    s = s.trim();
+    const chain = s.trim().split(/\s+(?![^[]*\])/);
+    if (!compound(node, chain[chain.length - 1])) return false;
+    let anc = node.parentElement;
+    for (let i = chain.length - 2; i >= 0; i--) {
+      while (anc && !compound(anc, chain[i])) anc = anc.parentElement;
+      if (!anc) return false;
+      anc = anc.parentElement;
+    }
+    return true;
+  });
+}
+
+function compound(node, s) {
+  {
     if (s === "*") return true;
     const m = /^([a-zA-Z][a-zA-Z0-9]*)?((?:#[\w-]+|\.[\w-]+|\[[^\]]+\])*)$/.exec(s);
     if (!m) throw new Error(`fake DOM: selector not supported: ${s}`);
@@ -369,14 +500,18 @@ function matches(node, sel) {
       } else if (part[0] === ".") {
         if (!(node.getAttribute("class") || "").split(/\s+/).includes(part.slice(1))) return false;
       } else {
-        const am = /^\[([\w-]+)(?:=(?:"([^"]*)"|'([^']*)'|([^\]]*)))?\]$/.exec(part);
-        const want = am[2] !== undefined ? am[2] : am[3] !== undefined ? am[3] : am[4];
+        // [a], [a=v], and the prefix / contains forms [a^=v] / [a*=v] that
+        // linkedin.js's description and job-link selectors use.
+        const am = /^\[([\w-]+)(?:([\^*]?)=(?:"([^"]*)"|'([^']*)'|([^\]]*)))?\]$/.exec(part);
+        const want = am[3] !== undefined ? am[3] : am[4] !== undefined ? am[4] : am[5];
+        const got = node.getAttribute(am[1]);
         if (want === undefined) { if (!node.hasAttribute(am[1])) return false; }
-        else if (node.getAttribute(am[1]) !== want) return false;
+        else if (am[2] === "^" ? !(got || "").startsWith(want)
+               : am[2] === "*" ? !(got || "").includes(want) : got !== want) return false;
       }
     }
     return true;
-  });
+  }
 }
 
 function node(tag, attrs = {}, kids = []) {

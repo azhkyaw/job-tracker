@@ -223,6 +223,10 @@ route deletes events and may delete an application.
     it changes ONE decision, this one, to triage (0.65, no title), and at
     30 or 60 it also admits an unrelated capture of the same vendor.
   The class stays rare; re-measure before reopening.
+  The other twins in the same NULL-score sweep were not the matcher's: three
+  LinkedIn confirmations made records because the captures they confirmed
+  carried ANOTHER job's identity (`.claude/rules/extension.md`, the 30 Sep
+  stale pane). Read a NULL-score create as "which side is wrong?" first.
 - **LinkedIn's confirmation email can name a job by a title its posting does
   not show** (24 Sep 2026 email audit). Of 236 confirmations, two stated a
   title unlike the record they were filed on — "AI Fullstack Engineer" for

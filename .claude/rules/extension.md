@@ -1113,6 +1113,63 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   - **Still the author's click:** a custom domain gets the scripts only once
     enabled ("Always capture on this site"), which no manifest can list.
 
+- **The stale pane came back, and the guard could not see it** (30 Sep
+  2026, found 2 Oct from a twin the author pointed at; extension 0.25.1).
+  - **What happened:** three Easy Apply captures in three minutes were each
+    filed as "Northwind Labs · AI Engineer", a job applied to two weeks
+    earlier, under three different and correct job ids, with no JD. Each
+    one's LinkedIn confirmation then found no record under its real
+    employer and made its own. Each stored id's own page named the real
+    job and said "Application submitted".
+  - **What the log said:** every capture ran in the preload frame
+    (`topFrame: false`, url `/preload/`), layout `search`, the wrong job
+    already in the keyed stash at the opening click (`exact: true`), and no
+    `stale_pane`.
+  - **Why no guard fired, two ways, measured:**
+    - on `/jobs/search-results/` no element carries a job id as an
+      attribute, so the card lookup (`data-occludable-job-id`) is dead there;
+    - a read of the preload frame itself has no id of its own (its address
+      names none), so neither guard ran, and the read borrowed the top's id
+      unchecked. That fits the log best.
+    - Which of the two happened on 30 Sep is not established: `layout:
+      "search"` covers `/jobs/search/` and `/jobs/search-results/` alike.
+  - **Disproved on the way:** that a read with no JD element anchors the
+    structural title search on the results list. Live, from `doc.body`,
+    the only matching `<p>` is the selected job's top card.
+  - **Fixed as rules (`linkedin.js`):**
+    - the pane names its own job: its description's container is
+      `JobDetails_AboutTheJob_<id>`, and its top card links to
+      `/jobs/view/<id>` (measured on three live panes: three links, no other
+      id in the document). Exactly one named job that is not the URL's
+      drops the content and keeps the id; a box naming several decides
+      nothing; a `/jobs/view/` page is never second-guessed;
+    - `readJob(doc, loc, expectId)`: the preload frame's read is checked,
+      by both guards, against the id it is about to borrow;
+    - a read the check emptied keeps its `stale_pane` (it returned null
+      before), and `getJob()` hands it on to the top's read it falls back to;
+    - `answerFormRoot()` takes the Easy Apply modal in ANY frame, and a
+      subframe's first `<form>` only when it holds none. Every 30 Sep capture
+      (and two on 8 Sep, the first stale-pane day) stored "Filter results by:
+      Date posted" / "Any time" as an answer: the preload frame is a whole
+      page, and its first form can be the search's filters.
+      `answers.py:_CONTROL_NORM_RES` drops `^filter results by` as the
+      second line; the 5 stored rows were removed.
+  - **What the fix trades:** a stale pane now saves an id-only record,
+    "unknown company", visible and repairable, where it saved another job's
+    name. Its LinkedIn confirmation will still make a twin.
+  - **Tests:** 12 new checks; the old code gives the 30 Sep records' exact
+    signature (the applied id, the other job's company and title, no JD, no
+    breadcrumb). A mutation run undid each part alone, and each turned its
+    own check red.
+  - **Repaired:** the three records' company, title and location from each
+    job's own page (`/edit`, the form read back first), the applied instant
+    restored, and one moved to its real submit (14:10:04, from the
+    provenance: the server was unreachable and the record was written on
+    the retry 16 s later, after its own confirmation). The three
+    confirmations re-filed, their duplicates deleted. Snapshots in
+    `job-tracker-snapshots/2026-10-02-*`. The JDs stay empty: the hidden
+    tab never loaded them.
+
 ## Known-untested surfaces (verify on first real contact)
 
 - **Extension DOM selectors** (`extension/adapters/*.js`) — best-effort against
@@ -1240,6 +1297,12 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   Verify 0.10.0 or later is live (`chrome://extensions`; 0.10.1 since 24 Sep
   2026 adds only the `normKey` change) and the tab was opened after the
   reload before trusting any result.
+  **It did not fire on 30 Sep 2026** (the gotcha above). 0.25.1 adds the
+  pane's own id as a second check and runs both on the preload frame's read;
+  that is proven in tests only. On the next Easy Apply from a search page,
+  a `stale_pane` with `named` (and `card: null`) is the new check firing,
+  and the record then reads "unknown company" with the right id: re-file
+  its confirmation onto it rather than letting the twin stand.
 - **`ats` is never detected on a LinkedIn EXTERNAL apply whose control is a
   `<button>`** (verified: `.jobs-apply-button` is a BUTTON with no href on that
   layout, so `resolveExternalUrl()` returns null). The destination isn't in the

@@ -338,12 +338,15 @@ check("resume: another upload (a cover letter), or a path, is not",
       [resume_file([{"question": "Cover Letter", "answer": "cover.pdf", "type": "file"}]),
        resume_file([{"question": "Resume/CV*", "answer": "C:\\fakepath\\cv.pdf", "type": "file"}])]
       == [None, None])
-check("clean drops the picker on both layouts and keeps the real question",
+check("clean drops the picker on both layouts, LinkedIn's chrome and its search filter, "
+      "and keeps the real question",
       [r["question"] for r in clean([
           {"question": "Deselect resume Contoso-resume.pdf",
            "answer": "Deselect resume Contoso-resume.pdf", "type": "radio"},
           {"question": "Resume*", "answer": "Contoso-resume-AI.pdf", "type": "radio"},
           {"question": "Mark job as a top choice", "answer": "No", "type": "checkbox"},
+          {"question": "Filter results by: Date posted", "answer": "Any time Filter by Any time",
+           "type": "radio"},
           {"question": "Resume link", "answer": "https://x.example/cv.pdf",
            "type": "text"},
           {"question": "Resume/CV*", "answer": "Jane-Doe_resume.pdf", "type": "file"}])]

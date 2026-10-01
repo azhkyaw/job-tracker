@@ -1349,3 +1349,28 @@ the key to each real case.
    (3 pairs in 269 names, 1 right), Workday's sender as the tenant (decides
    this mail only), and offering the capture the mail confirms (1 decision
    in 526 mails, to triage; wider windows admit strangers).
+
+48. **The 30 Sep stale pane: three applications under another job's name**
+   (2 Oct 2026, extension 0.25.1). Found while sizing task 47: three Easy
+   Apply captures in three minutes, all "AI Engineer" at the employer of a
+   16 Sep application, under three different job ids, each beside a
+   LinkedIn confirmation for a different employer that had made its own
+   record. Each id's own page named the real job and said "Application
+   submitted". The case, the guards that could not fire and the fix are in
+   `.claude/rules/extension.md`. With the author's go-ahead: the three
+   records repaired through `/edit` (company, title and location from each
+   job's page; the form read back first; the applied instants restored, one
+   to its real submit 16 s before the retry that wrote it), the three
+   confirmations re-filed and their duplicates deleted (snapshot
+   `2026-10-02-stale-pane-captures-repair.json`). The JDs stay empty (the
+   hidden tab never loaded them). The extension fix: the pane's own id
+   (`JobDetails_AboutTheJob_<id>`, `/jobs/view/<id>` links) as a second
+   check, both checks on the preload frame's read against the id it
+   borrows, and the Easy Apply modal before a subframe's first form. That
+   last change ends a junk answer, "Filter results by: Date posted", stored
+   by all three captures and two on 8 Sep. `answers.py` drops it as
+   LinkedIn chrome, and the 5 rows plus one resume upload the 46 rule now
+   promotes were removed (snapshot `2026-10-02-answer-chrome-cleanup.json`).
+   12 new extension checks (392) and one Python check; a mutation run
+   turned each part's own check red. Disproved and recorded: that the
+   structural title search anchors on the results list without a JD.

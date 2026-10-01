@@ -81,6 +81,12 @@ _UPLOADED_FILE = re.compile(r"^[^/\\:]+\.[a-z0-9]{2,5}$", re.I)
 _CONTROL_NORM_RES = (
     re.compile(r"^mark job as a top choice\b"),
     re.compile(r"^follow .+ to stay up to date\b"),
+    # LinkedIn's search filters ("Filter results by: Date posted" / "Any
+    # time"), swept when a capture ran in the preload frame holding a whole
+    # search page: 5 rows on the two stale-pane days, 8 and 30 Sep 2026. The
+    # extension now roots on the Easy Apply modal there (linkedin.js
+    # answerFormRoot); this is the second line.
+    re.compile(r"^filter results by\b"),
     # A captcha's hidden response field, named for code and holding a token.
     # The extension skips it (answers.js:machinery — unrendered and named only
     # by its own name attribute); this is the second line, for the three

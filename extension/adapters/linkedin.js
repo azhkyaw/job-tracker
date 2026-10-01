@@ -28,6 +28,26 @@ function usableJob(job) {
   return !!(job && (job.title || job.jd_text));
 }
 
+// The job ids a detail pane names ITSELF by (readJob's stale-pane check):
+// its description's container id, JobDetails_AboutTheJob_<id>, and the
+// /jobs/view/<id> links in its top card, the box six levels above the top
+// card's location line (measured live 2 Oct 2026: that box holds the pane's
+// own three links and no other job's).
+function paneJobIds(jdEl, anchor) {
+  const ids = new Set();
+  const own = jdEl && /^JobDetails_AboutTheJob_(\d+)$/.exec(jdEl.id || "");
+  if (own) ids.add(own[1]);
+  let box = anchor;
+  for (let i = 0; i < 6 && box && box.parentElement; i++) box = box.parentElement;
+  if (box && box.querySelectorAll) {
+    for (const a of box.querySelectorAll("a[href*='/jobs/view/']")) {
+      const m = /\/jobs\/view\/(\d+)/.exec(a.getAttribute("href") || "");
+      if (m) ids.add(m[1]);
+    }
+  }
+  return ids;
+}
+
 window.__trackerAdapter = {
   platform: "linkedin",
   // Opt-in for shared/answers.js's noRoot diagnostic (a MutationObserver that
@@ -124,11 +144,17 @@ window.__trackerAdapter = {
   // backstop, i.e. fields the applicant TYPED into — every prefilled field,
   // every radio and the resume choice were lost, silently, for two weeks.
   // `dialog[open]` goes first because it is the shape that is live today.
+  // The Easy Apply modal, wherever it renders. A subframe falls back to its
+  // first form only when it holds no modal: the modal's own iframe, whose
+  // document IS the form. The preload frame is a whole page, where the first
+  // form can be the search's filters: all three 30 Sep 2026 captures, made
+  // in that frame, stored "Filter results by: Date posted" as an answer.
   answerFormRoot() {
-    if (window !== window.top) return document.querySelector("form") || document.body;
-    return deepQuerySelector(document,
+    const modal = deepQuerySelector(document,
       "dialog[open], .jobs-easy-apply-modal, .jobs-easy-apply-content, " +
       "[role='dialog'], [data-test-modal]");
+    if (modal || window === window.top) return modal;
+    return document.querySelector("form") || document.body;
   },
   // The job the form belongs to, so answers can't survive into the next one.
   // Read from the top frame's URL (cheap — this runs on every field edit)
@@ -193,8 +219,17 @@ window.__trackerAdapter = {
     if (topWin === window) return top;
     if (usableJob(top)) return top;
 
-    const own = this.readJob(document, location);
-    if (!usableJob(own)) return top || own;
+    // This frame's address names no job (the preload page), so its read is
+    // checked against the id it is about to borrow (readJob's `expectId`):
+    // a stale pane here once borrowed the top's id unchecked (30 Sep 2026).
+    const own = this.readJob(document, location, top && top.platform_job_id);
+    if (!usableJob(own)) {
+      // Keep the reason this frame was refused on what is returned instead.
+      if (top && top._prov && own && own._prov && own._prov.stale_pane) {
+        top._prov.stale_pane = own._prov.stale_pane;
+      }
+      return top || own;
+    }
     // The id and the url it was built from move together — own.url falls back
     // to this frame's own href, which is truthy and WRONG (that is how a
     // capture came to record linkedin.com/preload/?_bprMode=vanilla as the job
@@ -214,7 +249,10 @@ window.__trackerAdapter = {
     if (top && top._prov) own._prov.layout = top._prov.layout;
     return own;
   },
-  readJob(doc, loc) {
+  // `expectId`: the id the capture will carry when this document's own
+  // address names none (the preload frame borrows the top's), so the
+  // stale-pane checks below have something to check against.
+  readJob(doc, loc, expectId = null) {
     const q = (sels) => {
       for (const s of sels) {
         const el = doc.querySelector(s);
@@ -342,7 +380,8 @@ window.__trackerAdapter = {
     // card, so `card` is null and this is a no-op — the guard is the card's
     // existence, not the pathname, so a future split layout is covered too.
     let stale_pane = null;
-    if (idFromUrl && /^\d+$/.test(idFromUrl) && title) {
+    const expected = idFromUrl || expectId;
+    if (expected && /^\d+$/.test(expected) && title) {
       const norm = (s) => s.toLowerCase().replace(/\s+/g, " ").trim();
       // Card title/company text is doubled (visible span + a visually-hidden
       // copy carrying the accessible name — the same a11y pattern answers.js
@@ -354,14 +393,14 @@ window.__trackerAdapter = {
           ? c.slice(0, h) : c;
       };
       const card =
-        doc.querySelector(`[data-occludable-job-id="${idFromUrl}"]`) ||
-        doc.querySelector(`[data-job-id="${idFromUrl}"]`);
+        doc.querySelector(`[data-occludable-job-id="${expected}"]`) ||
+        doc.querySelector(`[data-job-id="${expected}"]`);
       const link = card && card.querySelector(
         "a.job-card-container__link, a.job-card-list__title--link");
       const cardTitle = link ? undouble(link.textContent) : null;
       if (cardTitle && norm(cardTitle) !== norm(title)) {
         const sub = card.querySelector(".artdeco-entity-lockup__subtitle");
-        stale_pane = { url: idFromUrl, shown: title, card: cardTitle };
+        stale_pane = { url: expected, shown: title, card: cardTitle };
         title = cardTitle;
         company = sub ? undouble(sub.textContent) : null;
         title_source = company_source = "card";
@@ -369,6 +408,31 @@ window.__trackerAdapter = {
         location = null;
         posted_label = null;
         reposted = null;
+      }
+    }
+    // THE PANE NAMES ITS OWN JOB (2 Oct 2026). The card above is the classic
+    // search page's; on /jobs/search-results/ no element carries a job id as
+    // an attribute (measured live), so that guard can never fire there, and
+    // three Easy Apply captures on 30 Sep were filed as the job the pane still
+    // showed, each under the right currentJobId. The pane names its job
+    // itself: its description's container is JobDetails_AboutTheJob_<id>, and
+    // its top card links to /jobs/view/<id> (three links and no other id,
+    // measured on three live panes). When it names exactly ONE job and that is
+    // not the URL's, its content is another job's: none of it is kept, only
+    // the id. A box naming several jobs decides nothing, and a job's own page
+    // (no currentJobId) is never second-guessed. Dropping makes the read
+    // unusable, so getJob() goes on to the next document, and a capture that
+    // finds nothing better saves blind: visible and repairable, where the
+    // other job's name was neither. A document whose address names no job at
+    // all (the preload frame) is checked against the id it will borrow.
+    const paneOf = new URLSearchParams(loc.search).get("currentJobId") || (idFromUrl ? null : expectId);
+    if (!stale_pane && paneOf && title) {
+      const named = paneJobIds(jdEl, tertiaryHost);
+      if (named.size === 1 && !named.has(paneOf)) {
+        stale_pane = { url: paneOf, shown: title, card: null, named: [...named][0] };
+        title = company = jd_text = location = posted_label = null;
+        reposted = null;
+        title_source = company_source = null;
       }
     }
     // A job id read out of the URL is a FACT, and discarding it because the DOM
@@ -380,7 +444,9 @@ window.__trackerAdapter = {
     // Every caller guards on title/jd_text rather than on null (capture()'s
     // empty-job check, the tracker-apply responder), so an id-only read still
     // fails the checks meant to fail; it just stops being invisible.
-    if (!title && !jdEl && !idFromUrl) return null;
+    // A read the stale-pane check emptied is not "nothing here": it carries
+    // the breadcrumb that says why (getJob() hands it on).
+    if (!title && !jdEl && !idFromUrl && !stale_pane) return null;
 
     // Which of the three sources actually won, recorded so a wrong title is
     // diagnosable AFTER the fact instead of costing a live session.

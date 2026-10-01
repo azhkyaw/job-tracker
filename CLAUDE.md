@@ -75,7 +75,7 @@ and design records; the code and `migrations/` win where they disagree.
   this install. Read its §3 first: the author's right to earn in Singapore
   decides the rest. Confirms `docs/open-source.md` and says what would
   reopen the question.
-- `docs/worklog.md` — the dated task register (tasks 1-47 with their
+- `docs/worklog.md` — the dated task register (tasks 1-48 with their
   measurements); what is still open is summarised under "Open work" below.
 
 **Path-scoped rules.** Dated case history that only matters when touching
@@ -760,7 +760,7 @@ Detail lives with each family's rule file; this is the index.
 
 ## Open work (as of 30 Sep 2026)
 
-The dated register behind each item, tasks 1-47 with their measurements, is
+The dated register behind each item, tasks 1-48 with their measurements, is
 `docs/worklog.md`; read the matching entry before acting on one.
 
 - **Follow-up drafting** on an age-capped queue: cap `/follow-ups` near 21
@@ -770,10 +770,13 @@ The dated register behind each item, tasks 1-47 with their measurements, is
   queue as the author confirms them. Four `follow_up_sent` are on record: one filed
   by hand, three recovered from follow-ups the user EMAILED, which since
   migration 016 file themselves (task 16). (worklog task 4)
-- **Extension, next real Easy Apply:** verify the current build (0.25.0 on
+- **Extension, next real Easy Apply:** verify the current build (0.25.1 on
   2 Oct) is live on BOTH machines and the tab was opened after the
   reload; read `doc_source` and the sweep line, and check that the radio
-  rows read Yes/No, not the question (task 42). JobStreet still owes one
+  rows read Yes/No, not the question (task 42). From a search page, a
+  `stale_pane` with `named` is 0.25.1's new check firing: the record then
+  reads "unknown company" with the right id, and its confirmation needs
+  re-filing onto it (task 48). JobStreet still owes one
   clean submit with the race fix and salary capture together. (tasks 5, 18)
 - **Employer career sites** (`docs/career-sites.md`; phases A-C built
   24 Sep 2026, their history in worklog tasks 24-30). One live
