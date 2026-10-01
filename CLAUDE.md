@@ -75,7 +75,7 @@ and design records; the code and `migrations/` win where they disagree.
   this install. Read its §3 first: the author's right to earn in Singapore
   decides the rest. Confirms `docs/open-source.md` and says what would
   reopen the question.
-- `docs/worklog.md` — the dated task register (tasks 1-46 with their
+- `docs/worklog.md` — the dated task register (tasks 1-47 with their
   measurements); what is still open is summarised under "Open work" below.
 
 **Path-scoped rules.** Dated case history that only matters when touching
@@ -760,7 +760,7 @@ Detail lives with each family's rule file; this is the index.
 
 ## Open work (as of 30 Sep 2026)
 
-The dated register behind each item, tasks 1-46 with their measurements, is
+The dated register behind each item, tasks 1-47 with their measurements, is
 `docs/worklog.md`; read the matching entry before acting on one.
 
 - **Follow-up drafting** on an age-capped queue: cap `/follow-ups` near 21

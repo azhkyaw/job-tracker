@@ -201,6 +201,28 @@ route deletes events and may delete an application.
   the matcher was not changed for it — if a second ATS mail does the same,
   the general fix is to strip a trailing `(…id…)` before rule 1's equality,
   not to add a sender to a list.
+- **A sixth, by abbreviation, and the 24 Sep bullet's "they land in
+  triage" is not true of a confirmation** (made 29 Sep, found 2 Oct 2026).
+  A bank's Workday confirmation named the employer by its initials
+  (placeholder `NWB`) with no title and no job id, 10 s after the
+  extension captured the job, whose JobPosting gave the legal name with
+  Workday's company code in front (`1011 Northwind Bank Ltd`). Similarity
+  0.034, no shared word, rule 1 needs a title, the mail prints no
+  `JR…` id: zero candidates. A confirmation with zero candidates is
+  CREATED, not triaged (`dispatch`, `_CREATES`), so a silent "unknown role"
+  duplicate, `auto_matched` with a NULL score. Re-filed through
+  `refile_email`. Three mechanisms were measured and none built:
+  - an initials rule, against 269 real names: 3 pairs, 1 right, 1 a
+    stranger, 1 an agency's client mail against a direct application;
+  - Workday's sender local part as the tenant (`<tenant>@myworkday.com`
+    against `<tenant>.wdN.myworkdayjobs.com`): of 21 Workday mails, it
+    decides only this one (15 name a tenant no record holds an id under,
+    4 several records);
+  - offering the capture this mail confirms (same `ats`, captured within W
+    minutes before), replayed over all 526 extracted mails: at 10 minutes
+    it changes ONE decision, this one, to triage (0.65, no title), and at
+    30 or 60 it also admits an unrelated capture of the same vendor.
+  The class stays rare; re-measure before reopening.
 - **LinkedIn's confirmation email can name a job by a title its posting does
   not show** (24 Sep 2026 email audit). Of 236 confirmations, two stated a
   title unlike the record they were filed on — "AI Fullstack Engineer" for

@@ -1334,3 +1334,18 @@ the key to each real case.
    near miss on `…/consentCollection/…` ("Submit" was not captured: no
    application form found on this page), and its record came from email
    alone: "unknown role", no answers.
+
+47. **A confirmation by abbreviation made its own record** (2 Oct 2026,
+   made 29 Sep). The author asked why one record existed beside the
+   extension's. A bank's Workday confirmation named the employer by its
+   initials, with no title and no job id, against a record named
+   "1011 <legal name>" (Workday's company code in front of its JobPosting's
+   organisation). Zero candidates, and a confirmation with none is created,
+   not triaged: `.claude/rules/matching.md` has the case, and corrects the
+   24 Sep belief that this class lands in triage. Re-filed through
+   `refile_email` with the author's go-ahead, snapshot first
+   (`2026-10-02-workday-abbreviation-refile.json`); the route deleted
+   the empty duplicate. Three fixes measured, none built: an initials rule
+   (3 pairs in 269 names, 1 right), Workday's sender as the tenant (decides
+   this mail only), and offering the capture the mail confirms (1 decision
+   in 526 mails, to triage; wider windows admit strangers).
