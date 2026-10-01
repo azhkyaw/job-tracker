@@ -1515,10 +1515,14 @@ function memoryStorage() {
            removeItem: (k) => m.delete(k) };
 }
 
-function loadGeneric(kids, href, title = "", storage = undefined) {
+// answers.js loads after generic.js, as the manifest has it on every ATS
+// host: rule 2 counts the fields that ask something by the sweep's own
+// labelFor (generic.js:asking). `answers: false` is the popup's injection,
+// which carries no answers.js.
+function loadGeneric(kids, href, title = "", storage = undefined, { answers = true } = {}) {
   const doc = pageDoc(kids, title);
   const loc = makeLoc(href);
-  const sandbox = { URL, URLSearchParams, console, setTimeout: () => 0 };
+  const sandbox = { URL, URLSearchParams, console, setTimeout: () => 0, CSS: { escape: (s) => s } };
   if (storage) sandbox.sessionStorage = storage;
   sandbox.window = { document: doc, location: loc };
   sandbox.document = doc;
@@ -1526,6 +1530,14 @@ function loadGeneric(kids, href, title = "", storage = undefined) {
   vm.createContext(sandbox);
   vm.runInContext(JOBPOSTING_SRC, sandbox);
   vm.runInContext(GENERIC_SRC, sandbox);
+  if (answers) {
+    // What labelFor reaches for: the document a light-DOM node belongs to
+    // (getRootNode), its ids, and a place to hang the sweep's listeners.
+    for (const n of doc.querySelectorAll("*")) n._doc = doc;
+    doc.getElementById = (id) => doc.querySelectorAll("*").find((n) => n.getAttribute("id") === id) || null;
+    doc.addEventListener = () => {};
+    vm.runInContext(ANSWERS_SRC, sandbox);
+  }
   return sandbox.window.__trackerAdapter;
 }
 const text = (name) => node("input", { type: "text", name });
@@ -1663,7 +1675,11 @@ console.log("\ngeneric.js: SuccessFactors' candidate experience, built from web 
   // in <meta name="jobRequisitionId"> and a hidden career_job_req_id input.
   // The tab's address after the first postback carried only the crumb.
   const hidden = (name, value) => node("input", { type: "hidden", name, ...(value ? { value } : {}) });
-  const uiInput = () => attachShadow(node("ui5-input-xweb-dynamic-content"), [node("input", { type: "text" })]);
+  // Each field asks its question: the 13 answers the edit backstop kept on
+  // the day were named right through labelFor. HOW the inner <input> was
+  // named is not on record; modelled as its aria-label.
+  const uiInput = (q) => attachShadow(node("ui5-input-xweb-dynamic-content"),
+                                      [node("input", { type: "text", "aria-label": q })]);
   const uiButton = (label, aria) => {
     const inner = node("button", { role: "button", ...(aria ? { "aria-label": aria } : {}) }, [node("slot")]);
     const host = attachShadow(node("ui5-button-xweb-candidate-experience", {}, label ? [label] : []), [inner]);
@@ -1679,7 +1695,8 @@ console.log("\ngeneric.js: SuccessFactors' candidate experience, built from web 
       node("meta", { name: "jobRequisitionId", content: "61234" }),
       node("form", { id: "careerform", name: "careerform" }, [
         hidden("career_job_req_id", "61234"), hidden("_s.crb", "x"), hidden("clientId"),
-        node("div", {}, [uiInput(), uiInput(), uiInput(), uiInput(), uiInput(), uiInput()]),
+        node("div", {}, ["First Name", "Last Name", "Email", "Phone Number", "Country", "Notice Period"]
+                          .map(uiInput)),
         node("div", {}, [browse, icon]),
         node("div", { class: "footer" }, [submit, close]),
       ]),
@@ -1838,6 +1855,37 @@ console.log("\ngeneric.js: what must NOT be an application");
   const b = loadGeneric([node("input", { type: "search", name: "q" }), text("location")],
                         "https://jobs.lever.co/contoso/53e23908-0da6-47a5-a482-39be676e9ee6");
   check("a listing with no resume field and no apply path: no root", b.answerFormRoot() === null, true);
+}
+{
+  // A sign-in with NO password field (1 Oct 2026): MyGreenhouse, which
+  // Greenhouse's job boards offer for autofill, takes an emailed security
+  // code, and its Submit filed an application ("MyGreenhouse", no employer,
+  // the sign-in's email as its one answer). Rule 2 saw five fields and a
+  // "Submit". The sweep at that click read 8 controls, every one filled and
+  // none labelled; their markup was not read, so the boxes here are bare.
+  const SIGN_IN = "https://my.greenhouse.io/users/sign_in?initiator=autofill&source=quick_apply" +
+                  "&job_post_id=4377390009&job_board=northwind";
+  const page = (labelled) => {
+    const submit = button("Submit", { type: "submit" });
+    const boxes = Array.from({ length: 8 }, (_, i) => labelled
+      ? [node("label", { for: `q${i}` }, [`Question ${i + 1}`]), node("input", { type: "text", id: `q${i}` })]
+      : [node("input", { type: "text" })]).flat();
+    return { kids: [node("h1", {}, ["MyGreenhouse"]), node("form", {}, [...boxes, submit])], submit };
+  };
+  const p = page(false);
+  const a = loadGeneric(p.kids, SIGN_IN, "MyGreenhouse");
+  check("passwordless sign-in: eight fields that ask nothing are no application", a.answerFormRoot() === null, true);
+  check("...so its 'Submit' files nothing", a.isCompletion(p.submit), false);
+  check("...and the miss says why", a.nearMiss(p.submit), "no application form found on this page");
+  // The control: the same form whose fields ask something is rule 2's.
+  const q = page(true);
+  const b = loadGeneric(q.kids, SIGN_IN, "MyGreenhouse");
+  check("the same form with eight labelled fields is an application",
+        [b.answerFormRoot() !== null, b.isCompletion(q.submit)], [true, true]);
+  // The popup's injection carries no answers.js and keeps the old count.
+  const r = page(false);
+  check("without answers.js (the popup's injection) every control counts, as before",
+        loadGeneric(r.kids, SIGN_IN, "MyGreenhouse", undefined, { answers: false }).isCompletion(r.submit), true);
 }
 {
   // A wizard step with no file input of its own (Workday's later steps) is

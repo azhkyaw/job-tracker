@@ -769,8 +769,8 @@ The dated register behind each item, tasks 1-44 with their measurements, is
   queue as the author confirms them. Four `follow_up_sent` are on record: one filed
   by hand, three recovered from follow-ups the user EMAILED, which since
   migration 016 file themselves (task 16). (worklog task 4)
-- **Extension, next real Easy Apply:** verify the current build (0.24.1 on
-  30 Sep) is live on BOTH machines and the tab was opened after the
+- **Extension, next real Easy Apply:** verify the current build (0.24.2 on
+  2 Oct) is live on BOTH machines and the tab was opened after the
   reload; read `doc_source` and the sweep line, and check that the radio
   rows read Yes/No, not the question (task 42). JobStreet still owes one
   clean submit with the race fix and salary capture together. (tasks 5, 18)
@@ -823,7 +823,9 @@ The dated register behind each item, tasks 1-44 with their measurements, is
   and read right by the submit (task 43). It was still filed twice: the
   handoff held the listing's id and the form sent its own; 0.24.1 learns
   the second id from the form's referrer, and the twins were merged
-  (task 44).
+  (task 44). The fifth (LinkedIn → a Greenhouse job board, 1 Oct) took
+  the handoff into one record; the MyGreenhouse sign-in on its way filed
+  a false one, refused since 0.24.2 (task 45).
   Open: the first real apply through each piece.
 - **Release blockers:** LICENSE (Apache-2.0 recommended), split the extension
   into its own repo, decide whether CLAUDE.md ships, and whether

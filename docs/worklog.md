@@ -1280,3 +1280,31 @@ the key to each real case.
    triage twin detector. This was the third board-plus-ATS twin in three
    days (tasks 37, 41, 44). Seen, not acted on: step 1's upload is labelled
    "Choose a file or drop it here", so `resume_file` stayed empty.
+
+45. **A passwordless sign-in filed an application** (1-2 Oct 2026,
+   extension 0.24.2). The author asked why one record id existed. It was
+   "MyGreenhouse", "unknown company", one `applied` event and one answer
+   (the author's email), filed at 17:07:33 UTC on 1 Oct from
+   `my.greenhouse.io/users/sign_in?…source=quick_apply…`, the sign-in a
+   Greenhouse job board offers for autofill. The extension's buffers (read
+   from the LevelDB) gave the sequence. A LinkedIn listing at 17:07:03, the
+   handoff bound to the job board at 17:07:07. The sign-in's Submit then
+   captured at 17:07:33: rule 2 of `applicationRoot()` (a form, a "Submit",
+   five or more fields, no password) on 8 controls the sweep read as all
+   filled and none labelled, most likely the emailed code's boxes. The real
+   submit followed at 17:08:10. It took the handoff
+   (`linked: "opener+handoff"`) into ONE record with 8 answers and the ATS
+   id, the first time the submit was seen taking the binding (0.18.0's open
+   item). No mail, contact or other row pointed at the false record. It was
+   deleted with the author's go-ahead, through
+   `POST /applications/{id}/delete` (TestClient), snapshot first
+   (`2026-10-02-mygreenhouse-signin-capture.json`). The fix is a rule: rule 2
+   counts only fields that ask something, by the sweep's own `labelFor`
+   (answers.js exposes it), so the root rule and the sweep's `noLabel`
+   count are one predicate. The popup's injection carries no answers.js and
+   keeps the old count. 5 new extension checks (364): the three negatives
+   are red on the old code with the real signature, and a labelled control
+   and the fallback stay green on both. The UI5 fixture's inputs got
+   labels, since the real page's had them (its typed answers resolved),
+   modelled as `aria-label`. Expect a near-miss line in the popup at the
+   next MyGreenhouse sign-in: the refusal, not a loss.

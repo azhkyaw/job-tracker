@@ -830,6 +830,9 @@
     // Exposed for tests/test_extension.js's parity checks against the server.
     normKey,
     isSensitive,
+    // The question a control asks, or null: the sweep's own rule, read by
+    // generic.js to tell an application's fields from a code's boxes.
+    labelFor,
     // What the sweep saw on its way here, for the popup's diagnostic list.
     // Read before take() clears the store, or not at all.
     diagnostics() {

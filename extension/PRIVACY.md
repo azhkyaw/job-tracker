@@ -18,9 +18,11 @@ sites of the hiring systems employers use to take applications (Greenhouse,
 Lever, Ashby, Workable, Workday, SuccessFactors' career pages, SmartRecruiters,
 iCIMS, JazzHR, Breezy). There it does what it does on LinkedIn's Easy Apply:
 when YOU click the form's own submit button, it saves the job and the form's
-questions and answers to your tracker. It never reads a sign-in form (a
-password field anywhere in the form rules it out), and it skips a page's
-hidden machinery, such as a captcha's response field. When that page was
+questions and answers to your tracker. It does not take a sign-in form for
+an application: a password field anywhere in the form rules it out, and so
+does a form whose fields ask no question, such as the boxes of a sign-in
+code. It skips a page's hidden machinery, such as a captcha's response
+field. When that page was
 opened by a job board's "Apply on company website", the application is filed
 onto the record the job board started. That link comes from the browser's own
 note of which tab opened which, not from reading your tabs' addresses.

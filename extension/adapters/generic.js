@@ -66,6 +66,25 @@
   const hasPassword = (root) => passwordsIn(root).length > 0;
   const isFile = (el) => (el.getAttribute("type") || "").toLowerCase() === "file";
 
+  /* How many of these controls ask something: the ones answers.js's sweep
+   * can put a question to (its labelFor, exposed for this). A sign-in with
+   * no password field is otherwise just fields and a "Submit". MyGreenhouse's
+   * (1 Oct 2026, the sign-in Greenhouse's job boards offer for autofill)
+   * takes an emailed security code, and its Submit filed an application:
+   * no employer, title "MyGreenhouse", the sign-in's email as its one
+   * answer. The sweep at that click read 8 controls, every one filled and
+   * none labelled (their markup was not read), so this counts by the
+   * sweep's rule, not by a guess at what a code's boxes look like. Without
+   * answers.js (the popup's own injection, which sweeps nothing) every
+   * control counts, as before. */
+  function asking(controls) {
+    const A = window.__trackerAnswers;
+    if (!A || !A.labelFor) return controls.length;
+    return controls.filter((el) => {
+      try { return !!A.labelFor(el); } catch (e) { return false; }
+    }).length;
+  }
+
   function inside(node, ancestor) {
     for (let x = node; x; x = up(x)) if (x === ancestor) return true;
     return false;
@@ -145,9 +164,9 @@
    * that is a candidate sign-in, and its username is not an answer. In order:
    *  1. the <form> the resume's file input sits in (Lever, Greenhouse,
    *     Workable);
-   *  2. a <form> with the fields of an application and a control inside it
-   *     that says it sends one (SuccessFactors, whose address cannot be
-   *     trusted — see below);
+   *  2. a <form> with the fields of an application (five that ask
+   *     something) and a control inside it that says it sends one
+   *     (SuccessFactors, whose address cannot be trusted — see below);
    *  3. on a page with a file input or in an application's flow (inFlow:
    *     its address, or a later step of a form found before), the nearest
    *     container of every VISIBLE answerable control (Ashby's
@@ -168,13 +187,14 @@
     // postback (a Save, an upload, the register step), and a real application
     // was missed exactly there. Five fields at least, so a job-alert or
     // sign-up form (one to three, measured on the four other vendors) is not
-    // taken for one. The candidate experience's form (29 Sep 2026) is found
-    // here too, through its Submit's slotted label: its address need not say
-    // "application" either.
+    // taken for one, and five that ASK something (asking(), below). The
+    // candidate experience's form (29 Sep 2026) is found here too, through
+    // its Submit's slotted label: its address need not say "application"
+    // either.
     for (const b of deepAll(doc, "button, input, [role='button']")) {
       if (!submitWorded(b)) continue;
       const form = closestDeep(b, "form");
-      if (form && !hasPassword(form) && controlsIn(form).length >= MIN_FORM_FIELDS) return form;
+      if (form && !hasPassword(form) && asking(controlsIn(form)) >= MIN_FORM_FIELDS) return form;
     }
     // Rule 3 needs an address that says "application", or a file input on a
     // page that is NOT a listing. A job page that publishes a JobPosting and

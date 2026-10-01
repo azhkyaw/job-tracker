@@ -1034,6 +1034,41 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   - **Repaired:** merged keeping the LinkedIn record, the popover's
     `applied` removed (worklog task 44).
 
+- **A sign-in with no password field filed an application** (1 Oct 2026, a
+  LinkedIn → Greenhouse job-board apply; extension 0.24.2).
+  - **The page:** `my.greenhouse.io/users/sign_in?…source=quick_apply…`,
+    the MyGreenhouse sign-in that Greenhouse's job boards offer for
+    autofill. The manifest's `*://*.greenhouse.io/*` covers it, so
+    `generic.js` runs there. It asks for an email, then an emailed security
+    code. There is no `type=password` anywhere, so the one sign-in guard
+    (`hasPassword`) never fired.
+  - **What fired:** rule 2 of `applicationRoot()`, a `<form>` holding a
+    submit-worded control and five or more answerable controls. The sweep at
+    the Submit click read 8 controls, every one filled and none labelled.
+    The markup was not read, since reaching that step emails a code. The
+    capture filed title "MyGreenhouse", "unknown company", and one answer:
+    the email typed on the first step, kept by the edit backstop. 37 s later
+    the real submit on the job board made its own correct record.
+  - **Fixed as a rule:** rule 2 counts only controls that ASK something
+    (`generic.js:asking`), by the sweep's own `labelFor`, which answers.js
+    now exposes. So the rule and the sweep's `noLabel` count cannot
+    disagree, and the measurement (8 of 8 unlabelled) refuses the page
+    directly. A one-time-code test (`autocomplete`, `maxlength=1` runs) was
+    the other option and was not taken: the boxes' markup was never seen.
+  - **The fallback:** the popup's injection loads no answers.js, so there
+    every control counts as before. `tests/test_extension.js`'s
+    `loadGeneric` now loads answers.js after generic.js, as the manifest
+    does. The UI5 fixture's inputs got labels (modelled as `aria-label`:
+    the real page's typed answers resolved through `labelFor`, but how is
+    not on record).
+  - **What to expect next time:** the sign-in's Submit is a near miss in the
+    popup's failures ("no application form found on this page"). That line
+    is the refusal working, not a lost application.
+  - **How it was found:** the provenance, sweeps and handoffs buffers from
+    the LevelDB (Procedures). The sign-in capture's provenance shows
+    `linked: null` and `source: "doctitle"`, on a host the handoff did not
+    hold.
+
 ## Known-untested surfaces (verify on first real contact)
 
 - **Extension DOM selectors** (`extension/adapters/*.js`) — best-effort against
@@ -1338,8 +1373,10 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   - the job board path (LinkedIn's external apply) binds through
     `openerTabId`, which Chrome DOES set there: seen live once (28 Sep 2026,
     `via: "opener"` with the right `atsJobId`), when the submit's own id was
-    what failed (the gotcha above, fixed in 0.21.1). The submit taking the
-    binding is still to be seen;
+    what failed (the gotcha above, fixed in 0.21.1). The submit took the
+    binding on 1 Oct 2026, on a Greenhouse job board: provenance
+    `linked: "opener+handoff"`, one record with the board's identity, the
+    form's 8 answers and `ats_job_id`;
   - an employer-branded listing binds only once its site is enabled, and
     enabling has not yet completed once (docs/career-sites.md §16.1, P3);
   - SuccessFactors ids now carry the tenant (`<host>/<tenant>/<id>`): one
