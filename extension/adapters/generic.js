@@ -213,6 +213,19 @@
     return root && !hasPassword(root) ? root : null;
   }
 
+  /* A hiring system's own page: on the vendor's host (atsOfUrl), or on an
+   * employer's domain that runs the vendor's app AND holds the application
+   * form right here. Eightfold's candidate site is served as
+   * careers.<employer> (read live 2 Oct 2026: scripts from vscdn.net, the job
+   * at /careers/job/<pid>, its form at /careers/apply?pid=<pid>, one id for
+   * both), so the page with its form is the hiring system's, whatever the
+   * domain. The form is the test, not the vendor alone: a SuccessFactors
+   * career site loads the vendor's files too, and its listing's number is not
+   * the id its form will carry (docs/career-sites.md §16, P4). */
+  function hiringSystem(doc, loc) {
+    return !!J.atsOfUrl(loc.href) || (!!J.vendorOf(doc, loc) && !!applicationRoot(doc, loc));
+  }
+
   // The words that send an application — matched whole, and only on a control
   // INSIDE the application root, so a job page's own "Apply" button (outside
   // Greenhouse's form, measured) and a sign-in's "Submit" (no root) never fire.
@@ -359,11 +372,12 @@
     },
     // The job's own id on its hiring system, which the server keeps on the
     // JOB (migration 018, docs/career-sites.md §16): this page's id, only on
-    // the vendor's own host and only a real one, never a crumb. capture.js
-    // sends it beside the identity, since a link to a job board's record
-    // replaces the page's.
+    // a hiring system's own page (hiringSystem: the vendor's host, or its
+    // form under an employer's domain) and only a real one, never a crumb.
+    // capture.js sends it beside the identity, since a link to a job board's
+    // record replaces the page's.
     atsJobId() {
-      if (!J.atsOfUrl(location.href)) return null;
+      if (!hiringSystem(document, location)) return null;
       const id = J.pageId(document, location, hints());
       return id && id.by !== "path" ? id.platform_job_id : null;
     },
@@ -386,6 +400,7 @@
     },
     // Pure forms of the rules, for tests/test_extension.js.
     applicationRoot,
+    hiringSystem,
     arrivedFrom,
     isSubmitControl,
     quickApplyStart,
@@ -464,20 +479,40 @@
    * it is; the worker binds this tab to the listing the applicant just left
    * (jobposting.js:pickDeparture) and keeps that for days. Every later page
    * of the visit says so again, which adds the job's id once an address or a
-   * heading shows it. Only on a hiring system's own host. */
+   * heading shows it.
+   * On a site the user enabled (an employer's own domain, which may serve a
+   * hiring system's app: Eightfold, 2 Oct 2026) the page says it is a `site`:
+   * there only the tab that opened this one can bind it, and a binding with
+   * no id fits a submit only when the titles agree (handoffFits). Its form
+   * may render after load, so it says so again twice, as stashListing does.
+   * The binding takes the PAGE's own id, form or not: Eightfold's job page
+   * and its form share one (`/careers/job/<pid>`, `?pid=<pid>`), and a
+   * binding that learned no id at the job's page could later take a second
+   * job's. The worker keeps an id to its own host. */
   function claimHandoff() {
-    if (!J.atsOfUrl(location.href) || window !== window.top) return;
+    if (window !== window.top) return;
+    const site = !J.atsOfUrl(location.href);
     let atsJobId = null, fromId = null, listing = false;
-    try { atsJobId = adapter.atsJobId(); } catch (e) { atsJobId = null; }
+    try {
+      const id = J.pageId(document, location, hints());
+      atsJobId = id && id.by !== "path" ? id.platform_job_id : null;
+    } catch (e) { atsJobId = null; }
     // Where this page was reached from, and whether it is a listing: how the
     // worker tells a job's second id from another job's (learnsAlias).
     try { fromId = arrivedFrom(document, location); } catch (e) { fromId = null; }
     try { listing = J.hasPosting(document); } catch (e) { listing = false; }
     try {
       chrome.runtime.sendMessage({ type: "tracker-claim-handoff", page: {
-        host: location.hostname.toLowerCase(), vendor: J.atsOfUrl(location.href),
-        tenant: tenantHint(), atsJobId, fromId, listing } }).catch(() => {});
+        host: location.hostname.toLowerCase(),
+        vendor: site ? J.vendorOf(document, location) : J.atsOfUrl(location.href),
+        tenant: tenantHint(), atsJobId, fromId, listing, site } }).catch(() => {});
     } catch (e) { /* no extension context: a test, or a reloaded extension */ }
   }
-  if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id) claimHandoff();
+  if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id) {
+    claimHandoff();
+    if (!J.atsOfUrl(location.href)) {
+      setTimeout(claimHandoff, 1500);
+      setTimeout(claimHandoff, 5000);
+    }
+  }
 })();

@@ -809,7 +809,7 @@
    * Decided here, seconds after the click, rather than at the submit, which
    * comes after a sign-in, an account and (28 Sep 2026) a session timeout.
    *
-   * `page` is {host, vendor, tenant}. Only the MOST RECENT entry of each list
+   * `page` is {host, vendor, tenant, site}. Only the MOST RECENT entry of each list
    * is considered: an older one is a guess about which job was meant. It must
    * not contradict the page: a listing that names where it hands over
    * (atsHandoff: data centre, tenant) must name THIS host and tenant, and a
@@ -831,6 +831,11 @@
     if (opener && now - opener.at <= OPENER_WINDOW_MS && fits(opener)) {
       return { entry: opener, via: "opener" };
     }
+    // A site the user enabled (an employer's own domain; Eightfold's
+    // candidate site runs on one, 2 Oct 2026) binds from the opener only.
+    // A same-tab listing elsewhere is evidence about a hiring system's own
+    // host, where its vendor can disagree; here none need be known.
+    if (page.site) return null;
     // Same-tab: never a listing on this very host (a hiring system's own job
     // page before its own form, which the keyed stash already links).
     const own = (ownEntries || []).find((e) => e && e.job && hostOf(e.job.url) !== page.host);
@@ -843,14 +848,19 @@
    * to another job's form must not file that job onto the listing. An id the
    * binding LEARNED (learnsAlias, below) fits only when the submit's page
    * title is the bound job's too, since that id came from where the page was
-   * reached from, not from the listing itself. */
+   * reached from, not from the listing itself. A binding made on a site the
+   * user enabled (`site`) whose id is not known on both sides fits only on
+   * the title as well: its first page may be the job's own, with no form and
+   * so no id, and a second job applied to in the same tab must not be filed
+   * onto the first. */
   const knowsId = (b, id) => !!id && (b.atsJobId === id || (b.aliases || []).includes(id));
 
   function handoffFits(binding, page) {
     if (!binding || !binding.job || binding.host !== page.host) return false;
-    if (!binding.atsJobId || !page.atsJobId || binding.atsJobId === page.atsJobId) return true;
-    return (binding.aliases || []).includes(page.atsJobId) &&
-      !!page.title && sameJob(binding.job.title, page.title);
+    const titled = !!page.title && sameJob(binding.job.title, page.title);
+    if (!binding.atsJobId || !page.atsJobId) return !binding.site || titled;
+    if (binding.atsJobId === page.atsJobId) return true;
+    return (binding.aliases || []).includes(page.atsJobId) && titled;
   }
 
   /* One job, two ids on one host. SmartRecruiters' listing is
@@ -867,6 +877,38 @@
   function learnsAlias(b, page) {
     return !!(b && b.job && page && b.host === page.host && b.atsJobId && page.atsJobId &&
       !page.listing && !knowsId(b, page.atsJobId) && knowsId(b, page.fromId));
+  }
+
+  /* The tab's binding after one of its pages says where it is
+   * (background.js:claimHandoff), given what pickDeparture chose: the new
+   * binding, or null to leave the tab's as it is. Pure, so the cases that
+   * would file one job onto another are tested, not argued. */
+  const jobKeyOf = (j) => (j && (j.platform_job_id || j.url)) || null;
+
+  function rebind(cur, pick, page, now) {
+    if (pick) {
+      const same = !!cur && jobKeyOf(cur.job) === jobKeyOf(pick.entry.job);
+      const here = same && cur.host === page.host;
+      // The same listing still leads this tab's list, but the hiring system
+      // now shows ANOTHER job's id: the tab went on to a second job without a
+      // new listing. Its binding stays the first job's, and handoffFits keeps
+      // the second job's submit off it.
+      if (here && cur.atsJobId && page.atsJobId && !knowsId(cur, page.atsJobId)) return null;
+      // An id is kept only on its own host: a career site's listing number (a
+      // site binding, 2 Oct 2026) is not the id its hiring system's form on
+      // another host will send.
+      return { at: now, job: pick.entry.job, via: pick.via, host: page.host,
+               atsJobId: (here && cur.atsJobId) || page.atsJobId || null,
+               ...(same && cur.aliases ? { aliases: cur.aliases } : {}),
+               // Made on a site the user enabled, not a hiring system's own
+               // host: handoffFits then asks for the title too.
+               ...(page.site ? { site: true } : {}) };
+    }
+    // A later page of the visit shows the job's id.
+    if (cur && cur.host === page.host && page.atsJobId && !cur.atsJobId) {
+      return { ...cur, atsJobId: page.atsJobId };
+    }
+    return null;
   }
 
   /* The site an "Always capture on this site" click enables: one host, both
@@ -907,7 +949,7 @@
   // rule exists once; `window` in a page, where the two are the same object.
   (typeof window !== "undefined" ? window : self).__trackerJobPosting =
     { read, idFrom, pageId, tenantOf, atsHandoff, atsCandidates, hasPosting, siteOwner, pickDeparture,
-      handoffFits, learnsAlias, knowsId, quickApplies, quickApplySent, atsOfUrl, vendorOf, htmlToText, sameJob,
+      handoffFits, learnsAlias, rebind, knowsId, quickApplies, quickApplySent, atsOfUrl, vendorOf, htmlToText, sameJob,
       pickListed, siteOf, APPLY_SEGMENTS,
       matchPatternRegex, stripRequisition, suggestCompany };
 })();

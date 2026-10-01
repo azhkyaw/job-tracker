@@ -63,7 +63,10 @@ _RESUME_RE = re.compile(r"^\s*(?:de)?select\s+resume\s+(.+?)\s*$", re.I)
 # Recognised by the shape of the pair instead — a radio whose question opens
 # with the word and whose answer is a BARE document filename. Bare on purpose:
 # a genuine "Resume link" question answered with a URL is a question.
-_RESUME_HEAD = re.compile(r"^resume\b")
+# "Opens with" allows two words before it: an Eightfold form (2 Oct 2026)
+# asks "Upload your resume" and shows the chosen file in a combobox, a TEXT
+# input whose value is the bare filename.
+_RESUME_HEAD = re.compile(r"^(?:\w+ ){0,2}resume\b")
 _RESUME_FILE = re.compile(r"^[^/\\:]+\.(?:pdf|docx?)$", re.I)
 # A resume UPLOAD's answer: the file's own name, never a path (see
 # _is_resume_pick).
@@ -121,7 +124,8 @@ def _is_resume_pick(question: str, answer: str | None, field_type: str | None) -
     answer the extension sends as the chosen file's name (answers.js:valueOf;
     Greenhouse's job boards, "Resume/CV*"). A file field's answer is a file
     name by construction, so any extension counts there (it accepts .txt and
-    .rtf too); a radio's must still be a bare document name."""
+    .rtf too); a radio's, or a text field's (Eightfold's combobox showing the
+    chosen file), must still be a bare document name."""
     if _RESUME_RE.match(question or ""):
         return True
     if not _RESUME_HEAD.match(norm_question(question)):
@@ -129,7 +133,7 @@ def _is_resume_pick(question: str, answer: str | None, field_type: str | None) -
     answer = (answer or "").strip()
     if field_type == "file":
         return bool(_UPLOADED_FILE.match(answer))
-    return field_type in (None, "radio") and bool(_RESUME_FILE.match(answer))
+    return field_type in (None, "radio", "text") and bool(_RESUME_FILE.match(answer))
 
 
 def _control_kind(question: str, answer: str | None = None,

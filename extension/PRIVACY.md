@@ -34,7 +34,11 @@ then on, on that site:
 - each job page you open is remembered for its tab, locally, for up to two
   hours;
 - when that tab moves on to the employer's hiring system and you submit the
-  application, the application is filed onto that job.
+  application, the application is filed onto that job;
+- when the site IS the hiring system (its application form is on the site
+  itself, as with Eightfold's), the submit there is captured with the
+  form's answers, and filed onto the job board's record when a job board's
+  "Apply on company website" opened the tab.
 "Stop capturing on <that site>" in the popup, or removing the site in
 chrome://extensions, ends it.
 

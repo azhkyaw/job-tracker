@@ -1373,6 +1373,53 @@ console.log("\njobposting.js: the handoff from a listing to its hiring system (P
                                   title: "GenAI Engineer" }),
          J.handoffFits(learned, { host: SRH, atsJobId: LISTING })], [false, true]);
 
+  // A site the user enabled: an employer's own domain, under which
+  // Eightfold's candidate site runs (read live 2 Oct 2026). Only the opener
+  // binds there, and a binding whose id is not known on both sides fits only
+  // where the titles agree.
+  const EF = "careers.fabrikam.com";
+  const efPage = { host: EF, vendor: "eightfold", tenant: null, site: true };
+  const elsewhere = entry("https://jobs.contoso.com/job/7");
+  check("a site binds from a fresh opener", pd([board], [elsewhere], efPage),
+        ["opener", "https://www.linkedin.com/jobs/view/4400000001/"]);
+  check("…never from the tab's own list, which a hiring system's own host would take",
+        [pd(null, [elsewhere], efPage), pd(null, [elsewhere], { ...efPage, site: false })],
+        [null, ["tab", "https://jobs.contoso.com/job/7"]]);
+  const A = `${EF}/446700000001`, B2 = `${EF}/446700000002`;
+  const siteB = { job: { title: "Senior Platform Engineer" }, host: EF, atsJobId: null, site: true };
+  check("handoffFits on a site with no id: the title must be the bound job's",
+        [J.handoffFits(siteB, { host: EF, atsJobId: A, title: "Senior Platform Engineer" }),
+         J.handoffFits(siteB, { host: EF, atsJobId: B2, title: "Data Scientist" }),
+         J.handoffFits(siteB, { host: EF, atsJobId: null, title: null })], [true, false, false]);
+  check("…with an id on both sides, the ids decide",
+        [J.handoffFits({ ...siteB, atsJobId: A }, { host: EF, atsJobId: A, title: "Data Scientist" }),
+         J.handoffFits({ ...siteB, atsJobId: A }, { host: EF, atsJobId: B2, title: "Senior Platform Engineer" })],
+        [true, false]);
+
+  // rebind: what a tab's binding becomes when one of its pages says where it
+  // is (background.js:claimHandoff), given what pickDeparture chose.
+  const li = { url: "https://www.linkedin.com/jobs/view/4400000001/", platform_job_id: "4400000001",
+               title: "Senior Platform Engineer" };
+  const chose = (job) => ({ entry: { job }, via: "opener" });
+  const first = J.rebind(undefined, chose(li), { ...efPage, atsJobId: A }, NOW);
+  check("rebind: a site's job page binds the opener's job with the page's own id, marked a site",
+        [first.host, first.atsJobId, first.site, first.job.url], [EF, A, true, li.url]);
+  check("…a second job's page in the same tab, the opener still fresh: the first job's binding stays",
+        J.rebind(first, chose(li), { ...efPage, atsJobId: B2 }, NOW), null);
+  check("…a page with no id keeps the binding's",
+        J.rebind(first, chose(li), { ...efPage, atsJobId: null }, NOW).atsJobId, A);
+  check("…a later page's id fills one the binding lacks; with nothing chosen and nothing to learn, no change",
+        [J.rebind({ ...first, atsJobId: null }, null, { ...efPage, atsJobId: A }, NOW).atsJobId,
+         J.rebind(first, null, { ...efPage, atsJobId: null }, NOW)], [A, null]);
+  // A career site's listing (a site binding with the listing's number), then
+  // its hiring system on ANOTHER host: that number is not the form's id.
+  const onCsb = J.rebind(undefined, chose(li), { host: "jobs.litwarebank.com", vendor: "successfactors",
+                                                 site: true, atsJobId: "jobs.litwarebank.com/51234" }, NOW);
+  const onSf = J.rebind(onCsb, chose(li), { ...sfPage, atsJobId: "career2.successfactors.eu/litwarebk/51234" }, NOW);
+  check("…on another host the binding takes that host's id, not the site's, and is a site binding no more",
+        [onSf.host, onSf.atsJobId, !!onSf.site],
+        ["career2.successfactors.eu", "career2.successfactors.eu/litwarebk/51234", false]);
+
   // atsCandidates (P4): what a listing BELIEVES its hiring system holds, for
   // the server to look up and never store.
   const h = { atsHost: "career2.successfactors.eu", tenant: "litwarebk" };
@@ -1519,7 +1566,13 @@ function memoryStorage() {
 // host: rule 2 counts the fields that ask something by the sweep's own
 // labelFor (generic.js:asking). `answers: false` is the popup's injection,
 // which carries no answers.js.
-function loadGeneric(kids, href, title = "", storage = undefined, { answers = true } = {}) {
+function loadGeneric(kids, href, title = "", storage = undefined, opts = {}) {
+  return genericSandbox(kids, href, title, storage, opts).window.__trackerAdapter;
+}
+
+// The same load, returning the whole sandbox: its window also holds
+// answers.js's __trackerAnswers, whose take() sweeps the form as a submit does.
+function genericSandbox(kids, href, title = "", storage = undefined, { answers = true } = {}) {
   const doc = pageDoc(kids, title);
   const loc = makeLoc(href);
   const sandbox = { URL, URLSearchParams, console, setTimeout: () => 0, CSS: { escape: (s) => s } };
@@ -1538,7 +1591,7 @@ function loadGeneric(kids, href, title = "", storage = undefined, { answers = tr
     doc.addEventListener = () => {};
     vm.runInContext(ANSWERS_SRC, sandbox);
   }
-  return sandbox.window.__trackerAdapter;
+  return sandbox;
 }
 const text = (name) => node("input", { type: "text", name });
 const file = (name) => node("input", { type: "file", name });
@@ -2028,6 +2081,102 @@ console.log("\ngeneric.js: a later step at an address that never says 'apply' (S
   const review = loadGeneric([node("div", {}, [node("p", {}, ["First name: Jane"])]), submitHost], SR, "",
                              store({ key: FORM_KEY, at: Date.now(), items: earlier, rooted: true }));
   check("…and a controlless last step of it sends too", review.isCompletion(submit), true);
+}
+
+console.log("\ngeneric.js: Eightfold's candidate site under an employer's domain (read live 2 Oct 2026)");
+{
+  // careers.<employer> serves Eightfold's app: its scripts come from
+  // vscdn.net, the job is /careers/job/<pid> and its form
+  // /careers/apply?pid=<pid>, and the server HTML of both carries a
+  // JobPosting. The form, read with the applicant signed in (nothing typed,
+  // nothing sent): one <form> holding the resume's hidden file input and, as
+  // the visible choice, a COMBOBOX whose value is the chosen file's name,
+  // labelled "Upload your resume"; section toggles as <button type=button>;
+  // contact fields named by <label for>, an aria-label, or a placeholder
+  // alone; comboboxes that keep the picked option in the input, each in a
+  // box with no text of its own; a consent box; and "Submit application"
+  // (type=submit). The visa question's picked "Yes" is modelled: it was
+  // unanswered on the day.
+  const EF = "https://careers.fabrikam.com", PID = "446700000001";
+  const posting = () => ld({
+    "@context": "http://schema.org", "@type": "JobPosting", title: "Senior Platform Engineer",
+    description: "<p>Build the platform.</p>", datePosted: "2026-04-15T00:00:00", employmentType: "FULL_TIME",
+    hiringOrganization: { "@type": "Organization", name: "Fabrikam" },
+    jobLocation: [{ "@type": "Place", address: { "@type": "PostalAddress",
+      addressCountry: { "@type": "Country", name: "SG" }, addressLocality: "Singapore", addressRegion: "" } }],
+    url: `${EF}/careers/apply?pid=${PID}` });
+  const vendor = () => node("script", { src: "https://static.vscdn.net/images/careers/demo/fabrikam/app.js" });
+  const combo = (attrs) => node("div", { class: "select-module_select-input" },
+                                [node("input", { type: "text", role: "combobox", "aria-expanded": "false", ...attrs })]);
+  const asked = (id, q, attrs) => node("div", {}, [node("span", { id }, [q]), combo({ "aria-labelledby": id, ...attrs })]);
+  const applyPage = () => {
+    const upload = node("input", { type: "file" });
+    upload.getClientRects = () => [];
+    const [submit, toggle, cancel, uploadNew] = [button("Submit application", { type: "submit" }),
+      button("Contact Information", { type: "button", "aria-expanded": "true" }),
+      button("Cancel", { type: "button" }), button("Upload new", { type: "button" })];
+    const field = (id, lbl, value, extra = {}) =>
+      [node("label", { for: id }, [lbl]), node("input", { id, value, ...extra })];
+    const form = node("form", { class: "form-3YMOs" }, [
+      asked("Resume_resume_label", "Upload your resume", { id: "input-7", value: "Jane-Doe_resume.pdf" }),
+      node("div", { class: "upload-module_upload" }, [upload, uploadNew]),
+      toggle,
+      ...field("Contact_Information_firstname", "First Name", "Jane"),
+      ...field("Contact_Information_lastname", "Last Name", "Doe"),
+      ...field("Contact_Information_email", "Email", "jane@example.com", { readonly: "" }),
+      combo({ "aria-label": "Country code", value: "Singapore (+65)" }),
+      node("input", { type: "text", id: "Contact_Information_phone", placeholder: "Phone Number", value: "91234567" }),
+      asked("q_country", "Country", {}),
+      asked("q_auth", "Can you, upon employment, submit verification of your legal right to work in Singapore?",
+            { value: "Yes" }),
+      node("label", { for: "tc" }, ["I consent"]),
+      node("input", { type: "checkbox", id: "tc", name: "Terms_and_Conditions_consent", checked: true }),
+      cancel, submit,
+    ]);
+    return { kids: [vendor(), posting(), node("h1", {}, ["Application Form"]), form],
+             form, submit, toggle, cancel, uploadNew };
+  };
+  const APPLY = `${EF}/careers/apply?pid=${PID}`;
+  const p = applyPage();
+  const sb = genericSandbox(p.kids, APPLY, "Submit application for Senior Platform Engineer");
+  const a = sb.window.__trackerAdapter;
+  check("the root is the form that holds the resume's file input", a.answerFormRoot() === p.form, true);
+  check("'Submit application' is the submit; a section toggle, Cancel and 'Upload new' are not",
+        [a.isCompletion(p.submit), a.isCompletion(p.toggle), a.isCompletion(p.cancel), a.isCompletion(p.uploadNew)],
+        [true, false, false, false]);
+  const job = a.getJob();
+  check("the job, from the JobPosting the page serves, under the ?pid= id; vendor eightfold",
+        [job.platform_job_id, job.title, job.company, job.ats, /Singapore/.test(job.location || "")],
+        ["careers.fabrikam.com/446700000001", "Senior Platform Engineer", "Fabrikam", "eightfold", true]);
+  check("the form's page is the hiring system's, off its own host: the id is the job's on it",
+        [a.hiringSystem(sb.document, sb.location), a.atsJobId()], [true, "careers.fabrikam.com/446700000001"]);
+  check("what the submit sends: every named field, the resume combobox's file name, the picked option",
+        sb.window.__trackerAnswers.take(), [
+          { question: "Upload your resume", answer: "Jane-Doe_resume.pdf", type: "text" },
+          { question: "First Name", answer: "Jane", type: "text" },
+          { question: "Last Name", answer: "Doe", type: "text" },
+          { question: "Email", answer: "jane@example.com", type: "text" },
+          { question: "Country code", answer: "Singapore (+65)", type: "text" },
+          { question: "Phone Number", answer: "91234567", type: "text" },
+          { question: "Can you, upon employment, submit verification of your legal right to work in Singapore?",
+            answer: "Yes", type: "text" },
+          { question: "I consent", answer: "Yes", type: "checkbox" }]);
+  // The job's own page: the same JobPosting and vendor, no form.
+  const jobPage = genericSandbox([vendor(), posting(), node("h1", {}, ["Senior Platform Engineer"]),
+                                  node("a", { href: `/careers/apply?pid=${PID}` }, ["Apply Now"])],
+                                 `${EF}/careers/job/${PID}`, "Senior Platform Engineer | Fabrikam");
+  const j = jobPage.window.__trackerAdapter;
+  check("the job's page has the form's id, and no form: no root, not the hiring system's page",
+        [j.getJob().platform_job_id, j.answerFormRoot(), j.hiringSystem(jobPage.document, jobPage.location), j.atsJobId()],
+        ["careers.fabrikam.com/446700000001", null, false, null]);
+  // An employer's own form with no hiring system's app behind it.
+  const q = applyPage();
+  q.kids.shift();
+  const inHouse = genericSandbox(q.kids, APPLY, "");
+  check("a form on an employer's domain with no vendor's app is no hiring system: no ATS id",
+        [inHouse.window.__trackerAdapter.answerFormRoot() === q.form,
+         inHouse.window.__trackerAdapter.hiringSystem(inHouse.document, inHouse.location),
+         inHouse.window.__trackerAdapter.atsJobId()], [true, false, null]);
 }
 
 console.log("\ngeneric.js getJob: a listing proposes its hiring system's id (P4)");

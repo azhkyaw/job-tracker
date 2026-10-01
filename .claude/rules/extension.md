@@ -1069,6 +1069,50 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
     `linked: null` and `source: "doctitle"`, on a host the handoff did not
     hold.
 
+- **A hiring system served under an employer's own domain** (2 Oct 2026,
+  Eightfold; extension 0.25.0).
+  - **The page, read live** (the author signed in; nothing typed or sent):
+    `careers.<employer>` runs Eightfold's app, its scripts from `vscdn.net`.
+    The job is `/careers/job/<pid>` and the form `/careers/apply?pid=<pid>`,
+    one id for both, and the server HTML of both carries a JobPosting. The
+    form is plain light DOM: one `<form>` holding the resume's hidden file
+    input, "Submit application" as `type=submit`, section toggles as
+    `<button type=button>`. The chosen resume shows in a COMBOBOX whose
+    value is the file's name, labelled "Upload your resume". Comboboxes
+    keep the picked option in the input itself, unlike Greenhouse's
+    react-select.
+  - **What already worked:** rule 1 roots the form, the submit words
+    match, `read()` takes the JobPosting, `?pid=` was already an id
+    parameter, and `vendorOf` reads `eightfold` off the scripts.
+  - **What did not, all because the host is not the vendor's:**
+    `claimHandoff` returned at once off a hiring system's host, so a
+    LinkedIn → employer-domain apply had only the opener check at the
+    submit, which filed a twin on 30 Sep. And `atsJobId()` was null, so
+    no `jobs.ats_job_id`.
+  - **Fixed as rules:**
+    - `generic.js:hiringSystem()`: the vendor's host, or a page under any
+      domain that runs a vendor's app AND holds the application form. The
+      form is the test, not the vendor alone: a SuccessFactors career site
+      loads the vendor's files too, and its listing number is not its
+      form's id (P4). `atsJobId()` reads it.
+    - `claimHandoff` runs on every page, sending the PAGE's own id. Off a
+      vendor's host the page is a `site`: `pickDeparture` binds it from the
+      opener only, and `handoffFits` asks for the title when the id is not
+      known on both sides. It re-claims at 1.5 s and 5 s, since a form may
+      render after load.
+    - The worker's re-bind is now `jobposting.js:rebind()`, pure and
+      tested. It keeps an id to its own host: a career site's listing
+      number must not follow the tab onto its hiring system's form.
+    - `pipeline/answers.py:_RESUME_HEAD` allows two words before "resume",
+      and a text field's bare document name counts, so the combobox
+      promotes to `resume_file`.
+  - **Each rule was undone alone and its own check went red** (a mutation
+    run): the old `atsJobId` gate, an id-less site binding fitting any
+    title, a site binding from the tab's list, an id carried across hosts,
+    and no second-job guard.
+  - **Still the author's click:** a custom domain gets the scripts only once
+    enabled ("Always capture on this site"), which no manifest can list.
+
 ## Known-untested surfaces (verify on first real contact)
 
 - **Extension DOM selectors** (`extension/adapters/*.js`) — best-effort against
@@ -1454,6 +1498,18 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   seen, and the suite's labels read as before. What to read on the next ATS
   wizard whose later step has no file input: the sweep line's `drawn`
   count, and that step's answers on the record.
+- **A hiring system under an employer's domain (0.25.0, 2 Oct 2026) has
+  run only against tests**, with a fixture built from the live Eightfold
+  form; enabling a site has never completed live either. What to read on
+  the first apply there, after "Always capture on <site>":
+  - the LevelDB's `handoffs[<tab>]` holds `site: true`, the job board's
+    job, and `atsJobId` `<host>/<pid>` from the job's own page;
+  - the provenance line says `…+handoff`, and one record carries the job
+    board's identity, the form's answers and `ats_job_id` `<host>/<pid>`;
+  - `resume_file` is the combobox's file name, with no "Upload your
+    resume" row among the answers;
+  - a picked option in a combobox (the visa question) reads as the option,
+    since only an EMPTY one was seen.
 - **The handoff's learned second id (0.24.1, 30 Sep 2026) has run only
   against tests.** Its inputs were measured live (the referrer, no
   JobPosting on the form); `background.js`'s `claimHandoff` wiring is not

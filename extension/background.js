@@ -302,8 +302,6 @@ async function _handoffs() {
   return handoffs;
 }
 
-const jobKeyOf = (j) => (j && (j.platform_job_id || j.url)) || null;
-
 async function claimHandoff(tabId, openerTabId, page) {
   if (tabId == null || !page || !page.host) return;
   const J = self.__trackerJobPosting;
@@ -319,22 +317,10 @@ async function claimHandoff(tabId, openerTabId, page) {
   }
   const pick = J.pickDeparture(openerTabId != null ? ext[openerTabId] : null,
                                ext[tabId], page, Date.now());
-  if (pick) {
-    const same = !!cur && jobKeyOf(cur.job) === jobKeyOf(pick.entry.job);
-    // The same listing still leads this tab's list, but the hiring system now
-    // shows ANOTHER job's id: the tab went on to a second job without a new
-    // listing. Its binding stays the first job's, and handoffFits keeps the
-    // second job's submit off it.
-    if (same && cur.host === page.host && cur.atsJobId && page.atsJobId &&
-        !J.knowsId(cur, page.atsJobId)) return;
-    all[tabId] = { at: Date.now(), job: pick.entry.job, via: pick.via, host: page.host,
-                   atsJobId: (same && cur.atsJobId) || page.atsJobId || null,
-                   ...(same && cur.aliases ? { aliases: cur.aliases } : {}) };
-  } else if (cur && cur.host === page.host && page.atsJobId && !cur.atsJobId) {
-    cur.atsJobId = page.atsJobId;      // a later page of the visit shows the job's id
-  } else {
-    return;
-  }
+  // What the binding becomes, or null to leave it (jobposting.js:rebind).
+  const next = J.rebind(cur, pick, page, Date.now());
+  if (!next) return;
+  all[tabId] = next;
   await setLocal({ handoffs: all });
 }
 

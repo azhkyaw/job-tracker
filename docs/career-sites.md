@@ -150,7 +150,7 @@ rule in CLAUDE.md).
 | Personio | JSON-LD on the job page, **none on `/apply`** (L) | The organization name has a trailing space. `employmentType` is an array |
 | JazzHR | Two JSON-LD blocks, an Organization then the JobPosting (L) | Every address field is `""`. It uses a non-standard `uniqueJobCode` instead of `identifier` |
 | Avature | **None** (L) | Server-rendered label/value pairs |
-| Eightfold | None in the server HTML. Its config says `publishToGoogle:true`, so JSON-LD is probably added on the client (not verified) | — |
+| Eightfold | None in the server HTML of the tenant read here. Its config says `publishToGoogle:true`, so JSON-LD is probably added on the client (not verified). **2 Oct 2026:** a tenant served under an employer's own domain has it in the server HTML of both the job page and the form (L) | No `identifier`; `url` is the form's address. `addressCountry` is a Country object |
 | Phenom | Three JSON-LD blocks, with the JobPosting between two WebPages (L) | Entity-encoded HTML description. Three different dates on one job |
 | MyCareersFuture | None in the server HTML. The bundle adds it on the client (B) | `datePosted` is the REPOST date. The currency is hard-coded to SGD. The organization may be the agency that posted the job |
 | Careers@Gov | JSON-LD (L) | `datePosted` is the last-activity time. The organization is the government agency |
@@ -173,6 +173,7 @@ rule in CLAUDE.md).
 | JazzHR | `/apply/{10-char}/{slug}` | Inline on the same page | `#resumator-submit-resume` |
 | Avature | `/careers/JobDetail/{slug}/{numeric}` | Same host, `/careers/Login?jobId={id}`: a **sign-in** | Found only by `href` |
 | Phenom | `/…/job/{REQID}/{slug}` | **Another vendor's host**: the page's state names a Workday `applyUrl` | None in the server HTML |
+| Eightfold (2 Oct 2026) | `/careers/job/{pid}`; the form and the search carry `?pid={pid}`. Often served under the employer's own domain (`careers.<employer>`), its scripts from `vscdn.net` | Same host, `/careers/apply?pid={pid}`, signed in. One `<form>` holding the resume's file input; the chosen resume shows in a combobox | `button[type=submit]` "Submit application" |
 | MyCareersFuture | `…/{slug}-{32-hex}` | Same host, behind a **Singpass** login, or an external URL | `#job-details-apply-button` (B) |
 | Careers@Gov | `/jobs/{source}/{id}` | **Another host**: the agency's own ATS, via a `<button>` with no href | None |
 
@@ -641,7 +642,8 @@ All four were taken by the author on 24 Sep 2026, each as recommended.
 - iCIMS (WAF CAPTCHA) and Taleo (no live posting reached).
 - Client-rendered JSON-LD on Workable, Oracle Recruiting Cloud,
   MyCareersFuture, BambooHR and Eightfold: known from bundle code only, never
-  seen in a rendered page.
+  seen in a rendered page. (Eightfold's was seen on 2 Oct 2026, in the
+  server HTML of a tenant under an employer's own domain.)
 - That employer sites iframe Greenhouse's embed form: prior knowledge, not
   observed. If so, frame 0 needs a content script (per-site opt-in) before
   `tracker-relay-getjob` can ask it who the job is.

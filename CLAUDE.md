@@ -75,7 +75,7 @@ and design records; the code and `migrations/` win where they disagree.
   this install. Read its §3 first: the author's right to earn in Singapore
   decides the rest. Confirms `docs/open-source.md` and says what would
   reopen the question.
-- `docs/worklog.md` — the dated task register (tasks 1-44 with their
+- `docs/worklog.md` — the dated task register (tasks 1-46 with their
   measurements); what is still open is summarised under "Open work" below.
 
 **Path-scoped rules.** Dated case history that only matters when touching
@@ -743,7 +743,8 @@ Detail lives with each family's rule file; this is the index.
   submitted; 0.24.0's drawn checkboxes and switches are modelled in tests
   only (its drawn radios, flat-tree labels and continued form met one real
   SmartRecruiters submit); 0.24.1's handoff learning a job's second id has
-  run only against tests.
+  run only against tests, and so has 0.25.0's hiring system under an
+  employer's own domain (Eightfold's form read live, never submitted).
 - **Mail** (`.claude/rules/mail-ingest.md`): IMAP verified on a real inbox
   28 Jul 2026; the web IMAP connect form, Gmail web OAuth and the full `-m 12`
   window are not.
@@ -759,7 +760,7 @@ Detail lives with each family's rule file; this is the index.
 
 ## Open work (as of 30 Sep 2026)
 
-The dated register behind each item, tasks 1-44 with their measurements, is
+The dated register behind each item, tasks 1-46 with their measurements, is
 `docs/worklog.md`; read the matching entry before acting on one.
 
 - **Follow-up drafting** on an age-capped queue: cap `/follow-ups` near 21
@@ -769,7 +770,7 @@ The dated register behind each item, tasks 1-44 with their measurements, is
   queue as the author confirms them. Four `follow_up_sent` are on record: one filed
   by hand, three recovered from follow-ups the user EMAILED, which since
   migration 016 file themselves (task 16). (worklog task 4)
-- **Extension, next real Easy Apply:** verify the current build (0.24.2 on
+- **Extension, next real Easy Apply:** verify the current build (0.25.0 on
   2 Oct) is live on BOTH machines and the tab was opened after the
   reload; read `doc_source` and the sweep line, and check that the radio
   rows read Yes/No, not the question (task 42). JobStreet still owes one
@@ -825,7 +826,11 @@ The dated register behind each item, tasks 1-44 with their measurements, is
   the second id from the form's referrer, and the twins were merged
   (task 44). The fifth (LinkedIn → a Greenhouse job board, 1 Oct) took
   the handoff into one record; the MyGreenhouse sign-in on its way filed
-  a false one, refused since 0.24.2 (task 45).
+  a false one, refused since 0.24.2 (task 45). 0.25.0 (task 46) treats a
+  vendor's form under an employer's own domain (Eightfold) as the hiring
+  system: the handoff, its id and the resume combobox; it runs once the
+  author enables the site. Not built: a Workday consent step's "Submit",
+  missed on 1 Oct (task 46).
   Open: the first real apply through each piece.
 - **Release blockers:** LICENSE (Apache-2.0 recommended), split the extension
   into its own repo, decide whether CLAUDE.md ships, and whether

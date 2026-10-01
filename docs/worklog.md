@@ -1308,3 +1308,29 @@ the key to each real case.
    labels, since the real page's had them (its typed answers resolved),
    modelled as `aria-label`. Expect a near-miss line in the popup at the
    next MyGreenhouse sign-in: the refusal, not a loss.
+
+46. **Eightfold under an employer's own domain** (2 Oct 2026, extension
+   0.25.0). Asked to support an apply address on `careers.<employer>`
+   that looked like Eightfold. Read live first, signed in, nothing typed or
+   sent (`.claude/rules/extension.md` has the shape). The generic rules
+   already fit the form: a root, the submit, the JobPosting (in the server
+   HTML, against `docs/career-sites.md` §4.1's guess), the `?pid=` id and
+   the vendor. What did not fit was the domain. Off a vendor's own host
+   there was no handoff and no ATS id, so a LinkedIn → employer-domain apply
+   leaned on the opener check at the submit, which filed a twin on 30 Sep
+   (task 44). Four rules: `generic.js:hiringSystem()` (a vendor's app with
+   its form on the page); `claimHandoff` everywhere, sending the page's own
+   id, a `site` binding from the opener only, and a title check where ids
+   cannot decide; the worker's re-bind as a pure `jobposting.js:rebind()`
+   that keeps an id to its host; and `answers.py` promoting the resume
+   combobox ("Upload your resume", a text field's bare file name). 16 new
+   extension checks (380) and 3 Python ones. A mutation run undid each rule
+   alone and turned exactly its own check red. One stored row would also
+   match the wider resume rule, an "Upload resume" file field, and its
+   application already has its `resume_file`. Enabling the site is the
+   author's click in the popup; it has never completed live.
+   Found on the way, not acted on: the 1 Oct apply whose verification codes
+   came from an Eightfold sender went through WORKDAY. Its only trace is a
+   near miss on `…/consentCollection/…` ("Submit" was not captured: no
+   application form found on this page), and its record came from email
+   alone: "unknown role", no answers.

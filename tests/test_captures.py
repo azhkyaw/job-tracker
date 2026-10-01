@@ -322,6 +322,18 @@ check("resume: an upload under 'Resume/CV*' is the resume, whatever its extensio
       [resume_file([{"question": "Resume/CV*", "answer": f, "type": "file"}])
        for f in ("Jane-Doe_resume.pdf", "Jane-Doe_resume.txt")]
       == ["Jane-Doe_resume.pdf", "Jane-Doe_resume.txt"])
+# Eightfold's form (read live 2 Oct 2026) asks "Upload your resume" and shows
+# the chosen file in a combobox: a TEXT input whose value is the bare name.
+check("resume: a combobox under 'Upload your resume' showing the file is the resume",
+      resume_file([{"question": "Upload your resume", "answer": "Jane-Doe_resume.pdf",
+                    "type": "text"}]) == "Jane-Doe_resume.pdf")
+check("resume: …but typed text that is not a bare document name stays a question",
+      [resume_file([{"question": "Upload your resume", "answer": a, "type": "text"}])
+       for a in ("see LinkedIn", "https://x.example/cv.pdf", "cv.txt")]
+      == [None, None, None])
+check("resume: three words before 'resume' is a question about it, not the picker",
+      resume_file([{"question": "Is your current resume up to date?", "answer": "cv.pdf",
+                    "type": "text"}]) is None)
 check("resume: another upload (a cover letter), or a path, is not",
       [resume_file([{"question": "Cover Letter", "answer": "cover.pdf", "type": "file"}]),
        resume_file([{"question": "Resume/CV*", "answer": "C:\\fakepath\\cv.pdf", "type": "file"}])]
