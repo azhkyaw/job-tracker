@@ -744,7 +744,9 @@ Detail lives with each family's rule file; this is the index.
   only (its drawn radios, flat-tree labels and continued form met one real
   SmartRecruiters submit); 0.24.1's handoff learning a job's second id has
   run only against tests, and so has 0.25.0's hiring system under an
-  employer's own domain (Eightfold's form read live, never submitted).
+  employer's own domain (Eightfold's form read live, never submitted), and
+  0.25.1's stale-pane checks (the pane's own id, the preload frame's read)
+  and modal-first form root.
 - **Mail** (`.claude/rules/mail-ingest.md`): IMAP verified on a real inbox
   28 Jul 2026; the web IMAP connect form, Gmail web OAuth and the full `-m 12`
   window are not.
@@ -758,7 +760,7 @@ Detail lives with each family's rule file; this is the index.
   detail page's "Heard nothing since?" (29 Sep, task 40), were rendered
   through TestClient against real data only, never looked at.
 
-## Open work (as of 30 Sep 2026)
+## Open work (as of 2 Oct 2026)
 
 The dated register behind each item, tasks 1-48 with their measurements, is
 `docs/worklog.md`; read the matching entry before acting on one.
@@ -776,7 +778,8 @@ The dated register behind each item, tasks 1-48 with their measurements, is
   rows read Yes/No, not the question (task 42). From a search page, a
   `stale_pane` with `named` is 0.25.1's new check firing: the record then
   reads "unknown company" with the right id, and its confirmation needs
-  re-filing onto it (task 48). JobStreet still owes one
+  re-filing onto it (task 48). The three records repaired that day still
+  have no JD: re-capture from the popup on each job page. JobStreet still owes one
   clean submit with the race fix and salary capture together. (tasks 5, 18)
 - **Employer career sites** (`docs/career-sites.md`; phases A-C built
   24 Sep 2026, their history in worklog tasks 24-30). One live
