@@ -1206,6 +1206,11 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
     deletes nothing a capture did not ask), and a new address, or a new
     key, saves as before. On the old code the test reproduces the store
     found on disk.
+  - **Also seen, and fixed in 0.25.4:** a Workday requisition with two
+    letter groups (`_PT-JR012345`) missed `idFrom`'s Workday segment rule
+    (one group of up to five letters), so the posting's id was the whole
+    apply address. Letter groups may now repeat, joined by hyphens, each
+    still capped at five letters (worklog task 51).
 
 ## Known-untested surfaces (verify on first real contact)
 

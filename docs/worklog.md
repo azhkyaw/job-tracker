@@ -1410,3 +1410,20 @@ the key to each real case.
    store found on disk. Whether the 1 Oct Eightfold report (19 answers left,
    44 s after an 18-answer capture) was this is not established: which page
    saved that store is not on record.
+
+51. **A Workday requisition with two letter groups gave a fallback id** (2 Oct
+   2026, extension 0.25.4; found in task 49). The segment rule took
+   `_<up to 5 letters><digits>`, so a bank's `_PT-JR012345` matched nothing
+   and the posting's id became its whole apply address, `?src=` included
+   (the form still kept its 60 answers: the address held still). The rule
+   is now short letter groups, hyphens allowed, then digits (`PT-JR012345`,
+   `R-07654321`, `REQ-2024-001`), each group still capped at five letters so
+   a slug word (`_engineer-2024`) is not an id; both implementations, 4
+   fixture cases, red on the old rule. Replayed over the 18 stored
+   non-platform postings: 1 changes, that record. Repaired with `/edit`
+   (the form read back and asserted equal to the record first), the applied
+   instant restored to the microsecond and `jobs.ats_job_id` set as a
+   capture would have (snapshot `2026-10-02-workday-req-id-repair.json`).
+   Not known: whether the employer's mail prints `PT-JR012345` or
+   `JR012345`; `match_by_ats_id` needs the whole token, and no stored mail
+   names it yet.

@@ -127,7 +127,11 @@
   const SEGMENT_IDS = [
     /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/,
     /-([0-9a-f]{32})$/,
-    /_([a-z]{0,5}\d{3,}(?:-\d+)?)$/,
+    // Workday's `…_<requisition>`: short letter groups, then digits
+    // (R120291, JR012345, PT-JR012345, R-07654321, REQ-2024-001). Each group
+    // capped at five letters, so a slug word (`_engineer-2024`) is not one.
+    // Until 2 Oct 2026 one group only: `_PT-JR012345` gave a fallback id.
+    /_((?:[a-z]{1,5}-)*[a-z]{0,5}-?\d{3,}(?:-\d+)*)$/,
     /^(\d{4,})-/,
     /^(\d+)$/,
     /^((?=[a-z0-9]*\d)(?=[a-z0-9]*[a-z])[a-z0-9]{8,40})$/,

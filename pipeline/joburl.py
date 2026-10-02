@@ -33,7 +33,7 @@ _ID_PARAMS = ("gh_jid", "jobid", "job_id", "job", "jid", "pid", "reqid",
 _SEGMENT_IDS = (
     re.compile(r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"),
     re.compile(r"-([0-9a-f]{32})$"),
-    re.compile(r"_([a-z]{0,5}[0-9]{3,}(?:-[0-9]+)?)$"),
+    re.compile(r"_((?:[a-z]{1,5}-)*[a-z]{0,5}-?[0-9]{3,}(?:-[0-9]+)*)$"),
     re.compile(r"^([0-9]{4,})-"),
     re.compile(r"^([0-9]+)$"),
     re.compile(r"^((?=[a-z0-9]*[0-9])(?=[a-z0-9]*[a-z])[a-z0-9]{8,40})$"),
