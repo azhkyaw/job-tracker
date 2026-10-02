@@ -1398,3 +1398,15 @@ the key to each real case.
    100 ms after the capture), which can report a false "form left holding
    answers"; and a Workday requisition shaped `_PT-JR012345` misses the
    segment rule, so a same-day Workday record's id is its whole address.
+
+50. **A capture's own click refilled the store it had just taken** (2 Oct
+   2026, extension 0.25.3; found in task 49). `take()` empties the answers
+   store, and then the submit click's 0 and 300 ms re-sweeps, and any later
+   click on that page, saved the review step back into it, so the next full
+   page load could report a sent form as "left holding answers".
+   `answers.js:save()` now skips the address a capture took the store on;
+   memory still holds the re-sweep, for a second submit there. 4 new
+   extension checks; without the guard the first goes red with the exact
+   store found on disk. Whether the 1 Oct Eightfold report (19 answers left,
+   44 s after an 18-answer capture) was this is not established: which page
+   saved that store is not on record.

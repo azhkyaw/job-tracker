@@ -2249,6 +2249,28 @@ console.log("\nanswers.js: a wizard whose address names its step (Phenom's own a
                                APPLY.replace("R01234567", "R07654321") + "&step=6&stepname=applicationReview", "", again);
   check("…and another job's form in the same tab does not inherit them",
         other.window.__trackerAnswers.take().map((a) => a.question), ["Years of experience", "Notice period"]);
+
+  // After the submit's capture took the store, the click's delayed sweeps
+  // (and any later click on that page) refilled it from the review step: the
+  // store on disk was saved 100 ms after the real capture, and the next full
+  // load reports a stored form as "left holding answers".
+  const KEY = "__tracker_form_answers";
+  const tab = memoryStorage();
+  const last = genericSandbox(stepPage(field("yrs", "Years of experience", "10"), field("np", "Notice period", "1 month")),
+                              `${APPLY}&step=6&stepname=applicationReview`, "", tab);
+  last.document._on.click();
+  check("before the submit, the store holds the step",
+        Object.keys(JSON.parse(tab.getItem(KEY)).items).length, 2);
+  last.window.__trackerAnswers.take();
+  last.document._on.click();            // the submit click's delayed sweep
+  check("after the capture took it, a sweep on that page writes nothing back", tab.getItem(KEY), null);
+  check("…though memory keeps them, for a second submit there",
+        last.window.__trackerAnswers.take().length, 2);
+  const next = `${APPLY}&step=7&stepname=moreQuestions`;
+  Object.assign(last.location, makeLoc(next));
+  last.document._on.click();            // a later page of the same form
+  check("…and the form's next address saves again",
+        Object.keys(JSON.parse(tab.getItem(KEY) || "{}").items || {}).length, 2);
 }
 
 console.log("\ngeneric.js: Eightfold's candidate site under an employer's domain (read live 2 Oct 2026)");

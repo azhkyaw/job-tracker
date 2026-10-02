@@ -1196,10 +1196,16 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
     per-step key, never merges two jobs. `jobseqno` was not added to
     `ID_PARAMS`: it would not have linked the form to its listing either,
     whose id is the path `…/job/<req>/<slug>`.
-  - **Also seen, not built:** the store on disk was saved 100 ms after the
-    capture's `take()`: the submit click's delayed re-sweeps (0 and 300 ms,
-    the typeahead fix) refill it from the review page. The next full page
-    load can then report it as a form "left holding answers".
+  - **Also seen, and fixed in 0.25.3:** the store on disk was saved 100 ms
+    after the capture's `take()`, because the submit click's delayed
+    re-sweeps (0 and 300 ms, the typeahead fix) refilled it from the review
+    page. The next full page load could then report it as a form "left
+    holding answers". `answers.js:save()` now writes nothing while the page
+    is still at the address a capture took the store on (`takenOn`); memory
+    keeps the re-sweep for a second submit there (the server's upsert
+    deletes nothing a capture did not ask), and a new address, or a new
+    key, saves as before. On the old code the test reproduces the store
+    found on disk.
 
 ## Known-untested surfaces (verify on first real contact)
 

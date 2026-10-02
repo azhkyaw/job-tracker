@@ -75,7 +75,17 @@
   // (SmartRecruiters' /screening, 30 Sep 2026) continues a form found before.
   // Answers the edit backstop kept on a page with no form never set it, so a
   // job-alert box typed into does not make the next "Submit" an application.
+  // Not on the page a capture just took the store on (`takenOn`, set by
+  // take()): the submit click's own delayed sweeps (0 and 300 ms, for a
+  // typeahead, below) and any later click there refill the store from the
+  // form the capture already sent, and the next full page load then reports
+  // it as a form "left holding answers" (2 Oct 2026: a Phenom review step's
+  // store, found on disk, saved 100 ms after its capture). In memory they are
+  // kept: a second submit there still sends them, and the server's upsert
+  // never deletes what a capture did not ask.
+  let takenOn = null;
   function save(items) {
+    if (takenOn !== null && takenOn === String(location.href)) return;
     try {
       sessionStorage.setItem(KEY, JSON.stringify(
         { key: formKey(), at: Date.now(), items, rooted }));
@@ -100,6 +110,7 @@
     rooted = false;
     seq = 0;
     stats = null;
+    takenOn = null;
   }
 
   // pipeline/answers.py:norm_question, character for character (it also strips
@@ -872,6 +883,7 @@
       rooted = false;
       seq = 0;
       stats = null;
+      takenOn = String(location.href);
       try { sessionStorage.removeItem(KEY); } catch (e) {}
       return out;
     },
