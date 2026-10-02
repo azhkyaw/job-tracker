@@ -172,7 +172,7 @@ rule in CLAUDE.md).
 | Personio | `/job/{numeric}` | Same host, `/job/{id}/apply` | `button.career-submit-application-btn` |
 | JazzHR | `/apply/{10-char}/{slug}` | Inline on the same page | `#resumator-submit-resume` |
 | Avature | `/careers/JobDetail/{slug}/{numeric}` | Same host, `/careers/Login?jobId={id}`: a **sign-in** | Found only by `href` |
-| Phenom | `/…/job/{REQID}/{slug}` | **Another vendor's host**: the page's state names a Workday `applyUrl` | None in the server HTML |
+| Phenom | `/…/job/{REQID}/{slug}` | **Another vendor's host**: the page's state names a Workday `applyUrl`. Or, seen live 2 Oct 2026, Phenom's OWN apply on the same host: `/…/apply?jobSeqNo={seq}&step={N}&stepname={name}`, six steps, "Next" between them | None in the server HTML; live, the review step's submit was found |
 | Eightfold (2 Oct 2026) | `/careers/job/{pid}`; the form and the search carry `?pid={pid}`. Often served under the employer's own domain (`careers.<employer>`), its scripts from `vscdn.net` | Same host, `/careers/apply?pid={pid}`, signed in. One `<form>` holding the resume's file input; the chosen resume shows in a combobox | `button[type=submit]` "Submit application" |
 | MyCareersFuture | `…/{slug}-{32-hex}` | Same host, behind a **Singpass** login, or an external URL | `#job-details-apply-button` (B) |
 | Careers@Gov | `/jobs/{source}/{id}` | **Another host**: the agency's own ATS, via a `<button>` with no href | None |
@@ -300,7 +300,7 @@ which makes this the hard part.
 | Shape | Vendors | Mechanism |
 |---|---|---|
 | Apply page on the same site, same tab | Lever, Ashby, Workable, Personio, Workday | The existing keyed stash (`background.js:stashPendingJob`), keyed on the id in the URL. **SmartRecruiters is the exception**: its apply-page UUID is not the job URL's id, so its key must come from the listing, which contains both. Since 0.24.1 (30 Sep 2026) the handoff learns the form's id as the same job's second one, from the form page's referrer (`jobposting.js:learnsAlias`) |
-| Different site, same tab | SuccessFactors → career{N}, Phenom → Workday, Careers@Gov → an agency's ATS | A **declared handoff** (below) |
+| Different site, same tab | SuccessFactors → career{N}, Phenom → Workday (some tenants; others apply on Phenom's own host), Careers@Gov → an agency's ATS | A **declared handoff** (below) |
 | New tab | LinkedIn "Apply on company website"; any listing link with `target=_blank` | **`sender.tab.openerTabId`** (below) |
 
 **The declared handoff.**

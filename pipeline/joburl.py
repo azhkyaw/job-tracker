@@ -42,6 +42,10 @@ _SEGMENT_IDS = (
 # flow. The id is looked for before it; the flow's tail (Oracle's
 # `…/job/2087/apply/section/1`) only when nothing before it is id-shaped.
 _APPLY_SEGMENTS = ("apply", "application")
+# jobposting.js:FLOW_STEP_PARAM: on an apply flow's address, the parameter
+# naming the wizard's step is the flow's state and stays out of the fallback
+# id (Phenom's `…/apply?jobSeqNo=…&step=N&stepname=…`, 2 Oct 2026).
+_FLOW_STEP_PARAM = re.compile(r"step")
 
 
 # jobposting.js:TENANT_PARAM: a hiring system serving many employers from one
@@ -104,8 +108,11 @@ def generic_id(url: str | None) -> str | None:
     if not token:
         if not segs:
             return None
+        in_flow = cut < len(segs)
         query = "&".join(f"{k}={v}" for k, v in
-                         sorted((k, v.lower()) for k, v in params if not k.startswith("utm_")))
+                         sorted((k, v.lower()) for k, v in params
+                                if not k.startswith("utm_")
+                                and not (in_flow and _FLOW_STEP_PARAM.search(k))))
         token = "/".join(segs) + (f"?{query}" if query else "")
     else:
         tenant = _tenant(host, params)

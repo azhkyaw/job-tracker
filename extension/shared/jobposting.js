@@ -111,6 +111,15 @@
   //     every job on it ONE id, and a capture would silently update another
   //     job's posting. A tracking parameter at worst makes a duplicate, which
   //     is visible and mergeable — the failure invariant #3 prefers.
+  //     On an apply flow's address, a parameter naming the wizard's STEP is
+  //     left out, for rule 2's reason: it is the flow's state. Phenom's own
+  //     apply (2 Oct 2026) is `…/apply?jobSeqNo=<job>&step=N&stepname=<s>`,
+  //     so every "Next" changed this id, which is also the answers store's
+  //     key, and answers.js emptied the store at each step as if the job had
+  //     changed: of a six-step form, the capture kept the last step's one
+  //     answer. Only the step is dropped, never the rest of the query, so a
+  //     job in an unknown parameter still keys apart; a step parameter by
+  //     another name only keeps today's per-step key.
   // Lower-cased throughout, so a URL's case variants (Workday changes it
   // between its own links) keep one identity.
   const ID_PARAMS = ["gh_jid", "jobid", "job_id", "job", "jid", "pid", "reqid",
@@ -129,6 +138,9 @@
   // idFrom stops looking for the id there, and generic.js's apply-flow test
   // is built from it.
   const APPLY_SEGMENTS = ["apply", "application"];
+  // A query parameter that says which step of an apply flow the page is
+  // (rule 3): `step`, `stepname`, `currentStep`, …
+  const FLOW_STEP_PARAM = /step/;
 
   function decodeSegment(s) {
     try { return decodeURIComponent(s); } catch (e) { return s; }
@@ -183,7 +195,8 @@
     }
     if (!token) {
       if (!segs.length) return null;          // a bare site is not a job
-      const query = params.filter(([k]) => !k.startsWith("utm_"))
+      const query = params.filter(([k]) => !k.startsWith("utm_") &&
+                                           !(cut >= 0 && FLOW_STEP_PARAM.test(k)))
         .map(([k, v]) => [k, v.toLowerCase()])
         .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0))
         .map(([k, v]) => `${k}=${v}`).join("&");

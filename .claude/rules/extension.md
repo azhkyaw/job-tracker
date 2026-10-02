@@ -1170,6 +1170,37 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
     `job-tracker-snapshots/2026-10-02-*`. The JDs stay empty: the hidden
     tab never loaded them.
 
+- **A wizard whose address names its step emptied its answers at every
+  "Next"** (2 Oct 2026, an employer's Phenom career site; extension 0.25.2).
+  - **The flow:** Phenom's own apply on the career site's host,
+    `…/apply?jobSeqNo=<job>&step=N&stepname=<name>`, six steps, the submit
+    on `applicationReview`. Not a Workday handoff: `docs/career-sites.md`
+    had assumed one from the survey's page state.
+  - **Why:** no id rule matched (`jobSeqNo` is in no list, no path segment
+    is id-shaped), so `idFrom` fell back to path plus query, and the query
+    held the step. That id is `answerFormKey()`, and answers.js's
+    `syncKey()` / `loadRec()` drop the store when the key changes, which is
+    right between two jobs and wrong between two steps. The capture kept
+    one answer, the review step's.
+  - **How it was found:** provenance (`exact: false`, `linked:
+    "tab+title"`, the tab on `step=6`), no `sweeps` entry for the capture,
+    and the tab's session storage (`tools/session_answers.py`): one store,
+    keyed `…&step=6&stepname=applicationreview`, `rooted: true`. Rooted
+    means the form rule worked there, so the earlier steps were swept and
+    then dropped, not missed.
+  - **Fixed as a rule, not a `jobseqno` entry:** on an apply address, the
+    fallback leaves out a parameter whose name says `step`, rule 2's
+    reasoning applied to the query (Oracle's `…/apply/section/1`, above).
+    The rest of the query stays, so a job in an unknown parameter still
+    keys apart. A step parameter by another name only keeps the old
+    per-step key, never merges two jobs. `jobseqno` was not added to
+    `ID_PARAMS`: it would not have linked the form to its listing either,
+    whose id is the path `…/job/<req>/<slug>`.
+  - **Also seen, not built:** the store on disk was saved 100 ms after the
+    capture's `take()`: the submit click's delayed re-sweeps (0 and 300 ms,
+    the typeahead fix) refill it from the review page. The next full page
+    load can then report it as a form "left holding answers".
+
 ## Known-untested surfaces (verify on first real contact)
 
 - **Extension DOM selectors** (`extension/adapters/*.js`) — best-effort against
@@ -1573,6 +1604,13 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
     resume" row among the answers;
   - a picked option in a combobox (the visa question) reads as the option,
     since only an EMPTY one was seen.
+- **A step-free key across a wizard (0.25.2, 2 Oct 2026) has run only
+  against tests**, whose addresses are the live flow's. What to read on the
+  next Phenom apply: the record carries every step's answers, and the tab's
+  answers store, if read before the submit, is keyed without `step`. Phenom
+  steps may be in-page (pushState) or full loads; the test covers the full
+  load (`loadRec`), and the in-page path goes through the same `formKey()`
+  in `syncKey()`.
 - **The handoff's learned second id (0.24.1, 30 Sep 2026) has run only
   against tests.** Its inputs were measured live (the referrer, no
   JobPosting on the form); `background.js`'s `claimHandoff` wiring is not

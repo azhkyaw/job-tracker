@@ -1374,3 +1374,27 @@ the key to each real case.
    12 new extension checks (392) and one Python check; a mutation run
    turned each part's own check red. Disproved and recorded: that the
    structural title search anchors on the results list without a JD.
+
+49. **A six-step apply kept only its last step** (2 Oct 2026, extension
+   0.25.2). The author applied on an employer's own career site (Phenom,
+   enabled the day before) through Phenom's OWN apply, not a Workday
+   handoff as `docs/career-sites.md` had assumed: `…/apply?jobSeqNo=<job>
+   &step=N&stepname=<name>`, "Next" between steps, submit on step 6. The
+   record's identity, JD and time were right (linked by tab and title to
+   the listing's stash); its answers were one, the review step's file
+   upload. Cause, read from the extension's buffers and the tab's session
+   storage: no id rule matched the address, so its id was path plus query,
+   the STEP included, and that id keys the answers store, which answers.js
+   empties when the key changes. The step-6 store on disk was `rooted`, so
+   the earlier steps had been found and swept, then dropped. Fixed as a
+   rule (`jobposting.js:idFrom` and `joburl.generic_id`): on an apply
+   address, the fallback leaves out a parameter naming the step, and keeps
+   the rest of the query. No stored posting id changes. 3 new extension
+   checks plus 4 fixture cases; on the old rule they give the real
+   record's signature (only the last step's answers). The lost answers are
+   unrecoverable: each step's store overwrote the last. Found on the way,
+   not built: the submit click's two delayed re-sweeps run after `take()`
+   and refill the store from the review page (the store on disk was saved
+   100 ms after the capture), which can report a false "form left holding
+   answers"; and a Workday requisition shaped `_PT-JR012345` misses the
+   segment rule, so a same-day Workday record's id is its whole address.

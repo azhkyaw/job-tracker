@@ -746,7 +746,8 @@ Detail lives with each family's rule file; this is the index.
   run only against tests, and so has 0.25.0's hiring system under an
   employer's own domain (Eightfold's form read live, never submitted), and
   0.25.1's stale-pane checks (the pane's own id, the preload frame's read)
-  and modal-first form root.
+  and modal-first form root, and 0.25.2's step-free answers key on a
+  wizard whose address names its step (Phenom's own apply).
 - **Mail** (`.claude/rules/mail-ingest.md`): IMAP verified on a real inbox
   28 Jul 2026; the web IMAP connect form, Gmail web OAuth and the full `-m 12`
   window are not.
@@ -772,7 +773,7 @@ The dated register behind each item, tasks 1-48 with their measurements, is
   queue as the author confirms them. Four `follow_up_sent` are on record: one filed
   by hand, three recovered from follow-ups the user EMAILED, which since
   migration 016 file themselves (task 16). (worklog task 4)
-- **Extension, next real Easy Apply:** verify the current build (0.25.1 on
+- **Extension, next real Easy Apply:** verify the current build (0.25.2 on
   2 Oct) is live on BOTH machines and the tab was opened after the
   reload; read `doc_source` and the sweep line, and check that the radio
   rows read Yes/No, not the question (task 42). From a search page, a

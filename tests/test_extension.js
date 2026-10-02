@@ -1723,7 +1723,8 @@ function genericSandbox(kids, href, title = "", storage = undefined, { answers =
     // (getRootNode), its ids, and a place to hang the sweep's listeners.
     for (const n of doc.querySelectorAll("*")) n._doc = doc;
     doc.getElementById = (id) => doc.querySelectorAll("*").find((n) => n.getAttribute("id") === id) || null;
-    doc.addEventListener = () => {};
+    // Kept by type, so a test can click "Next" (the sweep's click listener).
+    doc.addEventListener = (type, fn) => { (doc._on = doc._on || {})[type] = fn; };
     vm.runInContext(ANSWERS_SRC, sandbox);
   }
   return sandbox;
@@ -2216,6 +2217,38 @@ console.log("\ngeneric.js: a later step at an address that never says 'apply' (S
   const review = loadGeneric([node("div", {}, [node("p", {}, ["First name: Jane"])]), submitHost], SR, "",
                              store({ key: FORM_KEY, at: Date.now(), items: earlier, rooted: true }));
   check("…and a controlless last step of it sends too", review.isCompletion(submit), true);
+}
+
+console.log("\nanswers.js: a wizard whose address names its step (Phenom's own apply, 2 Oct 2026)");
+{
+  // Phenom's apply runs on the employer's own career site, one step per
+  // address: …/apply?jobSeqNo=<job>&step=N&stepname=<name>, with "Next"
+  // between steps. The step was part of the form's key (jobposting.js:idFrom's
+  // fallback), so every step emptied the answers store as if the job had
+  // changed, and the review step's submit sent the last step's one answer of
+  // a six-step form. Placeholder host and job.
+  const APPLY = "https://jobs.contoso.com/global/en/apply?jobSeqNo=CONTOSOGLOBALR01234567EXTERNALENGLOBAL";
+  const field = (id, lbl, value) => [node("label", { for: id }, [lbl]), node("input", { type: "text", id, value })];
+  const stepPage = (...fields) => [node("form", {}, [...fields.flat(), button("Next", { type: "button" })])];
+  const visit = memoryStorage();
+  const step1 = genericSandbox(stepPage(field("fn", "First name", "Jane"), field("em", "Email", "jane@example.com")),
+                               `${APPLY}&step=1&stepname=personalInformation`, "", visit);
+  step1.document._on.click();           // "Next": the sweep keeps this step's answers
+  const review = genericSandbox(stepPage(field("yrs", "Years of experience", "10"), field("np", "Notice period", "1 month")),
+                                `${APPLY}&step=6&stepname=applicationReview`, "", visit);
+  check("every step of the form has one key, the job's",
+        review.window.__trackerAdapter.answerFormKey(), step1.window.__trackerAdapter.answerFormKey());
+  check("the submit on the last step sends every step's answers",
+        review.window.__trackerAnswers.take().map((a) => a.question),
+        ["First name", "Email", "Years of experience", "Notice period"]);
+  // The key still names the job: another job's form in the same tab starts empty.
+  const again = memoryStorage();
+  genericSandbox(stepPage(field("fn", "First name", "Jane"), field("em", "Email", "jane@example.com")),
+                 `${APPLY}&step=1&stepname=personalInformation`, "", again).document._on.click();
+  const other = genericSandbox(stepPage(field("yrs", "Years of experience", "10"), field("np", "Notice period", "1 month")),
+                               APPLY.replace("R01234567", "R07654321") + "&step=6&stepname=applicationReview", "", again);
+  check("…and another job's form in the same tab does not inherit them",
+        other.window.__trackerAnswers.take().map((a) => a.question), ["Years of experience", "Notice period"]);
 }
 
 console.log("\ngeneric.js: Eightfold's candidate site under an employer's domain (read live 2 Oct 2026)");
