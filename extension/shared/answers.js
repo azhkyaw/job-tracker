@@ -279,6 +279,9 @@
     for (let n = node, hops = 0; n && hops < 3; n = n.parentElement, hops++) {
       const prev = n.previousElementSibling;
       if (!prev) continue;
+      // A control is never a label either: in a row of a code's boxes, each
+      // box's neighbour is the box before it.
+      if (prev.matches && prev.matches("input,select,textarea")) return null;
       if (prev.querySelector && prev.querySelector("input,select,textarea")) return null;
       const kids = prev.children ? Array.from(prev.children) : [];
       const head = kids.length >= 2 ? labelText(kids[0]) : "";
@@ -371,6 +374,17 @@
       const legend = fs.querySelector("legend");
       if (legend && labelText(legend)) return labelText(legend);
     }
+    // Nothing names the control itself: the question is the block just before
+    // its field. Lever's custom questions (read live 2 Oct 2026) are
+    // <div class="application-label">…</div> beside the field's own <div>,
+    // with no <label>, and every text one carries the placeholder "Type your
+    // response". That is an instruction, not a question, so this sits above
+    // the placeholder. Only for a control on screen: a hidden one named by
+    // its own attribute is a captcha's field (machinery(), below).
+    if (!el.getClientRects || el.getClientRects().length > 0) {
+      const before = precedingText(el);
+      if (before) return before;
+    }
     return (el.getAttribute("placeholder") || el.name || "").trim() || null;
   }
 
@@ -405,7 +419,7 @@
     return labelFor(el) || el.value || null;
   }
 
-  function radioQuestion(el, option, shared) {
+  function radioQuestion(el, option, shared, members) {
     const fs = closestDeep(el, "fieldset");
     const legend = fs && fs.querySelector("legend");
     if (legend && labelText(legend)) return labelText(legend);
@@ -420,11 +434,25 @@
       const own = ariaName(w);
       if (own && own !== option) return own;
     }
-    if (group) {
-      const before = precedingText(group);
+    // No group element at all: the smallest box holding every option stands
+    // in for one. Lever's custom Yes/No questions (2 Oct 2026) are a bare
+    // <ul> of <label><input type=radio>Yes</label>, the question in the block
+    // before the field, and labelFor(el) below names the first OPTION.
+    const box = group || (members && members.length > 1 ? around(members) : null);
+    if (box) {
+      const before = precedingText(box);
       if (before) return before;
     }
     return labelFor(el);
+  }
+
+  // The nearest ancestor of every one of `members`.
+  function around(members) {
+    const holds = (box, m) => { for (let x = m; x; x = x.parentElement) if (x === box) return true; return false; };
+    for (let n = members[0].parentElement; n; n = n.parentElement) {
+      if (members.every((m) => holds(n, m))) return n;
+    }
+    return null;
   }
 
   /* One radio GROUP's question and answer, read from every member at once.
@@ -444,7 +472,7 @@
     const shared = members.length > 1 && names[0] &&
       names.every((n) => n === names[0]) ? names[0] : null;
     const on = members.findIndex((m) => m.checked);
-    const question = radioQuestion(members[0], shared ? null : names[0], shared);
+    const question = radioQuestion(members[0], shared ? null : names[0], shared, members);
     if (on === -1) return { question, answer: null };
     // No row text means no answer, never the input's value: a radio with no
     // value attribute reports "on".

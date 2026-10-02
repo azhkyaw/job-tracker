@@ -1427,3 +1427,27 @@ the key to each real case.
    Not known: whether the employer's mail prints `PT-JR012345` or
    `JR012345`; `match_by_ats_id` needs the whole token, and no stored mail
    names it yet.
+
+52. **Lever's custom questions were named by an option, an id or a
+   placeholder** (2 Oct 2026, extension 0.25.5). Checked live BEFORE the
+   first real Lever submit (a LinkedIn → Lever apply, held for the fix):
+   the handoff had bound (`via: "opener"`, the Lever id), the form rooted
+   on its resume input and `button#btn-submit` sat inside it, but every
+   custom question would have saved under the wrong name. Lever writes the
+   question in a `<div class="application-label">` beside the field's own
+   `<div>`: no `<label>`, `<fieldset>` or role. So a Yes/No question was
+   named by its first option ("Yes"/"No"), the location-and-right-to-work
+   select by its `name` (`opportunityLocationId`), and both text questions
+   by their placeholder, "Type your response". `answers.js` now takes the
+   block before a nameless control's field (above the placeholder, on-screen
+   controls only, so a captcha field stays machinery) and, for a radio group
+   with no group element, the block before the smallest box holding its
+   options. `precedingText()` refuses a neighbour that is itself a control,
+   for `asking()`'s code-box rows. 3 new checks; on the old code the fixture
+   gives exactly the names predicted from the live page. **Verified on the
+   real submit**: one record (`opener+handoff`), 14 answers under their real
+   questions, `resume_file` set. The record's four "No" answers were
+   suspected, "corrected" and restored from the snapshot
+   (`2026-10-02-lever-answers.json`): the author had clicked No. Current
+   location read as empty at every sweep; whether it was filled is not
+   established.

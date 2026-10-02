@@ -1212,6 +1212,34 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
     apply address. Letter groups may now repeat, joined by hyphens, each
     still capped at five letters (worklog task 51).
 
+- **A question written BESIDE its field, not on it, was named by whatever
+  the control carried** (2 Oct 2026, Lever; extension 0.25.5).
+  - **The page:** Lever's custom questions put the words in a
+    `<div class="application-label">` next to the field's own `<div>`. The
+    standard fields sit inside a `<label>` and always read right; the custom
+    ones have no `<label>`, `<fieldset>`, legend or role.
+  - **What each read as:** a Yes/No question as its first OPTION
+    (`labelFor()` reaches the input's wrapping `<label>`, "Yes"); the select
+    by its `name` (`opportunityLocationId`); every text question by its
+    placeholder, "Type your response", so they would have keyed together
+    as occurrences of one question.
+  - **Fixed as a rule:** a control nothing names takes the block just
+    before its field (`precedingText`), ABOVE the placeholder (an
+    instruction, not a question) and only when on screen, since a hidden
+    control named by its own attribute is a captcha's field (`machinery()`).
+    A radio group with no group element uses the smallest box holding all
+    its options. `precedingText()` now refuses a neighbour that IS a
+    control, so a row of code boxes labels at most its first box
+    (`generic.js:asking()` counts labelled fields).
+  - **Found before it cost anything:** the submit was held, the live form
+    read in a separate tab, and the real submit then saved all 14 answers
+    under their questions (worklog task 52).
+  - **Don't "correct" a capture from memory.** The record's "No" answers
+    were reported as wrong and rewritten, then restored: the author had
+    clicked No. The answers store's history in Session Storage's `.log`
+    (every version, not only the last) showed each answer recorded at the
+    moment of its pick, which is what the page held.
+
 ## Known-untested surfaces (verify on first real contact)
 
 - **Extension DOM selectors** (`extension/adapters/*.js`) — best-effort against

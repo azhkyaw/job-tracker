@@ -961,6 +961,76 @@ console.log("\nanswers.js sweep: a SmartRecruiters screening step, drawn by web 
          [{ question: "Keep me informed about future roles", answer: "No", type: "checkbox" }]]);
 }
 
+console.log("\nanswers.js sweep: Lever's custom questions, named by the block before the field (read live 2 Oct 2026)");
+{
+  // Lever's apply form, the live markup with placeholder questions. Its
+  // standard fields sit inside a <label> and always read right; its custom
+  // ones have no <label>, <fieldset> or role: the question is a
+  // <div class="application-label"> beside the field's own <div>. On the old
+  // code a Yes/No question was named by its first option ("Yes"), the
+  // location select by its name attribute, and every text card by its
+  // placeholder "Type your response".
+  const label = (q) => node("div", { class: "application-label full-width multiple-choice" },
+                            [node("div", { class: "text" }, [q, node("span", { class: "required" }, ["✱"])])]);
+  const yesNo = (name, q, first, picked) => node("li", { class: "application-question custom-question" }, [
+    node("div", {}, [label(q),
+      node("div", { class: "application-field full-width required-field" }, [
+        node("ul", { "data-qa": "multiple-choice" }, [first, first === "Yes" ? "No" : "Yes"].map((opt) =>
+          node("li", {}, [node("label", {}, [
+            node("input", { type: "radio", name, value: opt, ...(opt === picked ? { checked: "checked" } : {}) }),
+            node("span", { class: "application-answer-alternative" }, [opt])])]))),
+      ])]),
+  ]);
+  const text = (name, q, value) => node("li", { class: "application-question custom-question" }, [
+    node("div", {}, [label(q),
+      node("div", { class: "application-field full-width" }, [
+        node("input", { class: "card-field-input", type: "text", placeholder: "Type your response", name,
+                        ...(value ? { value } : {}) })])]),
+  ]);
+  const where = (picked) => node("li", { class: "application-question", "data-qa": "opportunity-location-question" }, [
+    node("div", { class: "application-label" }, ["Where are you based, and may you work there?"]),
+    node("div", { class: "application-field" }, [node("div", { class: "application-dropdown" }, [
+      node("select", { name: "opportunityLocationId" }, [
+        node("option", { value: "" }, ["Select..."]),
+        node("option", { value: "a", ...(picked ? { selected: "selected" } : {}) }, ["Singapore, with the right to work"])])])]),
+  ]);
+  const standard = node("li", { class: "application-question" }, [node("label", {}, [
+    node("div", { class: "application-label" }, ["Full name", node("span", { class: "required" }, ["✱"])]),
+    node("div", { class: "application-field" }, [node("input", { type: "text", name: "name", value: "Jane Doe" })])])]);
+  const form = node("form", { id: "application-form" }, [node("ul", {}, [
+    standard,
+    where(true),
+    yesNo("cards[c1][field0]", "At least 4 years in a B2B SaaS startup?", "Yes", "Yes"),
+    yesNo("cards[c1][field1]", "Do you need sponsorship to work here?", "No", "No"),
+    text("cards[c1][field5]", "# of years with Python", "6"),
+    text("cards[c1][field6]", "Expected base salary", "10000"),
+  ])]);
+  check("each custom question reads as the block before its field, never an option, name or placeholder",
+        sweepOf(form),
+        [{ question: "Full name ✱", answer: "Jane Doe", type: "text" },
+         { question: "Where are you based, and may you work there?", answer: "Singapore, with the right to work", type: "select" },
+         { question: "# of years with Python ✱", answer: "6", type: "text" },
+         { question: "Expected base salary ✱", answer: "10000", type: "text" },
+         { question: "At least 4 years in a B2B SaaS startup? ✱", answer: "Yes", type: "radio" },
+         { question: "Do you need sponsorship to work here? ✱", answer: "No", type: "radio" }]);
+
+  // A HIDDEN control named only by itself stays machinery, whatever sits
+  // before it: Lever's hCaptcha writes its response field inside this form.
+  const captcha = node("textarea", { name: "h-captcha-response", value: "P1_token" });
+  captcha.getClientRects = () => [];
+  check("…a hidden captcha field after a text block is still not a question",
+        sweepOf(node("form", {}, [node("div", { class: "application-label" }, ["Verify you are human"]),
+                                  node("div", {}, [captcha])])), []);
+  // A row of a code's boxes: each box's neighbour is the box before it, so
+  // at most the first takes the prompt (generic.js's asking() counts these).
+  const boxes = node("div", {}, [node("p", {}, ["Enter the code we emailed you"]),
+    node("div", {}, ["1", "2", "3", "4", "5", "6"].map((d) => node("input", { type: "text", maxlength: "1", value: d })))]);
+  const Aload = loadAnswers(boxes).window.__trackerAnswers;
+  check("…and in a row of code boxes only the first reads the prompt",
+        boxes.querySelectorAll("input").map((b) => Aload.labelFor(b)),
+        ["Enter the code we emailed you", null, null, null, null, null]);
+}
+
 console.log("\nanswers.js normKey: one rule with pipeline/answers.py:norm_question");
 {
   // The same list tests/test_captures.py holds the server to. Until 24 Sep 2026
