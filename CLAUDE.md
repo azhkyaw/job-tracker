@@ -55,6 +55,12 @@ and design records; the code and `migrations/` win where they disagree.
   of how job pages expose a job, and the plan (phases A-C built 24 Sep 2026).
 - `docs/jd-extraction-models.md` — which Claude model and effort run the JD
   extractor, measured on a hand-labelled gold set (25 Sep 2026).
+- `docs/llm-alternatives.md` — other LLM APIs against the Claude stages
+  (3 Oct 2026): cost at this volume (~US$5/month, so not a reason to
+  switch), which providers `pipeline/llm.py`'s OpenAI-compatible backend
+  reaches unchanged and the code changes the rest need (402/408 filed as
+  job failures, `temperature` not overridable), and where each sends the
+  data. Recommends replays, starting with Sonnet 5.5, not a switch.
 - `docs/vllm-lab.md` — open-weight models on an OpenAI-compatible server
   (vLLM first) go through `pipeline/llm.py` (Key files); this is the
   hands-on lab that verifies it against a real server on GCP, stage by
