@@ -114,6 +114,24 @@
     return urlStr && J ? J.atsOfUrl(urlStr) : null;
   }
 
+  // Where the last external Apply click LEFT FOR: its destination's host,
+  // set by the click (below) and taken by the stash it causes, which hands it
+  // to the worker. A kept opener links only to a page on that host
+  // (jobposting.js:departsTo). A slot, not an argument, because only that one
+  // click has a destination and capture() has eight callers; it is honoured
+  // for a few seconds only, so a stale one never rides along.
+  let departure = null;
+  const DEPARTURE_MS = 10 * 1000;
+  const hostOfUrl = (u) => {
+    try { return u ? new URL(u, location.href).hostname.toLowerCase().replace(/^www\./, "") : null; }
+    catch (e) { return null; }
+  };
+  function takeDeparture() {
+    const d = departure;
+    departure = null;
+    return d && d.host && Date.now() - d.at <= DEPARTURE_MS ? d.host : null;
+  }
+
   function buildPayload(trigger, external, ats, job, recruiter, answers, tags, completed, atsJobId) {
     return {
       completed: !!completed,
@@ -958,7 +976,8 @@
       // and the real submit time (§8; background.js:takeExternal). Stashed
       // whatever the answer below turns out to be — the form may be sent
       // before this box is answered, or instead of it.
-      merged.then((j) => tell({ type: "tracker-stash-external",
+      const dest = takeDeparture();
+      merged.then((j) => tell({ type: "tracker-stash-external", dest,
                                 job: { ...j, _prov: undefined, platform: adapter.platform } }));
       // Ask first, then write — see confirmPopover.
       confirmPopover((tags, report) => {
@@ -1010,9 +1029,11 @@
       // Only external applies have a resolvable ATS destination — Easy
       // Apply / native quick-apply never leaves the platform, so there's
       // nothing to detect from.
-      const ats = external
-        ? detectAts(adapter.resolveExternalUrl ? adapter.resolveExternalUrl(hit) : hit.href)
+      const dest = external
+        ? (adapter.resolveExternalUrl ? adapter.resolveExternalUrl(hit) : hit.href)
         : null;
+      const ats = detectAts(dest);
+      departure = external ? { host: hostOfUrl(dest), at: Date.now() } : null;
       if (external || !adapter.deferInternalApply) {
         // The top frame captures inline and SYNCHRONOUSLY — the DOM must be
         // read in this tick, before the page's own handler runs and swaps it
@@ -1022,7 +1043,7 @@
         if (isTopFrame) {
           capture("apply", external, ats);
         } else {
-          relayApply({ trigger: "apply", external, ats })
+          relayApply({ trigger: "apply", external, ats, dest: departure && departure.host })
             .then((relayed) => { if (!relayed) capture("apply", external, ats); });
         }
         return;
@@ -1107,6 +1128,8 @@
       try { job = adapter.getJob(); } catch (e) { job = null; }
       if (!job || (!job.title && !job.jd_text)) { respond({ ok: false }); return false; }
       const d = msg.detail || {};
+      // The subframe's click knew where it left for; this frame's capture stashes.
+      departure = d.dest ? { host: d.dest, at: Date.now() } : null;
       capture(d.trigger || "apply", d.external, d.ats);
       respond({ ok: true });
     }

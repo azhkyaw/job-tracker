@@ -46,6 +46,14 @@ _APPLY_SEGMENTS = ("apply", "application")
 # naming the wizard's step is the flow's state and stays out of the fallback
 # id (Phenom's `…/apply?jobSeqNo=…&step=N&stepname=…`, 2 Oct 2026).
 _FLOW_STEP_PARAM = re.compile(r"step")
+# jobposting.js:JOB_PARAM / JOB_PARAM_VALUE: a parameter NAMED for the job
+# (Phenom's `jobSeqNo`, 3 Oct 2026) with an id-shaped value, tried only where
+# the rules above found nothing. fullmatch for JavaScript's ^…$, ASCII so
+# IGNORECASE cannot admit the Kelvin sign as a `k`.
+_JOB_PARAM = re.compile(
+    r"(job|req|requisition|posting|vacancy|opening)[_-]?(seq|post|posting|req)?[_-]?"
+    r"(id|no|num|number|code|ref)")
+_JOB_PARAM_VALUE = re.compile(r"(?=[a-z0-9_-]*[0-9])[a-z0-9_-]{4,64}", re.I | re.A)
 
 
 # jobposting.js:TENANT_PARAM: a hiring system serving many employers from one
@@ -105,6 +113,9 @@ def generic_id(url: str | None) -> str | None:
             if m:
                 token = m.group(1)
                 break
+    if not token:
+        token = next((v.lower() for k, v in params
+                      if _JOB_PARAM.fullmatch(k) and _JOB_PARAM_VALUE.fullmatch(v)), None)
     if not token:
         if not segs:
             return None

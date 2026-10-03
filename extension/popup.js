@@ -338,8 +338,13 @@ chrome.storage.local.get({ provenance: [] }, ({ provenance }) => {
     // candidates with no link means the titles disagreed, so the submit filed
     // its own record — worth checking once for a duplicate.
     // "+handoff": bound when the hiring system's first page loaded (§16).
+    // "opener-kept": Chrome had forgotten the opener; the worker's own record
+    // of it was used, on the host the Apply left for (jobposting.js).
     const how = { "opener+title": "the tab that opened this one and the title",
                   "opener+handoff": "the handoff from the tab that opened this one",
+                  "opener-kept": "the tab that opened this one, as remembered",
+                  "opener-kept+title": "the tab that opened this one, as remembered, and the title",
+                  "opener-kept+handoff": "the handoff from the tab that opened this one, as remembered",
                   "tab+title": "the title", "tab+handoff": "the handoff from the listing" };
     if (p.linked && p.linked.startsWith("opener")) {
       li.append(` — completed the job board's record (matched by ${

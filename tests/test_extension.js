@@ -1625,6 +1625,70 @@ console.log("\njobposting.js: the handoff from a listing to its hiring system (P
         [onSf.host, onSf.atsJobId, !!onSf.site],
         ["career2.successfactors.eu", "career2.successfactors.eu/litwarebk/51234", false]);
 
+  // THE OPENER, KEPT (3 Oct 2026). Chrome forgets a tab's opener when the
+  // user switches tabs, types an address or opens another tab from a link,
+  // so the worker writes it down at the tab's creation (background.js).
+  const kept = J.keepOpener({}, { id: 422, openerTabId: 375 }, NOW);
+  check("keepOpener: a tab another opened is written down; one nobody opened is not",
+        [kept[422].opener, J.keepOpener(kept, { id: 423 }, NOW)], [375, null]);
+  check("openerOf: Chrome's own while it stands, else the kept one, marked kept, else none",
+        [J.openerOf(kept, { id: 422, openerTabId: 375 }), J.openerOf(kept, { id: 422 }),
+         J.openerOf(kept, { id: 999 }), J.openerOf(kept, null)],
+        [{ id: 375, kept: false }, { id: 375, kept: true }, { id: null, kept: false }, { id: null, kept: false }]);
+  let many = {};
+  for (let i = 0; i < 200; i++) many = J.keepOpener(many, { id: 1000 + i, openerTabId: 1 }, NOW - (200 - i));
+  many = J.keepOpener(many, { id: 5000, openerTabId: 1 }, NOW);
+  check("keepOpener: capped at 200, the oldest written-down tab going first",
+        [Object.keys(many).length, 1000 in many, 1001 in many, 5000 in many], [200, false, true, true]);
+  check("departsTo: the host the Apply left for, or a subdomain of it; never without one",
+        [J.departsTo({ dest: "jobs.contoso.com" }, "jobs.contoso.com"),
+         J.departsTo({ dest: "contoso.com" }, "careers.contoso.com"),
+         J.departsTo({ dest: "jobs.contoso.com" }, "jobs.fabrikam.com"),
+         J.departsTo({ dest: "contoso.com" }, "notcontoso.com"),
+         J.departsTo({ dest: null }, "jobs.contoso.com"), J.departsTo({}, "jobs.contoso.com")],
+        [true, true, false, false, false, false]);
+
+  // The real case (an employer's Phenom site, 3 Oct 2026; placeholders here). LinkedIn's
+  // Apply stashed the job, with where it left for; the site was enabled only
+  // once the form was open, 37 s later, when Chrome had forgotten the opener.
+  const PH = "jobs.contoso.com";
+  const phJob = { url: "https://www.linkedin.com/jobs/view/4400000002/", platform: "linkedin",
+                  platform_job_id: "4400000002", title: "Senior Data Science & AI Engineer", company: "Contoso" };
+  const phEntry = { at: NOW - 37_000, job: phJob, dest: PH };
+  const older = [1, 2, 3, 4].map((n) => ({ at: NOW - n * 120_000, dest: `jobs.other${n}.com`,
+    job: { url: `https://www.linkedin.com/jobs/view/440000001${n}/`, platform_job_id: `440000001${n}`, title: "AI Engineer" } }));
+  const opList = [phEntry, ...older];
+  const formId = (u) => { const id = J.idFrom(u); return id && id.by !== "path" ? id.platform_job_id : null; };
+  const STEP1 = "https://jobs.contoso.com/global/en/apply?jobSeqNo=CONTOSOGLOBALR01234567EXTERNALENGLOBAL&source=WORKDAY&utm_source=linkedin&step=1&stepname=personalInformation";
+  const STEP4 = "https://jobs.contoso.com/global/en/apply?jobSeqNo=CONTOSOGLOBALR01234567EXTERNALENGLOBAL&source=WORKDAY&utm_source=linkedin&step=4&stepname=applicationReview";
+  const phPage = { host: PH, vendor: "phenom", tenant: null, site: true, atsJobId: formId(STEP1) };
+  check("Phenom: the form's address now yields the job's id (a named job parameter), the one its job page gives",
+        [formId(STEP1), formId(STEP4),
+         J.idFrom("https://jobs.contoso.com/global/en/job/CONTOSOGLOBALR01234567EXTERNALENGLOBAL/Senior-Data-Science-AI-Engineer").platform_job_id],
+        [`${PH}/contosoglobalr01234567externalenglobal`, `${PH}/contosoglobalr01234567externalenglobal`,
+         `${PH}/contosoglobalr01234567externalenglobal`]);
+  check("…with Chrome's opener gone and nothing kept, the enable binds nothing (what happened)",
+        J.pickDeparture(null, [], phPage, NOW), null);
+  const opener = J.openerOf(kept, { id: 422 });
+  const phPick = J.pickDeparture(opener.kept ? opList : null, [], phPage, NOW, opener.kept);
+  check("…with the kept opener, its newest entry binds: it left for this very host",
+        phPick && phPick.entry.job.platform_job_id, "4400000002");
+  const phBind = J.rebind(undefined, phPick, phPage, NOW);
+  check("…and the review step's submit fits the binding by the job's id, with no title read",
+        J.handoffFits(phBind, { host: PH, atsJobId: formId(STEP4), title: null }), true);
+  check("…which the kept opener alone could not do: a site binding with no id needs a title",
+        J.handoffFits({ ...phBind, atsJobId: null }, { host: PH, atsJobId: null, title: null }), false);
+  check("…and at the submit with no handoff, a kept opener's list offers only what left for this host",
+        J.pickListed(opList.filter((e) => J.departsTo(e, PH)), null).entry.job.platform_job_id, "4400000002");
+  // What Chrome's forgetting protects: the same tab, the Apply's site left by
+  // a typed address for another employer's. A kept opener must not bind it.
+  const typed = { host: "jobs.fabrikam.com", vendor: null, tenant: null, site: true, atsJobId: "jobs.fabrikam.com/77001" };
+  check("a kept opener never binds a host its job did not leave for; Chrome's live one still does",
+        [J.pickDeparture(opList, [], typed, NOW, true),
+         J.pickDeparture(opList, [], typed, NOW, false).entry.job.platform_job_id], [null, "4400000002"]);
+  check("…nor an entry stashed without a destination (before 0.26.0)",
+        J.pickDeparture([{ ...phEntry, dest: null }], [], phPage, NOW, true), null);
+
   // atsCandidates (P4): what a listing BELIEVES its hiring system holds, for
   // the server to look up and never store.
   const h = { atsHost: "career2.successfactors.eu", tenant: "litwarebk" };

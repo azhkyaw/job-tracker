@@ -1195,7 +1195,11 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
     keys apart. A step parameter by another name only keeps the old
     per-step key, never merges two jobs. `jobseqno` was not added to
     `ID_PARAMS`: it would not have linked the form to its listing either,
-    whose id is the path `…/job/<req>/<slug>`.
+    whose id is the path `…/job/<req>/<slug>`. **That last reason was
+    wrong** (found 3 Oct 2026): the path's id IS the `jobSeqNo` value
+    (`SEGMENT_IDS`' letters-and-digits rule reads the same token), so the
+    two ids agree once the parameter is read. 0.26.0 reads it, as a rule
+    about parameter names (the next entry).
   - **Also seen, and fixed in 0.25.3:** the store on disk was saved 100 ms
     after the capture's `take()`, because the submit click's delayed
     re-sweeps (0 and 300 ms, the typeahead fix) refilled it from the review
@@ -1239,6 +1243,52 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
     clicked No. The answers store's history in Session Storage's `.log`
     (every version, not only the last) showed each answer recorded at the
     moment of its pick, which is what the page held.
+
+- **Chrome forgets a tab's opener, and an enabled site's first claim can
+  come too late to see it** (3 Oct 2026, a LinkedIn → Phenom apply;
+  extension 0.26.0; worklog task 54).
+  - **What happened:** two records. The Phenom review step's submit filed
+    one with the 21 answers and no name (`linked: null, candidates: 0`).
+    The LinkedIn popover filed the other 11 s later. LinkedIn's Apply HAD
+    stashed the job under its tab, and the entry was never taken.
+  - **Why, from three records:** the storage write order (the LevelDB log
+    read in sequence, not just its final state), Chrome's History
+    (`visits.opener_visit`, `from_visit`), and Chromium's source. The site
+    was enabled from the popup 37 s after the click, with the form already
+    open, so nothing ran when the tab's first page loaded. Every later
+    claim found no opener, and no handoff was ever written.
+    `TabStripModel` forgets EVERY tab's opener in the window on a non-link
+    navigation anywhere (typed, bookmark, keyword), on a user-gesture
+    switch to a tab that is neither this one's opener nor opened by it, and
+    when a tab is opened from a link in the foreground.
+    `chrome.tabs`' `openerTabId` is that same opener
+    (`extension_tab_util.cc`). Which of those fired here is not known. The
+    30 Sep SmartRecruiters apply had lost its opener by the submit,
+    probably the same way.
+  - **NOT the cause:** LinkedIn's `safety/go` interstitial. Every LinkedIn
+    external apply goes through it (History `opener_visit = 0` on all of
+    them), the ones that bound included. History's opener is not the tab
+    strip's.
+  - **Fix 1, the kept opener:** `background.js` writes each tab's opener
+    down at `tabs.onCreated` (no `tabs` permission needed) and uses it once
+    Chrome's is gone (`jobposting.js:keepOpener` / `openerOf`). Chrome's
+    forgetting guards something real: a TYPED address starts a new task. So
+    a kept opener only links on the host its job's Apply LEFT FOR, or a
+    subdomain of it: the stash's `dest`, which `capture.js` resolves at the
+    click (`departsTo`). Through a redirector or a career-site → ATS hop it
+    links nothing, which leaves a duplicate, never a wrong merge. It shows
+    as `opener-kept` in the provenance line.
+  - **Fix 2, the form's id:** that alone would not have linked this apply.
+    The Phenom form's id was the whole-query fallback, which the handoff
+    reads as "no id", and on an enabled site a binding with no id needs
+    the submit's title, which this submit did not read. `idFrom` now takes
+    a parameter NAMED for the job (`JOB_PARAM`, anchored:
+    `jobSeqNo`, `job_post_id`; not `jobApplicationId`, `filter_reqid`,
+    `jobTitle`, `jobFamilyGroup`) with an id-shaped value, before the
+    fallback only. Replayed first: of 19 stored addresses it changes 1, and
+    of 662 visited job-site addresses 28, every one the job's own id.
+    `tests/test_extension.js` replays the sequence. On the old code the
+    fixture's Phenom ids fail and `keepOpener` does not exist.
 
 ## Known-untested surfaces (verify on first real contact)
 

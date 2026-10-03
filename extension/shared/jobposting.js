@@ -105,7 +105,8 @@
   //     the handoff bound to 2087 was refused at the submit (28 Sep 2026). The
   //     tail is searched only when the part before it has no id, which is
   //     where JazzHR keeps its own (`/apply/<id>/<slug>`);
-  //  3. otherwise the whole path PLUS the non-tracking query. The query is not
+  //  3. otherwise a parameter whose NAME says it is the job's id (JOB_PARAM,
+  //     below), and failing that the whole path PLUS the non-tracking query. The query is not
   //     decoration there: a generic page carrying its job in a parameter this
   //     list does not know (an embed's ?for=…&token=…) would otherwise give
   //     every job on it ONE id, and a capture would silently update another
@@ -124,6 +125,21 @@
   // between its own links) keep one identity.
   const ID_PARAMS = ["gh_jid", "jobid", "job_id", "job", "jid", "pid", "reqid",
                      "req_id", "requisitionid", "career_job_req_id", "jk", "id"];
+  // A parameter whose NAME says it is the job's identifier, past the list
+  // above: a job word, then optionally what kind of number, then an id word
+  // — Phenom's `jobSeqNo`, MyGreenhouse's `job_post_id`, a `requisitionNumber`.
+  // Phenom's apply (3 Oct 2026) is `…/apply?jobSeqNo=<job>&source=…`, so until
+  // then it fell to rule 3 and the form's id was the whole query, which
+  // pageId reads as "no id": the handoff could never check the submit against
+  // the job (handoffFits). The job page, `/job/<same token>/<slug>`, already
+  // gave that token by rule 2, so the two ids now agree. Anchored at both
+  // ends: `jobApplicationId` (an application's id) and `filter_reqid` (a
+  // search's) do not match, nor `jobTitle`, `jobFamilyGroup`, `jobSource`.
+  // The value must hold a digit and no spaces. Replayed before it was
+  // written: of 19 stored addresses it changes 1 (that one), and of 662
+  // visited job-site addresses 28, all the job's own id.
+  const JOB_PARAM = /^(job|req|requisition|posting|vacancy|opening)[_-]?(seq|post|posting|req)?[_-]?(id|no|num|number|code|ref)$/;
+  const JOB_PARAM_VALUE = /^(?=[a-z0-9_-]*\d)[a-z0-9_-]{4,64}$/i;
   const SEGMENT_IDS = [
     /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/,
     /-([0-9a-f]{32})$/,
@@ -196,6 +212,13 @@
         const m = rx.exec(seg);
         if (m) { token = m[1]; by = "segment"; break; }
       }
+    }
+    // Rule 3's first resort: a parameter NAMED for the job, holding an
+    // id-shaped value (JOB_PARAM). Only where rules 1-2 found nothing, so it
+    // changes no id they give.
+    if (!token) {
+      const hit = params.find(([k, v]) => JOB_PARAM.test(k) && JOB_PARAM_VALUE.test(v));
+      if (hit) { token = hit[1].toLowerCase(); by = "param"; }
     }
     if (!token) {
       if (!segs.length) return null;          // a bare site is not a job
@@ -835,7 +858,9 @@
    * been read for a while. Returns {entry, via} or null. */
   const OPENER_WINDOW_MS = 15 * 60 * 1000;
 
-  function pickDeparture(openerEntries, ownEntries, page, now) {
+  // `openerKept`: the opener came from keepOpener's record, not from Chrome,
+  // so the opener's entry must also have DEPARTED to this host (departsTo).
+  function pickDeparture(openerEntries, ownEntries, page, now, openerKept) {
     const fits = (e) => {
       if (!e || !e.job) return false;
       const h = e.job.handoff || {};
@@ -845,7 +870,8 @@
       return true;
     };
     const opener = (openerEntries || [])[0];
-    if (opener && now - opener.at <= OPENER_WINDOW_MS && fits(opener)) {
+    if (opener && now - opener.at <= OPENER_WINDOW_MS && fits(opener) &&
+        (!openerKept || departsTo(opener, page.host))) {
       return { entry: opener, via: "opener" };
     }
     // A site the user enabled (an employer's own domain; Eightfold's
@@ -858,6 +884,62 @@
     const own = (ownEntries || []).find((e) => e && e.job && hostOf(e.job.url) !== page.host);
     if (own && fits(own)) return { entry: own, via: "tab" };
     return null;
+  }
+
+  /* THE OPENER, KEPT (3 Oct 2026). Every link from a job board's Apply to the
+   * employer's tab rests on `sender.tab.openerTabId`, and Chrome forgets it
+   * far more readily than the design assumed. Chromium's TabStripModel
+   * (read in its source that day) forgets EVERY tab's opener in the window
+   * when any tab navigates other than by a link (typed, bookmark, keyword),
+   * when the user switches to a tab that is neither this one's opener nor
+   * opened by it, and when another tab is opened from a link in the
+   * foreground. A real apply on an employer's Phenom site lost it within 37 s: the
+   * site was enabled only once its form was open, so the first claim came
+   * late, found no opener, and the submit filed a second record beside
+   * LinkedIn's. The 30 Sep SmartRecruiters apply had lost it by its submit.
+   *
+   * So the worker writes each tab's opener down when Chrome creates the tab
+   * (tabs.onCreated carries openerTabId, no "tabs" permission needed) and
+   * uses that once Chrome's own is gone. What Chrome's forgetting protects
+   * against is real: after a TYPED address, the tab is a new task, and a
+   * kept opener would file that task's application onto the job board's job.
+   * So a kept opener is trusted only on the host its job's Apply LEFT FOR
+   * (`dest`, the destination capture.js resolves at the click: LinkedIn's
+   * safety/go unwrapped), or a subdomain of it. A redirector (grnh.se), or a
+   * career site handing over to its ATS on another host, therefore links
+   * nothing through a kept opener: a duplicate, as before, never a wrong
+   * merge. Chrome's live opener, when it still stands, is used as it always
+   * was, with no host check. */
+  const KEPT_OPENERS_MAX = 200;
+
+  // The record after `tab` was created: {[tabId]: {opener, at}}, capped to
+  // the newest. Null when there is nothing to keep (a tab nobody opened).
+  function keepOpener(kept, tab, now) {
+    if (!tab || tab.id == null || tab.openerTabId == null) return null;
+    const next = { ...(kept || {}), [tab.id]: { opener: tab.openerTabId, at: now } };
+    const ids = Object.keys(next);
+    if (ids.length > KEPT_OPENERS_MAX) {
+      ids.sort((a, b) => next[a].at - next[b].at)
+        .slice(0, ids.length - KEPT_OPENERS_MAX).forEach((k) => delete next[k]);
+    }
+    return next;
+  }
+
+  // The tab that opened `tab`: Chrome's, while it stands, else the kept one.
+  // {id, kept}; id null when neither knows.
+  function openerOf(kept, tab) {
+    if (!tab || tab.id == null) return { id: null, kept: false };
+    if (tab.openerTabId != null) return { id: tab.openerTabId, kept: false };
+    const k = kept && kept[tab.id];
+    return k && k.opener != null ? { id: k.opener, kept: true } : { id: null, kept: false };
+  }
+
+  // Did this stashed departure leave for `host`? Its destination's host, or a
+  // subdomain of it. An entry with no destination (stashed before 0.26.0, or
+  // by an Apply whose link could not be read) never qualifies.
+  function departsTo(entry, host) {
+    const d = entry && entry.dest;
+    return !!d && !!host && (host === d || host.endsWith("." + d));
   }
 
   /* Does a submit belong to its tab's handoff? The same hiring system's host,
@@ -966,7 +1048,7 @@
   // rule exists once; `window` in a page, where the two are the same object.
   (typeof window !== "undefined" ? window : self).__trackerJobPosting =
     { read, idFrom, pageId, tenantOf, atsHandoff, atsCandidates, hasPosting, siteOwner, pickDeparture,
-      handoffFits, learnsAlias, rebind, knowsId, quickApplies, quickApplySent, atsOfUrl, vendorOf, htmlToText, sameJob,
+      handoffFits, learnsAlias, rebind, knowsId, keepOpener, openerOf, departsTo, quickApplies, quickApplySent, atsOfUrl, vendorOf, htmlToText, sameJob,
       pickListed, siteOf, APPLY_SEGMENTS,
       matchPatternRegex, stripRequisition, suggestCompany };
 })();

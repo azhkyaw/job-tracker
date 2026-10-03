@@ -1472,3 +1472,29 @@ the key to each real case.
      mail is 1,470 tokens a call, not the 3,810 recorded on 4 Aug.
    - **Still open:** §8's backend changes, whether an outage-fallback
      provider is worth a second key, and Haiku 5.5 once it has a price.
+
+54. **A LinkedIn → Phenom apply filed twice: Chrome had forgotten the
+   opener** (3 Oct 2026, extension 0.26.0). Reported by the author as "the
+   same application", by the two record ids.
+   - **Repair:** `dedup.merge_jobs` onto the LinkedIn record, which has the
+     name, the JD and the board id, with the form's 21 answers and posting
+     moved across. The popover's `applied`, 11 s after the submit's, was
+     removed. Snapshot first (`2026-10-03-phenom-linkedin-twins.json`).
+     Done before sync, with no employer mail yet arrived.
+   - **Cause:** the site was enabled mid-visit, so the first handoff claim
+     came 37 s after the click, by which time Chrome had dropped the tab's
+     `openerTabId`. And the Phenom form's id was the whole-query fallback,
+     so even a bound handoff could not have checked the submit against
+     it. The evidence, and a first wrong guess (LinkedIn's `safety/go`):
+     `.claude/rules/extension.md`.
+   - **Built:** the kept opener, trusted only on the host the Apply left
+     for, and `idFrom`'s named job parameter (Python mirror
+     `joburl.generic_id`, `tests/job_urls.json` +7 cases, 3 changed). Both
+     were replayed against real addresses before they were written. All
+     nine suites pass.
+   - **Not done:** the merged record's Phenom posting still holds the old
+     fallback id; the new rule would give the job's token. Cosmetic unless
+     that page is captured again.
+   - **Next real check:** an external apply on an enabled site where the
+     tab was switched away and back. The provenance line should read
+     `opener-kept+handoff`.

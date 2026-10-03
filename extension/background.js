@@ -209,7 +209,9 @@ async function takePendingJob(key, tabId) {
  * permission (it gates only url, pendingUrl, title and favIconUrl). So the
  * link is a fact about the tabs, not a guess about the job, which is why it
  * may wait as long as the keyed job stash does: a sign-in plus a new
- * candidate account can take most of an hour.
+ * candidate account can take most of an hour. Chrome forgets that record
+ * within seconds of ordinary use, so the worker keeps its own copy from the
+ * tab's creation (openerFor, below; jobposting.js "THE OPENER, KEPT").
  *
  * One board tab can open several employer sites before any is submitted, so
  * the opener's entries are a short list and the submit names its own title:
@@ -234,12 +236,14 @@ async function _externalJobs() {
   return externalJobs;
 }
 
-async function stashExternal(tabId, job) {
+// `dest`: the host the Apply left for (capture.js), which a KEPT opener must
+// match (jobposting.js:departsTo).
+async function stashExternal(tabId, job, dest) {
   if (tabId == null || !job) return;
   const all = await _externalJobs();
   const list = (all[tabId] || []).filter((e) =>
     !(job.platform_job_id && e.job.platform_job_id === job.platform_job_id));
-  list.unshift({ at: Date.now(), job });
+  list.unshift({ at: Date.now(), job, dest: dest || null });
   all[tabId] = list.slice(0, EXTERNAL_PER_TAB);
   await setLocal({ externalJobs: all });
 }
@@ -257,7 +261,10 @@ async function stashExternal(tabId, job) {
  * `via` is "opener" / "tab", with "+title" when a title picked it;
  * `candidates` counts what was there, for the provenance line when nothing
  * was chosen. */
-async function takeExternal(openerTabId, ownTabId, title, page) {
+// `opener`: {id, kept} from openerFor(). A KEPT opener's list offers only the
+// entries that departed to this page's host (jobposting.js:departsTo), and
+// links as "opener-kept".
+async function takeExternal(opener, ownTabId, title, page) {
   const J = self.__trackerJobPosting;
   // The tab's HANDOFF first: bound when the hiring system's first page
   // loaded, seconds after the listing's Apply, and kept for days
@@ -268,11 +275,13 @@ async function takeExternal(openerTabId, ownTabId, title, page) {
     if (J.handoffFits(b, { ...page, title })) return { job: b.job, via: `${b.via}+handoff`, candidates: 1 };
   }
   const all = await _externalJobs();
-  const lists = [["opener", openerTabId], ["tab", ownTabId]]
+  const lists = [[opener.kept ? "opener-kept" : "opener", opener.id], ["tab", ownTabId]]
     .filter(([, id]) => id != null && all[id] && all[id].length);
   const candidates = lists.reduce((n, [, id]) => n + all[id].length, 0);
   for (const [via, id] of lists) {
-    const pick = J.pickListed(all[id], title);
+    const offered = via === "opener-kept"
+      ? all[id].filter((e) => J.departsTo(e, page && page.host)) : all[id];
+    const pick = J.pickListed(offered, title);
     if (!pick) continue;
     all[id] = all[id].filter((e) => e !== pick.entry);
     if (!all[id].length) delete all[id];
@@ -302,7 +311,45 @@ async function _handoffs() {
   return handoffs;
 }
 
-async function claimHandoff(tabId, openerTabId, page) {
+/* Each tab's opener as Chrome gave it at the tab's creation, kept because
+ * Chrome forgets it within seconds of ordinary use (jobposting.js, "THE
+ * OPENER, KEPT"). Cleared at startup like the handoffs, since restored tabs
+ * get new ids; pruned as tabs close. Writes are chained, since two tabs
+ * created together would otherwise each overwrite the other's entry. */
+let _openersWrite = Promise.resolve();
+
+function _updateOpeners(change) {
+  _openersWrite = _openersWrite.then(async () => {
+    const { keptOpeners = {} } = await new Promise((res) =>
+      chrome.storage.local.get({ keptOpeners: {} }, res));
+    const next = change(keptOpeners);
+    if (next) await setLocal({ keptOpeners: next });
+  }).catch(() => {});
+  return _openersWrite;
+}
+
+// {id, kept}: Chrome's opener while it stands, else the kept one.
+async function openerFor(tab) {
+  const { keptOpeners = {} } = await new Promise((res) =>
+    chrome.storage.local.get({ keptOpeners: {} }, res));
+  return self.__trackerJobPosting.openerOf(keptOpeners, tab);
+}
+
+chrome.tabs.onCreated.addListener((tab) => {
+  if (tab.openerTabId == null) return;
+  _updateOpeners((kept) => self.__trackerJobPosting.keepOpener(kept, tab, Date.now()));
+});
+chrome.tabs.onRemoved.addListener((tabId) => {
+  _updateOpeners((kept) => {
+    if (!(tabId in kept)) return null;
+    const next = { ...kept };
+    delete next[tabId];
+    return next;
+  });
+});
+chrome.runtime.onStartup.addListener(() => { _updateOpeners(() => ({})); });
+
+async function claimHandoff(tabId, opener, page) {
   if (tabId == null || !page || !page.host) return;
   const J = self.__trackerJobPosting;
   const [all, ext] = [await _handoffs(), await _externalJobs()];
@@ -315,8 +362,10 @@ async function claimHandoff(tabId, openerTabId, page) {
     await setLocal({ handoffs: all });
     return;
   }
-  const pick = J.pickDeparture(openerTabId != null ? ext[openerTabId] : null,
-                               ext[tabId], page, Date.now());
+  const found = J.pickDeparture(opener.id != null ? ext[opener.id] : null,
+                                ext[tabId], page, Date.now(), opener.kept);
+  // Named apart in the binding, and so in the provenance line ("opener-kept+handoff").
+  const pick = found && opener.kept && found.via === "opener" ? { ...found, via: "opener-kept" } : found;
   // What the binding becomes, or null to leave it (jobposting.js:rebind).
   const next = J.rebind(cur, pick, page, Date.now());
   if (!next) return;
@@ -516,8 +565,9 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
       // tell that tab, so a box still asking "Capture this application?"
       // turns into the receipt (capture.js). Needs host permission for the
       // opener's site — linkedin.com has it; elsewhere this quietly fails and
-      // the box simply stays until dismissed.
-      const opener = sender.tab && sender.tab.openerTabId;
+      // the box simply stays until dismissed. The kept opener counts here
+      // too: the submit already linked through it.
+      const opener = sender.tab ? (await openerFor(sender.tab)).id : null;
       if (msg.notifyOpener && opener != null) {
         chrome.tabs.sendMessage(opener, {
           type: "tracker-external-completed",
@@ -555,20 +605,22 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
   // Same worker-lifetime rule as the job stash below: sent by the click that
   // opens the employer's site, the worst moment to be racing a shutdown.
   if (msg && msg.type === "tracker-stash-external") {
-    stashExternal(sender.tab && sender.tab.id, msg.job).then(() => respond({ ok: true }));
+    stashExternal(sender.tab && sender.tab.id, msg.job, msg.dest).then(() => respond({ ok: true }));
     return true;
   }
 
   if (msg && msg.type === "tracker-take-external") {
-    takeExternal(sender.tab && sender.tab.openerTabId, sender.tab && sender.tab.id,
-                 msg.title || null, msg.page || null)
-      .then((r) => respond(r));
+    openerFor(sender.tab)
+      .then((opener) => takeExternal(opener, sender.tab && sender.tab.id,
+                                     msg.title || null, msg.page || null))
+      .then((r) => respond(r), () => respond({ job: null, candidates: 0 }));
     return true;
   }
 
   // A hiring system's page has loaded in this tab (generic.js:claimHandoff).
   if (msg && msg.type === "tracker-claim-handoff") {
-    claimHandoff(sender.tab && sender.tab.id, sender.tab && sender.tab.openerTabId, msg.page)
+    openerFor(sender.tab)
+      .then((opener) => claimHandoff(sender.tab && sender.tab.id, opener, msg.page))
       .then(() => respond({ ok: true }), () => respond({ ok: false }));
     return true;
   }
