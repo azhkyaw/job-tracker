@@ -71,6 +71,14 @@ _RESUME_FILE = re.compile(r"^[^/\\:]+\.(?:pdf|docx?)$", re.I)
 # A resume UPLOAD's answer: the file's own name, never a path (see
 # _is_resume_pick).
 _UPLOADED_FILE = re.compile(r"^[^/\\:]+\.[a-z0-9]{2,5}$", re.I)
+# An upload says it is the resume ANYWHERE in its label, or in its file's own
+# name (4 Oct 2026). Upload widgets label the input with their own chrome:
+# iCIMS "My Computer (Opens new window) Upload your resume/CV (max size: 5
+# MB)", and four others "Upload options", "Upload from Device", "Choose a file
+# or drop it here", whose files were all named "…_Resume.pdf". Every one of
+# the 5 file fields stored by then was a resume, and none was promoted. A
+# cover letter's upload says neither, and stays an answer.
+_RESUME_WORD = re.compile(r"(?:^| )(?:resume|resumes|résumé|résumés|cv|cvs)(?= |$)")
 
 # The rest are LinkedIn UI toggles, answered by ticking a box rather than by
 # saying anything. "Follow <employer>" is the worst of them: the employer's
@@ -134,11 +142,15 @@ def _is_resume_pick(question: str, answer: str | None, field_type: str | None) -
     chosen file), must still be a bare document name."""
     if _RESUME_RE.match(question or ""):
         return True
-    if not _RESUME_HEAD.match(norm_question(question)):
-        return False
     answer = (answer or "").strip()
     if field_type == "file":
-        return bool(_UPLOADED_FILE.match(answer))
+        # The answer is a file name by construction; the label or the name
+        # need only SAY resume somewhere (_RESUME_WORD).
+        return bool(_UPLOADED_FILE.match(answer)) and bool(
+            _RESUME_WORD.search(norm_question(question))
+            or _RESUME_WORD.search(norm_question(answer.rsplit(".", 1)[0])))
+    if not _RESUME_HEAD.match(norm_question(question)):
+        return False
     return field_type in (None, "radio", "text") and bool(_RESUME_FILE.match(answer))
 
 

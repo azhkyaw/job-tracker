@@ -334,6 +334,20 @@ check("resume: …but typed text that is not a bare document name stays a questi
 check("resume: three words before 'resume' is a question about it, not the picker",
       resume_file([{"question": "Is your current resume up to date?", "answer": "cv.pdf",
                     "type": "text"}]) is None)
+# Upload widgets label their input with their own chrome (4 Oct 2026): iCIMS
+# names it after the resume mid-sentence, and four others only by the widget,
+# whose files were named "…_Resume.pdf". None of the five was promoted.
+check("resume: an upload whose label says resume/CV anywhere, or whose file is named so",
+      [resume_file([{"question": q, "answer": f, "type": "file"}]) for q, f in (
+          ("My Computer (Opens new window) Upload your resume/CV (max size: 5 MB)", "JD.pdf"),
+          ("Upload options", "Jane-Doe-resume.pdf"),
+          ("Choose a file or drop it here", "Jane-Doe_AI-engineer_Resume.pdf"),
+          ("Attach", "jane-cv.docx"))]
+      == ["JD.pdf", "Jane-Doe-resume.pdf", "Jane-Doe_AI-engineer_Resume.pdf", "jane-cv.docx"])
+check("resume: …but an upload saying neither (a transcript, a portfolio) stays an answer",
+      [resume_file([{"question": q, "answer": f, "type": "file"}]) for q, f in (
+          ("Upload options", "transcript.pdf"), ("Portfolio", "work-samples.pdf"),
+          ("Cover letter", "Jane-Doe_Cover_Letter.pdf"))] == [None, None, None])
 check("resume: another upload (a cover letter), or a path, is not",
       [resume_file([{"question": "Cover Letter", "answer": "cover.pdf", "type": "file"}]),
        resume_file([{"question": "Resume/CV*", "answer": "C:\\fakepath\\cv.pdf", "type": "file"}])]
