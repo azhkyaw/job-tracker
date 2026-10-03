@@ -31,7 +31,13 @@ from collections import defaultdict
 # dump a page into the DB.
 MAX_QUESTION = 300
 MAX_ANSWER = 4000
-MAX_ITEMS = 60
+# Was 60 until 4 Oct 2026, and an ATS form is longer than an Easy Apply one:
+# a work-history repeater alone is a dozen fields per employer. 60 cut 14 real
+# captures (24 Sep - 3 Oct; Workday, SuccessFactors, iCIMS) silently, keeping
+# the first 60 in form order, i.e. dropping the END of the form, where the
+# screening and visa questions are. The first iCIMS apply's store held 83.
+# Still a bound against a runaway scrape, now well clear of any real form.
+MAX_ITEMS = 500
 
 # A run of # or + glued to the end of a WORD is part of a name — C#, F#, C++,
 # Notepad++, CompTIA A+ — and is the only thing telling C# from C++ from C.

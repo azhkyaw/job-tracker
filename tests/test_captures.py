@@ -990,4 +990,21 @@ again = post({**_EA, "platform_job_id": "LI-ea-1"}).json()
 check("once it is sent, a re-capture says nothing",
       again["application_id"] == ea["application_id"] and again["email_ask"] is None, again)
 
+print("a long ATS form keeps every answer, its last step included (4 Oct 2026)")
+# The cap was 60 and kept the FIRST 60, so a long form lost its last step,
+# where the screening questions are: 14 real captures, 24 Sep - 3 Oct.
+_long = [{"question": f"Employer {n}", "answer": f"Co {n}", "type": "text"} for n in range(110)]
+_long.append({"question": "Will you now or in the future require sponsorship?",
+              "answer": "Yes", "type": "select"})
+lg = post({"platform": "other", "platform_job_id": "longform.example/9", "company": "Longform Co",
+           "title": "Engineer", "trigger": "apply", "answers": _long}).json()
+with db.connect() as conn:
+    _qs = [r["question"] for r in conn.execute(
+        "SELECT question FROM application_answers WHERE application_id = %s::uuid ORDER BY ordinal",
+        (lg["application_id"],)).fetchall()]
+check("all 111 answers are stored, and the response says so",
+      lg["answers"] == 111 and len(_qs) == 111, (lg["answers"], len(_qs)))
+check("...the form's last question among them",
+      _qs[-1] == "Will you now or in the future require sponsorship?", _qs[-1:])
+
 print("\nALL CAPTURE PATHS PASS")
