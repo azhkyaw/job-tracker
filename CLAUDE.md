@@ -82,7 +82,7 @@ and design records; the code and `migrations/` win where they disagree.
   this install. Read its §3 first: the author's right to earn in Singapore
   decides the rest. Confirms `docs/open-source.md` and says what would
   reopen the question.
-- `docs/worklog.md` — the dated task register (tasks 1-48 with their
+- `docs/worklog.md` — the dated task register (tasks 1-56 with their
   measurements); what is still open is summarised under "Open work" below.
 
 **Path-scoped rules.** Dated case history that only matters when touching
@@ -772,9 +772,9 @@ Detail lives with each family's rule file; this is the index.
   detail page's "Heard nothing since?" (29 Sep, task 40), were rendered
   through TestClient against real data only, never looked at.
 
-## Open work (as of 2 Oct 2026)
+## Open work (as of 4 Oct 2026)
 
-The dated register behind each item, tasks 1-48 with their measurements, is
+The dated register behind each item, tasks 1-56 with their measurements, is
 `docs/worklog.md`; read the matching entry before acting on one.
 
 - **Follow-up drafting** on an age-capped queue: cap `/follow-ups` near 21
@@ -848,7 +848,8 @@ The dated register behind each item, tasks 1-48 with their measurements, is
   vendor's form under an employer's own domain (Eightfold) as the hiring
   system: the handoff, its id and the resume combobox; it runs once the
   author enables the site. Not built: a Workday consent step's "Submit",
-  missed on 1 Oct (task 46).
+  missed on 1 Oct (task 46). SAP's newer data centres (`sapsf.com` /
+  `sapsf.eu`) are covered since 0.26.2, verified on a real submit (task 56).
   Open: the first real apply through each piece.
 - **Release blockers:** LICENSE (Apache-2.0 recommended), split the extension
   into its own repo, decide whether CLAUDE.md ships, and whether

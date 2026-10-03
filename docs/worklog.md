@@ -1534,3 +1534,22 @@ the key to each real case.
      LinkedIn popover's record the same way as above (snapshot
      `2026-10-03-sf-quick-apply-repair.json`). Applied time left at the
      popover's, about a minute after the send.
+
+56. **A SuccessFactors form on SAP's newer data centre ran no script**
+   (3 Oct 2026, extension 0.26.2). The author asked mid-form whether
+   `career44.sapsf.com/portalcareer?_s.crb=…` was a supported ATS. It is
+   SuccessFactors' classic form, but on `sapsf.com`, which neither
+   `jobposting.js`'s vendor table nor the manifest knew: no content script,
+   so a submit would have filed only LinkedIn's answerless popover record.
+   - **Built before the submit:** `sapsf.com` / `sapsf.eu` in `VENDORS`,
+     the manifest's `/career*` and `/portalcareer*` patterns,
+     `joburl._TENANT_PARAM` and the mail allowlist; a `tests/job_urls.json`
+     case; and a `test_extension.js` check that loops `VENDORS` against the
+     manifest (red on the old manifest).
+   - **Real submit, after a Save, an extension reload and a tab reload:**
+     one record on the LinkedIn posting, 60 answers, `ats_job_id`
+     `career44.sapsf.com/<tenant>/<req>`. The handoff still bound, though
+     the form's first load ran no script. `resume_file` empty, as on the
+     other classic-form records (an attachment widget).
+   - Committed `cb7d351` and pushed. The other machine needs a pull and an
+     extension reload.
