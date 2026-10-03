@@ -560,6 +560,8 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
         // So the receipt can ask for an employer the capture could not name —
         // an ATS submit navigates, and this held copy is the one it shows.
         company_known: r.body.company_known, suggest,
+        // The CV the listing asked for by email, still owed (web.py).
+        email_ask: r.body.email_ask || null,
       });
       // An ATS submit that completed the record a job board's tab started:
       // tell that tab, so a box still asking "Capture this application?"
@@ -572,7 +574,8 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
         chrome.tabs.sendMessage(opener, {
           type: "tracker-external-completed",
           detail: { ok: true, id: r.body.application_id, label: r.body.label,
-                    answers: r.body.answers, enriched: r.body.enriched, apiBase: r.base },
+                    answers: r.body.answers, enriched: r.body.enriched, apiBase: r.base,
+                    email_ask: r.body.email_ask || null },
         }, { frameId: 0 }).catch(() => {});
       }
       // apiBase travels back so the receipt can link straight to the record —

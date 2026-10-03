@@ -209,6 +209,13 @@ def _event_label(e) -> str:
 _EMAILED = {"sent": "You emailed your CV", "not_needed": "No email needed"}
 
 
+def _email_owed(conn, app_id) -> bool:
+    """analytics.email_owed_sql for one application: the page, the answer
+    route and the capture's receipt all ask it, and must agree."""
+    return conn.execute(f"SELECT {analytics.email_owed_sql('a')} AS o "
+                        f"FROM applications a WHERE a.id = %s", (app_id,)).fetchone()["o"]
+
+
 def _email_ask(jds, title) -> dict | None:
     """What the listing asked: email_apply.instruction() over the job's JDs,
     the first that asks, with its mailto link. The SQL (analytics.
@@ -1296,10 +1303,8 @@ def application_detail(request: Request, app_id: str, saved: str | None = None,
                            datetime.now(timezone.utc), config.REMINDER_DAYS)
         # The listing asked for the CV by email and nothing says it went
         # (analytics.email_owed_sql): the sentence, a mailto, and the answer.
-        owed = conn.execute(f"SELECT {analytics.email_owed_sql('a')} AS o "
-                            f"FROM applications a WHERE a.id = %s", (a["id"],)).fetchone()["o"]
         email_ask = (_email_ask([p["jd_text"] for p in postings], a["title_canonical"])
-                     if owed else None)
+                     if _email_owed(conn, a["id"]) else None)
         return templates.TemplateResponse(request=request, name="application_detail.html", context={
             "a": a, "status": _display(a["status"]), "axis": axis, "email_ask": email_ask,
             "events": events, "postings": postings, "contacts": contacts,
@@ -2023,9 +2028,7 @@ def mark_emailed(request: Request, app_id: str, outcome: str = Form(""),
         return _event_error(app_id, err)
     with db.connect_scoped(user["id"]) as conn, conn.transaction():
         a = _get_application(conn, app_id)
-        owed = conn.execute(f"SELECT {analytics.email_owed_sql('a')} AS o "
-                            f"FROM applications a WHERE a.id = %s", (a["id"],)).fetchone()["o"]
-        if not owed:
+        if not _email_owed(conn, a["id"]):
             return _event_error(app_id, "This application owes no email: its listing asked for "
                                         "none, or it is already sent, answered or closed.")
         occurred_at, err = _on_the_thread(conn, a, occurred_at, tz)
@@ -2749,10 +2752,21 @@ def captures(payload: CaptureIn, authorization: str | None = Header(None)):
         # already put a name to: offer that name on the receipt (P4). Offered,
         # not stored: the user confirms it with one key.
         suggestion = None if named else _tenant_company(conn, payload.ats_job_id, job_id)
+        # The listing asked for the CV by email as well (4 Oct 2026): said on
+        # the receipt, the moment you have just applied and can still act on
+        # it. Only while owed, so a re-capture after sending says nothing.
+        email_ask = None
+        if _email_owed(conn, app_id):
+            job = conn.execute("SELECT title_canonical FROM jobs WHERE id = %s",
+                               (job_id,)).fetchone()
+            jds = [p["jd_text"] for p in conn.execute(
+                "SELECT jd_text FROM postings WHERE job_id = %s ORDER BY captured_at",
+                (job_id,)).fetchall()]
+            email_ask = _email_ask(jds, job["title_canonical"])
         return {"application_id": str(app_id), "posting_id": str(posting_id),
                 "created": r["created"], "enriched": r["enriched"],
                 "answers": n_answers, "company_known": named,
-                "company_suggestion": suggestion,
+                "company_suggestion": suggestion, "email_ask": email_ask,
                 "label": f"{payload.company or 'unknown company'}"
                          f" · {payload.title or 'unknown role'}"}
 

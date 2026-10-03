@@ -299,6 +299,7 @@
     .co{align-items:center}
     .co input{margin-top:0;flex:1}
     .co button.t{flex:none}
+    q{display:block;margin-top:4px;font-size:12px;line-height:1.4}
     input:focus{outline:2px solid #1F53BE;outline-offset:-1px}
     .ft{display:flex;align-items:baseline;gap:8px;margin-top:8px;
         font-size:11.5px;color:#5A6873;min-height:1.3em}
@@ -425,13 +426,24 @@
         <div class="qa">This form didn't name the employer.${site
           ? ` Turn on "Always capture on ${esc(site)}" in the toolbar popup and its listings will.`
           : ""}</div>` : "";
+    // The listing asked for the CV by email as well (4 Oct 2026; web.py
+    // decides, and says it only while the email is owed): its own sentence and
+    // a mailto to every address it names, said now, while you can still act
+    // on it. The record waits in Follow-ups too, and mail you send clears it
+    // there by itself. Only a mailto is ever linked.
+    const ea = d.email_ask && /^mailto:/.test(d.email_ask.mailto || "") ? d.email_ask : null;
+    const eaHtml = ea ? `
+        <div class="qa">This listing also asks for your CV by email:</div>
+        <q>${esc(ea.sentence)}</q>
+        <div class="qa"><a href="${esc(ea.mailto)}">Write the email</a>.
+          It waits in Follow-ups until it is sent.</div>` : "";
     const ui = mount(`
       <div class="box">
         <div class="hd"><span class="tick">&#10003;</span>
           <span>${d.enriched ? "Saved — enriched an existing record" : "Saved to tracker"}</span>
           <button class="x" title="Dismiss" aria-label="Dismiss">&times;</button></div>
         <div class="sub">${esc(d.label || "")}</div>
-        ${qa}${askHtml}
+        ${qa}${eaHtml}${askHtml}
         <input type="text" placeholder="add a note&hellip;" aria-label="Note">
         <div class="ft"><span class="s"></span>${link}</div>
       </div>`);
@@ -455,10 +467,12 @@
     note.addEventListener("keydown", (e) => { if (e.key === "Enter") commitNote(); });
     note.addEventListener("blur", commitNote);
     note.addEventListener("focus", () => { status.textContent = "Enter to save the note"; });
-    if (!ask) { ui.fade(8000); return; }
+    if (!ask && !ea) { ui.fade(8000); return; }
     // A question waits for its answer: no countdown while it is open (the
-    // confirm box's rule), and the × still dismisses it unanswered.
+    // confirm box's rule), and the × still dismisses it unanswered. So does
+    // the email ask: eight seconds is less than it takes to read.
     ui.hold();
+    if (!ask) return;
     const co = ui.root.querySelector("input[aria-label='Company']");
     const coBtn = ui.root.querySelector("button[data-co]");
     const sub = ui.root.querySelector(".sub");
@@ -576,7 +590,8 @@
     const detail = (res && res.ok)
       ? { ok: true, id: res.application_id, label: res.label || label,
           answers: res.answers, enriched: res.enriched, apiBase: res.apiBase,
-          company_known: res.company_known, suggest: res.suggest || null }
+          company_known: res.company_known, suggest: res.suggest || null,
+          email_ask: res.email_ask || null }
       : { ok: false, label, payload,
           error: (res && res.error) || "no response — is `serve` running?" };
     // Prefer the top frame. On Easy Apply this code is running inside the

@@ -953,4 +953,27 @@ with db.connect() as conn:
         (r4.json()["application_id"],)).fetchone()
     check("status interested", st["status"] == "interested", st)
 
+print("the receipt says when the listing asked for the CV by email (4 Oct 2026)")
+_EA = {"platform": "linkedin", "url": "https://www.linkedin.com/jobs/view/77/",
+       "company": "Contoso Search", "title": "Data Engineer", "trigger": "apply",
+       "jd_text": "Great team.\nPlease send your updated resume to jane@contoso-search.example."}
+ea = post({**_EA, "platform_job_id": "LI-ea-1"}).json()
+check("an apply whose JD asks for the CV by email carries the sentence and a mailto",
+      ea["email_ask"] is not None
+      and ea["email_ask"]["sentence"] == "Please send your updated resume to jane@contoso-search.example."
+      and ea["email_ask"]["to"] == ["jane@contoso-search.example"]
+      and ea["email_ask"]["mailto"].startswith("mailto:jane@contoso-search.example?subject="), ea)
+on = post({**_EA, "platform_job_id": "LI-ea-2",
+           "jd_text": "Please apply online or email your CV to jane@contoso-search.example"}).json()
+check("one that also offers the apply button carries none", on["email_ask"] is None, on)
+sv = post({**_EA, "platform_job_id": "LI-ea-3", "trigger": "manual"}).json()
+check("nor does a job only saved: nothing was applied for yet", sv["email_ask"] is None, sv)
+with db.connect() as conn, conn.transaction():
+    conn.execute("INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+                 "SELECT user_id, id, 'note', 'manual', now(), '{\"emailed\": \"sent\"}' "
+                 "FROM applications WHERE id = %s::uuid", (ea["application_id"],))
+again = post({**_EA, "platform_job_id": "LI-ea-1"}).json()
+check("once it is sent, a re-capture says nothing",
+      again["application_id"] == ea["application_id"] and again["email_ask"] is None, again)
+
 print("\nALL CAPTURE PATHS PASS")
