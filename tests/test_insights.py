@@ -173,6 +173,25 @@ for c in _cases:
     check(f"{c['q'][:48]!r} -> {c['a'][:24]!r}: {c['needs']}",
           answers.declares_sponsorship(c["q"], c["a"]) is c["needs"])
 
+print("email apply: a JD asking for the CV by email")
+from pipeline import email_apply                              # noqa: E402
+_ea_cases = json.load(open(Path(__file__).parent / "email_apply.json",
+                           encoding="utf-8"))["cases"]
+for c in _ea_cases:
+    _f = email_apply.instruction(c["jd"])
+    # ascii(): a case holds an emoji, and a Windows console is cp1252.
+    check(f"{ascii(c['jd'][:56])}: {'owed' if c['owed'] else 'nothing owed'}",
+          (_f is not None) is c["owed"] and (_f["to"] if _f else []) == c["to"]
+          and (_f is None or _f["sentence"] in c["jd"]), _f)
+check("a quoted sentence keeps its own full stop, and only its own",
+      email_apply.instruction("Hi. Send your CV to a@b.example. Thanks!")["sentence"]
+      == "Send your CV to a@b.example."
+      and email_apply.instruction("Send your CV to a@b.example\nThanks")["sentence"]
+      == "Send your CV to a@b.example")
+check("a mailto names every address and the role, and needs no script",
+      email_apply.mailto({"to": ["a@x.example", "b@x.example"]}, "AI Engineer & Lead")
+      == "mailto:a@x.example,b@x.example?subject=Application%3A%20AI%20Engineer%20%26%20Lead")
+
 print("facts: the colour of a square is the colour of its row on the list")
 fresh_reply = app(status="viewed")
 old_wait = app()

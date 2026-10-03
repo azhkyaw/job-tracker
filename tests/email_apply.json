@@ -1,0 +1,31 @@
+{
+  "about": "pipeline/email_apply.py: does a JD ask for the application by email? Read by tests/test_insights.py (Python) and tests/test_web.py (the SQL), so the two stay one rule. Wordings are the real ones of 4 Oct 2026 with placeholder names and domains; `owed` is whether the sentence asks for a CV by email WITHOUT also offering to apply online, `to` the addresses instruction() returns.",
+  "cases": [
+    {"jd": "Salary: $8,000. Please send CV to jobs@northwind.example. Thanks!", "owed": true, "to": ["jobs@northwind.example"]},
+    {"jd": "To apply\nInterested candidates, please send your resume to Jane Recruiter at jr@contoso-search.example, quoting the job title.", "owed": true, "to": ["jr@contoso-search.example"]},
+    {"jd": "Should you be interested in this career opportunity, please send in your updated resume to apply@contoso.example at the earliest.", "owed": true, "to": ["apply@contoso.example"]},
+    {"jd": "We would love to hear from you.    Please contact Jane or email your cv directly in word format to Jane@Contoso.example    Please note only shortlisted candidates will be notified.", "owed": true, "to": ["Jane@Contoso.example"]},
+    {"jd": "How To Apply:  Interested candidate, please submit your updated resume in MS WORD Format to Jane Recruiter, email – jane.recruiter@northwind-group.asia", "owed": true, "to": ["jane.recruiter@northwind-group.asia"]},
+    {"jd": "If you are interested in the above opportunity, we look forward to receiving your resume in confidence to Jane (jane@contoso.example.sg).", "owed": true, "to": ["jane@contoso.example.sg"]},
+    {"jd": "Interested? Send your resume, GitHub profile, publications, or portfolio to join@northwind.ai", "owed": true, "to": ["join@northwind.ai"]},
+    {"jd": "📩 Interested candidates can share their updated resume and a brief introduction at:📧 jane.r@contoso.example", "owed": true, "to": ["jane.r@contoso.example"]},
+    {"jd": "Pls help to share your resumes to jane.r@contoso.example", "owed": true, "to": ["jane.r@contoso.example"]},
+    {"jd": "> Please share your resume in word format with jane@northwind.example", "owed": true, "to": ["jane@northwind.example"]},
+    {"jd": "How to apply\nEmail your résumé to hr@contoso.example", "owed": true, "to": ["hr@contoso.example"]},
+    {"jd": "We are hiring.\r\nPlease send your CVs to hr@contoso.example\r\nThank you", "owed": true, "to": ["hr@contoso.example"]},
+    {"jd": "Please send your CV to jane@contoso.example and copy john@contoso.example, or jane@contoso.example again.", "owed": true, "to": ["jane@contoso.example", "john@contoso.example"]},
+    {"jd": "To submit your application, please apply online or email your UPDATED CV in Microsoft Word format to Jane@northwind.example and John@northwind.example", "owed": false, "to": []},
+    {"jd": "If you are interested in this opportunity, please ‘Apply Now’ or email your CV to jane@contoso.example", "owed": false, "to": []},
+    {"jd": "If you're interested in this role, click 'apply now' to forward an up-to-date copy of your CV, or call Jane on +65 9000 0000 or email jane.r@contoso.example.sg for a confidential discussion", "owed": false, "to": []},
+    {"jd": "If you're interested in this role, click 'apply now' or reach out to Jane Recruiter at j.r@northwind.example with an up-to-date copy of your CV", "owed": false, "to": []},
+    {"jd": "INTERESTED? APPLY NOW OR EMAIL YOUR CV TO JANE@CONTOSO.EXAMPLE", "owed": false, "to": []},
+    {"jd": "If you are interested in applying for employment with Contoso and are in need of accommodation or special assistance to navigate our website or to complete your application, please send an e-mail with your request to Recruiting Operations Team: careers@contoso.example", "owed": false, "to": []},
+    {"jd": "Please contact Jane Recruiter at jane@contoso.example.sg for a confidential discussion", "owed": false, "to": []},
+    {"jd": "Contoso Search Pte Ltd EA Licence No. 05C0000 | Registration No. R0000000 | jane@contoso.example", "owed": false, "to": []},
+    {"jd": "Send us your CV. For anything else, email hr@contoso.example.", "owed": false, "to": []},
+    {"jd": "Experience with Cvent is a plus; questions to events@contoso.example", "owed": false, "to": []},
+    {"jd": "Hiring has resumed, write to hr@contoso.example", "owed": false, "to": []},
+    {"jd": "Please submit your resume for our consideration.", "owed": false, "to": []},
+    {"jd": "", "owed": false, "to": []}
+  ]
+}

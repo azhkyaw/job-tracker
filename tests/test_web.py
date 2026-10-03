@@ -2167,6 +2167,19 @@ _bad = [(c["q"][:50], c["a"][:20]) for c, g in zip(_cases, _got) if g["needs"] !
 check(f"the SQL agrees with every case in sponsorship_answers.json ({len(_cases)})",
       len(_got) == len(_cases) and not _bad, _bad)
 
+print("email apply: the rule is one rule in Python and SQL")
+from pipeline import email_apply as _email_apply                      # noqa: E402
+_ea_cases = _json.load(open(Path(__file__).parent / "email_apply.json",
+                            encoding="utf-8"))["cases"]
+with db.connect() as conn:
+    _ea_got = conn.execute(
+        "SELECT " + _email_apply.asks_by_email_sql("v.jd") + " AS owed "
+        "FROM unnest(%s::text[]) WITH ORDINALITY AS v(jd, i) ORDER BY v.i",
+        ([c["jd"] for c in _ea_cases],)).fetchall()
+_ea_bad = [c["jd"][:50] for c, g in zip(_ea_cases, _ea_got) if g["owed"] is not c["owed"]]
+check(f"the SQL agrees with every case in email_apply.json ({len(_ea_cases)})",
+      len(_ea_got) == len(_ea_cases) and not _ea_bad, _ea_bad)
+
 r = client.get("/")
 legend = r.text.split('class="legend"')[1].split("</span>")[0]
 check("the legend's rejected entry carries every bucket at rest, each a filter",
