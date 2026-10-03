@@ -32,8 +32,9 @@ from pydantic import BaseModel
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from . import (analytics, answers, auth, config, db, dedup, email_classifier, gmail_imap,
-               gmail_oauth, ingest, insights, jd_extraction, joburl, mailbox, matcher, trace)
+from . import (analytics, answers, auth, config, db, dedup, email_apply, email_classifier,
+               gmail_imap, gmail_oauth, ingest, insights, jd_extraction, joburl, mailbox,
+               matcher, trace)
 from .email_classifier import norm_company
 
 app = FastAPI(title="Job Tracker")
@@ -197,7 +198,27 @@ def _event_label(e) -> str:
     # names a hand-filed reply.
     if e["type"] == "note" and (p.get("reply") or e.get("sent")):
         return "You replied"
+    # The email a listing asked for, answered by hand (mark_emailed).
+    if e["type"] == "note" and p.get("emailed") in _EMAILED:
+        return _EMAILED[p["emailed"]]
     return EVENT_LABELS.get(e["type"], e["type"])
+
+
+# What "I emailed it" and "Not needed" file (mark_emailed), and what the
+# timeline calls each.
+_EMAILED = {"sent": "You emailed your CV", "not_needed": "No email needed"}
+
+
+def _email_ask(jds, title) -> dict | None:
+    """What the listing asked: email_apply.instruction() over the job's JDs,
+    the first that asks, with its mailto link. The SQL (analytics.
+    email_owed_sql) decides WHETHER a record owes the email; this only words
+    it, so it is called on records the SQL already picked."""
+    for jd in jds or ():
+        found = email_apply.instruction(jd)
+        if found:
+            return {**found, "mailto": email_apply.mailto(found, title)}
+    return None
 
 
 # How an event or a posting got here, as a phrase that completes a sentence.
@@ -660,6 +681,8 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
             "funnel": _funnel(conn, user_id, is_inbound),
             "pending": _pending_count(conn),
             "follow_ups": analytics.reminder_count(conn, user_id),
+            # Only the record's page nudges about it: an approach owes none.
+            "emails_owed": 0 if is_inbound else analytics.email_owed_count(conn, user_id),
             "leads": analytics.lead_count(conn, user_id),
             "reminder_days": config.REMINDER_DAYS,
             # Only the default sort pins leads, so only it gets the divider —
@@ -1271,8 +1294,14 @@ def application_detail(request: Request, app_id: str, saved: str | None = None,
         # newest-first for the log below; trace.build wants chronological.
         axis = trace.build([a], {a["id"]: list(reversed(events))},
                            datetime.now(timezone.utc), config.REMINDER_DAYS)
+        # The listing asked for the CV by email and nothing says it went
+        # (analytics.email_owed_sql): the sentence, a mailto, and the answer.
+        owed = conn.execute(f"SELECT {analytics.email_owed_sql('a')} AS o "
+                            f"FROM applications a WHERE a.id = %s", (a["id"],)).fetchone()["o"]
+        email_ask = (_email_ask([p["jd_text"] for p in postings], a["title_canonical"])
+                     if owed else None)
         return templates.TemplateResponse(request=request, name="application_detail.html", context={
-            "a": a, "status": _display(a["status"]), "axis": axis,
+            "a": a, "status": _display(a["status"]), "axis": axis, "email_ask": email_ask,
             "events": events, "postings": postings, "contacts": contacts,
             "emails": emails, "options": _application_options(conn, a["user_id"]),
             "extractions": extractions, "artifacts": artifacts,
@@ -1834,9 +1863,12 @@ def edit_event(
                 for k in ("superseded_by", "closed", "why"):
                     if k in e["payload"]:
                         payload[k] = e["payload"][k]
-            # And a reply (mark_replied) that stays a note stays a reply.
+            # And a reply (mark_replied) that stays a note stays a reply, and
+            # an answered email ask (mark_emailed) stays answered.
             if type == e["type"] == "note" and e["payload"].get("reply"):
                 payload["reply"] = True
+            if type == e["type"] == "note" and e["payload"].get("emailed"):
+                payload["emailed"] = e["payload"]["emailed"]
             conn.execute(
                 "UPDATE events SET type = %s, occurred_at = %s, payload = %s WHERE id = %s",
                 (type, occurred_at, Json(payload), e["id"]))
@@ -1963,6 +1995,47 @@ def mark_replied(request: Request, app_id: str, channel: str = Form(""),
             "VALUES (%s, %s, 'note', 'manual', COALESCE(%s, now()), %s)",
             (a["user_id"], a["id"], occurred_at, Json(payload)))
     dest = redirect_to if redirect_to in ("/inbound",) else f"/applications/{app_id}"
+    return RedirectResponse(dest, status_code=303)
+
+
+@app.post("/applications/{app_id}/emailed")
+def mark_emailed(request: Request, app_id: str, outcome: str = Form(""),
+                 occurred_on: str = Form(""), redirect_to: str = Form("")):
+    """The email a listing asked for (4 Oct 2026, pipeline/email_apply.py):
+    "I emailed it" (`outcome=sent`) or "Not needed" (`not_needed`, e.g. the
+    agency also reads its platform applications). A `note` with
+    `payload.emailed`, the type an emailed CV already files when the sent mail
+    is matched (matcher._append_event), so neither path adds a type or moves
+    a status; either one takes the record off analytics.email_owed_sql.
+
+    "I emailed it" exists although sent mail clears the row by itself: the
+    mailbox may not be synced, or the CV went from another account. Only
+    while the email is owed, since otherwise there is nothing to answer.
+    Dated like mark_replied (_on_the_thread); undo is deleting it from the
+    timeline."""
+    from psycopg.types.json import Json
+    user = _login_user(request)
+    tz = request.state.tz
+    if outcome not in _EMAILED:
+        raise HTTPException(400, "unknown outcome")
+    occurred_at, err = _parse_occurred_on(occurred_on, tz)
+    if err:
+        return _event_error(app_id, err)
+    with db.connect_scoped(user["id"]) as conn, conn.transaction():
+        a = _get_application(conn, app_id)
+        owed = conn.execute(f"SELECT {analytics.email_owed_sql('a')} AS o "
+                            f"FROM applications a WHERE a.id = %s", (a["id"],)).fetchone()["o"]
+        if not owed:
+            return _event_error(app_id, "This application owes no email: its listing asked for "
+                                        "none, or it is already sent, answered or closed.")
+        occurred_at, err = _on_the_thread(conn, a, occurred_at, tz)
+        if err:
+            return _event_error(app_id, err)
+        conn.execute(
+            "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+            "VALUES (%s, %s, 'note', 'manual', COALESCE(%s, now()), %s)",
+            (a["user_id"], a["id"], occurred_at, Json({"emailed": outcome})))
+    dest = redirect_to if redirect_to in ("/follow-ups",) else f"/applications/{app_id}"
     return RedirectResponse(dest, status_code=303)
 
 
@@ -2961,9 +3034,17 @@ def follow_ups_page(request: Request):
             if r["kind"] == "round":
                 r["moved_words"] = _MOVED_AS.get(
                     r["moved_as"], f"{EVENT_LABELS.get(r['moved_as'], 'Last heard')} on")
+        # Listings that asked for the CV by email, still owed (4 Oct 2026).
+        # Above the waits and apart from them: the move here is yours, today,
+        # not a wait on anyone, so these rows wear no heat.
+        by_email = analytics.emails_owed(conn, user["id"])
+        now = datetime.now(timezone.utc)
+        for r in by_email:
+            r["ask"] = _email_ask(r["jds"], r["title_canonical"])
+            r["days"] = (now - r["applied_at"]).days
         return templates.TemplateResponse(
             request=request, name="follow_ups.html",
-            context={"reminders": reminders, "again_n": len(again),
+            context={"reminders": reminders, "again_n": len(again), "by_email": by_email,
                      "replied_n": sum(1 for r in reminders if r["kind"] == "lead"),
                      "round_n": sum(1 for r in reminders if r["kind"] == "round"),
                      "reminder_days": config.REMINDER_DAYS,

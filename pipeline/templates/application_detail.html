@@ -115,6 +115,21 @@
     next move is theirs from then on, so it leaves "Awaiting your call" and
     waits on them — and REMINDER_DAYS of silence later, it is in /follow-ups.
     An emailed reply files itself; this is for LinkedIn, WhatsApp, a call. #}
+{#- The listing asked for the CV by email, and nothing says it went
+    (analytics.email_owed_sql, 4 Oct 2026): its sentence, verbatim, a mailto
+    to every address it names, and the two answers (web.py, mark_emailed).
+    Mail you send clears it by itself once synced. #}
+{% if email_ask %}
+<form method="post" action="/applications/{{ a.id }}/emailed" class="record">
+  <span class="lab">The listing asks for your CV by email:</span>
+  <q>{{ email_ask.sentence }}</q>
+  <a href="{{ email_ask.mailto }}">Write the email</a>
+  <input type="date" name="occurred_on" max="{{ today }}" aria-label="When you emailed it"
+         title="When you emailed it. Leave blank for today">
+  <button name="outcome" value="sent" class="primary">I emailed it</button>
+  <button name="outcome" value="not_needed">Not needed</button>
+</form>
+{% endif %}
 {% if a.origin == 'inbound' and status == 'interested' %}
 <form method="post" action="/applications/{{ a.id }}/replied" class="record">
   <span class="lab">Answered them?</span>

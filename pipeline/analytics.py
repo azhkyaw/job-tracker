@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import re
 
-from . import answers, config
+from . import answers, config, email_apply
 from .jd_extraction import visa_group_sql as jd_visa_group_sql
 from .ingest import UNKNOWN_COMPANY, UNKNOWN_TITLE
 
@@ -526,6 +526,62 @@ def reapplications(conn, user_id) -> dict:
         out[r["old_id"]] = {"id": r["id"], "applied_at": r["applied_at"],
                             "title_canonical": r["title_canonical"]}
     return out
+
+
+# An application the listing asked for BY EMAIL, still owed (4 Oct 2026;
+# pipeline/email_apply.py has the rule and its measurement). Your own
+# application, applied, and nothing since that makes the email moot:
+#   - no response (RESPONSE_TYPES: a "viewed" says the online one reached
+#     them) and not withdrawn;
+#   - no mail of yours filed on it (emails.sent_by_user): an emailed CV for a
+#     role already applied to files as a note (matcher._append_event), and
+#     that is how sending it clears the row with no click;
+#   - nothing you filed by hand ("I emailed it" / "Not needed",
+#     web.mark_emailed: a note with `payload.emailed`).
+# An approach a recruiter started is left out: there you answer them.
+_EMAIL_CLEARS = _sql_list(RESPONSE_TYPES + ("withdrawn",))
+
+
+def email_owed_sql(a: str) -> str:
+    """Application `a` still owes the email its listing asked for."""
+    return f"""({a}.origin <> 'inbound'
+        AND EXISTS (SELECT 1 FROM events eo WHERE eo.application_id = {a}.id
+                    AND eo.type = 'applied')
+        AND NOT EXISTS (SELECT 1 FROM events eo WHERE eo.application_id = {a}.id
+                        AND (eo.type IN {_EMAIL_CLEARS} OR eo.payload ? 'emailed'
+                             OR EXISTS (SELECT 1 FROM emails em WHERE em.id = eo.source_email_id
+                                        AND em.sent_by_user)))
+        AND EXISTS (SELECT 1 FROM postings po WHERE po.job_id = {a}.job_id
+                    AND {email_apply.asks_by_email_sql('po.jd_text')}))"""
+
+
+def emails_owed(conn, user_id) -> list[dict]:
+    """The applications still owing their email, oldest application first,
+    each with `jds`: its postings' JD texts, for email_apply.instruction() to
+    quote the sentence from (the SQL can say whether, not what)."""
+    return conn.execute(f"""
+        SELECT a.id, j.title_canonical,
+               COALESCE((SELECT p.company_raw FROM postings p
+                          WHERE p.job_id = a.job_id AND p.company_raw IS NOT NULL
+                          ORDER BY p.captured_at DESC LIMIT 1),
+                        j.company_norm) AS company_display,
+               (SELECT min(occurred_at) FROM events e
+                 WHERE e.application_id = a.id AND e.type = 'applied') AS applied_at,
+               (SELECT array_agg(p.jd_text ORDER BY p.captured_at) FROM postings p
+                 WHERE p.job_id = a.job_id AND p.jd_text IS NOT NULL) AS jds
+        FROM applications a
+        JOIN jobs j ON j.id = a.job_id
+        WHERE a.user_id = %s AND {email_owed_sql('a')}
+        ORDER BY applied_at
+    """, (user_id,)).fetchall()
+
+
+def email_owed_count(conn, user_id) -> int:
+    """Just the number, for the list's nudge: the same predicate as
+    emails_owed(), so the nudge promises the rows /follow-ups shows."""
+    return conn.execute(f"SELECT count(*) AS n FROM applications a "
+                        f"WHERE a.user_id = %s AND {email_owed_sql('a')}",
+                        (user_id,)).fetchone()["n"]
 
 
 def reminder_count(conn, user_id) -> int:

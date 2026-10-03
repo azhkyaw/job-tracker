@@ -13,6 +13,43 @@
    it now. Ticking a row files a real follow_up_sent event, which drops it out
    of the query, so the page shortens as you work it. #}
 <h1>Needs follow-up</h1>
+{# Listings that asked for the CV by email, and nothing says it went
+   (analytics.email_owed_sql, 4 Oct 2026). First, because the move is yours
+   and due now; grey, because it is not a wait on anyone (UI rule 1) — the
+   number is days since you applied, at heat 0. Mail you send clears a row by
+   itself once synced; the buttons are for the rest (web.py, mark_emailed). #}
+{% if by_email %}
+<h2 id="by-email">Asked for by email</h2>
+<p class="lede"><b>{{ by_email | length }}</b> listing{{ '' if by_email | length == 1 else 's' }}
+  asked for your CV by email, and nothing you sent is on record. Mail you send
+  clears a row once it is synced; mark one here if it went another way, or if
+  the online application was enough.</p>
+<div class="card fu">
+  {% for r in by_email %}
+  <div class="fu-row">
+    <a class="fu-name" href="/applications/{{ r.id }}">
+      <span class="co">{{ r.company_display }}</span>
+      <span class="ro">{{ r.title_canonical }}</span>
+    </a>
+    <span class="fu-d" title="Days since you applied">{{ r.days }}d</span>
+    <form method="post" action="/applications/{{ r.id }}/emailed">
+      <input type="hidden" name="outcome" value="sent">
+      <input type="hidden" name="redirect_to" value="/follow-ups">
+      <button title="Record that you emailed it and clear this row">I emailed it</button>
+    </form>
+    {%- if r.ask %}
+    <p class="fu-again"><q>{{ r.ask.sentence }}</q> <a href="{{ r.ask.mailto }}">Write the email</a></p>
+    {%- endif %}
+    <form method="post" action="/applications/{{ r.id }}/emailed" class="fu-again-do">
+      <input type="hidden" name="outcome" value="not_needed">
+      <input type="hidden" name="redirect_to" value="/follow-ups">
+      <button class="small" title="Clear this row: the online application was enough">Not needed</button>
+    </form>
+  </div>
+  {% endfor %}
+</div>
+<h2>Waiting on them</h2>
+{% endif %}
 {% if reminders %}
 <p class="lede"><b>{{ reminders | length }}</b> waiting more than <b>{{ reminder_days }}</b> days,
   oldest first: applications with no reply and nothing sent{% if round_n %},

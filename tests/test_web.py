@@ -2996,4 +2996,104 @@ check("a round gone quiet is never offered as “you applied again”; the unans
       _ra in _rows and _rows[_ra]["kind"] == "round" and _ra not in _again and _rc in _again,
       (_ra in _rows, _ra in _again, _rc in _again))
 
+print("a listing that asked for the CV by email (4 Oct 2026)")
+_EA_JD = ("We are hiring.\nPlease send your updated resume in Word format to "
+          "jane@contoso-search.example, quoting the job title.\nOnly shortlisted candidates "
+          "will be notified.")
+_EA_SENTENCE = ("Please send your updated resume in Word format to "
+                "jane@contoso-search.example, quoting the job title.")
+
+
+def _owed():
+    with db.connect() as conn:
+        return ({str(x["id"]) for x in analytics.emails_owed(conn, _uid)},
+                analytics.email_owed_count(conn, _uid))
+
+
+def _new_ea_app(company, jd=_EA_JD):
+    r = client.post("/applications/new", data={
+        "company": company, "title": "Data Engineer", "platform": "other",
+        "applied_date": _ago(3), "jd_text": jd, "after": "view"})
+    assert r.status_code == 303, r.text[:300]
+    return r.headers["location"].rsplit("/", 1)[1]
+
+
+def _ea_events(app_id):
+    with db.connect() as conn:
+        return conn.execute("SELECT id, type, source, payload FROM events WHERE application_id = "
+                            "%s::uuid AND type = 'note'", (app_id,)).fetchall()
+
+
+_ea = _new_ea_app("Email Ask Co")
+_ea_online = _new_ea_app("Email Online Co", "Please apply online or email your CV to "
+                                            "jane@contoso-search.example")
+_set, _n = _owed()
+check("a JD asking for the CV by email makes the application owe it; one offering "
+      "the apply button too does not; the count is the rows",
+      _ea in _set and _ea_online not in _set and _n == len(_set), (_set, _n))
+_p = client.get(f"/applications/{_ea}").text
+check("its page quotes the listing's sentence with a mailto naming the role, and both answers",
+      "The listing asks for your CV by email" in _p and _EA_SENTENCE in _p
+      and 'href="mailto:jane@contoso-search.example?subject=Application%3A%20Data%20Engineer"' in _p
+      and 'value="sent"' in _p and 'value="not_needed"' in _p, _p[:200])
+check("...and the control's page asks nothing",
+      "The listing asks for your CV by email" not in client.get(f"/applications/{_ea_online}").text)
+_fu = client.get("/follow-ups").text
+_m = re.search(r"<b>(\d+)</b> listings?\s+asked for your CV by email", _fu)
+_frow = _row_on("/follow-ups", "Email Ask Co")
+check("/follow-ups lists it under its own heading, counted, with the sentence and both buttons",
+      'id="by-email"' in _fu and _m is not None and int(_m.group(1)) == _n
+      and _EA_SENTENCE in _frow and "Write the email" in _frow and "I emailed it" in _frow
+      and "Not needed" in _frow and "Email Online Co" not in _fu.split("Waiting on them")[0],
+      (_m and _m.group(1), _frow[:600]))
+check("the list nudges with the same number, in grey",
+      f'<a href="/follow-ups#by-email">{_n} asked for your CV by email</a>' in client.get("/").text)
+
+r = client.post(f"/applications/{_ea}/emailed", data={"outcome": "not_needed",
+                                                     "redirect_to": "/follow-ups"})
+_e = _ea_events(_ea)
+check("“Not needed” files a note by hand and clears the row, back on the queue",
+      r.headers["location"] == "/follow-ups" and _ea not in _owed()[0] and len(_e) == 1
+      and _e[0]["source"] == "manual" and _e[0]["payload"] == {"emailed": "not_needed"}, _e)
+check("...its timeline says so, and the page stops asking",
+      "No email needed" in (_p := client.get(f"/applications/{_ea}").text)
+      and "The listing asks for your CV by email" not in _p)
+r = client.post(f"/applications/{_ea}/emailed", data={"outcome": "sent"})
+check("an email no longer owed cannot be answered again",
+      "event_error=" in r.headers.get("location", ""), r.headers.get("location"))
+r = client.post(f"/applications/{_ea}/events/{_e[0]['id']}/edit", data={
+    "type": "note", "occurred_on": _ago(1)})
+check("editing the answer keeps it the answer",
+      r.status_code == 303 and _ea_events(_ea)[0]["payload"] == {"emailed": "not_needed"}
+      and _ea not in _owed()[0], _ea_events(_ea))
+check("an unknown answer is refused",
+      client.post(f"/applications/{_ea_online}/emailed", data={"outcome": "maybe"}).status_code == 400)
+
+_ea2 = _new_ea_app("Email Sent Co")
+r = client.post(f"/applications/{_ea2}/emailed", data={"outcome": "sent"})
+check("“I emailed it” clears it too, and reads “You emailed your CV”",
+      r.status_code == 303 and _ea2 not in _owed()[0]
+      and "You emailed your CV" in client.get(f"/applications/{_ea2}").text)
+
+_ea3 = _new_ea_app("Email Mailed Co")
+with db.connect() as conn, conn.transaction():
+    _em = conn.execute(
+        """INSERT INTO emails (user_id, gmail_message_id, sender, subject, received_at,
+                               classification, triage_state, sent_by_user, matched_application_id)
+           VALUES (%s, 'gm-email-ask', 'me@example.com', 'Application: Data Engineer', now(),
+                   'sent_application', 'auto_matched', true, %s::uuid) RETURNING id""",
+        (_uid, _ea3)).fetchone()["id"]
+    conn.execute("INSERT INTO events (user_id, application_id, type, source, occurred_at, "
+                 "payload, source_email_id) VALUES (%s, %s::uuid, 'note', 'email', now(), '{}', %s)",
+                 (_uid, _ea3, _em))
+check("the CV emailed from the mailbox clears it with no click", _ea3 not in _owed()[0])
+
+_ea4 = _new_ea_app("Email Rejected Co")
+client.post(f"/applications/{_ea4}/events", data={"type": "rejected"})
+_ea5 = _new_ea_app("Email Inbound Co")
+with db.connect() as conn, conn.transaction():
+    conn.execute("UPDATE applications SET origin = 'inbound' WHERE id = %s::uuid", (_ea5,))
+check("a response, and an approach a recruiter started, owe no email",
+      _ea4 not in _owed()[0] and _ea5 not in _owed()[0], _owed())
+
 print("\nALL WEB PATHS PASS")
