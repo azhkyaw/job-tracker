@@ -54,6 +54,38 @@ events that had none. Snapshot and run file:
 `job-tracker-snapshots/2026-09-25-rejection-reasons.json` and
 `2026-09-25-reason-runs.jsonl`.
 
+`CLASSIFY_MODEL` moved again on 3 Oct 2026, to `claude-sonnet-5-5`, which had
+shipped on 28 Sep at Sonnet 5's price (`docs/llm-alternatives.md` §13).
+All three Sonnet stages were replayed through the production functions for
+about US$1.25. Only classify moved:
+
+- **Classify moved.** On five ATS account-verification mails, the class
+  behind the 4 Aug move, Sonnet 5.5 said not job-related 3 runs of 3.
+  Sonnet 5 had stored `other` on all five and flipped on two of them when
+  re-run. Every other disagreement was a record stored before the 23 Sep
+  body rewrite, or a pair of labels that file the same event.
+- **JD extraction stayed** on Sonnet 5. It scored 97.2% against 98.1%, with
+  one reproducible miss: a terse "APPLICABLE FOR WORK VISA" read as
+  `unclear`.
+- **The rejection reason stayed** on Sonnet 5. It found no reason in the
+  LinkedIn letter naming the rejected screening answer, 3 runs of 3.
+
+Three things the run turned up:
+
+- **The classify replay can only check one direction.** Mail ruled not
+  job-related keeps no body, so the replay can catch a candidate dropping job
+  mail but never one flagging non-job mail.
+- **The JD eval harness needed a fix.** `job-tracker-snapshots/jd-eval-2026-09-25/`
+  needed `effort=None` in `jd_batch.py collect`, because `extract` gained
+  `effort` after the harness was written. Without it, every batch answer
+  would have been scored as an error.
+- **Classify's measured input is 1,470 tokens a call on job mail.** That is
+  not the ~3,810 the effort bullet below records. The 3,810 came from 12
+  emails on 4 Aug and could not be reproduced. The workload is still
+  input-dominated, so that bullet's conclusion holds.
+
+Run files: `job-tracker-snapshots/llm-alt-2026-10-03/`.
+
 ## Why the resume profile is a column (moved from CLAUDE.md, 25 Sep 2026)
 
 `covers.load_profile()` reads `users.resume_profile` only; the `profile.md`

@@ -200,6 +200,11 @@ LLM_EXTRA_BODY = json.loads(os.environ.get("TRACKER_LLM_EXTRA_BODY") or "{}")
 # version are on every extraction row (invariant #5); v1 rows keep Haiku.
 # JD_EFFORT applies to Claude models that take `effort`; set it empty for one
 # that does not (Haiku 4.5 rejects it) or for a local model.
+# Sonnet 5.5 at `medium` was replayed on the same gold set on 3 Oct 2026 and
+# NOT taken (docs/llm-alternatives.md §13.2): 97.2% against 98.1%, still no
+# invented signal, but it answered `unclear` on "APPLICABLE FOR WORK VISA"
+# (gold `sponsors`) in both trials. Sonnet 5 is listed active until at least
+# 30 Jun 2027.
 JD_MODEL = os.environ.get("TRACKER_JD_MODEL") or LLM_MODEL or "claude-sonnet-5"
 JD_EFFORT = os.environ.get("TRACKER_JD_EFFORT", "medium") or None
 # On Sonnet 5 the cap covers adaptive thinking AND the answer; the largest

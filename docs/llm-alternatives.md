@@ -1,10 +1,10 @@
 # Other LLM APIs against the Claude stages
 
 **Author:** AZ
-**Status:** Research, not applied. No configuration or code changed. §10's
-first replay, Sonnet 5.5, was run the same day (§13): better on classify,
-one reproducible miss each on the JD and rejection-reason stages. The
-switch is the author's call.
+**Status:** Research. One change applied, 3 Oct 2026: after §10's first
+replay (§13), `CLASSIFY_MODEL` is `claude-sonnet-5-5`. JD extraction and the
+rejection reason stay on Sonnet 5 (one reproducible miss each). Nothing else
+changed.
 **Date:** 3 October 2026
 **Scope:** The five language-model stages (`pipeline/email_classifier.py`,
 `jd_extraction.py`, `covers.py`) and the embedding stage, measured against

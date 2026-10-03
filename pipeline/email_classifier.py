@@ -55,7 +55,8 @@ REASON_PROMPT_VERSION = "rejection_reason_v1"
 # web.py asserts this is a subset of its vocabulary at import.
 STATED_REASONS = ("visa", "seniority", "salary", "skills", "location", "role_closed")
 
-# Classification moved to Sonnet 5 on 4 Aug 2026; extraction stays on Haiku.
+# Classification moved to Sonnet 5 on 4 Aug 2026, and to Sonnet 5.5 on
+# 3 Oct 2026 (the last paragraph of this block); extraction stays on Haiku.
 #
 # Haiku got a Workday "Verify your candidate account" mail WRONG, and
 # reproducibly so — 3/3 runs called it a `confirmation` while calling a
@@ -85,10 +86,24 @@ STATED_REASONS = ("visa", "seniority", "salary", "skills", "location", "role_clo
 # so old rows stay attributable and a selective re-run stays possible — the
 # same property invariant #5 buys for prompts.
 #
+# Sonnet 5.5 (released 28 Sep 2026, Sonnet 5's price) replaced Sonnet 5 on
+# 3 Oct 2026, replayed first (docs/llm-alternatives.md §13.1). Over the 182
+# classified emails since 10 Sep that keep a body it agreed on job-related
+# for 175, and each of the 12 disagreements was run twice more on both
+# models. Five were ATS account-verification mails, the very class above:
+# Sonnet 5 had stored `other` (job-related) and flipped on two of them on
+# re-run, while Sonnet 5.5 said not job-related 3 of 3 on all five, the
+# answer this block records as correct. Four were stored before the 23 Sep
+# body rewrite and Sonnet 5 now agrees with 5.5; the rest change no event.
+# Sonnet 5.5 gave the same label on every re-run. Same thinking default, so
+# the max_tokens note below holds unchanged. One limit of that sample: mail
+# ruled not job-related has no body left to replay, so it could show 5.5
+# dropping job mail, never 5.5 flagging non-job mail.
+#
 # config.LLM_MODEL (an open-weight model on an OpenAI-compatible server) is the
 # default for both when set; a `claude-*` name here on top of it keeps that one
 # stage on Anthropic — routing is by name, see config.py's LLM backend section.
-CLASSIFY_MODEL = os.environ.get("TRACKER_CLASSIFY_MODEL") or config.LLM_MODEL or "claude-sonnet-5"
+CLASSIFY_MODEL = os.environ.get("TRACKER_CLASSIFY_MODEL") or config.LLM_MODEL or "claude-sonnet-5-5"
 EXTRACT_MODEL = (os.environ.get("TRACKER_EXTRACT_MODEL") or config.LLM_MODEL
                  or "claude-haiku-4-5-20251001")
 # The rejection-reason stage runs on Sonnet 5: Haiku, told not to infer, had
@@ -100,7 +115,10 @@ EXTRACT_MODEL = (os.environ.get("TRACKER_EXTRACT_MODEL") or config.LLM_MODEL
 # (skills) — all correct on reading, and no stated reason missed among the 41
 # form letters. A job-digest footer naming the company "Visa" gave none. At
 # roughly one rejection a day the cost is noise; Haiku was not measured (the
-# author's choice).
+# author's choice). Sonnet 5.5 was replayed on 3 Oct 2026 and NOT taken
+# (docs/llm-alternatives.md §13.3): it matched the other stated reasons but
+# found none in the LinkedIn letter naming the rejected screening answer, 3
+# runs of 3, where Sonnet 5 says `skills` every time.
 REASON_MODEL = (os.environ.get("TRACKER_REASON_MODEL") or config.LLM_MODEL
                 or "claude-sonnet-5")
 

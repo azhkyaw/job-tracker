@@ -1451,3 +1451,24 @@ the key to each real case.
    (`2026-10-02-lever-answers.json`): the author had clicked No. Current
    location read as empty at every sweep; whether it was filled is not
    established.
+
+53. **Other LLM APIs weighed; classify moved to Sonnet 5.5** (3 Oct 2026).
+   Asked for research on APIs comparable to the Claude models in use.
+   - **How it was done:** four research agents read vendor pages, and the
+     claims the conclusions rest on were re-read at source. The record is
+     `docs/llm-alternatives.md`.
+   - **Cost is no reason to switch:** the whole bill is a few dollars a
+     month.
+   - **What `pipeline/llm.py`'s OpenAI-compatible backend can and cannot
+     do:** it reaches Mistral, Groq, DeepInfra, Fireworks and OpenRouter
+     unchanged. But it files a 402 or 408 as the job's fault, and it cannot
+     drop `temperature: 0`. The fixes are its §8; none is built.
+   - **The replay, on the author's go-ahead:** Sonnet 5.5 ran on all three
+     Sonnet stages for about US$1.25. Classify was better: right on five ATS
+     verification mails where Sonnet 5 stored `other`. JD extraction and
+     the rejection reason each showed one reproducible miss, so only
+     `CLASSIFY_MODEL` moved.
+   - **A correction to an earlier figure:** classify's measured input on job
+     mail is 1,470 tokens a call, not the 3,810 recorded on 4 Aug.
+   - **Still open:** §8's backend changes, whether an outage-fallback
+     provider is worth a second key, and Haiku 5.5 once it has a price.

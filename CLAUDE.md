@@ -60,7 +60,8 @@ and design records; the code and `migrations/` win where they disagree.
   switch), which providers `pipeline/llm.py`'s OpenAI-compatible backend
   reaches unchanged and the code changes the rest need (402/408 filed as
   job failures, `temperature` not overridable), and where each sends the
-  data. Recommends replays, starting with Sonnet 5.5, not a switch.
+  data. Its §13 replayed Sonnet 5.5 the same day: classify moved to it,
+  JD extraction and the rejection reason stay on Sonnet 5.
 - `docs/vllm-lab.md` — open-weight models on an OpenAI-compatible server
   (vLLM first) go through `pipeline/llm.py` (Key files); this is the
   hands-on lab that verifies it against a real server on GCP, stage by
