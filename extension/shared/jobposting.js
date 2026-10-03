@@ -39,6 +39,10 @@
     ["jobvite.com", "jobvite"], ["bamboohr.com", "bamboohr"],
     ["taleo.net", "taleo"], ["oraclecloud.com", "oracle"],
     ["successfactors.com", "successfactors"], ["successfactors.eu", "successfactors"],
+    // SAP's newer SuccessFactors data centres serve the same career pages
+    // from sapsf.com / sapsf.eu (career44.sapsf.com, 3 Oct 2026: the classic
+    // form at /portalcareer?_s.crb=…, which no script reached).
+    ["sapsf.com", "successfactors"], ["sapsf.eu", "successfactors"],
     ["workable.com", "workable"], ["breezy.hr", "breezy"],
     ["personio.com", "personio"], ["personio.de", "personio"],
     ["recruitee.com", "recruitee"], ["recruiteecdn.com", "recruitee"],
@@ -1049,6 +1053,6 @@
   (typeof window !== "undefined" ? window : self).__trackerJobPosting =
     { read, idFrom, pageId, tenantOf, atsHandoff, atsCandidates, hasPosting, siteOwner, pickDeparture,
       handoffFits, learnsAlias, rebind, knowsId, keepOpener, openerOf, departsTo, quickApplies, quickApplySent, atsOfUrl, vendorOf, htmlToText, sameJob,
-      pickListed, siteOf, APPLY_SEGMENTS,
+      pickListed, siteOf, APPLY_SEGMENTS, VENDORS,
       matchPatternRegex, stripRequisition, suggestCompany };
 })();

@@ -59,7 +59,8 @@ _JOB_PARAM_VALUE = re.compile(r"(?=[a-z0-9_-]*[0-9])[a-z0-9_-]{4,64}", re.I | re
 # jobposting.js:TENANT_PARAM: a hiring system serving many employers from one
 # host names the employer in a parameter, and each numbers its requisitions on
 # its own, so the tenant goes into the token (`<host>/<tenant>/<id>`).
-_TENANT_PARAM = (("successfactors.com", "company"), ("successfactors.eu", "company"))
+_TENANT_PARAM = (("successfactors.com", "company"), ("successfactors.eu", "company"),
+                 ("sapsf.com", "company"), ("sapsf.eu", "company"))
 _TENANT_SHAPE = re.compile(r"^[a-z0-9_-]{1,40}$", re.IGNORECASE)
 
 

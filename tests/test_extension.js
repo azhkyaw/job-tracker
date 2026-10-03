@@ -1747,6 +1747,21 @@ console.log("\njobposting.js matchPatternRegex: which pages the icon (and the po
   const bad = manifest.content_scripts.flatMap((cs) => cs.matches)
     .filter((p) => !J.matchPatternRegex(p));
   check("every manifest content-script pattern translates", bad, []);
+  // Every host the vendor table calls SuccessFactors is one the manifest
+  // injects on, at both form paths: SAP's newer data centres (sapsf.com) were
+  // in neither list, and a real form at career44.sapsf.com/portalcareer ran no
+  // script at all (3 Oct 2026). Loops the table, so a domain added there
+  // alone goes red here.
+  const injected = manifest.content_scripts.flatMap((cs) => cs.matches);
+  const sfHosts = J.VENDORS.filter(([, v]) => v === "successfactors").map(([h]) => h);
+  const uncovered = sfHosts.flatMap((h) => [`https://career44.${h}/portalcareer?_s.crb=x`,
+                                            `https://career44.${h}/career?company=x`])
+    .filter((url) => !injected.some((p) => cover(p, url)));
+  check("every SuccessFactors host is injected on at /career* and /portalcareer*", uncovered, []);
+  check("the 3 Oct form's address is SuccessFactors'",
+        J.atsOfUrl("https://career44.sapsf.com/portalcareer?_s.crb=AbC%253d"), "successfactors");
+  check("…and names its tenant like the older data centres",
+        J.tenantOf("https://career44.sapsf.com/career?company=Contoso&career_ns=job_application"), "contoso");
 }
 
 console.log("\nmanifest: every origin the extension asks Chrome for is one it declared (28 Sep 2026)");

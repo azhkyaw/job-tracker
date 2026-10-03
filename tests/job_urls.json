@@ -37,6 +37,7 @@
     ["https://career10.successfactors.com/careers?company=contoso&career_job_req_id=12345", "career10.successfactors.com/contoso/12345"],
     ["https://career2.successfactors.eu/career?company=LitwareBK&career_ns=job_application&career_job_req_id=51234", "career2.successfactors.eu/litwarebk/51234"],
     ["https://career2.successfactors.eu/careers?company=litwarebk", "career2.successfactors.eu/careers?company=litwarebk"],
+    ["https://career44.sapsf.com/career?company=contoso&career_ns=job_application&career_job_req_id=61234", "career44.sapsf.com/contoso/61234"],
     ["https://careers.contoso.com/jobs?company=northwind&job=77", "careers.contoso.com/77"],
     ["https://careers.contoso.com/jobs/senior-engineer?utm_source=linkedin&ref=abc", "careers.contoso.com/jobs/senior-engineer?ref=abc"],
     ["https://careers.contoso.com/jobs/senior-engineer", "careers.contoso.com/jobs/senior-engineer"],

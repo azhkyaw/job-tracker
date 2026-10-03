@@ -815,6 +815,16 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
     `<h1>` title with the requisition number appended ("… (1234)"). A capture
     from the form alone files as "unknown company". The listing has both, so
     per-site opt-in on the employer's domain (phase C) is the fix.
+  - **The same miss on the HOST, 3 Oct 2026 (0.26.2):** SAP's newer data
+    centres serve SuccessFactors from `sapsf.com` / `sapsf.eu`
+    (`career44.sapsf.com/portalcareer?_s.crb=…`), which neither the vendor
+    table nor the manifest knew, so no script ran on a classic form the
+    author was half-way through. Caught BEFORE the submit only because the
+    author asked. Both lists now carry it, and `tests/test_extension.js`
+    loops `VENDORS` against the manifest, so a SuccessFactors host added to
+    one list alone goes red. With a Save, an extension reload and a tab
+    reload before the submit, the handoff still bound: one record on the
+    LinkedIn posting, 60 answers, `ats_job_id` `career44.sapsf.com/<tenant>/<req>`.
 
 - **A tab's own toolbar icon does NOT reset when the tab navigates** (Chrome
   docs: it "automatically resets when the tab is closed").

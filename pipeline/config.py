@@ -45,7 +45,7 @@ ALLOWLIST_DOMAINS = {
     # more ATS vendors, unverified against any real inbox yet — trim/extend
     # once a full backfill shows which senders actually show up
     "teamtailor.com", "breezy.hr", "recruitee.com", "personio.com",
-    "taleo.net", "successfactors.com", "avature.net",
+    "taleo.net", "successfactors.com", "sapsf.com", "avature.net",
 }
 
 # Fallback net for direct employer mail from unknown domains. Subject-only
