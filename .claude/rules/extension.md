@@ -97,6 +97,15 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   stamp the repair's time; then `/edit` for the applied time, reading the
   edit form back and asserting it equals the record first. A later sweep on
   a page of the same origin overwrites the store, so copy it early.
+  **A CLOSED tab's store is deleted, not gone** (3 Oct 2026): Chrome drops
+  the tab's namespace, so `session_answers.py`, which rebuilds the final
+  state, finds no origin at all. The superseded row survives in an older
+  `.ldb` until a compaction merges it away. Walk EVERY version (each
+  table's rows and each log batch's puts, ignoring later deletions), find
+  the origin's `namespace-…` row for its map id, then that map's
+  `__tracker_form_answers`. That day's quick apply was recovered this way
+  from a copy taken five hours later; a compaction ran within the next
+  hour and removed it.
 - **Checking a rule against a LIVE page without sending anything**
   (29 Sep 2026). `generic.js`'s rules take the document and address as
   parameters, so paste them verbatim into claude-in-chrome's javascript_tool
@@ -928,6 +937,27 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
     the tab's session storage, read off disk (Procedures), held the
     untaken store; and the rules were then run, read-only, against the
     live form (Procedures). Nothing was guessed before those four reads.
+  - **The first real submit through 0.22.0 was still refused** (3 Oct 2026,
+    a LinkedIn → SuccessFactors candidate experience on `career10`,
+    0.26.1): "the button is outside the application form". The handoff
+    bound and the sweep held 40 answers, but the root was wrong. The page's
+    only file input belongs to `<ui5-file-uploader>`, which keeps it in a
+    PRIVATE `<form class="ui5-file-uploader-form">` (one control) inside
+    its shadow root. Rule 1 took the nearest form around a file input, and
+    once `deepAll` could see that input, the nearest form was the widget's.
+    So 0.22.0's shadow reading CREATED this miss on any page with the
+    uploader: the 29 Sep model had "Browse" as a plain button, with no
+    uploader form. Fixed as a rule (`formAround`): a form holding nothing
+    but uploads is the widget's machinery, and the walk goes on to the
+    next form out (`form#careerform`). The test fails on the old code with
+    the real near-miss text. Repaired by the 29 Sep procedure: 40 answers
+    from the tab's session storage through `POST /captures`, `ats` and
+    `ats_job_id` set, the applied time untouched (no `completed`); snapshot
+    `2026-10-03-sf-outside-form-repair.json`. Found in this order: the
+    failures buffer (refused, then 40 answers left over), History (the
+    form, then the `#/applications` landing that follows a submit), and
+    the form reopened by address in a fresh tab, where the uploader's
+    shadow form was counted. Nothing was clicked or typed there.
 
 - **Greenhouse's newer job-board page gave a capture with no employer, no
   JD, no location, no country and no resume** (29 Sep 2026, the first real
@@ -1656,7 +1686,9 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   - no "A form was left holding N answers" line in the popup's failures.
     That line appearing after a submit means the Submit was STILL not
     recognised (read the page's button shape again); appearing after a
-    form left unsent is the report working.
+    form left unsent is the report working. It did appear, on 3 Oct 2026,
+    and it was the uploader's private form (above); 0.26.1's `formAround`
+    has met that page only as a test and as DOM counted by hand.
   - Closed shadow roots stay unreadable to every rule here. answers.js's
     comment says its edit backstop reaches them through
     `composedPath()[0]`; that has never been checked on a real closed root.

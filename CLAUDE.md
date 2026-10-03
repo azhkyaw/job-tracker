@@ -756,7 +756,9 @@ Detail lives with each family's rule file; this is the index.
   and modal-first form root, and 0.25.2's step-free answers key on a
   wizard whose address names its step (Phenom's own apply), and 0.26.0's
   kept opener and named job parameter (task 54: read `opener-kept` in the
-  provenance line on the next external apply).
+  provenance line on the next external apply), and 0.26.1's passing over
+  an upload widget's own form (task 55: the next SuccessFactors
+  candidate-experience submit with a resume upload).
 - **Mail** (`.claude/rules/mail-ingest.md`): IMAP verified on a real inbox
   28 Jul 2026; the web IMAP connect form, Gmail web OAuth and the full `-m 12`
   window are not.
@@ -782,7 +784,7 @@ The dated register behind each item, tasks 1-48 with their measurements, is
   queue as the author confirms them. Four `follow_up_sent` are on record: one filed
   by hand, three recovered from follow-ups the user EMAILED, which since
   migration 016 file themselves (task 16). (worklog task 4)
-- **Extension, next real Easy Apply:** verify the current build (0.26.0 on
+- **Extension, next real Easy Apply:** verify the current build (0.26.1 on
   3 Oct) is live on BOTH machines and the tab was opened after the
   reload; read `doc_source` and the sweep line, and check that the radio
   rows read Yes/No, not the question (task 42). From a search page, a

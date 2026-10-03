@@ -1498,3 +1498,39 @@ the key to each real case.
    - **Next real check:** an external apply on an enabled site where the
      tab was switched away and back. The provenance line should read
      `opener-kept+handoff`.
+
+55. **A SuccessFactors candidate-experience submit was refused as "outside
+   the application form"** (3 Oct 2026, extension 0.26.1). Reported by the
+   author as "details were not captured". The apply was LinkedIn →
+   SuccessFactors, and the handoff bound through the opener.
+   - **Repair:** the LinkedIn popover's record (JD, board id, 0 answers)
+     got the form's 40 answers from the tab's session storage, plus `ats`
+     and `ats_job_id`, through `POST /captures` without `completed`, so the
+     applied time stayed. Snapshot first
+     (`2026-10-03-sf-outside-form-repair.json`). No questions were about
+     visas. The form held profile, work-history and education fields.
+   - **Cause:** UI5's file uploader keeps its `<input type=file>` in a
+     one-control `<form>` inside its shadow root. Rule 1 of
+     `applicationRoot` took the nearest form around a file input, so that
+     form became the root and the real Submit sat outside it. 0.22.0's
+     shadow reading is what made the input visible. Counted on the live
+     form, reopened by address in a fresh tab with nothing typed or
+     clicked: `.claude/rules/extension.md`.
+   - **Built:** `generic.js:formAround`, which passes over a form holding
+     nothing but uploads. `test_extension.js` adds the uploader to the
+     candidate-experience page and fails on the old code with the real
+     near-miss text. The full suite passes.
+   - **Next real check:** a candidate-experience submit with a resume
+     upload. It should capture at the Submit, with no "left holding N
+     answers" line after it.
+   - **A second miss the same day, repaired, cause NOT investigated:** a
+     LinkedIn → SuccessFactors QUICK apply (`career5`, 15:20), reaching
+     the `isRedirectToAppSent=true` landing. The extension logged
+     `"Apply" was not captured: no application form found on this page`
+     on the quick-apply page (sign-in, contact fields, upload). It never
+     wrote a quick-apply note, so the landing filed nothing. Its 9 answers
+     came from a superseded Session Storage row after the tab was closed
+     (`.claude/rules/extension.md` → Procedures). They went onto the
+     LinkedIn popover's record the same way as above (snapshot
+     `2026-10-03-sf-quick-apply-repair.json`). Applied time left at the
+     popover's, about a minute after the send.

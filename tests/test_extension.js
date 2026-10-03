@@ -2059,6 +2059,26 @@ console.log("\ngeneric.js: SuccessFactors' candidate experience, built from web 
                      hidden("career_job_req_id", "70001")], CRUMB, T).atsJobId(), null);
   check("a hidden field merely named 'id' is not a requisition",
         loadGeneric([hidden("id", "61234")], CRUMB, T).atsJobId(), null);
+  // The upload widget's own <form> (read live 3 Oct 2026): <ui5-file-uploader>
+  // keeps its <input type=file> in a one-control form inside its shadow root.
+  // As the nearest form around the page's only file input, it became the
+  // root, and a sent application's Submit was refused as outside it.
+  const uploaderPage = () => {
+    const pg = page();
+    const uploader = attachShadow(node("ui5-file-uploader-xweb-dynamic-content"), [
+      node("form", { class: "ui5-file-uploader-form" }, [node("input", { type: "file" })])]);
+    const widgets = pg.kids[1].childNodes[4];          // beside its Browse button
+    widgets.childNodes.unshift(uploader);
+    uploader.parentElement = widgets;
+    return pg;
+  };
+  const u = uploaderPage();
+  const d = loadGeneric(u.kids, CRUMB, T, memoryStorage());
+  const dRoot = d.answerFormRoot();
+  check("an uploader's private form is not the root: form#careerform is",
+        dRoot && dRoot.getAttribute("id"), "careerform");
+  check("…so the Submit is taken, with no near miss",
+        [d.isCompletion(u.submit), d.nearMiss(u.submit)], [true, null]);
 }
 
 console.log("\ngeneric.js: a listing's own Apply leaves for the application (P2)");

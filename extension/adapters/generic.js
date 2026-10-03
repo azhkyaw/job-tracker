@@ -90,6 +90,22 @@
     return false;
   }
 
+  /* The form a resume's file input belongs to: the nearest one around it that
+   * holds something besides uploads. A form holding nothing else is the
+   * upload widget's own machinery. UI5's <ui5-file-uploader> keeps its
+   * <input type=file> in a private <form> inside its shadow root (read live
+   * on a SuccessFactors candidate experience, 3 Oct 2026); once deepAll could
+   * see that input, the nearest form was that one-control form, it became the
+   * application's root, and the real Submit sat outside it: a sent
+   * application was turned down as "the button is outside the application
+   * form". The form the widget sits in (there form#careerform) is next. */
+  function formAround(el) {
+    for (let form = closestDeep(el, "form"); form; form = closestDeep(up(form), "form")) {
+      if (!controlsIn(form).every(isFile)) return form;
+    }
+    return null;
+  }
+
   function commonAncestor(nodes) {
     for (let a = up(nodes[0]); a; a = up(a)) {
       if (nodes.every((n) => inside(n, a))) return a;
@@ -163,7 +179,7 @@
    * this page has none. Never a container that also holds a password field:
    * that is a candidate sign-in, and its username is not an answer. In order:
    *  1. the <form> the resume's file input sits in (Lever, Greenhouse,
-   *     Workable);
+   *     Workable), never an upload widget's own (formAround);
    *  2. a <form> with the fields of an application (five that ask
    *     something) and a control inside it that says it sends one
    *     (SuccessFactors, whose address cannot be trusted — see below);
@@ -177,7 +193,7 @@
     if (all.length < 2) return null;
     const files = all.filter(isFile);
     for (const f of files) {
-      const form = closestDeep(f, "form");
+      const form = formAround(f);
       if (form && !hasPassword(form)) return form;
     }
     // A form that SAYS it sends an application, with the fields of one. The
