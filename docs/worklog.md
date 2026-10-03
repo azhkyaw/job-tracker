@@ -1553,3 +1553,33 @@ the key to each real case.
      other classic-form records (an attachment widget).
    - Committed `cb7d351` and pushed. The other machine needs a pull and an
      extension reload.
+
+57. **Listings that ask for the CV by email** (4 Oct 2026, extension
+   0.27.0). The author asked whether the tracker could catch listings that
+   ask for an emailed application, since they might be missing them.
+   - **Measured first, read-only:** of 333 stored JDs, 22 had one sentence
+     holding an email address and a CV word, and 15 asked for the email
+     alone; 7 also offered the platform's button. None of the 22
+     applications had any mail of the author's filed on it. Almost all
+     were recruitment agencies on LinkedIn.
+   - **The rule** (`pipeline/email_apply.py`): one sentence with an
+     address and cv/resume/résumé, not also saying "apply
+     online/now/here/through/via". The 19 address sentences it leaves out
+     were licence lines, privacy and accessibility contacts and "for a
+     confidential discussion". "application" admitted only an
+     accessibility contact, so it is not a CV word. One rule in Python and
+     SQL, held together by `tests/email_apply.json`; on the dev DB the two
+     agree on all 381 postings.
+   - **Owed** (`analytics.email_owed_sql`): your own application, applied,
+     the JD asks, and no response, withdrawal, sent mail filed on it or
+     answer by hand. An emailed CV clears it by itself (it files as a note
+     from a sent email). "I emailed it" / "Not needed"
+     (`web.mark_emailed`) file a note with `payload.emailed`.
+   - **Shown:** the application's page (the sentence, a mailto naming the
+     role, both answers), `/follow-ups` first under "Asked for by email",
+     in grey, the list's aside, and the extension's receipt, which stays
+     open while it carries the ask.
+   - **On the day:** 8 applications owed the email, two of them applied
+     to in the previous two days. The receipt has never been seen on a
+     real apply: on the next apply to a listing that asks, check that the
+     receipt quotes the sentence and its mailto opens the mail client.

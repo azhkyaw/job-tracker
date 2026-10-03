@@ -82,7 +82,7 @@ and design records; the code and `migrations/` win where they disagree.
   this install. Read its §3 first: the author's right to earn in Singapore
   decides the rest. Confirms `docs/open-source.md` and says what would
   reopen the question.
-- `docs/worklog.md` — the dated task register (tasks 1-56 with their
+- `docs/worklog.md` — the dated task register (tasks 1-57 with their
   measurements); what is still open is summarised under "Open work" below.
 
 **Path-scoped rules.** Dated case history that only matters when touching
@@ -203,6 +203,14 @@ An invariant keeps its RULE here and its case history in the rule file.
   `declares_sponsorship` is ONE rule in Python and SQL (its regexes run in
   both dialects), held to `tests/sponsorship_answers.json`; `FORM_VISA` /
   `form_visa_sql` bucket each application by what its form said about visas
+- `pipeline/email_apply.py` — does a JD ask for the CV BY EMAIL (4 Oct
+  2026)? One sentence holding an address and a CV word, and not also
+  offering the apply button. One rule in Python (`instruction()`, which
+  quotes the sentence) and SQL (`asks_by_email_sql`), held together by
+  `tests/email_apply.json`. `analytics.email_owed_sql` is the ONE "still
+  owed" rule (applied, no response, no sent mail, no "I emailed it" / "Not
+  needed", `web.mark_emailed`), read by the detail page, `/follow-ups`' first
+  section, the list's nudge and the capture receipt
 - `pipeline/salary.py` — parses the platform's displayed pay string (migration 011)
 - `pipeline/covers.py` — cover letters; `load_profile()` reads `users.resume_profile`
 - `pipeline/joburl.py` — paste-a-link job-id derivation for manual entry; mirrors
@@ -758,7 +766,8 @@ Detail lives with each family's rule file; this is the index.
   kept opener and named job parameter (task 54: read `opener-kept` in the
   provenance line on the next external apply), and 0.26.1's passing over
   an upload widget's own form (task 55: the next SuccessFactors
-  candidate-experience submit with a resume upload).
+  candidate-experience submit with a resume upload), and 0.27.0's receipt
+  quoting a listing that asks for the CV by email (task 57).
 - **Mail** (`.claude/rules/mail-ingest.md`): IMAP verified on a real inbox
   28 Jul 2026; the web IMAP connect form, Gmail web OAuth and the full `-m 12`
   window are not.
@@ -774,7 +783,7 @@ Detail lives with each family's rule file; this is the index.
 
 ## Open work (as of 4 Oct 2026)
 
-The dated register behind each item, tasks 1-56 with their measurements, is
+The dated register behind each item, tasks 1-57 with their measurements, is
 `docs/worklog.md`; read the matching entry before acting on one.
 
 - **Follow-up drafting** on an age-capped queue: cap `/follow-ups` near 21
@@ -784,8 +793,11 @@ The dated register behind each item, tasks 1-56 with their measurements, is
   queue as the author confirms them. Four `follow_up_sent` are on record: one filed
   by hand, three recovered from follow-ups the user EMAILED, which since
   migration 016 file themselves (task 16). (worklog task 4)
-- **Extension, next real Easy Apply:** verify the current build (0.26.2 on
-  3 Oct) is live on BOTH machines and the tab was opened after the
+- **Listings that asked for the CV by email** (task 57, 4 Oct): 8
+  applications owed the email on the day, listed first on `/follow-ups`;
+  each is the author's "I emailed it", "Not needed" or an email sent.
+- **Extension, next real Easy Apply:** verify the current build (0.27.0 on
+  4 Oct) is live on BOTH machines and the tab was opened after the
   reload; read `doc_source` and the sweep line, and check that the radio
   rows read Yes/No, not the question (task 42). From a search page, a
   `stale_pane` with `named` is 0.25.1's new check firing: the record then
