@@ -83,23 +83,24 @@
 <p class="hint">One square per application, in the week you sent it and in the colour its
   day count wears on the list: grey while young, warming to amber as the silence runs past
   <b>{{ r.reminder_days }}</b> days, blue while someone is engaged and it is fresh, rust once
-  rejected. A circle reached a round. Each square opens its application.</p>
+  rejected. A circle reached a round. Each square opens its application. Answered is a rejection
+  or a round; LinkedIn's “viewed” notice is not one.</p>
 {% if co.rows or co.approaches %}
 <div class="card pad units-card">
   <div class="urow uhead"><span class="wk">week of</span><span></span>
-    <span class="cnt"><span>sent</span><span class="quiet">heard</span></span></div>
+    <span class="cnt"><span>sent</span><span class="quiet">answered</span><span class="quiet">rounds</span></span></div>
   {% for w in co.rows %}
   <div class="urow">
     <span class="wk">{{ w.label }}</span>
     <span class="units">{{ squares(w.units) }}</span>
-    <span class="cnt"><span>{{ w.n }}</span><span class="quiet">{{ w.heard }}</span></span>
+    <span class="cnt"><span>{{ w.n }}</span><span class="quiet">{{ w.answered }}</span><span class="quiet">{{ w.rounds }}</span></span>
   </div>
   {% endfor %}
   {% if co.approaches %}
   <div class="urow approaches">
     <span class="wk">approached</span>
     <span class="units">{{ squares(co.approaches) }}</span>
-    <span class="cnt"><span>{{ co.approaches | length }}</span><span class="quiet">{{ co.approach_rounds }} round{{ '' if co.approach_rounds == 1 else 's' }}</span></span>
+    <span class="cnt"><span>{{ co.approaches | length }}</span><span class="quiet">{{ co.approach_answered }}</span><span class="quiet">{{ co.approach_rounds }}</span></span>
   </div>
   {% endif %}
   <div class="ukey">
@@ -290,13 +291,14 @@
 <p class="hint"><b>{{ em.count }}</b> employer{{ '' if em.count == 1 else 's' }} of <b>{{ em.companies }}</b>
   had more than one of your records, <b>{{ em.records }}</b> between them.
   {% if em.silent %}<b>{{ em.silent }}</b> of those have never answered anything — <b>{{ em.silent_records }}</b>
-  records' worth of silence, which is the employer-side half of a ghost job.{% endif %}</p>
+  records' worth of silence, which is the employer-side half of a ghost job.
+  {%- if em.unseen %} <b>{{ em.unseen }}</b> of them sent nothing at all, not even LinkedIn's “viewed” notice.{% endif %}{% endif %}</p>
 <div class="card emps">
   {% for e in em.rows %}
   <div class="erow">
     <a class="co" href="/?q={{ e.q | urlencode }}" title="{{ e.name }}">{{ e.name }}</a>
     <span class="units">{{ squares(e.units) }}</span>
-    <span class="cnt"><span>{{ e.n }}</span><span class="quiet">{{ e.heard }} heard</span></span>
+    <span class="cnt"><span>{{ e.n }}</span><span class="quiet">{{ e.answered }} answered</span></span>
   </div>
   {% endfor %}
 </div>

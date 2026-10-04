@@ -450,6 +450,20 @@ check("rows run week by week with the empty week kept, through this week",
 utc_co = insights.cohorts(facts_of([c1], co_ev[:1]), NOW, None)
 check("without a zone the same submission is the previous week (why the zone matters)",
       utc_co["rows"][0]["label"] == "24 Aug", utc_co["rows"][0]["label"])
+c3, c4 = app(status="viewed"), app(status="rejected")
+i1, i2 = app(origin="inbound", status="engaged"), app(origin="inbound", status="interested")
+co3_ev = [ev(c3, "applied", ago(30), source="extension"), ev(c3, "viewed", ago(29)),
+          ev(c4, "applied", ago(30), source="extension"), ev(c4, "rejected", ago(27)),
+          ev(i1, "recruiter_outreach", ago(20)), ev(i1, "engaged", ago(19)),
+          ev(i2, "recruiter_outreach", ago(18))]
+co3 = insights.cohorts(facts_of([c3, c4, i1, i2], co3_ev), NOW, SGT)
+wk = [r for r in co3["rows"] if r["n"]]
+check("a week counts answered, and LinkedIn's viewed notice is not an answer (heard back is gone)",
+      len(wk) == 1 and wk[0]["n"] == 2 and wk[0]["answered"] == 1 and wk[0]["rounds"] == 0
+      and "heard" not in wk[0], wk)
+check("the approaches row counts its own answers and rounds",
+      len(co3["approaches"]) == 2 and co3["approach_answered"] == 1 and co3["approach_rounds"] == 1,
+      (co3["approach_answered"], co3["approach_rounds"]))
 
 # ------------------------------------------------------------------- flow
 
@@ -516,6 +530,20 @@ check("only employers tried more than once, never the unknown placeholder",
       [r["name"] for r in e["rows"]] == ["Contoso Markets"] and e["count"] == 1, e["rows"])
 check("an employer that never answered counts as silent",
       e["silent"] == 1 and e["silent_records"] == 3)
+viewed_only = [app(company_norm="tailspin consulting", company_display="Tailspin Consulting")
+               for _ in range(2)]
+answered_once = [app(company_norm="wingtip talent group", company_display="Wingtip Talent Group")
+                 for _ in range(2)]
+more_ev = [ev(a, "applied", ago(30), source="extension") for a in viewed_only + answered_once]
+more_ev += [ev(viewed_only[0], "viewed", ago(29)), ev(answered_once[0], "rejected", ago(27))]
+e2 = insights.employers(facts_of(emp + viewed_only + answered_once, emp_ev + more_ev))
+rows2 = {r["name"]: r for r in e2["rows"]}
+check("a viewed notice is not an answer: that employer is silent, one that rejected is not",
+      e2["silent"] == 2 and e2["silent_records"] == 5
+      and rows2["Tailspin Consulting"]["answered"] == 0 and rows2["Wingtip Talent Group"]["answered"] == 1,
+      (e2["silent"], e2["silent_records"]))
+check("...and only the one that sent nothing at all is unseen, a subset of the silent",
+      e2["unseen"] == 1 and e2["unseen"] <= e2["silent"], e2["unseen"])
 
 print("rejection lags")
 lag_apps = [app(status="rejected") for _ in range(4)]

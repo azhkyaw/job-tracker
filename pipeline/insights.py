@@ -666,7 +666,12 @@ def cohorts(facts, now: datetime, tz) -> dict:
     """Every sent application as a square, one row per week it was sent,
     oldest week first and empty weeks kept (a week with nothing sent is a real
     zero, and dropping it would compress the search into a lie about pace).
-    The approaches follow as one row, in the order they arrived."""
+    The approaches follow as one row, in the order they arrived.
+
+    A row counts ANSWERED, not heard back (4 Oct 2026): it printed heard
+    back until then, and 10 of one week's 14 were LinkedIn's "viewed"
+    notice alone, the signal this module's vocabulary refuses to call an
+    answer."""
     sent = [f for f in facts if f["sent"]]
     rows = []
     if sent:
@@ -678,12 +683,13 @@ def cohorts(facts, now: datetime, tz) -> dict:
             fs = sorted(by_week.get(cur, []), key=_unit_key)
             rows.append({"week": cur, "label": _day_label(cur),
                          "units": [unit(f) for f in fs], "n": len(fs),
-                         "heard": sum(1 for f in fs if f["signal_at"]),
+                         "answered": sum(1 for f in fs if f["answer_at"]),
                          "rounds": sum(1 for f in fs if f["round_at"])})
             cur += timedelta(days=7)
     inbound = sorted((f for f in facts if f["inbound"] and f["start"]), key=lambda f: f["start"])
     return {"rows": rows, "peak": max((r["n"] for r in rows), default=0),
             "approaches": [unit(f) for f in inbound],
+            "approach_answered": sum(1 for f in inbound if f["answer_at"]),
             "approach_rounds": sum(1 for f in inbound if f["round_at"]),
             "tones": Counter(f["tone"] for f in facts if f["start"])}
 
@@ -794,10 +800,15 @@ def employers(facts) -> dict:
                      "rounds": sum(1 for f in fs if f["round_at"]),
                      "last": fs[-1]["start"]})
     rows.sort(key=lambda r: (-r["n"], -r["last"].timestamp()))
-    silent = [r for r in rows if r["heard"] == 0]
+    # Silent is "never answered", the word the row prints (4 Oct 2026; it
+    # was never heard back until then, 35 employers against 48). The
+    # stricter count, nothing at all, not even a "viewed" notice, is a
+    # subset and is said beside it.
+    silent = [r for r in rows if r["answered"] == 0]
     return {"rows": rows[:EMPLOYER_ROWS], "more": max(0, len(rows) - EMPLOYER_ROWS),
             "count": len(rows), "records": sum(r["n"] for r in rows),
             "silent": len(silent), "silent_records": sum(r["n"] for r in silent),
+            "unseen": sum(1 for r in silent if r["heard"] == 0),
             "companies": len(groups)}
 
 

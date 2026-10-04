@@ -358,12 +358,17 @@ main h2[id]{scroll-margin-top:1rem}
 
 /* Every application, one square each. Fixed size, wrapping: a row's LENGTH
    is its count while it fits, and its area always is. */
-.urow{display:grid;grid-template-columns:4.2rem minmax(0,1fr) 5.4rem;gap:0 .9rem;
+.urow{display:grid;grid-template-columns:4.2rem minmax(0,1fr) 7.8rem;gap:0 .9rem;
       align-items:center;padding:1.5px 0}
 .urow .wk{font-family:var(--sans);font-size:.76rem;color:var(--muted);text-align:right;
           font-variant-numeric:tabular-nums;white-space:nowrap}
-.urow .cnt,.erow .cnt{display:grid;grid-template-columns:1fr 1fr;gap:.5rem;text-align:right;
+.urow .cnt,.erow .cnt{display:grid;gap:.5rem;text-align:right;
       font-family:var(--sans);font-size:.8rem;font-variant-numeric:tabular-nums;white-space:nowrap}
+/* sent, answered, rounds: fixed widths, each just over its column head's
+   measured text (1.31, 2.88 and 2.06rem), so every row's numbers line up
+   whatever their digits and the squares keep the rest. */
+.urow .cnt{grid-template-columns:1.6rem 3rem 2.2rem}
+.erow .cnt{grid-template-columns:1.4rem minmax(0,1fr)}
 .urow.uhead{padding-bottom:.35rem}
 .urow.uhead .wk,.urow.uhead .cnt{font-size:.72rem}
 .urow.approaches{margin-top:.55rem;padding-top:.55rem;border-top:1px solid var(--line)}
@@ -639,8 +644,9 @@ pre.text{white-space:pre-wrap;font:inherit;margin:.5rem 0 0;max-width:70ch}
   .emps{grid-template-columns:minmax(0,1fr)}
   .emps .erow:nth-child(even){border-left:0}
   .emps .erow:nth-last-child(2){border-bottom:1px solid var(--line)}
-  .urow{grid-template-columns:3rem minmax(0,1fr) 4.4rem;gap:0 .6rem}
-  .erow{grid-template-columns:minmax(0,1fr) 5.6rem}
+  .urow{grid-template-columns:3rem minmax(0,1fr) 7.5rem;gap:0 .6rem}
+  .urow .cnt{gap:.35rem}
+  .erow{grid-template-columns:minmax(0,1fr) 6.2rem}
   .erow .units{grid-column:1 / -1;grid-row:2;margin-top:.25rem}
   .lag{grid-template-columns:minmax(0,1fr)}
   .lag .lk{margin-bottom:.3rem}
