@@ -85,6 +85,21 @@
     }).length;
   }
 
+  /* A container holding a password field is a candidate SIGN-IN, and its
+   * username is not an answer, unless it asks far more than a sign-in can.
+   * A sign-in, or an account's registration, asks for an identity: an email,
+   * names, a phone, a country. iCIMS's candidate profile (the first iCIMS
+   * apply, 3 Oct 2026, read live the next day) asks 81 visible questions in
+   * one form#profileForm AND creates the account in it: "Password" and
+   * "Password (Re-enter)". Refusing it on the password left the whole
+   * profile step with no root, so its sweeps read nothing and only what the
+   * candidate typed reached the store (Last Name, prefilled, never did; nor
+   * did any dropdown, whose choice iCIMS sets by script). The passwords are
+   * never swept as answers either way (answers.js:valueOf). */
+  const SIGN_IN_MAX_ASKS = 15;
+  const signIn = (root) => hasPassword(root) && asking(controlsIn(root).filter((el) =>
+    (el.getAttribute("type") || "").toLowerCase() !== "password")) < SIGN_IN_MAX_ASKS;
+
   function inside(node, ancestor) {
     for (let x = node; x; x = up(x)) if (x === ancestor) return true;
     return false;
@@ -176,8 +191,8 @@
   }
 
   /* The element holding the application's answerable controls, or null when
-   * this page has none. Never a container that also holds a password field:
-   * that is a candidate sign-in, and its username is not an answer. In order:
+   * this page has none. Never a candidate sign-in (signIn: a password field
+   * in a container that asks no more than a sign-in does). In order:
    *  1. the <form> the resume's file input sits in (Lever, Greenhouse,
    *     Workable), never an upload widget's own (formAround);
    *  2. a <form> with the fields of an application (five that ask
@@ -194,7 +209,7 @@
     const files = all.filter(isFile);
     for (const f of files) {
       const form = formAround(f);
-      if (form && !hasPassword(form)) return form;
+      if (form && !signIn(form)) return form;
     }
     // A form that SAYS it sends an application, with the fields of one. The
     // SuccessFactors form, read live 24 Sep 2026 (form#careerform: 59 fields,
@@ -210,7 +225,7 @@
     for (const b of deepAll(doc, "button, input, [role='button']")) {
       if (!submitWorded(b)) continue;
       const form = closestDeep(b, "form");
-      if (form && !hasPassword(form) && asking(controlsIn(form)) >= MIN_FORM_FIELDS) return form;
+      if (form && !signIn(form) && asking(controlsIn(form)) >= MIN_FORM_FIELDS) return form;
     }
     // Rule 3 needs an address that says "application", or a file input on a
     // page that is NOT a listing. A job page that publishes a JobPosting and
@@ -226,7 +241,7 @@
     // (answers.js decides what is machinery); they just cannot move it.
     const seen = all.filter(rendered);
     const root = commonAncestor(seen.length ? seen : all);
-    return root && !hasPassword(root) ? root : null;
+    return root && !signIn(root) ? root : null;
   }
 
   /* A hiring system's own page: on the vendor's host (atsOfUrl), or on an

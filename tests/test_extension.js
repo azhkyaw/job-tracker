@@ -2215,6 +2215,34 @@ console.log("\ngeneric.js: what must NOT be an application");
   check("a listing with no resume field and no apply path: no root", b.answerFormRoot() === null, true);
 }
 {
+  // An application that also CREATES the account (iCIMS, 3 Oct 2026, read
+  // live the next day): its candidate profile is one form#profileForm with
+  // the resume upload, ~108 labelled questions, and "Password" / "Password
+  // (Re-enter)". Refused as a sign-in, the step had no root, and only what was
+  // typed reached the store. A registration's size stays a sign-in.
+  const ICIMS = "https://singapore-careers-contoso.icims.com/jobs/104494/senior-engineer/candidate";
+  const asked = (n, prefix) => Array.from({ length: n }, (_, i) =>
+    [node("label", { for: `${prefix}${i}` }, [`Question ${i + 1}`]),
+     node("input", { type: "text", id: `${prefix}${i}` })]).flat();
+  const passwords = () => [node("label", { for: "pw1" }, ["Password"]), node("input", { type: "password", id: "pw1" }),
+                           node("label", { for: "pw2" }, ["Password (Re-enter)"]), node("input", { type: "password", id: "pw2" })];
+  const upload = () => [node("label", { for: "cv" }, ["Upload your resume/CV"]), node("input", { type: "file", id: "cv" })];
+  const profile = node("form", { id: "profileForm" }, [...upload(), ...asked(20, "p"), ...passwords(),
+                                                       button("Update profile", { type: "submit" })]);
+  const a = loadGeneric([profile], ICIMS);
+  check("an application that also creates the account (20 questions and two passwords) is the root",
+        a.answerFormRoot() === profile, true);
+  const register = node("form", {}, [...upload(), ...asked(6, "r"), ...passwords(), button("Register", { type: "submit" })]);
+  check("…but a registration's size (6 questions and two passwords) is still a sign-in",
+        loadGeneric([register], ICIMS).answerFormRoot() === null, true);
+  // The upload asks too: 13 questions and the resume make fourteen.
+  const fourteen = node("form", {}, [...upload(), ...asked(13, "f"), ...passwords()]);
+  const fifteen = node("form", {}, [...upload(), ...asked(14, "g"), ...passwords()]);
+  check("…up to fourteen questions beside the passwords, and fifteen is an application",
+        [loadGeneric([fourteen], ICIMS).answerFormRoot() === null,
+         loadGeneric([fifteen], ICIMS).answerFormRoot() === fifteen], [true, true]);
+}
+{
   // A sign-in with NO password field (1 Oct 2026): MyGreenhouse, which
   // Greenhouse's job boards offer for autofill, takes an emailed security
   // code, and its Submit filed an application ("MyGreenhouse", no employer,
