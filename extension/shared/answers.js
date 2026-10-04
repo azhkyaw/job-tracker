@@ -706,7 +706,23 @@
    * label (the wrapper's) — skipping on visibility is how every radio answer
    * would be lost again. */
   const rendered = (el) => !el.getClientRects || el.getClientRects().length > 0;
+  /* And a search box that FILTERS a native <select>: a combobox text input in
+   * the same field as the select. iCIMS's dropdowns (read live 4 Oct 2026)
+   * keep the choice on a visibility:hidden <select> with its own <label>
+   * ("Country", "Singapore"), which the sweep reads; the box beside it, named
+   * only by its placeholder "— Type to Search —", holds whatever was typed to
+   * find the option ("singa"), and the edit backstop stored that as the
+   * answer, 9 times on the first iCIMS apply. Two levels up at most: the
+   * select shares the box's field, not merely its form. */
+  function filterBox(el) {
+    if (el.tagName !== "INPUT" || el.getAttribute("role") !== "combobox") return false;
+    for (let n = el.parentElement, hops = 0; n && hops < 2; n = n.parentElement, hops++) {
+      if (n.querySelector && n.querySelector("select")) return true;
+    }
+    return false;
+  }
   function machinery(el, question) {
+    if (filterBox(el)) return true;
     if (rendered(el)) return false;
     const own = ((el.getAttribute && el.getAttribute("placeholder")) || el.name || "").trim();
     return !!own && question === own;

@@ -885,6 +885,32 @@ console.log("\nanswers.js sweep: Greenhouse's job-board form (read live 29 Sep 2
   check("a react-select answers with the option it shows, under its label",
         sweepOf(country("Singapore")), [{ question: "Country*", answer: "Singapore", type: "text" }]);
   check("…and nothing when only its placeholder shows", sweepOf(country(null)), []);
+  // iCIMS's dropdown (read live 4 Oct 2026): the choice on a visibility:hidden
+  // <select> with its own <label>, a drawn <a role=combobox> showing it, and a
+  // search box in an invisible container, named only "— Type to Search —",
+  // holding whatever was typed to find the option.
+  const icims = (typed) => {
+    const search = node("input", { type: "text", role: "combobox", autocomplete: "off",
+                                   placeholder: "— Type to Search —", "aria-label": "— Type to Search —",
+                                   value: typed });
+    const row = node("div", { class: "iCIMS_InfoData" }, [
+      node("label", { for: "AddressCountry" }, ["Country"]),
+      node("select", { id: "AddressCountry", style: "visibility:hidden;position:fixed" },
+           [node("option", { value: "65", selected: true }, ["Singapore"])]),
+      node("a", { id: "AddressCountry_icimsDropdown", role: "combobox" },
+           [node("span", { class: "dropdown-text" }, ["Singapore"])]),
+      node("div", { id: "AddressCountry_icimsDropdown_ctnr", class: "dropdown-container" }, [search]),
+    ]);
+    return { row, search };
+  };
+  const ic = icims("singa");
+  check("an iCIMS dropdown answers with its select's choice, not the typed search",
+        sweepOf(ic.row), [{ question: "Country", answer: "Singapore", type: "select" }]);
+  const icB = icims("sin");
+  const icSandbox = loadAnswers(icB.row);
+  for (const fn of icSandbox._listeners.input) fn({ composedPath: () => [icB.search] });
+  check("…and typing in its search box stores nothing (the edit backstop)",
+        icSandbox.window.__trackerAnswers.take().map((a) => a.question), ["Country"]);
   // Resume: <input type=file class="visually-hidden">, whose only <label for>
   // is the "Attach" button's, inside <div role="group"
   // aria-labelledby="upload-label-resume"> named "Resume/CV*".
