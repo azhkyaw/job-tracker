@@ -1583,3 +1583,38 @@ the key to each real case.
      to in the previous two days. The receipt has never been seen on a
      real apply: on the next apply to a listing that asks, check that the
      receipt quotes the sentence and its mailto opens the mail client.
+
+58. **The first iCIMS apply, checked after the submit** (4 Oct 2026,
+   extension 0.27.1-0.27.2). The record itself was right: one record on the
+   LinkedIn posting through the handoff, the iCIMS job id, the JD, the
+   submit's time. Its answers showed four faults, each a mechanism:
+   - **Resume uploads were never promoted** (`7e85458`): the rule wanted
+     "resume" in a label's first words, and upload widgets name the input
+     with their own chrome ("My Computer (Opens new window) Upload your
+     resume/CV…", "Upload options"). All 5 file fields ever stored were
+     resumes, none promoted. Now the label or the file's own name need only
+     say resume/CV. The 5 records repaired (snapshot
+     `2026-10-04-resume-uploads.json`).
+   - **The server kept the first 60 answers** (`eba400a`): a 28 Jul bound
+     against a runaway scrape, which cut the END of every long ATS form, the
+     screening step. 14 records, 24 Sep - 3 Oct (Workday, SuccessFactors,
+     iCIMS). Now 500. The iCIMS record's full 83-answer store survived in Session Storage
+     (copied at once to `2026-10-04-session-storage/`) and went in through
+     `POST /captures`: 59 -> 82 answers, its 23 the whole screening step,
+     "Do you require a work pass (visa)?" among them. **The other 13 are
+     lost**: Chrome compacted the store minutes after the submit.
+   - **The profile step had no root** (0.27.1): iCIMS creates the account
+     INSIDE the application form ("Password" / "Password (Re-enter)" among
+     108 labelled questions), and `generic.js` refused any container holding
+     a password. Found by running answers.js's own `labelFor`/`valueOf`
+     against the live profile page (read-only), which read every field
+     right, then the form's shape and History's step addresses. A password
+     now marks a sign-in only where fewer than 15 other questions are asked.
+   - **The dropdowns stored the typed search** (0.27.2): iCIMS keeps the
+     choice on a `visibility:hidden` `<select>` with its own label, and a
+     `role=combobox` search box beside it holds what was typed ("singa").
+     `answers.js:filterBox` treats a combobox in the same field as a
+     `<select>` as machinery, in the sweep and the edit backstop alike.
+   - **Next real check:** an iCIMS apply after reloading the extension:
+     Last Name, Country, School and Degree on the record as chosen, no
+     "— Type to Search —" rows.
