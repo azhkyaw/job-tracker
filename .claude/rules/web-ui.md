@@ -168,6 +168,16 @@ is a private artifact, linked from the memory file
    for the user: on the day, answers after a round had come up to 22 days
    later. The "you applied again" suggestion (9c) skips these rows: an
    older record the employer answered is not a repost's leftover.
+
+   **Since 4 Oct 2026 a first section: listings that asked for the CV by
+   email** (`analytics.email_owed_sql`, `pipeline/email_apply.py`). Above the
+   waits under its own heading, in GREY: the move is the user's and due now,
+   not a wait on anyone (rule 1), so its day count is days since applying at
+   heat 0. Each row quotes the listing's sentence with a mailto, and takes
+   "I emailed it" / "Not needed" (`web.mark_emailed`, a note with
+   `payload.emailed`); mail the user sends clears a row with no click. The
+   nav pill still counts only the waits; the list's aside counts this
+   section beside "N need follow-up".
 9b. **How you applied is on the row, in GREY** (21 Aug 2026): `on-platform` /
    `employer site`, read from the applied event's own `payload.external` — the
    same event the date comes from, so the two can't describe different
@@ -792,3 +802,10 @@ detail page's own select, scoped to that posting (decided 28 Jul 2026).
   close; the inbound round record offering its own close instead) and never
   looked at. The form is one more `.record` row with a text input for the
   note; what to look at is whether its placeholder reads as optional.
+
+- **`/follow-ups`' "Asked for by email" section and the detail page's email
+  panel (4 Oct 2026, task 57)** were rendered through TestClient against the
+  real dev DB (8 rows, each with its sentence and mailto) and never looked
+  at. What to look at: whether a long quoted sentence in the row's second
+  line crowds the "Not needed" button, and how the panel's `<q>` wraps
+  inside a `.record` row.

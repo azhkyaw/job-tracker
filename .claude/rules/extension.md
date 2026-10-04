@@ -1330,6 +1330,57 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
     `tests/test_extension.js` replays the sequence. On the old code the
     fixture's Phenom ids fail and `keepOpener` does not exist.
 
+- **An application form that also creates the candidate's account was
+  refused as a sign-in** (3 Oct 2026, the first iCIMS apply; extension
+  0.27.1; worklog task 58).
+  - **The page:** iCIMS's candidate profile is one `form#profileForm`: the
+    resume upload, 108 labelled questions, and "Password" / "Password
+    (Re-enter)". Every rule of `applicationRoot` refused a container holding
+    a password, so that step had no root: no sweep, and only what the edit
+    backstop caught (fields TYPED into) reached the store.
+  - **The signature:** First Name present and Last Name (prefilled) absent;
+    every dropdown absent; the typed search text present instead.
+  - **Fixed as a rule:** `generic.js:signIn`. A password marks a sign-in
+    only where fewer than 15 other questions are asked: a sign-in or a
+    registration asks for an identity, an application for a career.
+  - **How it was found, after a wrong guess:** "no root on the whole visit"
+    was disproved by the sweeps buffer (0 noRoot over 267 sweeps), but that
+    buffer keeps one entry per capture, the LAST page's. What settled it:
+    answers.js's own `labelFor`/`valueOf`, pasted verbatim into
+    `javascript_tool` on the live profile page (read-only), read every
+    field right; then the form's shape; then History's step addresses
+    (paths and parameter names only). When the readers are right and the
+    fields are missing, ask whether the step had a root.
+- **iCIMS's dropdowns keep the choice on a hidden native `<select>`; the box
+  beside it is a filter** (read live 4 Oct 2026; extension 0.27.2). The
+  select is `visibility:hidden; position:fixed`, has its own `<label for>`,
+  and holds only the chosen option; a drawn `<a role=combobox>` shows it; a
+  search `<input role=combobox>` in a `.dropdown-container`, named only by
+  aria-label "— Type to Search —" and `aria-hidden` only while closed, holds
+  what was typed ("singa"). `answers.js:filterBox` treats a combobox input
+  with a `<select>` within two levels as machinery, in the sweep and the
+  backstop. The react-select fixture (no native select) is the control.
+- **The server kept only the first 60 answers of a capture** (found 4 Oct
+  2026; `answers.MAX_ITEMS`, 500 since). Set on 28 Jul against a runaway
+  scrape, when only Easy Apply existed, and silent: the capture reported
+  success with 60. It cut the END of every long ATS form, the screening
+  step: 14 records, 24 Sep - 3 Oct, one recovered. **An application with
+  exactly N answers is this class**: compare the extension's store
+  (Session Storage) with the database's count when checking a long form.
+- **Copy Session Storage FIRST when a capture looks short** (4 Oct 2026).
+  The 3 Oct procedure (Procedures, above) recovers a superseded store from
+  an older table, but Chrome compacted that LevelDB minutes after a submit,
+  and 13 forms' earlier versions were gone; only the newest survived.
+  `cp "<profile>/Session Storage/"*.log *.ldb MANIFEST-* CURRENT <dir>`
+  costs a second, before any investigation.
+- **A resume upload was never promoted while its widget named the input**
+  (4 Oct 2026, `answers.py:_RESUME_WORD`). The rule wanted "resume" in the
+  label's first words; widgets label the input with their own chrome ("My
+  Computer (Opens new window) Upload your resume/CV…", "Upload options",
+  "Choose a file or drop it here"). Every file field stored by then was a
+  resume and none had reached `resume_file`. An upload is the resume when
+  its label or its file's own name says resume/CV.
+
 ## Known-untested surfaces (verify on first real contact)
 
 - **Extension DOM selectors** (`extension/adapters/*.js`) — best-effort against
@@ -1750,3 +1801,10 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   provenance line says `…+handoff`, and there is one record, not two, even
   with the popover answered. No `aliases` means the form's page load
   carried no referrer or read as a listing.
+
+- **0.27.1's sign-in size test and 0.27.2's filter box have met the live
+  iCIMS profile only as code evaluated in it (read-only) and as tests**
+  (4 Oct 2026). On the next iCIMS apply: Last Name, Country, School and
+  Degree on the record as chosen, no "— Type to Search —" rows, and an
+  answer count above 60 if the form is long. 0.27.0's receipt line for a
+  listing that asks for the CV by email has never been seen either.
