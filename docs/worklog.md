@@ -1618,3 +1618,42 @@ the key to each real case.
    - **Next real check:** an iCIMS apply after reloading the extension:
      Last Name, Country, School and Degree on the record as chosen, no
      "— Type to Search —" rows.
+
+59. **/analytics, read against the real page** (4 Oct 2026). The author
+   asked whether "Every application, week by week" should start its weeks
+   on a Saturday, then what else the page should change. Measured on the
+   dev DB first (350 sent applications, Singapore time) and rendered live.
+   - **Weeks stay on Monday.** The author's apply-days run in 15 bursts of
+     consecutive days. A Monday boundary cuts none of them; a Saturday one
+     cuts 5, holding 65 applications. Bursts begin on a Monday 5 times and
+     never on a weekend, and weekends carry 36 sends, 21 of them on
+     3-4 Oct. Reopen if weekends keep looking like that one, as a per-user
+     setting read by the week rows AND the Rhythm calendar, whose Mon-Sun
+     labels are literals in the template.
+   - **The findings list every row that clears the rule** (`b373203`,
+     `insights.findings`). The six-row cap was ranked by distance from the
+     base rate, which a small sample wins: 8 rows cleared, and the list led
+     with a hiring system at 4 of 7 and cut first postings at 19 of 147
+     and Thursday at 9 of 84. Now one line per comparison, biggest sample
+     first, a two-valued comparison with both sides.
+   - **The rows of squares count answered** (`356d3d2`): the week rows
+     print sent, answered and rounds, an employer row "N answered". 39 of
+     the 99 heard back had only LinkedIn's "viewed" notice, 10 of 14 in
+     the week of 14 Sep. "Never answered" went from 35 employers to 48,
+     and the 35 that sent nothing at all are said beside it.
+   - **The month you applied** (`2f2514a`), the first comparison and the
+     page's one trend: July 22% answered (11 of 51), August 22% (32 of
+     144), September 14% (8 of 59, interval 7-25%).
+   - **The reply window moved from 34 days to 55** (task 31's
+     measurement): one rejection on 28 Sep, to an application whose 4 Aug
+     date was typed by hand. The next longest wait is a "viewed" notice at
+     48 days. The window splits the waiting applications 162 inside and 92
+     past, and the hint comparing it with `FULL_HEAT_DAYS` (56) no longer
+     shows. Not changed: the window is the maximum by design. Defining it
+     on answers rather than any signal is the alternative if it should
+     move less.
+   - **Offered, not built:** each recruiter approach placed in its own week
+     rather than one row (a structural change). Seen and left: the resume
+     comparison shows the one resume named with nothing after the shared
+     stem as its full file name, clipped (its title has it); salary is on
+     0 of 350, the LinkedIn adapter's known gap.

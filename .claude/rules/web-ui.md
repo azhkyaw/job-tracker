@@ -594,6 +594,33 @@ is a private artifact, linked from the memory file
       (`insights.distinct_names`). Resumes are named after their owner, so
       the narrow label column truncated both real resumes to the same
       visible text. Found by measuring `scrollWidth`, not by eye.
+    - **Every row that clears the rule is a finding, the biggest sample
+      first** (4 Oct 2026, `insights.findings`). One line per comparison,
+      ordered by the largest sample among its rows that clear, and a
+      two-valued comparison prints both sides ("first posting 13% and
+      reposted 34%" is one fact). It was the six rows furthest from the
+      base rate, an order a small sample wins by being thrown wide, while
+      clearing the rule is decided by the interval, which only a big sample
+      narrows. On the day that list led with a hiring system at 4 of 7 and
+      cut first postings at 19 of 147 and Thursday at 9 of 84, the two
+      best-evidenced rows on the page. The hint counts the rows that clear
+      beside the chance count, so the two compare directly.
+    - **A row of squares counts answered, not heard back** (4 Oct 2026).
+      The week rows print sent, answered and rounds, and an employer row
+      "N answered". Both printed heard back, against this rule's first
+      bullet: 39 of the 99 heard were LinkedIn's "viewed" notice alone, 10
+      of 14 in one week. An employer row has no rounds column: its squares
+      are few enough to count the circles, and none of the 20 shown had a
+      round. "Never answered anything" moved with the column (35 employers
+      to 48), and the 35 that sent nothing at all, not even a "viewed"
+      notice, are said beside it. The headline keeps heard back, which
+      `tests/test_web.py` holds to the list's lede.
+    - **The month you applied is the first comparison** (4 Oct 2026), the
+      page's one trend. Oldest first, named by month (and year once the
+      search spans two), grouped in the viewer's zone. Its note says the
+      newest month is not all in, since comparisons count settled
+      applications only. On the day: July 22%, August 22%, September 14%,
+      September's interval 7-25%.
 
 ## Invariant #2 in detail (moved from CLAUDE.md, 25 Sep 2026)
 
@@ -729,6 +756,13 @@ detail page's own select, scoped to that posting (decided 28 Jul 2026).
   http.server`, then navigate/screenshot that. Mint the cookie directly via
   `pipeline.auth.create_session(conn, user_id)` in a one-off script rather
   than needing the real login password.
+  **Navigating to the address the tab already shows, with only the
+  `#fragment` changed, is a scroll, not a load** (4 Oct 2026). Twice that
+  day a page read after an edit was the old one, and the dev server's
+  reloader took the blame: it was innocent, since `uvicorn --reload`
+  restarts on a Python change and Jinja's `auto_reload` (on, the default)
+  re-reads a changed template. After an edit, `location.reload()`, or
+  navigate without the fragment, and check that the page changed.
 - **A `<textarea>` comes back with CRLF line breaks, whatever it was given**
   (found 24 Sep 2026). The HTML spec normalises every textarea's submitted
   value to CRLF, while the extension and stored emails use LF, and the

@@ -82,7 +82,7 @@ and design records; the code and `migrations/` win where they disagree.
   this install. Read its §3 first: the author's right to earn in Singapore
   decides the rest. Confirms `docs/open-source.md` and says what would
   reopen the question.
-- `docs/worklog.md` — the dated task register (tasks 1-58 with their
+- `docs/worklog.md` — the dated task register (tasks 1-59 with their
   measurements); what is still open is summarised under "Open work" below.
 
 **Path-scoped rules.** Dated case history that only matters when touching
@@ -701,7 +701,8 @@ web/UI, LLM, database) moved VERBATIM into `.claude/rules/` — see Docs map →
   base64 and cookie-looking output and truncates at ~1,000 chars; Dark Reader
   may be neutralising colours. Probes and workarounds: `.claude/rules/extension.md`
   (tab freeze, output blocks, safe adapter testing) and `.claude/rules/web-ui.md`
-  (Dark Reader, verifying an authenticated page). Two plain limits (30 Sep
+  (Dark Reader, verifying an authenticated page, a `#fragment`-only
+  navigate that never reloads the page). Two plain limits (30 Sep
   2026): the tool reaches only its own tab group, so a tab the author
   already has open (a half-filled form) is out of reach until they drag it
   into the "Claude" group, where it keeps its state; and `javascript_tool`
@@ -788,7 +789,7 @@ Detail lives with each family's rule file; this is the index.
 
 ## Open work (as of 4 Oct 2026)
 
-The dated register behind each item, tasks 1-58 with their measurements, is
+The dated register behind each item, tasks 1-59 with their measurements, is
 `docs/worklog.md`; read the matching entry before acting on one.
 
 - **Follow-up drafting** on an age-capped queue: cap `/follow-ups` near 21
@@ -892,6 +893,7 @@ The dated register behind each item, tasks 1-58 with their measurements, is
   "Capture this job as applied" button (task 20).
 - **Heat ceiling** (task 13): `trace.FULL_HEAT_DAYS` = 56 is a judgement.
   It now has a measurement beside it: `/analytics` shows the reply window.
-  That is the longest any application waited to hear anything, 34 days on
-  25 Sep (task 31). Replay over the waiting rows before tuning, and note
-  the window moves as replies arrive. The author's call, not changed.
+  That is the longest any application waited to hear anything: 34 days on
+  25 Sep (task 31), 55 on 4 Oct after one rejection reached a hand-dated
+  application (task 59). Replay over the waiting rows before tuning, and
+  note the window moves as replies arrive. The author's call, not changed.
