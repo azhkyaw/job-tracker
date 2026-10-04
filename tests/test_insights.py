@@ -436,6 +436,31 @@ cm = insights.compare(facts_of([manual], manual_ev), NOW, SGT)
 check("a typed date has no hour: no hour row for it",
       not [g for g in cm["groups"] if g["key"] == "hour"])
 
+print("comparisons: the month you applied is a trend, oldest first")
+
+
+def month_rows(apps_at, tz=SGT):
+    ma = [app() for _ in apps_at]
+    me = [ev(a, "applied", t, source="extension") for a, t in zip(ma, apps_at)]
+    cm_ = insights.compare(facts_of(ma, me), NOW, tz)
+    return [(r["label"], r["n"]) for g in cm_["groups"] if g["key"] == "month" for r in g["rows"]]
+
+
+utc = timezone.utc
+check("the first comparison in the registry, so the page opens on the trend",
+      insights.DIMENSIONS[0]["key"] == "month")
+mr = month_rows([datetime(2026, 7, 20, 3, tzinfo=utc)] + [datetime(2026, 8, d, 3, tzinfo=utc) for d in (3, 4, 5)])
+check("months run oldest first, not by count", mr == [("July", 1), ("August", 3)], mr)
+mr = month_rows([datetime(2026, 8, 31, 16, 30, tzinfo=utc)])          # 00:30 1 Sep in Singapore
+check("the viewer's zone decides the month", mr == [("September", 1)], mr)
+mr = month_rows([datetime(2026, 8, 31, 16, 30, tzinfo=utc)], tz=None)
+check("...which in UTC is still August", mr == [("August", 1)], mr)
+mr = month_rows([datetime(2025, 12, 20, 3, tzinfo=utc), datetime(2026, 1, 10, 3, tzinfo=utc)])
+check("a search spanning two years names the year", mr == [("Dec 2025", 1), ("Jan 2026", 1)], mr)
+mr = month_rows([ago(3), ago(20)])
+check("only settled applications count, so the newest month may be missing",
+      mr == [(f"{ago(20).astimezone(SGT):%B}", 1)], mr)
+
 # ----------------------------------------------------------------- cohorts
 
 print("cohorts")

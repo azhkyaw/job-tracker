@@ -528,10 +528,26 @@ def _local(dt: datetime, tz) -> datetime:
     return dt.astimezone(tz) if tz else dt
 
 
+def _months(pool, tz):
+    """The month you applied, oldest first: the page's one trend, whether the
+    search is getting better or worse (4 Oct 2026). Grouped in the viewer's
+    zone like every calendar grouping here, and named by month alone until
+    the search spans two years."""
+    groups = defaultdict(list)
+    for f in pool:
+        groups[_local(f["applied_at"], tz).date().replace(day=1)].append(f)
+    one_year = len({m.year for m in groups}) <= 1
+    return [(f"{m:%B}" if one_year else f"{m:%b %Y}", groups[m]) for m in sorted(groups)]
+
+
 # The comparison registry. Every entry is a sentence-case title and a rows
 # function; tests/test_insights.py loops the registry, so a new dimension is
 # covered by existing tests (CLAUDE.md: "a registry needs a test that loops it").
 DIMENSIONS = [
+    {"key": "month", "title": "The month you applied",
+     "note": f"Only applications at least {SETTLED_DAYS} days old count, as everywhere on "
+             "this chart, so the newest month is not all in yet.",
+     "rows": _months},
     {"key": "external", "title": "How you applied",
      "rows": _single(lambda f, tz: None if f["external"] is None else
                      ("on the employer's site" if f["external"] else "on the platform"),
