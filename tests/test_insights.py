@@ -364,6 +364,51 @@ check("a row stands out only when its whole interval clears the base",
       all(r["stands_out"] == (not r["thin"] and (r["lo"] > ct["base"] or r["hi"] < ct["base"]))
           for r in ats_rows.values()))
 check("the chance count is a twentieth of the rated rows", ct["chance"] == round(0.05 * ct["rated"]))
+
+print("findings: every row that clears, one line per comparison, the biggest sample first")
+
+
+def frow(label, n, out=False, thin=False):
+    return {"label": label, "n": n, "stands_out": out, "thin": thin}
+
+
+fgroups = [   # registry order; the shape of 4 Oct 2026's real page
+    {"key": "ats", "title": "hiring system", "rows": [
+        frow("ashby", 8, out=True), frow("workday", 7, out=True),
+        frow("greenhouse", 12), frow("lever", 1, thin=True)]},
+    {"key": "reposted", "title": "repost", "rows": [
+        frow("first posting", 147, out=True), frow("reposted", 41, out=True)]},
+    {"key": "external", "title": "how you applied", "rows": [
+        frow("on the platform", 197), frow("on the employer's site", 47, out=True)]},
+    {"key": "weekday", "title": "day", "rows": [
+        frow(d, n, out=d in ("Tuesday", "Thursday")) for d, n in
+        (("Monday", 37), ("Tuesday", 43), ("Wednesday", 48), ("Thursday", 84))]},
+    {"key": "visa", "title": "visa", "rows": [
+        frow("no sponsorship", 10, out=True), frow("sponsors", 4, thin=True)]},
+    {"key": "platform", "title": "platform", "rows": [frow("LinkedIn", 241)]},
+    {"key": "hour", "title": "hour", "rows": [frow("in the afternoon", 8, out=True)]},
+]
+fl = insights.findings(fgroups)
+check("ordered by the biggest sample that cleared, registry order breaking a tie",
+      [x["key"] for x in fl] == ["reposted", "weekday", "external", "visa", "ats", "hour"],
+      [(x["key"], x["n"]) for x in fl])
+check("no cap: all nine rows that clear are on a line, and a comparison with none has no line",
+      sum(1 for x in fl for r in x["rows"] if r["stands_out"]) == 9
+      and "platform" not in {x["key"] for x in fl})
+by_key = {x["key"]: [r["label"] for r in x["rows"]] for x in fl}
+check("a two-valued comparison prints both sides, in its own order",
+      by_key["reposted"] == ["first posting", "reposted"]
+      and by_key["external"] == ["on the platform", "on the employer's site"], by_key)
+check("...weighted by the side that cleared, not by the bigger side",
+      next(x["n"] for x in fl if x["key"] == "external") == 47)
+check("a side too thin to rate is not printed beside it", by_key["visa"] == ["no sponsorship"])
+check("a many-valued comparison prints only the rows that clear, in its own order",
+      by_key["weekday"] == ["Tuesday", "Thursday"] and by_key["ats"] == ["ashby", "workday"], by_key)
+for name, cc in (("the rich fixture", cmp_), ("the thin one", ct)):
+    outs = sorted((g["key"], r["label"]) for g in cc["groups"] for r in g["rows"] if r["stands_out"])
+    lined = sorted((x["key"], r["label"]) for x in cc["findings"] for r in x["rows"] if r["stands_out"])
+    check(f"compare() puts every row that clears on exactly one line, and counts them ({name})",
+          lined == outs and cc["cleared"] == len(outs), (lined, outs))
 check("file names shed the prefix they share and their extension, at a word boundary",
       insights.distinct_names(["Jane-Doe-resume-AI.pdf", "Jane-Doe-resume-dotnet.pdf",
                                "Jane-Doe_Software_Resume.pdf"])

@@ -574,6 +574,29 @@ DIMENSIONS = [
 ]
 
 
+def findings(groups) -> list[dict]:
+    """Every row whose interval clears the rule, one line per dimension, the
+    line with the biggest sample first. Until 4 Oct 2026 this was the six
+    rows furthest from the base rate, and that order rewards a small sample:
+    a stand-out is decided by its INTERVAL, which only a big sample narrows,
+    but the list was ranked by its point estimate, which a small one throws
+    wide. On the day it led with a hiring system at 4 of 7 and cut the two
+    best-evidenced rows on the page, first postings at 19 of 147 and
+    Thursday at 9 of 84. A two-valued dimension prints both sides on its
+    line, since "reposted 34%" and "first posting 13%" are one fact."""
+    lines = []
+    for g in groups:
+        out = [r for r in g["rows"] if r["stands_out"]]
+        if not out:
+            continue
+        rated = [r for r in g["rows"] if not r["thin"]]
+        lines.append({"key": g["key"], "group": g["title"],
+                      "rows": rated if len(g["rows"]) == len(rated) == 2 else out,
+                      "n": max(r["n"] for r in out)})
+    # sorted() is stable, so registry order breaks a tie.
+    return sorted(lines, key=lambda line: -line["n"])
+
+
 def compare(facts, now: datetime, tz) -> dict:
     """Answered rate per value of each dimension, over SETTLED applications,
     with a 95% Wilson interval, against the overall rate. Below MIN_RATE_N a
@@ -613,16 +636,14 @@ def compare(facts, now: datetime, tz) -> dict:
     for g in groups:
         for r in g["rows"]:
             r["x"], r["x_lo"], r["x_hi"] = x(r["rate"] or 0), x(r["lo"]), x(min(r["hi"], scale))
-    findings = sorted(
-        ({"group": g["title"], **r} for g in groups for r in g["rows"] if r["stands_out"]),
-        key=lambda r: -abs(r["rate"] - base))
     rated = sum(1 for g in groups for r in g["rows"] if not r["thin"])
     step = 10 if scale <= .5 else 20
     return {"n": n, "k": k, "base": base, "x_base": x(base) if base is not None else None,
             "scale": scale, "tick": f"{step / scale:.3f}%",
             "ticks": [{"x": x(t / 100), "label": f"{t}%"}
                       for t in range(0, round(scale * 100) + 1, step)],
-            "groups": groups, "findings": findings[:6],
+            "groups": groups, "findings": findings(groups),
+            "cleared": sum(1 for g in groups for r in g["rows"] if r["stands_out"]),
             "rows": sum(len(g["rows"]) for g in groups), "rated": rated,
             # A 95% interval clears a true rate one time in twenty by chance,
             # so this many "findings" are expected if nothing mattered at all.

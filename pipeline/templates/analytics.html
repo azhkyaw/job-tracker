@@ -242,16 +242,22 @@
 {% if c.findings %}
 <div class="findings">
   <p class="ptitle">Where the whole interval clears the rule</p>
+  {#- One line per comparison, the biggest sample first (insights.findings).
+      A row that clears is in weight; the other side of a two-valued
+      comparison rides along unweighted, since the two are one fact. -#}
   <ul>
-    {% for x in c.findings %}
-    <li><span class="quiet">{{ x.group }}:</span> {{ x.label }} —
-      <b class="num">{{ (x.rate * 100) | round | int }}%</b> answered
-      (<span class="num">{{ x.k }} of {{ x.n }}</span>), against <span class="num">{{ (c.base * 100) | round | int }}%</span>.</li>
+    {% for line in c.findings %}
+    <li><span class="quiet">{{ line.group }}:</span>
+      {%- for x in line.rows %}{{ ' ' if loop.first else (' and ' if loop.last else ', ') }}{{ x.label }}
+      {% if x.stands_out %}<b class="num">{{ (x.rate * 100) | round | int }}%</b>{% else %}<span class="num">{{ (x.rate * 100) | round | int }}%</span>{% endif %}
+      (<span class="num">{{ x.k }} of {{ x.n }}</span>){% endfor %} answered,
+      against&nbsp;<span class="num">{{ (c.base * 100) | round | int }}%</span>.</li>
     {% endfor %}
   </ul>
-  <p class="hint">With <b>{{ c.rated }}</b> rated rows, about <b>{{ c.chance }}</b> would clear the
-    rule by chance even if nothing mattered at all — read these as leads to watch, not verdicts.
-    A pattern that holds across neighbouring rows of one scale says more than any one row.</p>
+  <p class="hint"><b>{{ c.cleared }}</b> row{{ '' if c.cleared == 1 else 's' }} clear the rule, and with
+    <b>{{ c.rated }}</b> rated rows about <b>{{ c.chance }}</b> would by chance even if nothing mattered
+    at all — read these as leads to watch, not verdicts. The line with the most applications behind
+    it comes first. A pattern that holds across neighbouring rows of one scale says more than any one row.</p>
 </div>
 {% endif %}
 
