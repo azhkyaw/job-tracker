@@ -1647,8 +1647,11 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
     hollow, by design (CSS conditions see only displayed elements). If an
     enabled site's listing shows the filled dot, the priorities did not
     order the two rules the way the source reads.
-- **A wizard's review-step "Submit" (0.15.1, 28 Sep 2026) has never been
-  seen on a real review page.** The rule is deduced from the logged reason
+- **A wizard's review-step "Submit" (0.15.1, 28 Sep 2026): SEEN LIVE since**
+  (checked 4 Oct 2026): 11 Workday applies, 28 Sep - 3 Oct, were captured
+  on the Workday page with their answers, and a Workday wizard's only
+  Submit is its review step's. What follows is the item as written before
+  that: **never seen on a real review page.** The rule is deduced from the logged reason
   of the 25 Sep Workday miss (`generic.js` finds no root on an apply address
   only with fewer than two controls, or a password in the container), and
   the application it cost reached the tracker only through LinkedIn's

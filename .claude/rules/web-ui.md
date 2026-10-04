@@ -9,6 +9,7 @@ paths:
   - "tests/test_web.py"
   - "tests/test_insights.py"
   - "tests/test_phase3.py"
+  - "pipeline/email_apply.py"
 ---
 
 # Web UI: design system, templates, routes, analytics

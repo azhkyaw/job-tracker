@@ -546,6 +546,10 @@ web/UI, LLM, database) moved VERBATIM into `.claude/rules/` — see Docs map →
   gap to look for anywhere else a dict maps names to SQL or handlers.
 - When patching code with scripts, ASSERT the anchor matched — a silent
   no-op replace shipped a broken build once; the tests caught it.
+  **And assert the new text is ABSENT before inserting** (4 Oct 2026): an
+  insert BEFORE an anchor leaves the anchor in place, so a second run of
+  the patcher, there a `;`-chained retry, doubled 58 lines of a rule file
+  silently; counting occurrences caught it.
   **Assert the REPLACEMENT too.** A heredoc'd Python patcher adding migration
   014 to `test.sh`/`README.md` (3 Aug 2026) mangled `\\\n` into a literal `\n`:
   the anchor assertion passed and the script reported success, but the text it
@@ -642,6 +646,10 @@ web/UI, LLM, database) moved VERBATIM into `.claude/rules/` — see Docs map →
   the ref, refusing anything else, and the switch then touches nothing. A
   worktree run's per-suite log (`$TEMP/<suite>.log`, overwritten each run)
   says which tree it tested, by its check count.
+  **With master CHECKED OUT** (4 Oct 2026), `git fetch . <sha>:master`
+  refuses; after committing an intermediate state in a worktree,
+  `git reset <sha>` (mixed) moves master and the index to it and leaves the
+  working tree, holding the later issue's edits, exactly as it was.
 - **Windows: `uvicorn --reload`'s process tree outlives a single `taskkill`.**
   The PID `netstat`/`Get-NetTCPConnection` reports often isn't the real
   root — cross-check via `Get-CimInstance Win32_Process -Filter
@@ -662,6 +670,10 @@ web/UI, LLM, database) moved VERBATIM into `.claude/rules/` — see Docs map →
   real exit code. Run it as `powershell.exe -NoProfile -ExecutionPolicy Bypass
   -File scripts/test.ps1` from the **Bash** tool instead and grep for
   `^== `; the per-suite PASS/FAIL lines are the truth, not the exit status.
+- **Don't edit the tree while `test.ps1` runs** (4 Oct 2026). Each suite is
+  its own Python process that imports `pipeline/` as it starts, and Jinja
+  re-reads a changed template, so an edit mid-run tests a mix of trees. Run
+  it with `run_in_background` and touch only `docs/` and CLAUDE.md meanwhile.
 - **`%-d` / `%-m` strftime directives are glibc-only and raise `ValueError` on
   Windows.** Format with `%d` and `.lstrip("0")` instead (`trace.py:_ticks`,
   `insights._day_label`). Sibling of the cp1252 gotcha below — both are ways a
@@ -670,6 +682,11 @@ web/UI, LLM, database) moved VERBATIM into `.claude/rules/` — see Docs map →
   non-ASCII (em-dash, curly quotes) via Bash/PowerShell can raise
   `UnicodeEncodeError` — `sys.stdout.reconfigure(encoding='utf-8',
   errors='replace')` first.
+- **Git Bash converts a POSIX path in a native program's ARGUMENTS, never
+  inside a script's text** (4 Oct 2026). `uv run python x.py /c/projects/a`
+  receives `C:/projects/a`, but `/c/projects/a` written inside a heredoc'd
+  script reaches Windows Python as is, which reads `C:\c\projects\a`: a
+  FileNotFoundError on a path `ls` just showed. Write `C:/projects/…` in scripts.
 - **The suite inherits the developer's `.env`, because `config.py` auto-loads
   it.** A local `TRACKER_INGEST_ALL=true` made `test_email_ingest`'s
   pre-filter assertions pass VACUOUSLY and broke `backfill_query`'s
@@ -740,36 +757,22 @@ win). No per-shell export needed for local dev.
 
 Detail lives with each family's rule file; this is the index.
 
-- **Extension** (`.claude/rules/extension.md`): every adapter selector is
-  best-effort; JobStreet's race fix still wants one clean real submit; the
-  0.9.0 `<dialog>` sweep and `getJob()`'s self-document fallback are UNVERIFIED
-  on a real apply — read `doc_source` and the "Recent form sweeps" line on the
-  next Easy Apply; `getRecruiter()` has one card of evidence; textareas have
-  never been stored from Easy Apply (an ATS form's were, 30 Sep); Indeed has
-  never been exercised; 0.10.1's `normKey` is
-  proven in `tests/test_extension.js` only, never on a live wizard; 0.22.0's
-  reading of web-component forms (open shadow roots, slotted labels) and its
-  "form left holding answers" report have met a live form only as rules
-  evaluated in the page, never through a real submit; 0.23.0's Greenhouse
-  job-board reading (a combobox's shown choice, a file field's name) was
-  measured on the live page with the form EMPTY, so the picked-value shapes
-  are modelled, not seen; 0.23.1's `radioGroup()` (Easy Apply radios named
-  on the input itself) was measured on a live wizard and discarded, never
-  submitted; 0.24.0's drawn checkboxes and switches are modelled in tests
-  only (its drawn radios, flat-tree labels and continued form met one real
-  SmartRecruiters submit); 0.24.1's handoff learning a job's second id has
-  run only against tests, and so has 0.25.0's hiring system under an
-  employer's own domain (Eightfold's form read live, never submitted), and
-  0.25.1's stale-pane checks (the pane's own id, the preload frame's read)
-  and modal-first form root, and 0.25.2's step-free answers key on a
-  wizard whose address names its step (Phenom's own apply), and 0.26.0's
-  kept opener and named job parameter (task 54: read `opener-kept` in the
-  provenance line on the next external apply), and 0.26.1's passing over
-  an upload widget's own form (task 55: the next SuccessFactors
-  candidate-experience submit with a resume upload), and 0.27.0's receipt
-  quoting a listing that asks for the CV by email (task 57), and 0.27.1-0.27.2's
-  iCIMS candidate profile (an application form holding the account's
-  password) and its dropdowns' search boxes (task 58: the next iCIMS apply).
+- **Extension** (`.claude/rules/extension.md`, whose Known-untested section
+  says per build what to read on first real contact): every adapter
+  selector is best-effort; JobStreet's race fix wants one clean submit;
+  Indeed never exercised; `getRecruiter()` has one card of evidence;
+  textareas never stored from Easy Apply. Builds 0.9.0-0.27.2 carry
+  pieces proven only in tests or by rules run in a live page, waiting on:
+  the next Easy Apply (0.9.0's `<dialog>` sweep, `getJob()`'s
+  self-document fallback and `doc_source`, 0.10.1's
+  `normKey`, 0.23.1's radio rows, 0.25.1's stale-pane checks from a search
+  page); the next external apply (0.26.0's kept opener); a Greenhouse job
+  board with a picked country (0.23.0); LinkedIn → SmartRecruiters
+  (0.24.1); an ATS form with drawn checkboxes or switches (0.24.0); a
+  Phenom apply (0.25.2); an enabled Eightfold site (0.25.0); a
+  SuccessFactors candidate experience with an upload (0.22.0, 0.26.1); the
+  next iCIMS apply (0.27.1-0.27.2); a listing that asks for the CV by
+  email (0.27.0's receipt).
 - **Mail** (`.claude/rules/mail-ingest.md`): IMAP verified on a real inbox
   28 Jul 2026; the web IMAP connect form, Gmail web OAuth and the full `-m 12`
   window are not.
@@ -789,9 +792,10 @@ The dated register behind each item, tasks 1-58 with their measurements, is
 `docs/worklog.md`; read the matching entry before acting on one.
 
 - **Follow-up drafting** on an age-capped queue: cap `/follow-ups` near 21
-  days (150 qualify on 24 Sep, 10 of them inside the cap by that evening,
-  17 that morning — the queue ages), then build the draft next to the button. 15 of the 150 are marked on the page as an
-  earlier application to a role applied to again (task 19) and leave the
+  days (150 qualify on 24 Sep and 178 on 4 Oct; 10 of the 24 Sep ones
+  inside the cap by that evening, 17 that morning — the queue ages), then
+  build the draft next to the button. 22 rows on 4 Oct are marked on the
+  page as an earlier application to a role applied to again (task 19) and leave the
   queue as the author confirms them. Four `follow_up_sent` are on record: one filed
   by hand, three recovered from follow-ups the user EMAILED, which since
   migration 016 file themselves (task 16). (worklog task 4)
@@ -807,64 +811,22 @@ The dated register behind each item, tasks 1-58 with their measurements, is
   re-filing onto it (task 48). The three records repaired that day still
   have no JD: re-capture from the popup on each job page. JobStreet still owes one
   clean submit with the race fix and salary capture together. (tasks 5, 18)
-- **Employer career sites** (`docs/career-sites.md`; phases A-C built
-  24 Sep 2026, their history in worklog tasks 24-30). One live
-  SuccessFactors submit has been captured (task 30). Still NOT run live: the
-  popup's injection on a page with no adapter, the opener link to the job
-  board record, enabling an employer's site and then applying there, and
-  0.15.0's receipt asking for a missing company. All wait on the next real
-  external apply (reload the extension first; `.claude/rules/extension.md`
-  says what to read). Workday's form sits behind a candidate sign-in and is
-  unverified. Open: an email-side rescue that names a nameless record from
-  its confirmation, to be replayed first.
-  **Redesigned 28 Sep 2026** (`docs/career-sites.md` §16, task 36): 55
-  applications went LinkedIn → an employer's site and **none** has its
-  answers, so the link moves from the tab to the job's own id on the ATS,
-  bound at the handoff and upserted on by the server. Built: P0 (a Workday
-  review step's "Submit", 0.15.1) and P1's extension half (the id read off
-  the page when a SuccessFactors address lost it, 0.16.0), then P1's server
-  half the same day (`jobs.ats_job_id`, migration 018, the author's choice
-  of home; the upsert on it; the email lookup; 0.17.0 sends it), then P2
-  (the handoff bound at the hiring system's first page, SuccessFactors ids
-  with their tenant; 0.18.0), then P3 (0.20.0): "Always capture on this
-  site" had never worked because Chrome refused every request before its
-  prompt (a `*://` request against `https://` and `http://` declared
-  apart); SuccessFactors quick apply files from its landing; the icon's
-  third state marks a job page that is not captured; then P4 (0.21.0): a
-  thin record completed from its listing (a join-only candidate id, or the
-  popup's explicit attach) and a tenant's known name offered on the
-  receipt. The first real LinkedIn → ATS apply (Oracle, 28 Sep) bound the
-  handoff through the opener but split into two records, because the form's
-  `…/apply/section/1` read as the job's id; fixed in 0.21.1 and the pair
-  merged (task 37, which also lists two follow-ups offered, not built).
-  The second (SuccessFactors, 29 Sep) was never seen at its submit: that
-  tenant's form is built from web components (UI5; inputs and the Submit's
-  button in open shadow roots, the label slotted), which `generic.js` could
-  not read at all, silently. 0.22.0 reads through open shadow roots, takes
-  the requisition from the page's named field, and reports a form left
-  holding untaken answers; the record was repaired from the tab's on-disk
-  sessionStorage (task 39). The third (a direct Greenhouse job-board
-  apply, 29 Sep) captured at its submit but read almost nothing: that page
-  has no JobPosting, a react-select country and a resume upload named only
-  by its group. 0.23.0 reads the tab title's "… at <company>", the vendor's
-  JD and location blocks, a combobox's shown choice and a file field's
-  name (promoted to `resume_file`); the record's employer, JD and location
-  were repaired from the page; its country and resume file are left out, by
-  the author's choice (task 41). The fourth (LinkedIn → SmartRecruiters,
-  30 Sep) was checked live before its submit: its screening step had no
-  root, radios with no `<input>` and slotted labels, all fixed in 0.24.0
-  and read right by the submit (task 43). It was still filed twice: the
-  handoff held the listing's id and the form sent its own; 0.24.1 learns
-  the second id from the form's referrer, and the twins were merged
-  (task 44). The fifth (LinkedIn → a Greenhouse job board, 1 Oct) took
-  the handoff into one record; the MyGreenhouse sign-in on its way filed
-  a false one, refused since 0.24.2 (task 45). 0.25.0 (task 46) treats a
-  vendor's form under an employer's own domain (Eightfold) as the hiring
-  system: the handoff, its id and the resume combobox; it runs once the
-  author enables the site. Not built: a Workday consent step's "Submit",
-  missed on 1 Oct (task 46). SAP's newer data centres (`sapsf.com` /
-  `sapsf.eu`) are covered since 0.26.2, verified on a real submit (task 56).
-  Open: the first real apply through each piece.
+- **Employer career sites** (`docs/career-sites.md`, §16 the 28 Sep
+  redesign; the per-apply history is worklog tasks 24-58 and
+  `.claude/rules/extension.md`). Real applies have been captured through
+  Oracle, SuccessFactors (classic and candidate experience, `sapsf.com`
+  too), Greenhouse, SmartRecruiters, Phenom, Workday, Ashby and iCIMS;
+  each fix's "what to read on the next apply" is in extension.md's
+  Known-untested. Still NOT run live: the popup's injection on a page
+  with no adapter, enabling an employer's site and then applying there
+  (Eightfold's waits on the author's enable), and 0.15.0's receipt asking
+  for a missing company. Not built: a Workday consent step's "Submit"
+  (missed 1 Oct, task 46), an email-side rescue that names a nameless
+  record from its confirmation (replay first), and task 37's two offers: a
+  form page's weak reads yielding to an exact stash, and a triage band for
+  a board record and an ATS capture of one job minutes apart, keeping the
+  board's (such twins have recurred since). Not investigated: why a
+  3 Oct LinkedIn → Workday handoff did not bind (twins merged 4 Oct).
 - **Release blockers:** LICENSE (Apache-2.0 recommended), split the extension
   into its own repo, decide whether CLAUDE.md ships, and whether
   `docs/monetization-review.md` does (its §3 is the author's own work-pass
@@ -904,31 +866,24 @@ The dated register behind each item, tasks 1-58 with their measurements, is
   (`docs/jd-extraction-models.md` §9). Its eval harness and gold labels sit
   outside the repo in `job-tracker-snapshots/jd-eval-2026-09-25/`: re-run
   them after any change to `jd_extract_*` or `JD_MODEL`.
-- **Two emails from the sent-mail repair wait on the author** (task 16): the
-  two resume emails recovered from `not_job_related` sit in triage (neither
-  names a company, so the matcher could not place them). The misfiled 23 Sep
-  follow-up was re-filed on 24 Sep (task 22).
-- **The 9 open inbound leads are the author's clicks too** (task 38, 28 Sep):
-  each lead's page now takes "I replied" (then it waits on them and, silent
+- **Open inbound leads are the author's clicks too** (task 38; 9 awaited
+  the author's call on 28 Sep, 2 on 4 Oct): each lead's page takes "I replied" (then it waits on them and, silent
   `REMINDER_DAYS` later, reaches `/follow-ups`) or a close ("Not for me",
-  "They went quiet"). None had a reply on record, 6 to 66 days after the
-  approach, so all 9 still read "Awaiting your call". Not built: placing a
+  "They went quiet"). Not built: placing a
   same-day event from the general timeline form after the day's last event.
-- **Two interview threads gone quiet are the author's clicks** (task 40,
-  29 Sep): silent 19 and 20 days after the invitation, they are the first
-  round rows in `/follow-ups`: "Followed up" to chase (the clock restarts)
-  or "They went quiet" to close. Six other open rounds are younger than
-  `REMINDER_DAYS`. Not built, a separate decision: letting a never-answered
-  application close as "went quiet" too, which would thin the 170-row
-  unanswered queue.
+- **Round rows in `/follow-ups` are the author's clicks** (task 40; 2 on
+  29 Sep, 4 on 4 Oct): a thread an interview or a person opened, silent
+  `REMINDER_DAYS`; "Followed up" to chase (the clock restarts) or "They
+  went quiet" to close. Not built, a separate decision: letting a
+  never-answered application close as "went quiet" too, which would thin
+  the unanswered queue (174 rows on 4 Oct).
 - **The 24 Sep data audit's leftovers are the author's clicks, not code**
-  (tasks 19-21): 15 rows marked on `/follow-ups` as an earlier application
+  (tasks 19-21): 22 rows (4 Oct) marked on `/follow-ups` as an earlier application
   to a role applied to again, each with "Same role, close" (the studio's
   four were left undecided on purpose); 3 blind extension captures (29 Jul,
   18 Aug, 20 Aug) that re-capturing from the popup on each job page fixes;
-  15 referral emails in triage's inbound lane, plus (task 22) two same-minute
-  confirmations the margin held back for one studio's repeated title and a
-  24 Sep sent reply. Sync had not run since 01:45 that day — check the
+  16 approaches in triage's inbound lane on 4 Oct (task 22's two held-back
+  confirmations and the 24 Sep sent reply are resolved). Sync had not run since 01:45 that day — check the
   15-minute cron on whichever machine runs it. Decided and NOT open: one
   company under two names — where one name contains the other the matcher
   now handles it (task 23); names sharing no word (a parent brand, an
