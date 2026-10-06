@@ -234,10 +234,29 @@ a.tl:hover{background:color-mix(in srgb,var(--ink) 3.5%,var(--mix))}
 .tl-head{padding-top:.55rem;padding-bottom:.35rem;
          font-family:var(--sans);font-size:.76rem;font-weight:500;color:var(--muted)}
 .tl-head .lab.right{text-align:right}
+/* The register's head stays in view (7 Oct 2026): the axis, the count and the
+   month index, over a list 29 screens long. `clip`, not `hidden`, on the card:
+   both clip to the rounded corners, but `hidden` makes the card a scroll
+   container, and a sticky child then sticks to the card, which never scrolls.
+   (Under 720px `.card` scrolls sideways, which wins, and the head scrolls
+   away — the axis is hidden there anyway.) */
+.register{overflow:clip}
+.register .tl-head{position:sticky;top:0;z-index:2;background:var(--card)}
+/* The index of months: each a jump to its divider, grey until hovered. */
+.tl-head .months{display:inline-flex;flex-wrap:wrap;gap:0 .75rem;margin-left:1.1rem;font-weight:400}
+.tl-head .months a{color:var(--muted);text-decoration:none;font-variant-numeric:tabular-nums}
+.tl-head .months a:hover{color:var(--ink)}
+/* Who approached, beside the company on /inbound: the role line's grey. */
+.tl .co .who{font-weight:400;color:var(--muted);margin-left:.55rem;font-size:.95rem}
 /* Group label inside the list: names what the rows beneath it are. Grey, not
-   coloured — rule 1 reserves chroma for the state of a wait. */
+   coloured — rule 1 reserves chroma for the state of a wait. A month's
+   divider carries its count, and lands below the sticky head when jumped to. */
 .tl-sep{font-family:var(--sans);font-size:.76rem;font-weight:500;color:var(--muted);
         padding:.6rem 1rem .3rem;border-bottom:1px solid var(--line)}
+.tl-sep .n{font-weight:400;margin-left:.5rem;font-variant-numeric:tabular-nums}
+.tl-sep[id]{scroll-margin-top:2.4rem}
+/* The list's one toolbar row: search, sort, then the page's nudges, right. */
+.listbar .aside{margin-left:auto}
 
 /* The follow-up queue (its own page since 21 Aug 2026). The wait is the
    reason a row is here, so it wears the same graded amber as the register. */

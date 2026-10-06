@@ -466,6 +466,40 @@ def inbound(request: Request, deleted: str | None = None,
     return _list(request, "inbound", deleted, q, sort, status, reason, how, visa, form)
 
 
+def _month_landmarks(rows, tz) -> list[dict]:
+    """Landmarks in a long log (7 Oct 2026): the record's rows grouped by the
+    month they started, in the viewer's zone, for a divider at each month's
+    first row (`month_sep` on that row) and the index in the table's head.
+    Only meaningful under the default sort, which orders by that same
+    `started_at` newest first — the caller passes nothing otherwise. Named by
+    month alone until the rows span two years, as /analytics' month
+    comparison is (insights._months). Fewer than two months is no landmark,
+    so it returns nothing. On the day 351 rows ran 29 screens with nothing
+    to land on: October 34, September 122, August 144, July 51.
+    The NEWEST month gets no divider: the head's index names it right above
+    the first row, and seen on the real page a divider there only repeated
+    that line and spent the row the toolbar fold had just won. Its jump
+    target is the card itself (the template puts the id there)."""
+    keys = [r["started_at"].astimezone(tz).date().replace(day=1) if r["started_at"] else None
+            for r in rows]
+    if len(set(keys)) < 2:
+        return []
+    one_year = len({k.year for k in keys if k}) <= 1
+    out, by_key = [], {}
+    for r, k in zip(rows, keys):
+        r["month_sep"] = None
+        if k not in by_key:
+            m = {"id": f"m-{k:%Y-%m}" if k else "m-undated",
+                 "label": (f"{k:%B}" if one_year else f"{k:%B %Y}") if k else "Undated",
+                 "short": (f"{k:%b}" if one_year else f"{k:%b %Y}") if k else "Undated",
+                 "n": 0}
+            by_key[k] = m
+            out.append(m)
+            r["month_sep"] = m if len(out) > 1 else None
+        by_key[k]["n"] += 1
+    return out
+
+
 def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
           status: str, reason: str, how: str, visa: str = "", form: str = ""):
     """The one list builder behind `/` and `/inbound`. `page` decides which
@@ -572,7 +606,11 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
                      WHERE e.application_id = a.id AND e.type = 'applied'
                      ORDER BY e.occurred_at LIMIT 1)                       AS external,
                    (SELECT string_agg(DISTINCT p.platform, ', ')
-                      FROM postings p WHERE p.job_id = a.job_id)          AS platforms
+                      FROM postings p WHERE p.job_id = a.job_id)          AS platforms,
+                   -- Who: the recruiter on record for the job (7 Oct 2026).
+                   -- /inbound names them beside the company, since an
+                   -- approach is a thread with a person (33 of 35 had one).
+                   ct.name AS contact_name
             FROM applications a
             JOIN jobs j ON j.id = a.job_id
             JOIN application_status s ON s.application_id = a.id
@@ -608,6 +646,14 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
                ORDER BY e.occurred_at DESC, e.created_at DESC
                LIMIT 1
             ) wd ON true
+            -- The newest-approached contact with a name, as one row: the
+            -- same "which one" rule analytics._QUEUE_SQL uses for the
+            -- follow-up queue's recruiter.
+            LEFT JOIN LATERAL (
+              SELECT c.name FROM contacts c
+               WHERE c.job_id = a.job_id AND COALESCE(c.name, '') <> ''
+               ORDER BY c.approached_at DESC NULLS LAST, c.id LIMIT 1
+            ) ct ON true
             {analytics.LATEST_EXTRACTION}
             {answers.form_visa_evidence_sql("a.id")}
             WHERE a.user_id = %(user_id)s
@@ -615,10 +661,14 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
               -- is everything else. One predicate, so the two pages partition
               -- the table with nothing falling between them.
               AND (a.origin = 'inbound') = %(inbound)s::bool
+              -- A recruiter's name finds their threads too (7 Oct 2026): any
+              -- contact on the job, not only the one the row shows.
               AND (%(q)s::text = '' OR j.title_canonical ILIKE %(like)s
                    OR j.company_norm ILIKE %(like)s
                    OR EXISTS (SELECT 1 FROM postings p WHERE p.job_id = a.job_id
-                                AND p.company_raw ILIKE %(like)s))
+                                AND p.company_raw ILIKE %(like)s)
+                   OR EXISTS (SELECT 1 FROM contacts c WHERE c.job_id = a.job_id
+                                AND c.name ILIKE %(like)s))
               AND (%(status)s::text = '' OR s.status = %(status)s
                    OR (%(status)s = 'applied' AND s.status = 'confirmation'))
               AND (%(reason)s::text = '' OR rr.reason = %(reason)s)
@@ -640,6 +690,8 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
             # shouldn't have to re-derive that from display text.
             r["lead"] = r["awaiting_you"]
             r["status"] = _display(r["status"])
+        months = _month_landmarks(rows, request.state.tz) \
+            if not is_inbound and sort == _DEFAULT_SORT else []
 
         # One query for every event on the page, grouped in Python — the trace
         # needs each application's full history, and 45 per-row queries to draw
@@ -663,6 +715,10 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
         inbound_summary = conn.execute(
             f"""
             SELECT count(*) AS approaches,
+                   -- The lede's "since", off these rows (analytics.summary's
+                   -- first_applied has the reason).
+                   min((SELECT min(e.occurred_at) FROM events e
+                         WHERE e.application_id = a.id)) AS first_at,
                    count(*) FILTER (WHERE {_AWAITING}) AS awaiting,
                    count(*) FILTER (WHERE EXISTS (
                        SELECT 1 FROM events e
@@ -697,6 +753,10 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
             "leads_pinned": sort == _DEFAULT_SORT,
             # Scoped to the page, so the lede's count is the count label's.
             "summary": analytics.summary(conn, user_id, is_inbound),
+            # The lede's first clause: what moved in the last WEEK_DAYS.
+            "week": analytics.week(conn, user_id, is_inbound),
+            "week_days": analytics.WEEK_DAYS,
+            "months": months,
             "inbound_summary": inbound_summary,
             "triage_inbound": triage_inbound,
             "deleted": deleted,

@@ -790,9 +790,10 @@ Detail lives with each family's rule file; this is the index.
   window are not.
 - **LLM** (`.claude/rules/llm.md`): `pipeline/llm.py`'s OpenAI-compatible
   backend has never met a real vLLM; the Voyage embeddings call has never run.
-- **UI** (`.claude/rules/web-ui.md`): the palette has never been seen on a real
-  screen without Dark Reader in the way — neither the 28 Jul one nor the
-  23 Sep redraw's, whose light theme is verified numerically only. (task 13)
+- **UI** (`.claude/rules/web-ui.md`): the 23 Sep palette's DARK theme was
+  seen natively on 7 Oct (no Dark Reader) on the two lists and
+  `/follow-ups`, and holds; its LIGHT theme is still verified numerically
+  only. (tasks 13, 62)
   The approach panel ("Answered them?", "Close this approach") and
   `/follow-ups`' lead rows (28 Sep, task 38), and its round rows and the
   detail page's "Heard nothing since?" (29 Sep, task 40), were rendered
@@ -800,7 +801,7 @@ Detail lives with each family's rule file; this is the index.
 
 ## Open work (as of 7 Oct 2026)
 
-The dated register behind each item, tasks 1-60 with their measurements, is
+The dated register behind each item, tasks 1-62 with their measurements, is
 `docs/worklog.md`; read the matching entry before acting on one.
 
 - **Follow-up drafting**, now on a page that has a place for it (task 61,

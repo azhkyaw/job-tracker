@@ -519,15 +519,16 @@ check("the nav marks Inbound active, not Applications",
 check("its lede counts approaches awaiting the user, not applications and replies",
       "awaiting your call" in r.text and " application" not in r.text.split("<main>")[1].split('class="funnel')[0])
 # Singular here: at this point the only inbound row is the lead just filed.
+# In the table's head since 7 Oct 2026, where the column's name was.
 check("and it states its own count in the noun the page is about",
-      re.search(r'class="quiet">\d+ approach(es)?</span>', r.text) is not None)
+      re.search(r'class="lab count">\d+ approach(es)?</span>', r.text) is not None)
 r = client.get("/")
 check("the record excludes the lead", "Beacon Search" not in r.text)
 check("and never wears an inbound tag — nothing on it can be one", ">inbound</span>" not in r.text)
 check("its funnel has no interested segment — empty segments are dropped, not zeroed",
       "--interested" not in r.text.split('class="funnel')[1].split("</div>")[0])
-check("it states its count too",
-      re.search(r'class="quiet">\d+ applications?</span>', r.text) is not None)
+check("it states its count too (in the head, before the month index when there is one)",
+      re.search(r'class="lab count">\d+ applications?(</span>|<span class="months">)', r.text) is not None)
 r = client.get("/?origin=inbound")
 check("?origin= on the record is ignored, not honoured", "Beacon Search" not in r.text)
 with db.connect() as conn:
@@ -649,9 +650,11 @@ check("the pursued one sits under the second divider, the leads under the first"
       r.text.index(_sep) < r.text.index("Beacon Search") < r.text.index(_sep2)
       < r.text.index("sortfoxtrot"))
 # The ELEMENT, not the class name: base.html's stylesheet defines `.tl-sep`
-# on every page, so the bare string is always present.
-check("the record renders no divider — nothing on it can be pinned",
-      '<div class="tl-sep">' not in client.get("/").text)
+# on every page, so the bare string is always present. The record has month
+# dividers since 7 Oct 2026 (below), so this names the pin's two.
+_rec = client.get("/").text
+check("the record renders no lead divider — nothing on it can be pinned",
+      ">Awaiting your call</div>" not in _rec and ">Underway or closed</div>" not in _rec)
 
 # Identical timestamps, no tiebreaker = an order the planner picks. Asserting
 # stability is the point; which of the two comes first is not.
@@ -870,12 +873,17 @@ def row_for(app_id, text):
     return r.text.split(marker)[1].split("</a>")[0]
 
 
-check("an on-platform apply is labelled on-platform",
-      "on-platform" in row_for(easy_app, "Easy Apply Role"))
+# Since 7 Oct 2026 only the exception wears a tag: 242 of 351 real rows said
+# "on-platform", the default. The detail page keeps all three states.
+easy_row = row_for(easy_app, "Easy Apply Role")
+check("an on-platform apply wears no tag — the default needs none",
+      "on-platform" not in easy_row and "employer site" not in easy_row, easy_row)
+check("...and its detail page still says how it went in",
+      "on-platform (Easy Apply)" in client.get(f"/applications/{easy_app}").text)
 check("an employer-site apply is labelled employer site",
       "employer site" in row_for(ext_app, "External Apply Role"))
 # The whole point of reading it with `is sameas`: 111 real records predate the
-# flag, and calling those "on-platform" would invent a fact about every one.
+# flag, and calling those "employer site" would invent a fact about every one.
 unset_row = row_for(unset_app, "Unspecified Apply Role")
 check("an unrecorded apply is labelled NEITHER — unknown is not a no",
       "on-platform" not in unset_row and "employer site" not in unset_row, unset_row)
@@ -3172,6 +3180,82 @@ check("...and both leave the queue, the nudge stays, and the page says what it c
       and "Closed 2</strong> as gone quiet" in client.get("/follow-ups?closed=2").text
       and "They went quiet" in client.get(f"/applications/{_qu}").text
       and "You applied again" in client.get(f"/applications/{_old}").text)
+
+print("the lists: the week in the lede, months as landmarks, who approached (7 Oct 2026)")
+with db.connect() as conn:
+    _wk0 = analytics.week(conn, user_id, False)
+_wk_app = _new_app("Week Fresh Co", 1)
+with db.connect() as conn:
+    _wk = analytics.week(conn, user_id, False)
+    _wk_in = analytics.week(conn, user_id, True)
+    _summ = analytics.summary(conn, user_id, False)
+check("an application sent yesterday is one more sent in the week, and nothing else moves",
+      _wk["sent"] == _wk0["sent"] + 1 and _wk["heard"] == _wk0["heard"], (_wk0, _wk))
+r = client.get("/")
+_lede = r.text.split('<p class="lede">')[1].split("</p>")[0]
+check("the record's lede leads with the week, then the whole search",
+      f"In the last {analytics.WEEK_DAYS} days: <b>{_wk['sent']}</b> sent" in _lede
+      and f"<b>{_wk['heard']}</b> heard back" in _lede
+      and (f"<b>{_wk['interviews']}</b> interview invitation" in _lede) == bool(_wk["interviews"])
+      and f"<b>{_summ['responded']}</b> of <b>{_summ['applied']}</b>" in _lede, _lede)
+_since = re.search(r"Since ([^:]+):", _lede)
+_lede_q = client.get("/?q=Week+Fresh").text.split('<p class="lede">')[1].split("</p>")[0]
+check("...its “since” is the page's first application, so a search moves neither the date nor "
+      "the numbers",
+      _since is not None and f"Since {_since.group(1)}:" in _lede_q
+      and f"<b>{_summ['responded']}</b> of <b>{_summ['applied']}</b>" in _lede_q, (_lede, _lede_q))
+
+# Months: a divider at each month's first row, and the head's index jumping to it.
+_rows_n = r.text.count('<a class="tl"')
+_seps = re.findall(r'<div class="tl-sep" id="(m-[^"]+)">([^<]+)<span class="n">(\d+)</span>', r.text)
+_head = r.text.split('class="tl tl-head"')[1].split('class="axis"')[0]
+_idx = re.findall(r'<a href="#(m-[^"]+)" title="(\d+) in [^"]+">', _head)
+_chunks = r.text.split('<div class="tl-sep" id="m-')
+check("the record divides by month: the head's index names every month newest first, a divider "
+      "opens each but the newest (which the index names right above the first row), each month "
+      "counts exactly its rows, and they sum to the page",
+      len(_idx) >= 2 and [i for i, _ in _idx] == sorted((i for i, _ in _idx), reverse=True)
+      and [s[0] for s in _seps] == [i for i, _ in _idx[1:]]
+      and [int(s[2]) for s in _seps] == [int(n) for _, n in _idx[1:]]
+      and _chunks[0].count('<a class="tl"') == int(_idx[0][1])
+      and all(c.count('<a class="tl"') == int(s[2]) for c, s in zip(_chunks[1:], _seps))
+      and sum(int(n) for _, n in _idx) == _rows_n
+      and all(re.fullmatch(r"[A-Z][a-z]+( \d{4})?", s[1]) for s in _seps),
+      (_idx, [(s[0], s[2]) for s in _seps], _rows_n))
+check("the head names the column by its contents, and the newest month's jump lands on the "
+      "card, its sticky head",
+      re.search(rf'class="lab count">{_rows_n} applications<span class="months">', _head) is not None
+      and f'<div class="card register" id="{_idx[0][0]}">' in r.text, (_idx[:1], _head[:300]))
+check("no month landmarks under a sort that is not by date, nor on /inbound",
+      'class="tl-sep" id="m-' not in client.get("/?sort=company").text
+      and 'class="tl-sep" id="m-' not in client.get("/inbound").text
+      and 'class="months"' not in client.get("/?sort=company").text)
+check("one toolbar row: search and sort, then the page's links, before the list",
+      r.text.index('class="bar listbar"') < r.text.index("Add one by hand")
+      < r.text.index('<div class="card register"') and 'class="rowline"' not in r.text)
+
+# Who approached: the recruiter on record, beside the company, on /inbound only.
+_who = _new_lead("Who Lead Co", _ago(5))
+_who_q = _new_app("Who Record Co", 12)
+with db.connect() as conn, conn.transaction():
+    for _a, _name in ((_who, "Jane Recruiter"), (_who_q, "John Sourcer")):
+        _j = conn.execute("SELECT job_id FROM applications WHERE id = %s::uuid", (_a,)).fetchone()["job_id"]
+        conn.execute("INSERT INTO contacts (user_id, job_id, name, source) VALUES (%s, %s, %s, 'manual')",
+                     (user_id, _j, _name))
+_i = client.get("/inbound").text
+_wrow = _i.split(f'href="/applications/{_who}"')[1].split("</a>")[0]
+check("an approach names who made it, beside the company",
+      'Who Lead Co<span class="who" title="Who approached you">Jane Recruiter</span>' in _wrow, _wrow[:300])
+check("the record does not: there the company is who you wrote to",
+      'class="who"' not in client.get("/").text)
+check("a recruiter's name finds their threads, on either page",
+      "Who Lead Co" in client.get("/inbound?q=jane+recr").text
+      and "Who Record Co" in client.get("/?q=john+sourcer").text
+      and "Who Lead Co" not in client.get("/?q=jane+recr").text)
+_ilede = _i.split('<p class="lede">')[1].split("</p>")[0]
+check("the inbound lede leads with what awaits you, then the week, then the whole",
+      _ilede.index("awaiting your call") < _ilede.index(f"new in the last {analytics.WEEK_DAYS} days")
+      < _ilede.index("Since ") and f"<b>{_wk_in['started'] + 1}</b> new" in _ilede, _ilede)
 
 print("a listing that asked for the CV by email (4 Oct 2026)")
 _EA_JD = ("We are hiring.\nPlease send your updated resume in Word format to "

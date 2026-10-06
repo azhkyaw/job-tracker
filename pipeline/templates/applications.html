@@ -41,25 +41,30 @@
 <div class="note" style="--c:var(--rejected)">Deleted <strong>{{ deleted }}</strong>.</div>
 {% endif %}
 
-{# The search in one sentence rather than four tiles: it is a reading of the
-   derived figures, and the funnel beneath already carries every count. The
-   inbound page's sentence is a different reading — approaches, how many
-   still wait on the user, how many reached an interview (any invite on the
-   timeline, not the current status: a thread that interviewed and then
-   closed still interviewed). #}
+{# The search in a sentence rather than four tiles, and since 7 Oct 2026 the
+   sentence leads with what MOVED in the last week (analytics.week): the
+   whole-search totals read the same on every visit, and the funnel beneath
+   and /analytics carry them, so they shrink to the trailing clause. The
+   inbound page leads with its now-state instead — the approaches awaiting
+   the user — then the week, then the whole: approaches and how many reached
+   an interview (any invite on the timeline, not the current status: a
+   thread that interviewed and then closed still interviewed). #}
 {% if page == 'inbound' %}
 {% if inbound_summary.approaches %}
-<p class="lede">Since {{ axis.t0 | day }}:
-  <b>{{ inbound_summary.approaches }}</b> approach{{ '' if inbound_summary.approaches == 1 else 'es' }},
-  <b>{{ inbound_summary.awaiting }}</b> awaiting your call{% if inbound_summary.interviewed %},
+<p class="lede"><b>{{ inbound_summary.awaiting }}</b> awaiting your call,
+  <b>{{ week.started }}</b> new in the last {{ week_days }} days{% if week.interviews %},
+  <b>{{ week.interviews }}</b> interview invitation{{ '' if week.interviews == 1 else 's' }}{% endif %}.
+  Since {{ inbound_summary.first_at | day }}:
+  <b>{{ inbound_summary.approaches }}</b> approach{{ '' if inbound_summary.approaches == 1 else 'es' }}{% if inbound_summary.interviewed %},
   <b>{{ inbound_summary.interviewed }}</b> reached an interview{% endif %}.</p>
 {% endif %}
 {% elif summary.applied %}
-<p class="lede">Since {{ axis.t0 | day }}:
-  <b>{{ summary.applied }}</b> application{{ '' if summary.applied == 1 else 's' }},
-  <b>{{ summary.responded }}</b> repl{{ 'y' if summary.responded == 1 else 'ies' }}{% if summary.response_rate is not none %}
-  (<b>{{ summary.response_rate }}%</b>){% endif %}{% if summary.avg_days_to_resp %},
-  the first arriving after <b>{{ summary.avg_days_to_resp }}</b> days on average{% endif %}.</p>
+<p class="lede">In the last {{ week_days }} days: <b>{{ week.sent }}</b> sent,
+  <b>{{ week.heard }}</b> heard back{% if week.interviews %},
+  <b>{{ week.interviews }}</b> interview invitation{{ '' if week.interviews == 1 else 's' }}{% endif %}{% if week.offers %},
+  <b>{{ week.offers }}</b> offer{{ '' if week.offers == 1 else 's' }}{% endif %}.
+  Since {{ summary.first_applied | day }}: <b>{{ summary.responded }}</b> of <b>{{ summary.applied }}</b>
+  heard back{% if summary.response_rate is not none %} (<b>{{ summary.response_rate }}%</b>){% endif %}.</p>
 {% endif %}
 
 {% if funnel %}
@@ -134,14 +139,21 @@
   <a href="{{ list_url(status=status, q=q, sort=sort, reason=reason, how=how, visa='', form='') }}">Show every visa case</a></p>
 {% endif %}
 
-<form class="bar" method="get" action="{{ '/inbound' if page == 'inbound' else '/' }}">
+{# One row for the controls and the page's nudges (7 Oct 2026): the search
+   and sort, then the links that used to sit on a line of their own beneath
+   them with the count, which moved into the table's head. One line less
+   above the first trace, on a page whose first screen held six rows. The
+   links sit inside the GET form only for the layout; they are plain links. #}
+{% set total = funnel | sum(attribute='n') %}
+{% set noun = 'approach' if page == 'inbound' else 'application' %}
+<form class="bar listbar" method="get" action="{{ '/inbound' if page == 'inbound' else '/' }}">
   {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
   {% if reason %}<input type="hidden" name="reason" value="{{ reason }}">{% endif %}
   {% if how %}<input type="hidden" name="how" value="{{ how }}">{% endif %}
   {% if visa_filter %}<input type="hidden" name="visa" value="{{ visa_filter }}">{% endif %}
   {% if form_filter %}<input type="hidden" name="form" value="{{ form_filter }}">{% endif %}
   <span class="grow"><input type="search" name="q" value="{{ q }}"
-        placeholder="Search company or role" aria-label="Search company or role"
+        placeholder="Search company, role or recruiter" aria-label="Search company, role or recruiter"
         style="width:100%"></span>
   <select name="sort" aria-label="Sort by">
     {#- Same key, same ORDER BY (started_at): on the record that is the
@@ -153,19 +165,6 @@
   </select>
   <button>Apply</button>
   {% if q %}<a href="{{ list_url(status=status, sort=sort, reason=reason, how=how) }}">Clear</a>{% endif %}
-</form>
-
-{# Where the origin tabs stood until 24 Sep 2026: the page's own count, which
-   the funnel never states (it sums to it), and "of" the whole when a filter
-   or search has narrowed it. The tabs went with the split — inbound is a
-   page now, and All/Applied/Saved over one saved row was a control for
-   nothing; a saved row wears a grey tag instead (below). #}
-{% set total = funnel | sum(attribute='n') %}
-{% set noun = 'approach' if page == 'inbound' else 'application' %}
-<div class="rowline">
-  <span class="quiet">
-    {%- if rows | length != total %}{{ rows | length }} of {% endif -%}
-    {{ total }} {{ noun }}{{ '' if total == 1 else ('es' if page == 'inbound' else 's') }}</span>
   <span class="aside">
     {% if page == 'inbound' %}
     {# The inbound page's nudge: approaches still sitting in triage's inbound
@@ -189,12 +188,28 @@
     <a href="/applications/new">Add one by hand</a>
     {% endif %}
   </span>
-</div>
+</form>
 
 {% if rows %}
-<div class="card">
+{#- `register`: the head sticks to the top of the window while the list
+    scrolls (7 Oct 2026), so the axis that makes a trace readable, the count
+    and the month index stay in view on a page 29 screens long. It carries
+    the newest month's anchor, which has no divider of its own. #}
+<div class="card register"{% if months %} id="{{ months[0].id }}"{% endif %}>
   <div class="tl tl-head">
-    <span class="lab">Company and role</span>
+    {#- The column's name is its contents (7 Oct 2026): the page's count, which
+        the funnel never states (it sums to it), "of" the whole when a filter
+        or search has narrowed it, and under the default sort the index of
+        months, each a jump to its divider below. It stood on a line of its
+        own above the card until then, where the origin tabs stood until
+        24 Sep 2026. #}
+    <span class="lab count">
+      {%- if rows | length != total %}{{ rows | length }} of {% endif -%}
+      {{ total }} {{ noun }}{{ '' if total == 1 else ('es' if page == 'inbound' else 's') }}
+      {%- if months %}<span class="months">
+        {%- for m in months %}<a href="#{{ m.id }}" title="{{ m.n }} in {{ m.label }}">{{ m.short }} {{ m.n }}</a>{% endfor -%}
+      </span>{% endif -%}
+    </span>
     <span class="axis">
       {% for t in axis.ticks %}<span class="t{% if loop.first %} first{% endif %}" style="--x:{{ t.x }}">{{ t.label }}</span>{% endfor %}
       <span class="t last">today</span>
@@ -215,6 +230,12 @@
   {%- elif leads_pinned and not r.lead and not loop.first and rows[loop.index0 - 1].lead %}
   <div class="tl-sep">Underway or closed</div>
   {%- endif %}
+  {#- A month's first row under the default sort on the record (web.
+      _month_landmarks): the landmark the head's index jumps to. Every month
+      but the newest, which the index names right above the first row. #}
+  {%- if r.month_sep %}
+  <div class="tl-sep" id="{{ r.month_sep.id }}">{{ r.month_sep.label }}<span class="n">{{ r.month_sep.n }}</span></div>
+  {%- endif %}
   {#- A tail is "live" (blue) only while it is fresh AND someone else moved
       last; once it crosses the follow-up threshold it is a wait like any
       other and takes the row's heat. The numeral follows the same rule.
@@ -223,7 +244,10 @@
   {%- set tok = 'interview_invite' if r.status == 'interviewing' else r.status %}
   <a class="tl" href="/applications/{{ r.id }}" title="{{ r.trace_label }}" style="--heat:{{ r.heat }}%">
     <span class="name">
-      <span class="co">{{ r.company_display }}</span>
+      {#- On /inbound, who approached: the recruiter on record, in the
+          role's grey beside the company (7 Oct 2026). Not on the record,
+          where the company is who you wrote to. #}
+      <span class="co">{{ r.company_display }}{% if page == 'inbound' and r.contact_name %}<span class="who" title="Who approached you">{{ r.contact_name }}</span>{% endif %}</span>
       <span class="ro"><span class="ro-t">{{ r.title_canonical }}</span>
         {#- Captured but never applied to. Grey like the tags below: a fact
             about the submission (there wasn't one), not about any wait. The
@@ -234,15 +258,15 @@
             changes (invariant #9): until 24 Sep 2026 a job saved and then
             applied to, confirmed and rejected still read "saved". #}
         {%- if r.origin == 'saved' and r.applied_at is none %}<span class="tag">saved</span>{% endif %}
-        {# How you applied, from the applied event's payload. Three states and
-           they stay three: `is sameas true/false`, never truthiness, because
-           NULL means "never recorded" and rendering that as "on-platform"
-           would invent a fact about 111 older records. Grey on purpose —
-           UI rule 1 reserves chroma for the state of the wait, and this is a
-           property of the submission, not of anyone's response to it. #}
-        {%- if r.external is sameas true %}<span class="tag">employer site</span>
-        {%- elif r.external is sameas false %}<span class="tag">on-platform</span>
-        {%- endif %}
+        {# How you applied, from the applied event's payload — and since
+           7 Oct 2026 only the EXCEPTION wears a tag. On the day 242 of 351
+           rows said "on-platform", the default, so the tag was noise on
+           two rows in three. `is sameas true`, never truthiness: NULL means
+           "never recorded". The three states stay three on the detail page,
+           which still says "on-platform (Easy Apply)", and in /analytics'
+           comparison. Grey on purpose — UI rule 1 reserves chroma for the
+           state of the wait, and this is a property of the submission. #}
+        {%- if r.external is sameas true %}<span class="tag">employer site</span>{% endif %}
         {#- What the JD says about who may be hired, when it says anything
             (jd_extract_v2, which records only what the JD states and quotes
             it). Grey like the other property tags: a fact about the posting,

@@ -237,6 +237,13 @@ is a private artifact, linked from the memory file
    exactly the longest titles, silently and only where the column is tightest.
    Measured after the fix — 199 rows, 0 badges clipped, and still 0 with the
    name column forced to 560px where 182 titles truncate.
+   **Since 7 Oct 2026 only the exception wears it: `employer site`.** On the
+   day 242 of 351 rows said `on-platform`, the default — a tag on two rows in
+   three is a texture, not a fact — and every row wore at least one tag. The
+   list now tests `is sameas true` alone, so on-platform and never-recorded
+   look alike there; the three states stay three where they are read one at
+   a time, the detail page ("on-platform (Easy Apply)", nothing when
+   unrecorded) and /analytics' on-platform vs employer-site comparison.
 9c. **A role applied to again closes its older record — suggested by a rule,
    filed by a human** (24 Sep 2026). 15 of 150 queue rows were an older
    application to a role reposted under a new job id and applied to again;
@@ -307,6 +314,45 @@ is a private artifact, linked from the memory file
    names were being ellipsed. The trace still shares one axis (rule 4) and
    still earns its place on the detail page — it just doesn't get 40% of a
    list row to repeat "still nothing" 47 times.
+10b. **A long log needs landmarks, and the first screen is for rows**
+   (7 Oct 2026, worklog task 62). Measured on the day, the first real look
+   at the app's own CSS (no Dark Reader): 351 rows, 20,417px — 29 screens —
+   with nothing to land on, and a first screen of 695px holding six rows
+   under 320px of lede, funnel, legend, toolbar and a count line.
+   - **Month dividers** (`web._month_landmarks`): under the default sort on
+     the record, a `.tl-sep` at each month's first row ("September 122"),
+     grouped in the viewer's zone on `started_at` — the column the default
+     sort orders by, so a month is one contiguous run. Named like
+     /analytics' month comparison (year only once the rows span two). None
+     under any other sort (the rows are not in date order) and none on
+     /inbound, whose 35 rows have the lead pin's two dividers already.
+     **Not for the newest month**: built that way first, and seen on the
+     page, "October 34" sat directly under the head's "Oct 34" and spent the
+     ~33px the toolbar fold had just won, so the first screen still held six
+     rows. Nobody is lost at the top of a list; its jump target is the card.
+   - **The head names its column by its contents and stays in view**: the
+     count ("351 applications", "12 of 351" when narrowed) moved from its own
+     line into the head where "Company and role" stood, followed by the
+     index of months, each a jump to its divider (`scroll-margin-top` lands
+     it below the head). `.register .tl-head` is `position:sticky`, which
+     needs the card to be `overflow:clip`, not `hidden`: hidden makes the
+     card a scroll container and the head would stick to a box that never
+     scrolls. So the axis that makes a trace readable no longer leaves with
+     the sixth row. Under 720px `.card` scrolls sideways and the head scrolls
+     away with the list; the axis is hidden there anyway.
+   - **One toolbar row**: search, sort and the page's links ("19 moves to
+     make", "Add one by hand") share `.listbar`; the links sit inside the
+     GET form for layout only. `.rowline` left this page (the detail page
+     still uses it).
+   - **The lede says the week** (`analytics.week`, `WEEK_DAYS` = 7, a
+     rolling window so a Monday's lede is not empty): "In the last 7 days:
+     44 sent, 12 heard back, 2 interview invitations. Since 16 Jul 2026: 103
+     of 351 heard back (29%)." The whole-search sentence read the same on
+     every visit; the totals shrank to its tail. Its "since" now comes from
+     `summary.first_applied`, the same rows as its counts: it read the trace
+     axis, which is the VISIBLE rows', so a search moved the date
+     ("Since 23 Sep") and not the numbers beside it. The average days to a
+     first response left the lede; /analytics' curve says it better.
 11. **The funnel strip and its legend are the status filter** (29 Aug 2026;
     `web.py`'s `status` query param, validated against `FUNNEL_ORDER`) — not
     a separate dropdown next to `sort`/`q`. A segment's own href is
@@ -586,6 +632,16 @@ is a private artifact, linked from the memory file
       the tail runs from it in the heat of a wait on them. Both replies
       read "You replied" on the timeline (the detail query joins
       `emails.sent_by_user`).
+    **Who approached, on the row** (7 Oct 2026): the recruiter on record
+    for the job (the newest-approached contact with a name, the same pick
+    as the follow-up queue's) beside the company in the role's grey,
+    `.tl .co .who`. 33 of 35 approaches had one, and an approach is
+    recalled by the person who made it; agencies dominate the page, so the
+    company alone said little (one agency held three rows). /inbound only:
+    on the record the company is who you wrote to. The search matches any
+    contact's name on the job, on both pages. The inbound lede leads with
+    its now-state, "7 awaiting your call", then the week ("6 new in the
+    last 7 days"), then the whole (10b).
 
 18. **`/analytics` is a report, read top to bottom** (25 Sep 2026). It has
     the numbers, every application as a square by week, where every record
@@ -891,6 +947,12 @@ same rule 13 uses for `after_round`.
   paper; the first draft's amber failed at 4.25 and was darkened to
   `#9A5705`). Nobody has seen the APP itself render the new CSS without Dark
   Reader in the way. Check this before putting screenshots in a README.
+  **Half answered on 7 Oct 2026**: `/`, `/inbound` and `/follow-ups` seen in
+  the dev Chrome, DARK theme (OS scheme, `data-theme="auto"`), Dark Reader
+  not present. The scheme holds: serif names over sans numerals, grey at
+  rest, rust caps and blue dots unmistakable, the heat legible on the
+  numeral (the tail is 3px at 60% by design). The LIGHT theme is still
+  unseen.
 - **The approach panel and `/follow-ups`' lead rows (28 Sep 2026, rule 17)**
   were rendered through TestClient against the real dev DB (every page 200,
   the forms present on an open lead and absent on a closed one) and never

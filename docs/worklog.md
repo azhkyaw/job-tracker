@@ -1758,3 +1758,42 @@ the key to each real case.
      too noisy to name a person. A nudge still has no odds of WORKING: the
      curve says who still hears back unprompted, and the five follow-ups
      cannot say whether a nudge changes that.
+62. **The two lists, read on a real screen** (7 Oct 2026). Asked for UI
+   changes to `/` and `/inbound`; looked first, in the dev Chrome with no
+   Dark Reader, so this was also the first sight of the app's own dark
+   palette (it holds; web-ui.md's Known-untested has the half that is
+   answered). Measured on the day: 351 rows on `/`, 20,417px, 29 screens;
+   a first screen of six rows under 320px of chrome; 111 open rows at 100%
+   heat; 492 grey tags, 242 of them `on-platform`; 188 traces with one dot;
+   on `/inbound`, 33 of 35 approaches with a recruiter on record whom the
+   row never named. Six proposals; the author took five (A, quiet rows
+   going cold past the odds cut, was left out — the heat scale is
+   unchanged).
+   - **B, landmarks** (web-ui rule 10b): a divider at each month's first
+     row on the record under the default sort, and the table's head
+     carrying an index of months that jumps to them. The head is sticky
+     (`.register`, `overflow:clip` on the card), so the axis, count and
+     index stay in view down all 29 screens. Built with a divider for the
+     newest month too; seen on the page, it repeated the index right above
+     it and spent the row F had won, so the newest month has none.
+   - **C, who approached**: the recruiter on record beside the company on
+     `/inbound` rows, in the role's grey; any contact's name finds the
+     thread from the search box, on both pages.
+   - **D, only the exception wears a tag**: `on-platform` left the row;
+     `employer site` stays. The three states stay three on the detail page
+     and in /analytics' comparison.
+   - **E, the lede says the week** (`analytics.week`, a rolling 7 days):
+     "In the last 7 days: 44 sent, 12 heard back, 2 interview invitations.
+     Since 16 Jul 2026: 103 of 351 heard back (29%)." The inbound lede leads
+     with "7 awaiting your call, 6 new in the last 7 days". Found on the way
+     and fixed: the lede's "since" read the trace axis, which is the
+     visible rows', so a search moved the date ("Since 23 Sep") and not the
+     counts beside it; it now comes from the counts' own query.
+   - **F, one toolbar row**: search, sort and the page's links share a
+     row; the count moved into the table's head, where "Company and
+     role" stood.
+   - Rendered and checked in the browser after the suite passed: the head
+     pins at the top with an opaque background, and a jump to August lands
+     its divider 6px below the head. Thirteen new checks, three adapted
+     (the on-platform tag, the record's "no divider" check now naming the
+     pin's two, the count's new place).
