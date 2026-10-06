@@ -157,6 +157,30 @@ def still_chance(curve, t: float, horizon: float | None = None) -> float:
     return max(0.0, (f_end - f_t) / (1 - f_t))
 
 
+# Below this share of "still hear back later", an unanswered application has
+# gone QUIET: /follow-ups stops offering a nudge on it and offers to close it
+# instead (7 Oct 2026, analytics.queue). A judgement, held against the
+# record: the author's curve crossed it on day 23 that day, beside task 4's
+# hand-measured three weeks (2 Sep: no application had heard back after 21
+# days). Read off the curve rather than fixed in days, so it moves as replies
+# arrive, the way reply_window does.
+QUIET_CHANCE = 0.05
+
+
+def quiet_after(curve, reminder_days: int, chance: float = QUIET_CHANCE) -> int | None:
+    """The first whole day, from `reminder_days` on, at which fewer than
+    `chance` of the applications still silent ever heard back; None for an
+    empty curve. still_chance() never rises as t grows, so the first crossing
+    is the answer, and past the curve's last step it is 0."""
+    if not curve:
+        return None
+    last = int(curve[-1][0]) + 1
+    for d in range(reminder_days, last + 1):
+        if still_chance(curve, d) < chance:
+            return d
+    return last
+
+
 # ------------------------------------------------------------------- facts
 
 def build_facts(apps, events, now: datetime, reminder_days: int) -> list[dict]:

@@ -2,17 +2,39 @@
 {% block title %}follow-ups — tracker{% endblock %}
 {% block nav_follow_ups %}active{% endblock %}
 {% block content %}
-{# The day's task list, on its own page since 21 Aug 2026 (it was a collapsed
-   <details> at the top of the applications list). UI rule 9's argument is
-   unchanged — this IS work, so it gets real rows and a one-click action rather
-   than a sentence of links — but the list is a RECORD, and leading it with a
-   queue taxed every visit that came to read.
+{# Your move (7 Oct 2026): a row is here only when there is a move to make,
+   and the move is named on the row. Until then this was "Needs follow-up" —
+   every unanswered application over REMINDER_DAYS, oldest first: 192 rows on
+   the day, 150 of them past the point where any application had ever heard
+   back, 126 with nobody to write to, and five follow-ups filed in the whole
+   search. A wait is the list's to draw, as heat; this page is for work (UI
+   rule 9). Sections in the order the moves are due: the email a listing
+   asked for; threads after a round; applications worth a nudge (inside the
+   odds, someone to write to, best odds first); then two COUNTS, not rows —
+   the quiet ones, with one confirmed close for all of them, and the recent
+   ones nobody can be written to. analytics.queue places every row.
 
-   No 8-row cap and no "N more waiting" disclosure here: both existed only to
-   stop the queue burying the table beneath it, and there is no table beneath
-   it now. Ticking a row files a real follow_up_sent event, which drops it out
-   of the query, so the page shortens as you work it. #}
-<h1>Needs follow-up</h1>
+   Its history: a plain block at the top of the list (Jul), collapsed into a
+   <details> (28 Jul), a page of its own (21 Aug), sectioned (7 Oct). The
+   8-row cap and the "N more waiting" disclosure went with the move to a page;
+   acting on a row returns here, so the page shortens as you work it. #}
+<h1>Your move</h1>
+{% if closed %}
+<div class="note"><strong>Closed {{ closed }}</strong> as gone quiet. Each is undone on its own page, by deleting the event.</div>
+{% endif %}
+{% if not by_email and not rounds and not nudge and not again and not quiet_n %}
+<p class="empty">Nothing is waiting on you. Every application either got a reply,
+is younger than {{ reminder_days }} days, or has nobody to write to yet; every thread
+an interview or a person opened has moved within {{ reminder_days }} days or is
+closed. <a href="/">Back to the applications</a>.</p>
+{% else %}
+<p class="lede"><b>{{ moves }}</b> move{{ '' if moves == 1 else 's' }} to make{% if again %},
+  <b>{{ again | length }}</b> that look like an earlier application to a role you applied to again{% endif %}{% if quiet_n %},
+  <b>{{ quiet_n }}</b> gone quiet{% endif %}{% if waiting_n %},
+  and <b>{{ waiting_n }}</b> recent application{{ '' if waiting_n == 1 else 's' }} with nobody to write to{% endif %}.
+  Acting on a row records it on the thread and clears it from here.</p>
+{% endif %}
+
 {# Listings that asked for the CV by email, and nothing says it went
    (analytics.email_owed_sql, 4 Oct 2026). First, because the move is yours
    and due now; grey, because it is not a wait on anyone (UI rule 1) — the
@@ -48,42 +70,26 @@
   </div>
   {% endfor %}
 </div>
-<h2>Waiting on them</h2>
 {% endif %}
-{% if reminders %}
-<p class="lede"><b>{{ reminders | length }}</b> waiting more than <b>{{ reminder_days }}</b> days,
-  oldest first: applications with no reply and nothing sent{% if round_n %},
-  <b>{{ round_n }}</b> thread{{ '' if round_n == 1 else 's' }} gone quiet after an interview or a person
-  getting in touch{% endif %}{% if replied_n %}, and
-  <b>{{ replied_n }}</b> approach{{ '' if replied_n == 1 else 'es' }} you answered that went quiet{% endif %}.
-  Marking one as followed up records it on the thread and clears it from here.</p>
-{% if again_n %}
-<p class="lede"><b>{{ again_n }}</b> of them look like an earlier application to a role
-  you applied to again. The reply will come to the later one, so each is marked
-  below; if it really is the same role, close the old one here.</p>
-{% endif %}
+
+{# Threads after a round (analytics.reminders' `round`, 29 Sep 2026) and
+   leads you replied to (`lead`, 28 Sep): the next move was theirs and nothing
+   has moved for REMINDER_DAYS. Each says what moved last, since the wait runs
+   from that, and closes the way it opened (web.py, close_approach). A
+   follow-up resets its clock; the close is how it leaves for good. #}
+{% if rounds %}
+<h2 id="rounds">After a round</h2>
+<p class="lede">{% if round_n %}<b>{{ round_n }}</b> thread{{ '' if round_n == 1 else 's' }} gone quiet after an interview or a person
+  getting in touch{% endif %}{% if replied_n %}{% if round_n %}, and {% endif %}<b>{{ replied_n }}</b>
+  approach{{ '' if replied_n == 1 else 'es' }} you answered that went quiet{% endif %}: chase, or close.</p>
 <div class="card fu">
-  {% for r in reminders %}
+  {% for r in rounds %}
   <div class="fu-row" style="--heat:{{ r.heat }}%">
     <a class="fu-name" href="/applications/{{ r.id }}">
       <span class="co">{{ r.company_display }}</span>
       <span class="ro">{{ r.title_canonical }}</span>
     </a>
     <span class="fu-d">{{ r.days_waiting }}d</span>
-    {#- The rule only suggests (analytics.reapplications). The words name the
-        later application, with a link, so you can check before you click. #}
-    {%- if r.again %}
-    <p class="fu-again">You applied again on <a href="/applications/{{ r.again.id }}">{{ r.again.applied_at | day }}</a></p>
-    <form method="post" action="/applications/{{ r.id }}/reapplied" class="fu-again-do">
-      <input type="hidden" name="later_id" value="{{ r.again.id }}">
-      <input type="hidden" name="redirect_to" value="/follow-ups">
-      <button class="small" title="Close this one: the thread moved to the later application">Same role, close</button>
-    </form>
-    {%- endif %}
-    {#- A lead you answered (analytics.reminders' second kind): the wait is
-        since your reply, and besides chasing it you can close it — a
-        follow-up only resets its clock, so this is how it leaves for good
-        (web.py, close_approach). The same row shape as the suggestion above. #}
     {%- if r.kind == 'lead' %}
     <p class="fu-again">You replied to their approach on {{ r.replied_at | day }}, nothing since</p>
     <form method="post" action="/applications/{{ r.id }}/close" class="fu-again-do">
@@ -91,13 +97,7 @@
       <input type="hidden" name="redirect_to" value="/follow-ups">
       <button class="small" title="Close it: they stopped answering">They went quiet</button>
     </form>
-    {%- endif %}
-    {#- A round gone quiet (analytics.reminders' third kind, 29 Sep 2026): an
-        interview or a person getting in touch put the next move on them, and
-        nothing has moved since. It says what moved last and when, since the
-        wait runs from that, and closes the same way a lead does. A
-        follow-up resets its clock; the close is how it leaves for good. #}
-    {%- if r.kind == 'round' %}
+    {%- else %}
     <p class="fu-again">{{ r.moved_words }} {{ r.moved_at | day }}, nothing since</p>
     <form method="post" action="/applications/{{ r.id }}/close" class="fu-again-do">
       <input type="hidden" name="action" value="quiet">
@@ -116,10 +116,88 @@
   </div>
   {% endfor %}
 </div>
-{% else %}
-<p class="empty">Nothing is waiting on you. Every application either got a
-reply, was followed up, or is younger than {{ reminder_days }} days, and every
-thread an interview or a person opened has moved within {{ reminder_days }} days
-or is closed. <a href="/">Back to the applications</a>.</p>
+{% endif %}
+
+{# Worth a nudge (7 Oct 2026): unanswered, still inside the odds, and
+   someone to write to. The second line IS the move — the recruiter on record
+   with a link to message them, or the thread you wrote in — beside the odds
+   off your own reply curve (web._odds_words), the one fact that says whether
+   to bother. Best odds first, so the top of the page is where a message can
+   still land; the old oldest-first order put the hopeless rows there. #}
+{% if nudge %}
+<h2 id="nudge">Worth a nudge</h2>
+<p class="lede"><b>{{ nudge | length }}</b> application{{ '' if nudge | length == 1 else 's' }} with no reply yet, still inside the odds,
+  and someone to write to — best odds first.</p>
+<div class="card fu">
+  {% for r in nudge %}
+  <div class="fu-row" style="--heat:{{ r.heat }}%">
+    <a class="fu-name" href="/applications/{{ r.id }}">
+      <span class="co">{{ r.company_display }}</span>
+      <span class="ro">{{ r.title_canonical }}</span>
+    </a>
+    <span class="fu-d">{{ r.days_waiting }}d</span>
+    <p class="fu-again">
+      {%- if r.contact_url %}Message <a href="{{ r.contact_url }}">{{ r.contact_name or 'the recruiter' }}</a>{% if 'linkedin.com' in r.contact_url %} on LinkedIn{% endif %}
+      {%- else %}Reply in <a href="/applications/{{ r.id }}#emails">your thread</a>{% endif %}
+      {%- if r.odds_words %} · {{ r.odds_words }}{% endif %}</p>
+    <form method="post" action="/applications/{{ r.id }}/events">
+      <input type="hidden" name="type" value="follow_up_sent">
+      <input type="hidden" name="redirect_to" value="/follow-ups">
+      <button title="Record a follow-up and clear this row">Followed up</button>
+    </form>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{# An earlier application to a role applied to again (analytics.reapplications,
+   24 Sep 2026): the reply will come to the later one, so the older waits
+   forever unless closed. The rule only suggests; the row names the later
+   application with a link so you can check before you click, and keeps
+   "Followed up" for when the suggestion is wrong. Its own band since 7 Oct
+   2026, at any age: the suggestion is the move. One by one here, or all at
+   once with the quiet ones (web.quiet_confirm). #}
+{% if again %}
+<h2 id="again">Applied to again</h2>
+<p class="lede"><b>{{ again | length }}</b> look like an earlier application to a role you applied
+  to again. The reply will come to the later one; if it really is the same role, close
+  the old one here — one by one, or <a href="/follow-ups/quiet">all {{ again | length }} at once</a>.</p>
+<div class="card fu">
+  {% for r in again %}
+  <div class="fu-row" style="--heat:{{ r.heat }}%">
+    <a class="fu-name" href="/applications/{{ r.id }}">
+      <span class="co">{{ r.company_display }}</span>
+      <span class="ro">{{ r.title_canonical }}</span>
+    </a>
+    <span class="fu-d">{{ r.days_waiting }}d</span>
+    <p class="fu-again">You applied again on <a href="/applications/{{ r.again.id }}">{{ r.again.applied_at | day }}</a></p>
+    <form method="post" action="/applications/{{ r.id }}/reapplied" class="fu-again-do">
+      <input type="hidden" name="later_id" value="{{ r.again.id }}">
+      <input type="hidden" name="redirect_to" value="/follow-ups">
+      <button class="small" title="Close this one: the thread moved to the later application">Same role, close</button>
+    </form>
+    <form method="post" action="/applications/{{ r.id }}/events">
+      <input type="hidden" name="type" value="follow_up_sent">
+      <input type="hidden" name="redirect_to" value="/follow-ups">
+      <button title="Record a follow-up and clear this row">Followed up</button>
+    </form>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{# Gone quiet (7 Oct 2026): past `quiet_after`, the day from which fewer than
+   QUIET_CHANCE of your applications ever heard back (insights.quiet_after,
+   off the same curve /analytics draws). A count, not rows — there is nothing
+   to do to one of them but close it — and ONE close for all, confirmed on a
+   page that lists them (web.quiet_confirm). Until a curve exists (too few
+   replies) nothing is quiet, and this section is absent. #}
+{% if quiet_n %}
+<h2 id="quiet">Gone quiet</h2>
+<p class="lede"><b>{{ quiet_n }}</b> application{{ '' if quiet_n == 1 else 's' }} {{ 'is' if quiet_n == 1 else 'are' }} past <b>{{ quiet_after }}</b> days
+  with no reply. Fewer than {{ quiet_pct }}% of yours have ever heard back after that long
+  ({{ heard }} replies measured), so this page stops asking about them.
+  <a href="/follow-ups/quiet">Close all {{ quiet_n }} as gone quiet…</a>{% if again %}
+  (and the {{ again | length }} applied to again, as that){% endif %}</p>
 {% endif %}
 {% endblock %}

@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import re
 
-from . import answers, config, email_apply
+from . import answers, config, email_apply, trace
 from .jd_extraction import visa_group_sql as jd_visa_group_sql
 from .ingest import UNKNOWN_COMPANY, UNKNOWN_TITLE
 
@@ -44,6 +44,8 @@ def _sql_list(types) -> str:
 # the same set.
 RESPONSE_TYPES = ("viewed", "engaged", "interview_invite", "rejected", "offer")
 _RESPONSE_TYPES = _sql_list(RESPONSE_TYPES)
+# The events that end a thread, as SQL: trace.TERMINAL, the one list.
+_CLOSES = _sql_list(sorted(trace.TERMINAL))
 
 _APPS_CTE = f"""
 WITH apps AS (
@@ -399,54 +401,178 @@ _REMINDER_WHERE = f"""
 """
 
 
+# The queue's rows with their kind and wait: ONE statement that reminders()
+# reads rows from and queue_count() counts over, so the nav pill cannot
+# promise rows the page does not show (the trap _REMINDER_WHERE's comment
+# names). The reach columns (7 Oct 2026) say whether there is someone to
+# write to: the recruiter recorded on the job with a profile to message (the
+# extension's card, or one you added) or a thread you wrote in (mail you
+# sent, filed on the application). On the day 126 of 192 unanswered rows had
+# neither — a LinkedIn Easy Apply with no card — and the page had offered a
+# "Followed up" button on every one. A round or a lead has its own
+# conversation and never reads them.
+_QUEUE_SQL = f"""
+    SELECT q.*,
+           CASE WHEN q.status IN {_OPEN_ROUND} THEN 'round'
+                WHEN q.applied_at IS NULL THEN 'lead'
+                ELSE 'unanswered' END AS kind,
+           -- How long they've been sitting on it: since you applied, for
+           -- a lead since your latest reply, for a round since the
+           -- thread's latest move. The list can't reuse its own
+           -- silent_days here: this runs as its own query, and the number
+           -- is the whole reason a row is in this block.
+           date_part('day', now() - CASE WHEN q.status IN {_OPEN_ROUND} THEN q.moved_at
+                                         ELSE COALESCE(q.applied_at, q.replied_at) END)::int
+             AS days_waiting,
+           (q.contact_url IS NOT NULL OR q.wrote) AS reachable
+    FROM (
+      SELECT a.id, a.origin, j.title_canonical, s.status,
+             COALESCE(
+               (SELECT p.company_raw FROM postings p
+                 WHERE p.job_id = a.job_id AND p.company_raw IS NOT NULL
+                 ORDER BY p.captured_at DESC LIMIT 1),
+               j.company_norm) AS company_display,
+             (SELECT min(occurred_at) FROM events e
+               WHERE e.application_id = a.id AND e.type = 'applied') AS applied_at,
+             {_LAST_REPLY} AS replied_at,
+             {_LAST_MOVE} AS moved_at,
+             -- What that latest move was, for the row's own words: a
+             -- follow-up or a reply of yours, a message of theirs, or the
+             -- event itself (the invitation, a person getting in touch).
+             (SELECT CASE WHEN m.type = 'follow_up_sent' THEN 'followed_up'
+                          WHEN m.type = 'note' AND {reply_sql('m')} THEN 'replied'
+                          WHEN m.type = 'note' THEN 'wrote'
+                          ELSE m.type END
+                FROM events m
+               WHERE m.application_id = a.id AND {move_sql('m')}
+               ORDER BY m.occurred_at DESC, m.created_at DESC LIMIT 1) AS moved_as,
+             ct.name AS contact_name, ct.url AS contact_url,
+             EXISTS (SELECT 1 FROM emails w WHERE w.matched_application_id = a.id
+                        AND w.sent_by_user) AS wrote
+      FROM applications a
+      JOIN jobs j ON j.id = a.job_id
+      JOIN application_status s ON s.application_id = a.id
+      LEFT JOIN LATERAL (
+        SELECT c.name, c.url FROM contacts c
+         WHERE c.job_id = a.job_id AND c.url IS NOT NULL
+         ORDER BY c.approached_at DESC NULLS LAST, c.id LIMIT 1
+      ) ct ON true
+      {_REMINDER_WHERE}
+    ) q
+"""
+
+
 def reminders(conn, user_id):
-    """The follow-up queue's rows, oldest wait first, each with its `kind`
+    """The follow-up queue's rows, longest wait first, each with its `kind`
     (_REMINDER_WHERE has all three): `unanswered`, applied > REMINDER_DAYS
     ago with no response and nothing sent; `lead`, an approach you replied to
     that has heard nothing since (`replied_at` set, `applied_at` NULL); and
     `round`, a thread an interview or a person opened whose latest move
-    (`moved_at`, and `moved_as`: what it was) is > REMINDER_DAYS old."""
-    wait = (f"CASE WHEN q.status IN {_OPEN_ROUND} THEN q.moved_at "
-            f"ELSE COALESCE(q.applied_at, q.replied_at) END")
-    return conn.execute(f"""
-        SELECT q.*,
-               CASE WHEN q.status IN {_OPEN_ROUND} THEN 'round'
-                    WHEN q.applied_at IS NULL THEN 'lead'
-                    ELSE 'unanswered' END AS kind,
-               -- How long they've been sitting on it: since you applied, for
-               -- a lead since your latest reply, for a round since the
-               -- thread's latest move. The list can't reuse its own
-               -- silent_days here: this runs as its own query, and the number
-               -- is the whole reason a row is in this block.
-               date_part('day', now() - {wait})::int AS days_waiting
-        FROM (
-          SELECT a.id, a.origin, j.title_canonical, s.status,
-                 COALESCE(
-                   (SELECT p.company_raw FROM postings p
-                     WHERE p.job_id = a.job_id AND p.company_raw IS NOT NULL
-                     ORDER BY p.captured_at DESC LIMIT 1),
-                   j.company_norm) AS company_display,
-                 (SELECT min(occurred_at) FROM events e
-                   WHERE e.application_id = a.id AND e.type = 'applied') AS applied_at,
-                 {_LAST_REPLY} AS replied_at,
-                 {_LAST_MOVE} AS moved_at,
-                 -- What that latest move was, for the row's own words: a
-                 -- follow-up or a reply of yours, a message of theirs, or the
-                 -- event itself (the invitation, a person getting in touch).
-                 (SELECT CASE WHEN m.type = 'follow_up_sent' THEN 'followed_up'
-                              WHEN m.type = 'note' AND {reply_sql('m')} THEN 'replied'
-                              WHEN m.type = 'note' THEN 'wrote'
-                              ELSE m.type END
-                    FROM events m
-                   WHERE m.application_id = a.id AND {move_sql('m')}
-                   ORDER BY m.occurred_at DESC, m.created_at DESC LIMIT 1) AS moved_as
-          FROM applications a
-          JOIN jobs j ON j.id = a.job_id
-          JOIN application_status s ON s.application_id = a.id
-          {_REMINDER_WHERE}
-        ) q
-        ORDER BY {wait}
-    """, {"user_id": user_id, "days": config.REMINDER_DAYS}).fetchall()
+    (`moved_at`, and `moved_as`: what it was) is > REMINDER_DAYS old. Each
+    carries `reachable` and who that is (`contact_name`/`contact_url`,
+    `wrote`); queue() sections them by the move they offer."""
+    return conn.execute(f"{_QUEUE_SQL} ORDER BY days_waiting DESC, company_display, id",
+                        {"user_id": user_id, "days": config.REMINDER_DAYS}).fetchall()
+
+
+# ------------------------------------------------------------------- odds
+#
+# The reply curve, for the queue (7 Oct 2026): the SAME estimator /analytics
+# draws (insights.reply_curve over facts) — Kaplan-Meier over every
+# application the user sent, heard back at its lag or censored at its age or
+# the day it closed. Built here from one query rather than from facts()
+# because the nav pill reads it on every page, and facts() fetches every
+# event the user has (120 ms against 23 on the dev DB). tests/test_web.py
+# holds the two curves to each other.
+_REPLY_PAIRS_SQL = f"""
+    SELECT GREATEST(0, EXTRACT(epoch FROM COALESCE(
+             (SELECT min(e.occurred_at) FROM events e
+               WHERE e.application_id = a.id AND e.type IN {_RESPONSE_TYPES}),
+             (SELECT min(e.occurred_at) FROM events e
+               WHERE e.application_id = a.id AND e.type IN {_CLOSES}),
+             %(now)s::timestamptz) - ap.applied_at) / 86400.0) AS dur,
+           EXISTS (SELECT 1 FROM events e
+                    WHERE e.application_id = a.id AND e.type IN {_RESPONSE_TYPES}) AS heard
+    FROM applications a
+    JOIN LATERAL (SELECT min(e.occurred_at) AS applied_at FROM events e
+                   WHERE e.application_id = a.id AND e.type = 'applied') ap
+      ON ap.applied_at IS NOT NULL
+    WHERE a.user_id = %(user_id)s AND a.origin <> 'inbound'
+"""
+
+
+class ReplyOdds:
+    """What the queue reads off the user's reply curve: `quiet_after`, the
+    day from which an unanswered application has gone quiet
+    (insights.quiet_after), and `chance(days)`, the share still heard from at
+    that age. Both None below insights.MIN_TIMING_N replies — a curve drawn
+    by a handful of answers is an anecdote, and must not close anything."""
+
+    def __init__(self, curve, heard: int, reminder_days: int):
+        from . import insights        # insights imports this module
+        self.curve, self.heard = curve, heard
+        self.enough = heard >= insights.MIN_TIMING_N
+        self.quiet_after = insights.quiet_after(curve, reminder_days) if self.enough else None
+
+    def chance(self, days_waiting) -> float | None:
+        from . import insights
+        return insights.still_chance(self.curve, days_waiting) if self.enough else None
+
+
+def reply_odds(conn, user_id, now=None) -> ReplyOdds:
+    from datetime import datetime, timezone
+    from . import insights
+    rows = conn.execute(_REPLY_PAIRS_SQL, {"user_id": user_id,
+                                           "now": now or datetime.now(timezone.utc)}).fetchall()
+    pairs = [(float(r["dur"]), r["heard"]) for r in rows]
+    return ReplyOdds(insights.kaplan_meier(pairs), sum(1 for _, h in pairs if h),
+                     config.REMINDER_DAYS)
+
+
+def queue(conn, user_id, now=None) -> dict:
+    """/follow-ups' sections, every row placed by the MOVE it offers
+    (7 Oct 2026). Until then the page was every unanswered application over
+    REMINDER_DAYS, oldest first: 192 rows on the day, 150 of them past the
+    point where any application of the author's had ever heard back and 126
+    with nobody to write to, five follow-ups filed in the whole search. A wait
+    is the list's to draw; this page is for work (web-ui rule 9).
+      rounds   a thread after a round, or a lead you replied to, gone quiet
+               (reminders' `round` and `lead`): chase it or close it
+      nudge    unanswered, inside the odds (younger than `quiet_after`) and
+               reachable: a person to message or a thread to reply in, best
+               odds first — 7 of the 192
+      again    unanswered, and reapplications() names a later application to
+               the same role, whatever its age: the suggestion IS the move,
+               judged row by row ("Same role, close") or taken for all of
+               them at once (web.quiet_close). Not in the pill: its rule
+               compares job descriptions in Python (89 ms on the dev DB)
+               and the pill is one statement.
+      quiet    unanswered and past the odds: a count and one confirmed close
+               for all of them (web.quiet_close), never rows
+      waiting  unanswered, inside the odds, nobody to write to: a count
+    `odds` is the ReplyOdds behind the cut and each nudge row's `chance`.
+    With too few replies to draw a curve nothing is quiet, and every
+    reachable row is a nudge."""
+    odds = reply_odds(conn, user_id, now)
+    later = reapplications(conn, user_id)
+    rounds, nudge, again, quiet, waiting = [], [], [], [], []
+    for r in reminders(conn, user_id):
+        if r["kind"] != "unanswered":
+            rounds.append(r)
+            continue
+        r["chance"] = odds.chance(r["days_waiting"])
+        r["again"] = later.get(r["id"])
+        if r["again"]:
+            again.append(r)
+        elif odds.quiet_after is not None and r["days_waiting"] >= odds.quiet_after:
+            quiet.append(r)
+        elif r["reachable"]:
+            nudge.append(r)
+        else:
+            waiting.append(r)
+    nudge.sort(key=lambda r: (r["days_waiting"], r["company_display"]))
+    return {"rounds": rounds, "nudge": nudge, "again": again, "quiet": quiet,
+            "waiting": waiting, "odds": odds}
 
 
 _WORDS = re.compile(r"\w+")
@@ -585,13 +711,24 @@ def email_owed_count(conn, user_id) -> int:
                         (user_id,)).fetchone()["n"]
 
 
-def reminder_count(conn, user_id) -> int:
-    """Just the number, for the nav badge — same predicate as reminders()."""
+def queue_count(conn, user_id) -> int:
+    """The nav pill: the rows on /follow-ups that carry a move — the emails
+    owed, the threads after a round, the applications worth a nudge — which
+    is queue()'s first three sections over _QUEUE_SQL and email_owed_sql, in
+    one statement because every page renders it (the full queue() is ~250 ms
+    on the dev DB; this and the odds are ~100). Until 7 Oct 2026 it counted
+    every unanswered application: 197 on the day, a number nobody could act
+    on. tests/test_web.py holds it to the page's rows."""
+    quiet_after = reply_odds(conn, user_id).quiet_after
     return conn.execute(f"""
-        SELECT count(*) AS n FROM applications a
-        JOIN jobs j ON j.id = a.job_id
-        {_REMINDER_WHERE}
-    """, {"user_id": user_id, "days": config.REMINDER_DAYS}).fetchone()["n"]
+        SELECT (SELECT count(*) FROM applications a
+                 WHERE a.user_id = %(user_id)s AND {email_owed_sql('a')})
+             + (SELECT count(*) FROM ({_QUEUE_SQL}) w
+                 WHERE w.kind <> 'unanswered'
+                    OR (w.reachable AND (%(quiet)s::int IS NULL OR w.days_waiting < %(quiet)s)))
+               AS n
+    """, {"user_id": user_id, "days": config.REMINDER_DAYS,
+          "quiet": quiet_after}).fetchone()["n"]
 
 
 def lead_count(conn, user_id) -> int:

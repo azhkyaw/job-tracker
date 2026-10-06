@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from fastapi.testclient import TestClient
 from psycopg.types.json import Json
 
-from pipeline import analytics, db, web
+from pipeline import analytics, db, insights, web
 from pipeline.web import app
 
 client = TestClient(app, follow_redirects=False)
@@ -1637,8 +1637,14 @@ with db.connect() as conn, conn.transaction():
         (user_id, stale_job)).fetchone()["id"]
     conn.execute(
         "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
-        "VALUES (%s, %s, 'applied', 'manual', now() - interval '30 days', '{}')",
+        "VALUES (%s, %s, 'applied', 'manual', now() - interval '12 days', '{}')",
         (user_id, stale_app))
+    # Since 7 Oct 2026 an unanswered application is a ROW here only with
+    # someone to write to (analytics.queue): the recruiter on record.
+    conn.execute(
+        "INSERT INTO contacts (user_id, job_id, name, url, source) "
+        "VALUES (%s, %s, 'Jane Quiet', 'https://www.linkedin.com/in/jane-quiet', 'manual')",
+        (user_id, stale_job))
 
 r = client.get("/")
 check("the list no longer carries the queue at all",
@@ -1646,12 +1652,14 @@ check("the list no longer carries the queue at all",
       and 'class="card fu"' not in r.text
       and 'value="follow_up_sent"' not in r.text, r.status_code)
 check("it carries a counted link to them instead",
-      'href="/follow-ups"' in r.text and "need follow-up" in r.text, r.status_code)
+      'href="/follow-ups"' in r.text and "to make" in r.text, r.status_code)
 
 r = client.get("/follow-ups")
-check("the queue page lists the stale thread with its wait length",
-      r.status_code == 200 and "Needs follow-up" in r.text
-      and "quietcorp" in r.text and "30d" in r.text, r.status_code)
+check("the queue page lists the stale thread with its wait length, as a nudge naming the recruiter",
+      r.status_code == 200 and "Your move" in r.text and "Worth a nudge" in r.text
+      and "quietcorp" in r.text and "12d" in r.text
+      and 'href="https://www.linkedin.com/in/jane-quiet">Jane Quiet</a> on LinkedIn' in r.text,
+      r.status_code)
 check("it offers the action, not just a link", 'value="follow_up_sent"' in r.text)
 check("its buttons return to the queue, so clearing one shortens the page "
       "you are still looking at", 'name="redirect_to" value="/follow-ups"' in r.text)
@@ -1741,8 +1749,12 @@ check("the queue marks the row, naming the later application with a link",
       "You applied again on" in row and f'href="/applications/{rp_2}"' in row
       and f'value="{rp_2}"' in row, row[:400])
 check("the lede counts the suggestions", "look like an earlier application" in r.text)
-tw_row = r.text.split(f'href="/applications/{tw_1}"')[1].split('class="fu-row"')[0]
-check("the two-roles row carries no suggestion", "You applied again" not in tw_row)
+with db.connect() as conn:
+    _tw_q = analytics.queue(conn, user_id)
+check("the two-roles row carries no suggestion — so with nobody to write to it is a count here, "
+      "not a row (7 Oct 2026)",
+      tw_1 not in {x["id"] for x in _tw_q["again"]} and f'href="/applications/{tw_1}"' not in r.text
+      and tw_1 in {x["id"] for x in _tw_q["quiet"] + _tw_q["waiting"]})
 
 r = client.post(f"/applications/{rp_1}/reapplied",
                 data={"later_id": str(rp_2), "redirect_to": "/follow-ups"})
@@ -1807,9 +1819,12 @@ with db.connect() as conn, conn.transaction():
         "VALUES (%s, %s, 'applied', 'manual', now() - interval '20 days', '{}')",
         (user_id, wa_app))
 
-r = client.get("/follow-ups")
-check("before: the untouched thread is in the follow-up queue",
-      "sponsorless" in r.text, r.status_code)
+with db.connect() as conn:
+    _wa_q = analytics.queue(conn, user_id)
+check("before: the untouched thread is in the follow-up queue — since 7 Oct 2026 as a count "
+      "(nobody to write to), never a row",
+      wa_app in {x["id"] for x in _wa_q["waiting"] + _wa_q["quiet"]}
+      and "sponsorless" not in client.get("/follow-ups").text)
 
 r = client.post(f"/applications/{wa_app}/events",
                 data={"type": "rejected", "reason": "visa", "channel": "whatsapp",
@@ -1830,9 +1845,10 @@ with db.connect() as conn:
           conn.execute("SELECT status FROM application_status WHERE application_id = %s",
                        (wa_app,)).fetchone()["status"] == "rejected")
 
-r = client.get("/follow-ups")
+with db.connect() as conn:
+    _wa_q = analytics.queue(conn, user_id)
 check("the row leaves the follow-up queue, because it is genuinely answered now",
-      "sponsorless" not in r.text)
+      wa_app not in {x["id"] for x in _wa_q["waiting"] + _wa_q["quiet"] + _wa_q["nudge"]})
 
 r = client.get(f"/applications/{wa_app}")
 check("the timeline shows the reason as the selected why, and the channel it came through",
@@ -2778,7 +2794,7 @@ print("inbound: “I replied” moves the wait to them (28 Sep 2026)")
 def _queue(user_id):
     with db.connect() as conn:
         rows = {str(x["id"]): x for x in analytics.reminders(conn, user_id)}
-        return rows, analytics.reminder_count(conn, user_id)
+        return rows, analytics.queue_count(conn, user_id)
 
 
 _rep = _new_lead("Reply Lead Co", "2026-09-01")
@@ -2843,7 +2859,7 @@ check("...and reads “You replied” too", client.get(f"/applications/{_rep}").
 _rows, _cnt = _queue(_uid)
 check("REMINDER_DAYS after your reply, with nothing since, it is in the follow-up queue",
       _rep in _rows and _rows[_rep]["applied_at"] is None and _rows[_rep]["days_waiting"] >= 10
-      and _cnt == len(_rows), (_rows.get(_rep), _cnt, len(_rows)))
+      and _cnt >= 1, (_rows.get(_rep), _cnt, len(_rows)))
 _fu = client.get("/follow-ups").text
 _frow = _fu.split("Reply Lead Co", 1)[1].split('class="fu-row"')[0]
 check("its row says when you replied, beside “They went quiet” and “Followed up”",
@@ -2901,7 +2917,7 @@ client.post(f"/applications/{_rnd}/events", data={"type": "interview_invite", "o
 _rows, _cnt = _queue(_uid)
 check("an interview silent 20 days is queued as a round, and the nav badge counts it",
       _rnd in _rows and _rows[_rnd]["kind"] == "round" and 19 <= _rows[_rnd]["days_waiting"] <= 20
-      and _cnt == len(_rows), (_rows.get(_rnd), _cnt, len(_rows)))
+      and _cnt >= 1, (_rows.get(_rnd), _cnt, len(_rows)))
 _fu = client.get("/follow-ups").text
 _frow = _row_on("/follow-ups", "Round Quiet Co")
 check("its row says they invited you and when, beside “They went quiet” and “Followed up”",
@@ -2955,7 +2971,7 @@ _nr = _new_app("Round Guard Co", 20)
 r = client.post(f"/applications/{_nr}/close", data={"action": "quiet"})
 check("an application nobody answered is not closed as gone quiet (it waits in the queue)",
       "event_error=" in r.headers.get("location", "") and not _closes(_nr)
-      and "Needs follow-up" in unquote_plus(r.headers.get("location", "")), r.headers.get("location"))
+      and "Follow-ups" in unquote_plus(r.headers.get("location", "")), r.headers.get("location"))
 check("...and its page offers no such form",
       "Heard nothing since?" not in client.get(f"/applications/{_nr}").text)
 client.post(f"/applications/{_nr}/events", data={"type": "engaged", "occurred_on": _ago(5)})
@@ -3053,6 +3069,109 @@ _rows = _queue(_uid)[0]
 check("an approach that reached an offer keeps its own close, and is queued as a round",
       _state(_io)[0] == "offer" and 'value="decline"' in r.text and 'value="quiet"' in r.text
       and _io in _rows and _rows[_io]["kind"] == "round", (_state(_io)[0], _rows.get(_io)))
+
+print("your move: the queue by the move it offers (7 Oct 2026)")
+_now = datetime.now(timezone.utc)
+with db.connect() as conn:
+    _odds = analytics.reply_odds(conn, _uid, _now)
+    _fa, _fe = analytics.facts(conn, _uid)
+_facts = insights.build_facts(_fa, _fe, _now, 10)
+_curve_a = insights.reply_curve(_facts)
+check("the queue's reply curve is /analytics' curve: as many replies, the same odds at every "
+      "day, the same cut",
+      _odds.heard == sum(1 for f in _facts if f["sent"] and f["lag"] is not None)
+      and all(abs(insights.still_chance(_odds.curve, d) - insights.still_chance(_curve_a, d)) < .01
+              for d in range(0, 120))
+      and (not _odds.enough or _odds.quiet_after == insights.quiet_after(_curve_a, 10)),
+      (_odds.heard, _odds.quiet_after, insights.quiet_after(_curve_a, 10)))
+check("this suite's data draws a cut past day 11 (the checks below build on both sides of it)",
+      _odds.enough and _odds.quiet_after is not None and _odds.quiet_after > 11,
+      (_odds.heard, _odds.quiet_after))
+_T = _odds.quiet_after
+
+_nu = _new_app("Nudge Co", 11)
+_wa = _new_app("Unreachable Co", 11)
+_qu = _new_app("Quiet Co", _T + 20)
+with db.connect() as conn, conn.transaction():
+    _nu_job = conn.execute("SELECT job_id FROM applications WHERE id = %s::uuid", (_nu,)).fetchone()["job_id"]
+    conn.execute("INSERT INTO contacts (user_id, job_id, name, url, source) VALUES (%s, %s, "
+                 "'Jane Nudge', 'https://www.linkedin.com/in/jane-nudge', 'extension')", (_uid, _nu_job))
+    # An older application to a role applied to again, past the odds: the
+    # bulk close keeps the link, as "Same role, close" would.
+    _old = str(_seed_app(conn, "bulkagainco", "Platform Engineer", _T + 30))
+    _new = str(_seed_app(conn, "bulkagainco", "Platform Engineer", 3))
+with db.connect() as conn:
+    _q = analytics.queue(conn, _uid)
+    _cnt = analytics.queue_count(conn, _uid)
+    _owed_n = analytics.email_owed_count(conn, _uid)
+
+
+def _ids(rows):
+    return {str(r["id"]) for r in rows}
+
+
+check("inside the odds with a recruiter on record is a nudge; nobody to write to waits; past the "
+      "odds is quiet — and the cut is the one line between them; applied again is its own band",
+      _nu in _ids(_q["nudge"]) and _wa in _ids(_q["waiting"])
+      and _qu in _ids(_q["quiet"]) and _old in _ids(_q["again"]) and _old not in _ids(_q["quiet"])
+      and all(r["days_waiting"] >= _T for r in _q["quiet"])
+      and all(r["days_waiting"] < _T for r in _q["nudge"] + _q["waiting"]),
+      {k: len(v) for k, v in _q.items() if k != "odds"})
+check("nudges run best odds first, each carrying its chance",
+      [r["days_waiting"] for r in _q["nudge"]] == sorted(r["days_waiting"] for r in _q["nudge"])
+      and all(r["chance"] is not None and r["chance"] >= insights.QUIET_CHANCE for r in _q["nudge"]))
+_fu = client.get("/follow-ups").text
+_nrow = _row_on("/follow-ups", "Nudge Co")
+check("the page: the nudge row names the recruiter, the move and the odds; the unreachable and the "
+      "quiet are counts, and the quiet count carries its close",
+      "Your move" in _fu and "Worth a nudge" in _fu
+      and 'href="https://www.linkedin.com/in/jane-nudge">Jane Nudge</a> on LinkedIn' in _nrow
+      and "of applications this old" in _nrow and 'value="follow_up_sent"' in _nrow
+      and "Unreachable Co" not in _fu and "Quiet Co" not in _fu
+      and f"<b>{len(_q['waiting'])}</b> recent application" in _fu
+      and f"Close all {len(_q['quiet'])} as gone quiet" in _fu and 'href="/follow-ups/quiet"' in _fu
+      and f"past <b>{_T}</b> days" in _fu, _fu[:300])
+_pill = re.search(r'href="/follow-ups" class="[^"]*">Follow-ups<span class="pill warm">(\d+)</span>', _fu)
+check("the pill counts the rows that carry a move — the page's rows, and analytics.queue_count "
+      "everywhere else",
+      _pill is not None and int(_pill.group(1)) == _cnt == _owed_n + len(_q["rounds"]) + len(_q["nudge"])
+      and _fu.count('class="fu-row"') == _cnt + len(_q["again"]),
+      (_pill and _pill.group(1), _cnt, _fu.count('class="fu-row"'), _owed_n, len(_q["rounds"]),
+       len(_q["nudge"]), len(_q["again"])))
+check("the list's aside says the same number, as moves to make",
+      f">{_cnt} moves to make<" in client.get("/").text)
+
+r = client.get("/follow-ups/quiet")
+_qrow = r.text.split("Quiet Co", 1)[1].split('class="fu-row"')[0]
+_orow = r.text.split("bulkagainco", 1)[1].split('class="fu-row"')[0]
+_both = len(_q["quiet"]) + len(_q["again"])
+check("the confirmation lists every quiet and applied-again row with its fate and carries their "
+      "ids, and nothing else",
+      r.status_code == 200 and f"Close {_both} in one go" in r.text
+      and f'name="ids" value="{_qu}"' in r.text and "applications this old" in _qrow
+      and f'name="ids" value="{_old}"' in r.text and "applied again on" in _orow
+      and f'href="/applications/{_new}"' in _orow
+      and "Nudge Co" not in r.text and r.text.count('name="ids"') == _both
+      and f"Close all {_both}</button>" in r.text, r.status_code)
+r = client.post("/follow-ups/quiet", data={"ids": [_qu, _old, _nu]})
+with db.connect() as conn:
+    _new_at = conn.execute("SELECT min(occurred_at) AS t FROM events WHERE application_id = %s::uuid "
+                           "AND type = 'applied'", (_new,)).fetchone()["t"]
+check("closing files one withdrawal per quiet row — gone quiet dated now, applied again dated at the "
+      "later submission and linked — and leaves a row inside the odds alone",
+      r.status_code == 303 and r.headers["location"] == "/follow-ups?closed=2"
+      and _state(_qu)[0] == "withdrawn" and _closes(_qu)[0]["payload"] == {"closed": "went_quiet"}
+      and _state(_old)[0] == "withdrawn" and _closes(_old)[0]["payload"] == {"superseded_by": _new}
+      and _closes(_old)[0]["occurred_at"] == _new_at
+      and _state(_nu)[0] == "applied" and not _closes(_nu),
+      (r.headers.get("location"), _closes(_qu), _closes(_old), _closes(_nu)))
+with db.connect() as conn:
+    _q2 = analytics.queue(conn, _uid)
+check("...and both leave the queue, the nudge stays, and the page says what it closed",
+      _qu not in _ids(_q2["quiet"]) and _old not in _ids(_q2["again"]) and _nu in _ids(_q2["nudge"])
+      and "Closed 2</strong> as gone quiet" in client.get("/follow-ups?closed=2").text
+      and "They went quiet" in client.get(f"/applications/{_qu}").text
+      and "You applied again" in client.get(f"/applications/{_old}").text)
 
 print("a listing that asked for the CV by email (4 Oct 2026)")
 _EA_JD = ("We are hiring.\nPlease send your updated resume in Word format to "

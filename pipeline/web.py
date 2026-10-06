@@ -687,7 +687,7 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
             "axis": axis,
             "funnel": _funnel(conn, user_id, is_inbound),
             "pending": _pending_count(conn),
-            "follow_ups": analytics.reminder_count(conn, user_id),
+            "follow_ups": analytics.queue_count(conn, user_id),
             # Only the record's page nudges about it: an approach owes none.
             "emails_owed": 0 if is_inbound else analytics.email_owed_count(conn, user_id),
             "leads": analytics.lead_count(conn, user_id),
@@ -2101,7 +2101,8 @@ def close_approach(request: Request, app_id: str, action: str = Form(""),
                                 (a["id"], list(analytics.ROUND_EVENTS))).fetchone():
                 return _event_error(app_id, "“They went quiet” closes an application after an "
                                             "interview or a person getting in touch. One nobody "
-                                            "has answered waits in Needs follow-up.")
+                                            "has answered waits on the list, and Follow-ups "
+                                            "offers to close it once it is past the odds.")
         if conn.execute("SELECT 1 FROM events WHERE application_id = %s AND type = ANY(%s)",
                         (a["id"], sorted(trace.TERMINAL))).fetchone():
             return _event_error(app_id, "This thread is already closed.")
@@ -3017,63 +3018,137 @@ def analytics_page(request: Request):
             "by_reason": _reason_rows(analytics.rejection_reasons(conn, user_id)),
             "by_end": _end_rows(analytics.rejection_ends(conn, user_id)),
             "pending": _pending_count(conn),
-            "follow_ups": analytics.reminder_count(conn, user_id),
+            "follow_ups": analytics.queue_count(conn, user_id),
             "leads": analytics.lead_count(conn, user_id),
         })
 
 
 # --------------------------------------------------------------------------- answer bank
 
+def _odds_words(chance) -> str:
+    """A nudge row's odds, in words: the share of applications as old as this
+    one that ever heard back, off the user's own curve (analytics.ReplyOdds).
+    Nothing with too few replies to say."""
+    if chance is None:
+        return ""
+    pct = round(100 * chance)
+    return "under 1% of applications this old hear back" if pct < 1 else \
+        f"about {pct}% of applications this old still hear back"
+
+
+def _queue_ctx(conn, q) -> dict:
+    """The words every queue page needs about the odds."""
+    return {"quiet_after": q["odds"].quiet_after, "heard": q["odds"].heard,
+            "quiet_pct": round(100 * insights.QUIET_CHANCE),
+            "reminder_days": config.REMINDER_DAYS, "pending": _pending_count(conn)}
+
+
 @app.get("/follow-ups")
-def follow_ups_page(request: Request):
-    """The day's follow-up queue, on its own page since 21 Aug 2026.
+def follow_ups_page(request: Request, closed: int | None = None):
+    """Your move: the day's actions, on its own page since 21 Aug 2026 and
+    sectioned by the move each row offers since 7 Oct 2026 (analytics.queue
+    has the sections and the measurement that drew them).
 
-    It used to sit at the top of the applications list inside a
-    default-collapsed `<details>`. UI rule 9's argument for it hasn't changed —
-    on real data this IS the day's task list, so it gets real rows and a
-    one-click `follow_up_sent` rather than a sentence of links — but a list you
-    open to READ shouldn't lead with a queue you mostly aren't working.
-    Splitting them lets each be the whole page for what it is, which is also
-    why the 8-row cap and its "N more waiting" disclosure are gone: they only
-    existed to stop the queue burying the table underneath it.
+    The page used to sit at the top of the applications list inside a
+    default-collapsed `<details>`. UI rule 9's argument hasn't changed — this
+    IS work, so it gets real rows and a one-click action rather than a
+    sentence of links — but a list you open to READ shouldn't lead with a
+    queue, so it became a page; and a queue of every unanswered application
+    oldest first (197 rows on 7 Oct, five follow-ups ever filed) wasn't work
+    either, so the rows that offer no move became counts.
 
+    `closed` is the bulk close's receipt (quiet_close): how many it filed.
     No `?fu=1` here. That param existed to keep the block open across the
     reload that shortened it; a page of its own is open by definition."""
     user = _login_user(request)
     with db.connect_scoped(user["id"]) as conn:
-        reminders = analytics.reminders(conn, user["id"])
-        # A row that looks like an earlier application to a role you applied
-        # to again carries that later application, and a second button to
-        # close it as such (mark_reapplied). Beside the row, not in a band of
-        # its own: a suggestion you decline needs no dismissal to remember —
-        # the row is in the queue either way.
-        again = analytics.reapplications(conn, user["id"])
+        q = analytics.queue(conn, user["id"])
         # The same amber as the list's rail, off the same function, so a row
         # that reads 41 days here is the same colour it is on the register.
-        for r in reminders:
+        for r in q["rounds"] + q["nudge"] + q["again"]:
             r["heat"] = trace.heat(r["days_waiting"], config.REMINDER_DAYS)
-            r["again"] = again.get(r["id"])
+        for r in q["rounds"]:
             # A round gone quiet says what its latest move was, whoever made
             # it, since that is what the wait runs from.
             if r["kind"] == "round":
                 r["moved_words"] = _MOVED_AS.get(
                     r["moved_as"], f"{EVENT_LABELS.get(r['moved_as'], 'Last heard')} on")
+        for r in q["nudge"]:
+            r["odds_words"] = _odds_words(r["chance"])
         # Listings that asked for the CV by email, still owed (4 Oct 2026).
-        # Above the waits and apart from them: the move here is yours, today,
-        # not a wait on anyone, so these rows wear no heat.
+        # First: the move here is yours, today, not a wait on anyone, so
+        # these rows wear no heat.
         by_email = analytics.emails_owed(conn, user["id"])
         now = datetime.now(timezone.utc)
         for r in by_email:
             r["ask"] = _email_ask(r["jds"], r["title_canonical"])
             r["days"] = (now - r["applied_at"]).days
+        # The pill is these rows, and analytics.queue_count is the same
+        # number everywhere else (tests hold them equal).
+        moves = len(by_email) + len(q["rounds"]) + len(q["nudge"])
         return templates.TemplateResponse(
             request=request, name="follow_ups.html",
-            context={"reminders": reminders, "again_n": len(again), "by_email": by_email,
-                     "replied_n": sum(1 for r in reminders if r["kind"] == "lead"),
-                     "round_n": sum(1 for r in reminders if r["kind"] == "round"),
-                     "reminder_days": config.REMINDER_DAYS,
-                     "pending": _pending_count(conn),
-                     "follow_ups": analytics.reminder_count(conn, user["id"])})
+            context={"by_email": by_email, "rounds": q["rounds"], "nudge": q["nudge"],
+                     "again": q["again"],
+                     "quiet_n": len(q["quiet"]), "waiting_n": len(q["waiting"]),
+                     "moves": moves, "closed": closed,
+                     "replied_n": sum(1 for r in q["rounds"] if r["kind"] == "lead"),
+                     "round_n": sum(1 for r in q["rounds"] if r["kind"] == "round"),
+                     "follow_ups": moves, **_queue_ctx(conn, q)})
+
+
+@app.get("/follow-ups/quiet")
+def quiet_confirm(request: Request):
+    """The bulk close, shown before it happens (7 Oct 2026): every unanswered
+    application past the odds (analytics.queue's `quiet`) and every one that
+    looks like an earlier application to a role applied to again (`again`),
+    each with what it will be closed as — gone quiet, or applied again with
+    the link to the later application, exactly as "Same role, close" files
+    it. The first action here that files many events in one click, so it is
+    confirmed on a page that lists exactly the rows it will touch, carrying
+    their ids; quiet_close re-checks each against the rule, so a reply that
+    arrives in between keeps its record open."""
+    user = _login_user(request)
+    with db.connect_scoped(user["id"]) as conn:
+        q = analytics.queue(conn, user["id"])
+        rows = q["quiet"] + q["again"]
+        for r in rows:
+            r["odds_words"] = _odds_words(r["chance"])
+        return templates.TemplateResponse(
+            request=request, name="follow_ups_quiet.html",
+            context={"rows": rows, "quiet_n": len(q["quiet"]), "again_n": len(q["again"]),
+                     **_queue_ctx(conn, q)})
+
+
+@app.post("/follow-ups/quiet")
+def quiet_close(request: Request, ids: list[str] = Form([])):
+    """Close the listed applications in one transaction. Only an id that is
+    STILL in the quiet or the applied-again set is closed (quiet_confirm
+    listed it; a response since then takes it out and it is left alone). One
+    with a later application to the same role closes as applied again
+    (`superseded_by`, dated at that application's submission, mark_reapplied's
+    shape), the rest as `withdrawn` + `closed: went_quiet` dated now,
+    close_approach's shape — so the timeline, the list's grey tag and
+    /analytics' words needed nothing new. Undo is per record: delete the
+    event on its page. Returns to the queue with the count."""
+    from psycopg.types.json import Json
+    user = _login_user(request)
+    with db.connect_scoped(user["id"]) as conn, conn.transaction():
+        q = analytics.queue(conn, user["id"])
+        closable = {str(r["id"]): r for r in q["quiet"] + q["again"]}
+        now, n = datetime.now(timezone.utc), 0
+        for i in ids:
+            r = closable.get(i)
+            if r is None:
+                continue
+            later = r["again"]
+            payload = {"superseded_by": str(later["id"])} if later else {"closed": "went_quiet"}
+            conn.execute(
+                "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+                "VALUES (%s, %s, 'withdrawn', 'manual', %s, %s)",
+                (user["id"], r["id"], later["applied_at"] if later else now, Json(payload)))
+            n += 1
+    return RedirectResponse(f"/follow-ups?closed={n}", status_code=303)
 
 
 @app.get("/answers")

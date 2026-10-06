@@ -143,7 +143,8 @@ is a private artifact, linked from the memory file
    the queue burying the table underneath it — there is no table underneath it
    now). The number vindicates the split: the block was written for 18 rows and
    the queue now stands at **98**.
-   `analytics.reminders()` and `reminder_count()` share one `_REMINDER_WHERE`
+   `analytics.reminders()` and `queue_count()` (`reminder_count()` until
+   7 Oct 2026) share one `_QUEUE_SQL` over one `_REMINDER_WHERE`
    for a reason — two copies would let the nav badge promise a different number
    of rows than the page it links to.
    **Since 28 Sep 2026 the queue has a second kind of row: a lead you replied
@@ -177,8 +178,51 @@ is a private artifact, linked from the memory file
    heat 0. Each row quotes the listing's sentence with a mailto, and takes
    "I emailed it" / "Not needed" (`web.mark_emailed`, a note with
    `payload.emailed`); mail the user sends clears a row with no click. The
-   nav pill still counts only the waits; the list's aside counts this
-   section beside "N need follow-up".
+   nav pill counted only the waits until 7 Oct 2026; since then it counts
+   these rows too (next paragraph).
+
+   **Since 7 Oct 2026 the page is "Your move": a row exists only where a
+   move does, and the move is named on the row** (`analytics.queue`,
+   worklog task 61). Measured against the dev DB that day: 197 rows, 192 of
+   them unanswered applications oldest first; 150 of those past the point
+   where any application had EVER heard back (by the page's own
+   Kaplan-Meier curve), 99 at 100% heat — rule 14's flat-amber wall, back;
+   126 with nobody to write to (a LinkedIn Easy Apply with no recruiter
+   card), each wearing a "Followed up" button for an action that did not
+   exist; and five `follow_up_sent` in the whole search, the one that drew
+   an answer being a chase after an interview. The page had conflated a
+   WAIT (the list's, drawn as heat) with a MOVE. Now, in the order the
+   moves are due: asked for by email (4 Oct's section); after a round
+   (the round and lead rows, unchanged); **worth a nudge** — unanswered,
+   inside the odds, and someone to write to ("Message <name> on LinkedIn"
+   off the contact on record, or "Reply in your thread" off mail you sent),
+   best odds first with the odds on the row ("about 6% of applications this
+   old still hear back", `web._odds_words`); **applied to again** — the
+   `reapplications` suggestions as their own band at any age, since the
+   suggestion is the move; then two COUNTS, not rows — **gone quiet**, past
+   `insights.quiet_after` (the first day from `REMINDER_DAYS` on at which
+   under `QUIET_CHANCE` = 5% of those still silent ever heard back; 23 on
+   the day, beside task 4's hand-measured 21, and it moves as replies
+   arrive like the reply window), with ONE close for all of them; and the
+   recent ones with nobody to write to, who wait on the list. The curve is
+   `analytics.reply_odds`, the same estimator /analytics draws from one
+   query (facts() fetches every event; the pill reads this on every page),
+   held equal in `tests/test_web.py`; below `MIN_TIMING_N` replies nothing
+   is quiet. **The bulk close is confirmed on its own page**
+   (`/follow-ups/quiet`, `web.quiet_confirm` → `quiet_close`): it lists
+   exactly the rows it will close with each one's fate — "They went quiet"
+   dated today, or "You applied again" linked and dated at the later
+   submission, mark_reapplied's shape — carries their ids, and the POST
+   re-checks each against the rule, so a reply that lands in between keeps
+   its record open. The first action in the app that files many events in
+   one click, which is why it is a page and not a button. **The pill counts
+   moves**: `analytics.queue_count`, ONE statement (emails owed + rounds +
+   leads + nudges); the applied-again band is on the page but not in the
+   pill, because its rule compares job descriptions in Python (89 ms on
+   the dev DB) and the pill renders on every page — the lede says both
+   numbers. 19 on the day against 197 (8 emails owed, 5 after a round, 6
+   worth a nudge), beside 23 applied to again, 129 gone quiet and 34
+   recent with nobody to write to.
 9b. **How you applied is on the row, in GREY** (21 Aug 2026): `on-platform` /
    `employer site`, read from the applied event's own `payload.external` — the
    same event the date comes from, so the two can't describe different
@@ -870,6 +914,17 @@ same rule 13 uses for `after_round`.
   at. What to look at: whether a long quoted sentence in the row's second
   line crowds the "Not needed" button, and how the panel's `<q>` wraps
   inside a `.record` row.
+
+- **"Your move" and its confirmation page (7 Oct 2026, task 61)** were
+  rendered through TestClient against the dev DB (five sections, 42 rows,
+  the pill at 19; `/follow-ups/quiet` listing 152 with their fates) and
+  never looked at. New shapes to look at: a nudge row's second line
+  carrying a link AND the odds sentence after a middle dot, at the list's
+  width; the applied-again band's rows with two buttons stacked as before;
+  the "Gone quiet" paragraph ending in a link rather than a button, which
+  is deliberate (it opens a page, not an action) but may read as weak; and
+  the confirmation page's third column holding a sentence where every
+  other `.fu-row` holds a button.
 
 - **The detail page's "Offer in hand:" panel (7 Oct 2026, task 60)** has
   been rendered only through the suite's TestClient (an own application

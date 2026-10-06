@@ -97,6 +97,14 @@ check("still_chance: of those silent at 1, the share that heard later",
       and insights.still_chance(want, 4) == 0.0)
 check("still_chance within a horizon",
       abs(insights.still_chance(want, 1, horizon=2) - (0.625 - 0.25) / 0.75) < 1e-9)
+# F: .25 at day 1, .3 at day 3, .32 at day 5 (the end). Of those silent at
+# day 1, (.32-.25)/.75 = 9% still hear back; at day 3, .02/.7 = 3%.
+_qc = [(0.0, 0.0), (1, .25), (3, .3), (5, .32)]
+check("quiet_after: the first day from the threshold on where under 5% still hear back",
+      insights.quiet_after(_qc, 1) == 3 and insights.quiet_after(_qc, 4) == 4
+      and insights.quiet_after(_qc, 1, chance=.5) == 1
+      and insights.quiet_after([], 10) is None and insights.QUIET_CHANCE == 0.05,
+      [insights.quiet_after(_qc, d) for d in (1, 4)])
 
 print("quantile and days_text")
 check("median of an even list interpolates", insights.quantile([1, 2, 3, 4], .5) == 2.5)

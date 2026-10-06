@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}close in one go — tracker{% endblock %}
+{% block nav_follow_ups %}active{% endblock %}
+{% block content %}
+{# The bulk close's confirmation (7 Oct 2026, web.quiet_confirm): exactly the
+   rows the POST will close, each with what it closes as — gone quiet, or
+   applied again with the later application linked. The first action in the
+   app that files many events in one click, so it gets a page of its own
+   rather than a button beside a count. Rows reuse the queue's shape with the
+   fate where the button would be; no heat, since the quiet ones are past the
+   scale's end anyway and the others are leaving for a different reason. #}
+<h1>Close {{ rows | length }} in one go</h1>
+<p class="lede">
+  {%- if quiet_n %}<b>{{ quiet_n }}</b> {{ 'has' if quiet_n == 1 else 'have' }} waited more than <b>{{ quiet_after }}</b> days with no
+  reply and nothing sent. Fewer than {{ quiet_pct }}% of your applications have ever heard
+  back after that long, measured over <b>{{ heard }}</b> replies; each closes as “They went
+  quiet”, dated today.{% endif %}
+  {%- if again_n %} <b>{{ again_n }}</b> {{ 'looks' if again_n == 1 else 'look' }} like an earlier application to a role you
+  applied to again, and {{ 'closes' if again_n == 1 else 'close' }} as that instead, dated when the later one went in and
+  linked to it.{% endif %}
+  Any one is undone on its own page by deleting the event.</p>
+{% if rows %}
+<form method="post" action="/follow-ups/quiet">
+<div class="card fu">
+  {% for r in rows %}
+  <div class="fu-row">
+    <input type="hidden" name="ids" value="{{ r.id }}">
+    <a class="fu-name" href="/applications/{{ r.id }}">
+      <span class="co">{{ r.company_display }}</span>
+      <span class="ro">{{ r.title_canonical }}</span>
+    </a>
+    <span class="fu-d">{{ r.days_waiting }}d</span>
+    <span class="quiet sans" style="font-size:.84rem">
+      {%- if r.again %}applied again on <a href="/applications/{{ r.again.id }}">{{ r.again.applied_at | day }}</a>
+      {%- else %}{{ r.odds_words or 'gone quiet' }}{% endif %}</span>
+  </div>
+  {% endfor %}
+</div>
+<p class="bar"><button class="primary">Close all {{ rows | length }}</button>
+  <a href="/follow-ups">Back without closing</a></p>
+</form>
+{% else %}
+<p class="empty">Nothing to close in one go. <a href="/follow-ups">Back to your moves</a>.</p>
+{% endif %}
+{% endblock %}

@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi.testclient import TestClient
 
-from pipeline import covers, db, embeddings, jd_extraction, worker
+from pipeline import analytics, covers, db, embeddings, jd_extraction, worker
 from pipeline.jd_extraction import JdExtraction
 from pipeline.web import app
 
@@ -307,9 +307,27 @@ with db.connect() as conn:
         (user_id, stale))
     conn.commit()
 r = client.get("/follow-ups")
-check("stale application flagged for follow-up",
-      "Needs follow-up" in r.text and "stale co" in r.text)
-check("responded application not flagged", "vantage tech" not in r.text)
+
+
+def _unanswered(conn, uid):
+    """Every unanswered application the queue holds, whichever section — a
+    row only with someone to write to since 7 Oct 2026 (analytics.queue),
+    a count otherwise, which is what a bare 20-day application is here."""
+    q = analytics.queue(conn, uid)
+    return {str(x["id"]) for x in q["nudge"] + q["again"] + q["quiet"] + q["waiting"]}
+
+
+with db.connect() as conn:
+    _held = _unanswered(conn, user_id)
+check("stale application flagged for follow-up — held by the queue, counted on the page, "
+      "not a row (nobody to write to)",
+      "Your move" in r.text and str(stale) in _held and "stale co" not in r.text)
+with db.connect() as conn:
+    _answered = {str(x["id"]) for x in conn.execute(
+        "SELECT a.id FROM applications a JOIN jobs j ON j.id = a.job_id "
+        "WHERE j.company_norm = 'vantage tech'")}
+check("responded application not flagged", _answered and not (_answered & _held)
+      and "vantage tech" not in r.text, (_answered, _answered & _held))
 # "stale co" is an application, so it is legitimately in the table on "/" —
 # what must be gone is the QUEUE (its heading, its card, its action).
 list_html = client.get("/").text
@@ -331,9 +349,10 @@ with db.connect() as conn:
         "VALUES (%s, %s, 'applied', 'manual', now() - interval '20 days', '{}')",
         (user_id, stale2))
     conn.commit()
-r = client.get("/follow-ups")
+with db.connect() as conn:
+    _held = _unanswered(conn, user_id)
 check("newly-stale application flagged for follow-up before any response",
-      "stale eng co" in r.text)
+      str(stale2) in _held)
 r = client.post(f"/applications/{stale2}/events",
                 data={"type": "engaged", "channel": "whatsapp", "note": "recruiter followed up"})
 check("engaged event redirects", r.status_code == 303, r.status_code)

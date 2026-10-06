@@ -1705,3 +1705,56 @@ the key to each real case.
      the timeline reads "Note", not "You replied" (weaker). Also not built:
      accepting an offer — the search ends there, and `offer` with nothing
      after it says so for now.
+61. **/follow-ups is "Your move"** (7 Oct 2026). Asked to analyse the page
+   and propose boldly. Measured first, on the dev DB:
+   - **197 rows, 192 of them unanswered applications oldest first.** By the
+     page's own Kaplan-Meier curve (n=350), 150 had under a 5% chance of
+     ever hearing back; 99 were past 56 days at 100% heat (rule 14's flat
+     amber, back). 126 of the 192 had **nobody to write to** — a LinkedIn
+     Easy Apply with no recruiter card — and every one wore "Followed up".
+     56 had a captured recruiter (53 with a profile URL), 3 a thread the
+     author wrote in. Age × reach: only **7** were both inside the odds and
+     reachable. 33 employers held 85 rows (one agency 7, another 6). Five
+     `follow_up_sent` in the whole search; the one that drew an answer was
+     a chase after an interview (filed 4 Sep, rejected 15 Sep), and no cold
+     nudge ever has. First-answer lag: median 3 days, p90 18.
+   - **The reframe.** A WAIT is the list's (drawn as heat); this page is for
+     MOVES. `analytics.queue` sections every row by the move it offers:
+     asked for by email; after a round; worth a nudge (inside the odds,
+     someone to write to, best odds first, the move and the odds on the
+     row); applied to again (the suggestions as a band, any age); then two
+     counts — gone quiet, past `insights.quiet_after`, and recent with
+     nobody to write to. The cut is derived: the first day from
+     `REMINDER_DAYS` on at which under `QUIET_CHANCE` (5%) of those still
+     silent ever heard back — **23 on the day**, beside task 4's hand-measured
+     21, and it moves as replies arrive. `analytics.reply_odds` builds the
+     same curve `/analytics` draws from one 23 ms query (facts() is 120 ms
+     and the pill reads it on every page); `tests/test_web.py` holds the two
+     curves equal. Below `MIN_TIMING_N` replies nothing is quiet.
+   - **One confirmed close for the dead weight** (`/follow-ups/quiet`): the
+     page lists exactly what it will close, each with its fate — "They went
+     quiet" today, or "You applied again" linked to the later application
+     (mark_reapplied's shape) — and the POST re-checks every id. The first
+     many-events-in-one-click action in the app; the author chose "in, with
+     a confirmation". `/analytics`' "still waiting" gets honest with it.
+   - **The pill counts moves** (`queue_count`, one statement: emails owed +
+     rounds + leads + nudges): **19 against 197** on the day — 8 emails
+     owed, 5 after a round, 6 worth a nudge (one of the 7 reachable young
+     rows carries an applied-again suggestion instead) — beside 23 applied
+     to again, 129 gone quiet (150 past the odds, 21 of them in the
+     applied-again band) and 34 recent with nobody to write to; the
+     confirmation page listed 152. The applied-again band is outside the
+     pill (its rule is Python over JD text, 89 ms) and the lede says both.
+     The list's aside reads "N moves to make". Rendered through TestClient
+     against the dev DB: every section present, the six nudge rows each
+     naming a recruiter with a profile link and "about 6-7% of applications
+     this old still hear back".
+   - **Not built, next on this page:** the draft beside each nudge (a
+     mailto body for a thread, a copyable two-liner for a LinkedIn contact;
+     template first, a model only if the template gets used), and one card
+     per agency filing N follow-ups in one click. Left out on purpose: a
+     "reply to a human sender" reach class — 124 of 580 inbound senders
+     looked human by domain, but 44 were LinkedIn's relay and 28 Workday's,
+     too noisy to name a person. A nudge still has no odds of WORKING: the
+     curve says who still hears back unprompted, and the five follow-ups
+     cannot say whether a nudge changes that.

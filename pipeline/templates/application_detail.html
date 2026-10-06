@@ -344,7 +344,7 @@
 </div>
 
 {% if emails %}
-<h2>Emails</h2>
+<h2 id="emails">Emails</h2>
 <ul class="list">
   {% for m in emails %}
   <li><span class="k when">{{ m.received_at | dtt }}</span>

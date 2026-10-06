@@ -182,7 +182,7 @@
        replaces 15 rows of it sitting above the first trace. Amber only when
        there IS work, because --age is the "time passing, unanswered" token
        (UI rule 1) and that is exactly what these rows are. #}
-    {% if follow_ups %}<a class="warm" href="/follow-ups">{{ follow_ups }} need follow-up</a>{% endif %}
+    {% if follow_ups %}<a class="warm" href="/follow-ups">{{ follow_ups }} move{{ '' if follow_ups == 1 else 's' }} to make</a>{% endif %}
     {#- Listings that asked for your CV by email, still owed (4 Oct 2026).
         Grey: the move is yours, not a wait on anyone (rule 1). #}
     {% if emails_owed %}<a href="/follow-ups#by-email">{{ emails_owed }} asked for your CV by email</a>{% endif %}

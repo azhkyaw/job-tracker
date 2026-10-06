@@ -141,6 +141,11 @@ An invariant keeps its RULE here and its case history in the rule file.
 - `pipeline/analytics.py` — the counts the LIST pages show (summary,
   rejection reasons and endings, reminders), `reapplications` (the follow-up
   queue's "you applied again" suggestion; `web.mark_reapplied` files it),
+  `queue()` (7 Oct 2026: `/follow-ups` sectioned by the MOVE each row
+  offers — after a round, worth a nudge, applied to again, gone quiet,
+  nobody to write to — off `reply_odds`, the SAME Kaplan-Meier curve
+  `/analytics` draws, from one query; `insights.quiet_after` is the cut) and
+  `queue_count` (the nav pill, ONE statement, the rows that carry a move),
   `awaiting_you_sql` (the ONE "awaiting your call" rule for an inbound lead:
   no reply of yours since they last wrote, `reply_sql`/`theirs_sql`; the pin,
   the pill, the lede and the queue's lead rows all read it, 28 Sep 2026), and
@@ -798,14 +803,19 @@ Detail lives with each family's rule file; this is the index.
 The dated register behind each item, tasks 1-60 with their measurements, is
 `docs/worklog.md`; read the matching entry before acting on one.
 
-- **Follow-up drafting** on an age-capped queue: cap `/follow-ups` near 21
-  days (150 qualify on 24 Sep and 178 on 4 Oct; 10 of the 24 Sep ones
-  inside the cap by that evening, 17 that morning — the queue ages), then
-  build the draft next to the button. 22 rows on 4 Oct are marked on the
-  page as an earlier application to a role applied to again (task 19) and leave the
-  queue as the author confirms them. Four `follow_up_sent` are on record: one filed
-  by hand, three recovered from follow-ups the user EMAILED, which since
-  migration 016 file themselves (task 16). (worklog task 4)
+- **Follow-up drafting**, now on a page that has a place for it (task 61,
+  7 Oct): `/follow-ups` is "Your move", sectioned by the move each row
+  offers, and the cap task 4 asked for is derived — `insights.quiet_after`,
+  the day under 5% of the author's applications ever heard back (23 on
+  7 Oct), so 150 of 192 unanswered rows became one count with one confirmed
+  bulk close (the pill reads 19 against 197), and the 6 "worth a nudge"
+  rows name the recruiter to message and the odds. Still to build on it:
+  the draft itself beside each nudge
+  (a mailto body for a thread, a copyable two-liner for a LinkedIn contact;
+  template first, no model), and one card per agency with one click filing
+  N follow-ups (33 employers held 85 of the rows). Five `follow_up_sent`
+  are on record, one of them the chase that drew an answer, after an
+  interview; no cold nudge ever has. (worklog tasks 4, 61)
 - **Listings that asked for the CV by email** (task 57, 4 Oct): 8
   applications owed the email on the day, listed first on `/follow-ups`;
   each is the author's "I emailed it", "Not needed" or an email sent.
@@ -884,13 +894,16 @@ The dated register behind each item, tasks 1-60 with their measurements, is
   went quiet" to close. Since 7 Oct an offer in hand is one of these
   (task 60; 1 on the day, the search's first offer, silent since the
   author declined to relocate on 22 Sep): "Not for me" with the why, or
-  "They went quiet". Not built, a separate decision: letting a
-  never-answered application close as "went quiet" too, which would thin
-  the unanswered queue (174 rows on 4 Oct).
+  "They went quiet". Decided 7 Oct (task 61): a never-answered application
+  closes as "went quiet" too, but only past the odds and only through the
+  confirmed bulk close on `/follow-ups` — never from its own page before
+  then.
 - **The 24 Sep data audit's leftovers are the author's clicks, not code**
-  (tasks 19-21): 22 rows (4 Oct) marked on `/follow-ups` as an earlier application
-  to a role applied to again, each with "Same role, close" (the studio's
-  four were left undecided on purpose); 3 blind extension captures (29 Jul,
+  (tasks 19-21): 23 rows (7 Oct) in `/follow-ups`' "Applied to again" band,
+  each with "Same role, close", or all at once with the quiet ones through
+  the bulk close (the studio's four were left undecided on purpose, and
+  stay out of the bulk only if the author leaves them out — it lists what
+  it will close); 3 blind extension captures (29 Jul,
   18 Aug, 20 Aug) that re-capturing from the popup on each job page fixes;
   16 approaches in triage's inbound lane on 4 Oct (task 22's two held-back
   confirmations and the 24 Sep sent reply are resolved). Sync had not run since 01:45 that day — check the
