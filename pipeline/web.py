@@ -390,7 +390,7 @@ _SORTS = {
     # applied_at could only ever tie at NULL.
     "applied": f"{_LEADS_FIRST}, started_at DESC NULLS LAST, a.id",
     "activity": f"last_activity DESC NULLS LAST, {_TIEBREAK}",
-    "silence": (f"s.status IN ('rejected','offer','withdrawn') ASC, "
+    "silence": (f"s.status IN ('rejected','withdrawn') ASC, "
                 f"last_activity ASC NULLS LAST, {_TIEBREAK}"),
     # Over the LATERAL's columns, not the output alias: ORDER BY only accepts an
     # alias as a bare name, so wrapping one in lower() is an error, not a sort.
@@ -926,6 +926,7 @@ _MOVED_AS = {
     "wrote":            "They wrote on",
     "interview_invite": "They invited you to interview on",
     "engaged":          "They got in touch on",
+    "offer":            "They made an offer on",
 }
 
 # Why an approach was not for you, when you say (`payload.why`). A closed
@@ -1321,6 +1322,8 @@ def application_detail(request: Request, app_id: str, saved: str | None = None,
             "event_reasons": _EVENT_REASONS,
             "event_channels": _EVENT_CHANNELS,
             "decline_why": _DECLINE_WHY,
+            # The statuses the close panel asks about on your own application.
+            "open_round": analytics.OPEN_ROUND,
             "today": datetime.now(request.state.tz).strftime("%Y-%m-%d"),
         })
 
@@ -2054,10 +2057,14 @@ def close_approach(request: Request, app_id: str, action: str = Form(""),
     interview, or a person engaging), which put the next move on them; an
     interview that went badly and never got an answer closes the same way,
     when you decide. Never before a round: an application nobody answered
-    waits in the follow-up queue, and "I withdrew" says the rest. Files
-    `withdrawn` with `payload.closed` (see `_CLOSE_KINDS` for why no new
-    type), and `payload.note` when you add one: your own words on it, shown
-    on the timeline like any event's note.
+    waits in the follow-up queue, and "I withdrew" says the rest. And once
+    an OFFER is on the thread (7 Oct 2026, migration 019: an offer is a
+    round, not a close), "Not for me" too: declining it, with the why, is
+    the close that says what happened, where "I withdrew" would say you
+    left before they chose you. Files `withdrawn` with `payload.closed`
+    (see `_CLOSE_KINDS` for why no new type), and `payload.note` when you
+    add one: your own words on it, shown on the timeline like any event's
+    note.
 
     Refused on a thread already closed, since a second close would only
     argue with the first about when it ended. Dated like the timeline's
@@ -2084,9 +2091,12 @@ def close_approach(request: Request, app_id: str, action: str = Form(""),
     with db.connect_scoped(user["id"]) as conn, conn.transaction():
         a = _get_application(conn, app_id)
         if a["origin"] != "inbound":
-            if kind != "went_quiet":
-                return _event_error(app_id, "“Not for me” closes an approach a recruiter started. "
-                                            "For your own application, record “I withdrew”.")
+            if kind != "went_quiet" and not conn.execute(
+                    "SELECT 1 FROM events WHERE application_id = %s AND type = 'offer'",
+                    (a["id"],)).fetchone():
+                return _event_error(app_id, "“Not for me” closes an approach a recruiter started, "
+                                            "or an offer. For your own application, record "
+                                            "“I withdrew”.")
             if not conn.execute("SELECT 1 FROM events WHERE application_id = %s AND type = ANY(%s)",
                                 (a["id"], list(analytics.ROUND_EVENTS))).fetchone():
                 return _event_error(app_id, "“They went quiet” closes an application after an "

@@ -2996,6 +2996,64 @@ check("a round gone quiet is never offered as “you applied again”; the unans
       _ra in _rows and _rows[_ra]["kind"] == "round" and _ra not in _again and _rc in _again,
       (_ra in _rows, _ra in _again, _rc in _again))
 
+print("an offer is a round, not a close (7 Oct 2026, migration 019)")
+with db.connect() as conn:
+    _offers0 = analytics.summary(conn, _uid)["offers"]
+_of = _new_app("Offer Open Co", 40)
+client.post(f"/applications/{_of}/events", data={"type": "interview_invite", "occurred_on": _ago(30)})
+client.post(f"/applications/{_of}/events", data={"type": "offer", "channel": "whatsapp",
+                                                 "note": "the seat moved to another city",
+                                                 "occurred_on": _ago(16)})
+_rows = _queue(_uid)[0]
+check("an offer in hand is an open thread: status offer, queued as a round after REMINDER_DAYS "
+      "of silence, the wait running from the offer",
+      _state(_of)[0] == "offer" and _of in _rows and _rows[_of]["kind"] == "round"
+      and _rows[_of]["moved_as"] == "offer" and 15 <= _rows[_of]["days_waiting"] <= 16,
+      _rows.get(_of))
+check("its row says they made an offer and when",
+      "They made an offer on" in _row_on("/follow-ups", "Offer Open Co"))
+r = client.get(f"/applications/{_of}")
+check("its page asks about the offer: a why, “Not for me” and “They went quiet”",
+      "Offer in hand:" in r.text and 'value="decline"' in r.text and 'value="quiet"' in r.text
+      and "Heard nothing since?" not in r.text, r.status_code)
+r = client.post(f"/applications/{_of}/close", data={"action": "decline", "why": "location",
+                                                     "note": "would not relocate"})
+_c = _closes(_of)
+check("declining it files ONE withdrawal, by hand, saying declined, why and your note",
+      r.status_code == 303 and len(_c) == 1 and _c[0]["source"] == "manual"
+      and _c[0]["payload"] == {"closed": "declined", "why": "location", "note": "would not relocate"},
+      _c)
+with db.connect() as conn:
+    _offers1 = analytics.summary(conn, _uid)["offers"]
+check("...which ends it: withdrawn outranks the offer, out of the queue, and the offer still counts",
+      _state(_of)[0] == "withdrawn" and _of not in _queue(_uid)[0] and _offers1 == _offers0 + 1,
+      (_state(_of)[0], _offers0, _offers1))
+r = client.get(f"/applications/{_of}")
+check("its timeline says “You declined” with your note, and the panel is gone",
+      "You declined" in r.text and "would not relocate" in r.text and "Offer in hand:" not in r.text
+      and "You withdrew" not in r.text, r.status_code)
+_row = client.get("/").text.split("Offer Open Co", 1)[1].split("</a>")[0]
+check("the list wears it as withdrawn with a grey “declined” tag naming the why",
+      ">withdrawn</span>" in _row and ">declined</span>" in _row and "location or work mode" in _row,
+      _row[-500:])
+
+_rs = _new_app("Offer Pulled Co", 30)
+client.post(f"/applications/{_rs}/events", data={"type": "offer", "occurred_on": _ago(10)})
+client.post(f"/applications/{_rs}/events", data={"type": "rejected", "reason": "role_closed",
+                                                 "occurred_on": _ago(10)})
+check("a rescinded offer, filed as “They rejected me” the same day, reads rejected — the close "
+      "outranks the offer at the same instant — and ended after a round",
+      _state(_rs)[0] == "rejected"
+      and "Offer Pulled Co" in client.get("/?status=rejected&how=after_round").text, _state(_rs))
+
+_io = _new_lead("Offer Inbound Co", _ago(30))
+client.post(f"/applications/{_io}/events", data={"type": "offer", "occurred_on": _ago(12)})
+r = client.get(f"/applications/{_io}")
+_rows = _queue(_uid)[0]
+check("an approach that reached an offer keeps its own close, and is queued as a round",
+      _state(_io)[0] == "offer" and 'value="decline"' in r.text and 'value="quiet"' in r.text
+      and _io in _rows and _rows[_io]["kind"] == "round", (_state(_io)[0], _rows.get(_io)))
+
 print("a listing that asked for the CV by email (4 Oct 2026)")
 _EA_JD = ("We are hiring.\nPlease send your updated resume in Word format to "
           "jane@contoso-search.example, quoting the job title.\nOnly shortlisted candidates "

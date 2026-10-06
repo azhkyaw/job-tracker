@@ -49,9 +49,13 @@ migration invariant (#8) and the tenancy checklist (#6) are still in CLAUDE.md.
   `DROP CONSTRAINT`/`ADD CONSTRAINT`. First time a migration needed this
   (012) — every prior migration only ever added columns/tables.
 - **`application_status`'s CASE precedence uses gapped values** (multiples
-  of 10: 10/30/40/45/50/60/70), not consecutive integers, specifically so a
+  of 10: 10/30/40/45/50/55/60), not consecutive integers, specifically so a
   new event type can slot in between two existing ones without renumbering
-  everything else — done once already for `engaged` (migration 012).
+  everything else — done for `engaged` (migration 012, 45) and again when
+  `offer` moved from 70, above the closes, to 55 below them (migration 019:
+  an offer is a round, so declining or losing it is what ends the thread).
+  Each is a `CREATE OR REPLACE VIEW` with the whole CASE restated; the
+  current values are whichever migration touched the view LAST.
 - **Testing an `application_status` precedence tie:** two manual events
   filed with the SAME `occurred_on` date land at the EXACT same instant
   (`ingest.local_date_to_utc` anchors every bare date to local noon), so

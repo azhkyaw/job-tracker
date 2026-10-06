@@ -511,8 +511,11 @@ is a private artifact, linked from the memory file
       `superseded_by`.
     - **Your own application closes the same way, after a round**
       (29 Sep 2026): "They went quiet" only (never "Not for me", which is an
-      approach's; "I withdrew" stays the application's own), and only once
-      an interview or a person getting in touch has happened
+      approach's; "I withdrew" stays the application's own — until an OFFER
+      is on the thread, 7 Oct 2026, migration 019: then "Not for me" with
+      its why is the close that says what happened, and the detail page
+      asks "Offer in hand:" with the why-select beside "They went quiet"),
+      and only once an interview or a person getting in touch has happened
       (`analytics.ROUND_EVENTS`). Before a round, a silent application is
       the never-answered kind and waits in `/follow-ups`. The detail page
       asks "Heard nothing since?" on an open round, with an optional note
@@ -652,6 +655,29 @@ values (multiples of 10) so a future insertion doesn't force another
 renumbering. **A visa rejection does NOT auto-set
 `extractions.visa_signal`** — that stays a deliberate second click on the
 detail page's own select, scoped to that posting (decided 28 Jul 2026).
+
+**An offer is a round, not a close** (7 Oct 2026, migration 019). `offer`
+ranked ABOVE both closes (70 against 60), so once filed it was the status
+for good, and `trace.TERMINAL`, `insights.CLOSED`, `analytics.OPEN_ROUND`
+("without `offer`, which is terminal") and `close_approach`'s guard all read
+it as the end: a declined offer, a rescinded one and one gone quiet in
+negotiation were a green, closed success that could not be closed. Found on
+the search's first offer — an agency's recruiter rang with the client's
+offer of the seat, moved to another city; the author declined to relocate,
+asked for the original city to be reconsidered, and heard nothing more; the
+record could say none of it. Now `offer` ranks 55, between
+`interview_invite` and the closes (the gap the values left between 50 and
+60), `CLOSED = frozenset(trace.TERMINAL)` and `OPEN_ROUND = ROUND_EVENTS`,
+so three lists that meant one thing read one. The thread an offer opens
+stays open — green still (`insights` keeps the tone; it is the one colour
+that is the thread's own rather than the state of its wait), queued on
+`/follow-ups` as a round when quiet ("They made an offer on …",
+`_MOVED_AS`) — and ends on `withdrawn` + `closed=declined` with its `why`
+(rule 17's "Not for me", now allowed on your own application once an offer
+is on the thread), on `rejected` with a reason when they withdraw it, or on
+"They went quiet". `analytics.summary`'s `offered` is an EXISTS over the
+events, so an offer that was made still counts whatever came after; the
+same rule 13 uses for `after_round`.
 
 ## Gotchas learned the hard way
 
@@ -844,3 +870,13 @@ detail page's own select, scoped to that posting (decided 28 Jul 2026).
   at. What to look at: whether a long quoted sentence in the row's second
   line crowds the "Not needed" button, and how the panel's `<q>` wraps
   inside a `.record` row.
+
+- **The detail page's "Offer in hand:" panel (7 Oct 2026, task 60)** has
+  been rendered only through the suite's TestClient (an own application
+  with an offer: the why-select, "Not for me" and "They went quiet" in one
+  `.record` row, the widest that panel has been) — the one real offer is an
+  inbound record, whose page shows the existing "Close this approach"
+  panel, read through TestClient against the dev DB along with its
+  `/follow-ups` row ("They got in touch on 22 Sep, nothing since"). Never
+  looked at. What to look at: whether a select, two buttons, a note input
+  and a date fit one row at the list's width.

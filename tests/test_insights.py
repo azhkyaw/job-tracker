@@ -270,6 +270,21 @@ check("closing() names the LATEST close when a thread has two",
                      {"type": "note", "occurred_at": ago(1)}])["type"] == "withdrawn"
       and trace.closing([{"type": "applied", "occurred_at": ago(3)}]) is None
       and trace.closing([]) is None)
+check("an offer is a round, not a close (7 Oct 2026): closing() passes over it, a close after "
+      "it ends the thread, and the one list of open rounds holds it",
+      trace.closing([{"type": "offer", "occurred_at": ago(3)}]) is None
+      and trace.closing([{"type": "offer", "occurred_at": ago(9)},
+                         {"type": "withdrawn", "occurred_at": ago(3)}])["type"] == "withdrawn"
+      and "offer" not in insights.CLOSED and "offer" in analytics.OPEN_ROUND)
+_offer = app(status="offer")
+_fo = facts_of([_offer], [ev(_offer, "applied", ago(30), source="extension"),
+                          ev(_offer, "offer", ago(16))])[0]
+check("an offer in hand: not ended, green, counted, and waiting in the list's words",
+      _fo["ended_at"] is None and _fo["tone"] == "offer" and _fo["offer"]
+      and _fo["silent_days"] == 16 and insights._phrase(_fo) == "offer, quiet 16 days",
+      (_fo["ended_at"], _fo["tone"], insights._phrase(_fo)))
+check("the headline counts it among the threads in a round now, and as an offer",
+      insights.headline([_fo], NOW)["live"] == 1 and insights.headline([_fo], NOW)["offers"] == 1)
 check("trace.build sets the same `live` the template now reads",
       trace.build([{"id": "x"}], {"x": [{"type": "viewed", "occurred_at": ago(2)}]}, NOW, 10) is not None)
 row = {"id": "x"}

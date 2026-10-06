@@ -1657,3 +1657,51 @@ the key to each real case.
      comparison shows the one resume named with nothing after the shared
      stem as its full file name, clipped (its title has it); salary is on
      0 of 350, the LinkedIn adapter's known gap.
+60. **An offer is a round, not a close** (7 Oct 2026, migration 019). The
+   search's first offer, and the model had no word for how it went. An
+   agency's recruiter rang on 21 Sep (WhatsApp) with the client's offer of
+   the seat, moved to another city; the author said they would consider
+   it, was chased on the 22nd, declined to relocate and asked for the
+   original city to be reconsidered, and heard nothing more. The record (an
+   inbound lead, interview invitation 9 Sep) held none of it and sat on
+   `/follow-ups` as a round gone quiet since the invitation, where "They
+   went quiet" would have closed it with the offer never recorded.
+   - **The gap.** `offer` ranked above both closes (70 against 60), and
+     since migration 013 the highest precedence ever recorded wins, so a
+     filed offer was the status for good; `trace.TERMINAL`,
+     `insights.CLOSED` and `analytics.OPEN_ROUND` ("without `offer`, which
+     is terminal") each said the same thing in its own list, and
+     `close_approach` refused any thread holding a terminal event. A
+     declined, rescinded or quiet offer was a green, closed success that
+     could not be closed. 0 of 386 records held an offer event, which is
+     why nobody had noticed.
+   - **The fix** (`migrations/019_offer_is_a_round.sql`): `offer` ranks
+     55, between `interview_invite` and the closes; `TERMINAL` drops it and
+     `CLOSED = frozenset(trace.TERMINAL)`, `OPEN_ROUND = ROUND_EVENTS` —
+     one definition each. An offer in hand is an open thread, still green
+     (`insights` keeps the tone), queued as a round after `REMINDER_DAYS`
+     ("They made an offer on …" when the offer was the latest move), and
+     closed by "Not for me" with a why (now allowed on the author's own
+     application once an offer is on the thread — "Offer in hand:" on the
+     detail page), "They went quiet", or "They rejected me" with a reason
+     for a rescinded one. `analytics.summary`'s `offered` is unchanged, so
+     an offer that was made counts whatever came after. Twelve new checks
+     (`tests/test_web.py`, `tests/test_insights.py`): a declined offer
+     reads withdrawn and still counts; a same-day rejection outranks the
+     offer; an inbound offer keeps its own close; the pure suite's
+     `closing()`, tone and headline.
+   - **Filed on the record** through the real timeline route, as the page
+     would: the offer (21 Sep, WhatsApp, the move to the other city in its
+     note), the author's "I'll consider it" (a note), the chase (22 Sep,
+     `engaged`) and the author's answer (a note). Status now `offer`; the
+     queue row reads "They got in touch on 22 Sep, nothing since", 14 days,
+     one of 5 round rows that day. **The close is the author's click**: "Not
+     for me — location or work mode" (the cause, countable) or "They went
+     quiet" (the literal state), on the page or on `/follow-ups`.
+   - **Not built: "I replied" after a round.** `web.mark_replied` is for
+     open leads, so a hand-filed answer of yours on a thread that has moved
+     is a plain note, which `analytics.move_sql` does not count as a move:
+     the queue's wait runs from THEIR latest move (right for the queue) and
+     the timeline reads "Note", not "You replied" (weaker). Also not built:
+     accepting an offer — the search ends there, and `offer` with nothing
+     after it says so for now.

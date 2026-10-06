@@ -144,7 +144,7 @@
   <button class="primary">I replied</button>
 </form>
 {% endif %}
-{% if a.origin == 'inbound' and status not in ('rejected', 'withdrawn', 'offer') %}
+{% if a.origin == 'inbound' and status not in ('rejected', 'withdrawn') %}
 <form method="post" action="/applications/{{ a.id }}/close" class="record">
   <span class="lab">Close this approach:</span>
   <select name="why" aria-label="Why it is not for you">
@@ -165,10 +165,24 @@
     me", which both say something that did not happen. The note is yours (how
     it went, what you heard last); the timeline shows it. /follow-ups asks
     about the same threads after REMINDER_DAYS of silence. `a.status`, the
-    derived status itself: `status` here is its display word ("interviewing"). #}
-{% if a.origin != 'inbound' and a.status in ('engaged', 'interview_invite') %}
+    derived status itself: `status` here is its display word ("interviewing").
+    An offer in hand (7 Oct 2026, migration 019) is a round too, with one
+    more close: declining it, with the why — the close that says what
+    happened. `open_round` is analytics.OPEN_ROUND, the queue's own list. #}
+{% if a.origin != 'inbound' and a.status in open_round %}
 <form method="post" action="/applications/{{ a.id }}/close" class="record">
+  {% if a.status == 'offer' %}
+  <span class="lab">Offer in hand:</span>
+  <select name="why" aria-label="Why you declined it">
+    <option value="">Not for me, because…</option>
+    {% for value, label in decline_why.items() %}
+    <option value="{{ value }}">{{ label }}</option>
+    {% endfor %}
+  </select>
+  <button name="action" value="decline">Not for me</button>
+  {% else %}
   <span class="lab">Heard nothing since?</span>
+  {% endif %}
   <input type="text" name="note" placeholder="A note for yourself, if any" aria-label="A note for yourself"
          style="width:14rem">
   <input type="date" name="occurred_on" max="{{ today }}" aria-label="When you closed it"

@@ -85,7 +85,8 @@ psql tracker -f migrations/001_init.sql -f migrations/002_gmail_sync_state.sql \
              -f migrations/015_drop_application_focused.sql \
              -f migrations/016_email_sent_by_user.sql \
              -f migrations/017_visa_signal_v2.sql \
-             -f migrations/018_job_ats_id.sql
+             -f migrations/018_job_ats_id.sql \
+             -f migrations/019_offer_is_a_round.sql
 
 # 2. Python deps. google-api-python-client/google-auth-oauthlib are only
 #    needed for the OAuth alternative in step 3b — safe to skip if you're

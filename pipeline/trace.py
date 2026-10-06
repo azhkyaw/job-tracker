@@ -16,8 +16,10 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 # Events that end a thread: the trace stops with a cap rather than running a
-# waiting tail to today. Nothing is pending after these.
-TERMINAL = {"rejected", "offer", "withdrawn"}
+# waiting tail to today. Nothing is pending after these. An offer is NOT one
+# (7 Oct 2026, migration 019): it is a round, and the thread it opens waits
+# on you accepting or declining it, or on them withdrawing it or going quiet.
+TERMINAL = {"rejected", "withdrawn"}
 
 
 def closing(evs):

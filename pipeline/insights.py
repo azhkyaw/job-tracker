@@ -41,7 +41,10 @@ from .ingest import UNKNOWN_COMPANY
 RESPONSE = frozenset(analytics.RESPONSE_TYPES)
 ROUND = frozenset(analytics.ROUND_EVENTS)
 ANSWER = ROUND | {"rejected"}
-CLOSED = frozenset({"rejected", "offer", "withdrawn"})
+# The statuses that end a thread — trace.TERMINAL's, so the squares and the
+# list's traces close on the same events. An offer in hand is open
+# (7 Oct 2026, migration 019).
+CLOSED = frozenset(trace.TERMINAL)
 
 # A comparison counts only applications at least this old: a younger one has
 # not had its chance to be answered, and counting it as "not answered" would
@@ -223,7 +226,10 @@ def build_facts(apps, events, now: datetime, reminder_days: int) -> list[dict]:
         f["live"] = trace.live(last["type"] if last else None, silent, reminder_days)
         status = "applied" if a["status"] == "confirmation" else a["status"]
         f["state"] = status
-        f["tone"] = status if status in CLOSED else ("live" if f["live"] else "wait")
+        # An offer in hand is open (migration 019) and still wears green — the
+        # one colour that is the thread's own rather than the state of its wait.
+        f["tone"] = (status if status in CLOSED or status == "offer"
+                     else ("live" if f["live"] else "wait"))
         out.append(f)
     return out
 
@@ -309,7 +315,7 @@ def headline(facts, now: datetime) -> dict:
         "per_round_inbound": round(len(inbound) / r_in) if r_in else None,
         "approaches": len(inbound),
         "offers": sum(1 for f in facts if f["offer"]),
-        "live": sum(1 for f in facts if f["state"] in ("engaged", "interview_invite")),
+        "live": sum(1 for f in facts if f["state"] in analytics.OPEN_ROUND),
     }
 
 

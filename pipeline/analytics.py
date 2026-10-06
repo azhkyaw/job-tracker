@@ -353,11 +353,12 @@ def move_sql(e: str) -> str:
 _LAST_MOVE = f"""(SELECT max(m.occurred_at) FROM events m
                    WHERE m.application_id = a.id AND {move_sql('m')})"""
 
-# The statuses of a thread a round has opened and nothing has closed: an
-# interview invitation, or a person engaging (ROUND_EVENTS without `offer`,
-# which is terminal). The next move is theirs, which is exactly why the first
-# kind of queue row below leaves such a thread alone.
-OPEN_ROUND = ("engaged", "interview_invite")
+# The statuses of a thread a round has opened and nothing has closed — the
+# round events themselves, since an offer is one too (7 Oct 2026, migration
+# 019: it ranks below the closes, so accepting, declining or losing it is
+# what ends the thread, never the offer itself). A round is a response, which
+# is exactly why the first kind of queue row below leaves such a thread alone.
+OPEN_ROUND = ROUND_EVENTS
 _OPEN_ROUND = _sql_list(OPEN_ROUND)
 
 # Three kinds of row, one queue. An application: applied over REMINDER_DAYS

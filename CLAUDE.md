@@ -381,7 +381,13 @@ An invariant keeps its RULE here and its case history in the rule file.
    (28 Sep 2026; web-ui.md rule 17).
    **`engaged`** (a person reaching out, no next step yet) ranks strictly
    between `viewed` — `matcher.py`'s passive, auto-detected signal only —
-   and `interview_invite`, in gapped precedence values. **A visa rejection
+   and `interview_invite`, in gapped precedence values. **An offer is a
+   round, not a close** (7 Oct 2026, migration 019): it ranks between
+   `interview_invite` and the two closes, so the thread stays open — and
+   reaches `/follow-ups` when quiet — until you decline it (`withdrawn` +
+   `closed=declined`, with `why`; the one "Not for me" allowed on your own
+   application), they withdraw it (`rejected`, with a reason) or it goes
+   quiet. An offer that was made still counts as one. **A visa rejection
    does NOT auto-set `extractions.visa_signal`.** The full text, with the
    why of each rule: `.claude/rules/web-ui.md` → "Invariant #2 in detail".
 3. **postings ≠ jobs ≠ applications.** One application per (user, job). Dedup
@@ -787,9 +793,9 @@ Detail lives with each family's rule file; this is the index.
   detail page's "Heard nothing since?" (29 Sep, task 40), were rendered
   through TestClient against real data only, never looked at.
 
-## Open work (as of 4 Oct 2026)
+## Open work (as of 7 Oct 2026)
 
-The dated register behind each item, tasks 1-59 with their measurements, is
+The dated register behind each item, tasks 1-60 with their measurements, is
 `docs/worklog.md`; read the matching entry before acting on one.
 
 - **Follow-up drafting** on an age-capped queue: cap `/follow-ups` near 21
@@ -875,7 +881,10 @@ The dated register behind each item, tasks 1-59 with their measurements, is
 - **Round rows in `/follow-ups` are the author's clicks** (task 40; 2 on
   29 Sep, 4 on 4 Oct): a thread an interview or a person opened, silent
   `REMINDER_DAYS`; "Followed up" to chase (the clock restarts) or "They
-  went quiet" to close. Not built, a separate decision: letting a
+  went quiet" to close. Since 7 Oct an offer in hand is one of these
+  (task 60; 1 on the day, the search's first offer, silent since the
+  author declined to relocate on 22 Sep): "Not for me" with the why, or
+  "They went quiet". Not built, a separate decision: letting a
   never-answered application close as "went quiet" too, which would thin
   the unanswered queue (174 rows on 4 Oct).
 - **The 24 Sep data audit's leftovers are the author's clicks, not code**
