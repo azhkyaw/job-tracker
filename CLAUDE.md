@@ -718,7 +718,10 @@ web/UI, LLM, database) moved VERBATIM into `.claude/rules/` — see Docs map →
   already has open (a half-filled form) is out of reach until they drag it
   into the "Claude" group, where it keeps its state; and `javascript_tool`
   awaits a top-level `await`, not a promise an async IIFE returns (that
-  comes back as `{}`).
+  comes back as `{}`). And a page call sent alongside `navigate`, or right
+  after it, fails with "Can't interact with browser-internal or
+  unparseable URLs" while the page is still loading (twice on 7 Oct 2026):
+  the URL is fine, so send the next call on its own.
 
 ## Environment
 
@@ -920,3 +923,6 @@ The dated register behind each item, tasks 1-62 with their measurements, is
   25 Sep (task 31), 55 on 4 Oct after one rejection reached a hand-dated
   application (task 59). Replay over the waiting rows before tuning, and
   note the window moves as replies arrive. The author's call, not changed.
+  Offered 7 Oct and NOT taken (task 62): ending the amber at `/follow-ups`'
+  odds cut (`insights.quiet_after`, 23 days that day) so rows past it go
+  grey — 111 open rows sat at 100% heat. Don't re-propose it as new.
