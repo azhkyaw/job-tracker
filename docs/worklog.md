@@ -1892,8 +1892,8 @@ the key to each real case.
      job board had written ten hours after "your application was sent"
      that delivery failed, and that mail had been ignored in triage by a
      click on 30 Sep, so the record still reads applied (the author's to
-     check); a 3 Oct Ashby form's answers stored in a new wrong shape;
-     and, sized only, Workday answers stored as the platform's
+     check); a 3 Oct Ashby form's answers stored in a new wrong shape
+     (task 66); and, sized only, Workday answers stored as the platform's
      internal ids and a cookie banner's checkboxes stored as answers.
    - **Looked odd, fine:** same-title pairs at one employer are reposts or
      separate requisitions (three mail-made records of one title carry
@@ -1901,3 +1901,30 @@ the key to each real case.
      the popover-time shape; posting names differing from their job are
      merge leftovers. The decided items of 24 Sep (two names, differing
      answers, double rejections, 26 kept radio artefacts) were left alone.
+
+66. **A fieldset with no legend still has a caption** (7 Oct 2026,
+   extension 0.27.3). Task 65's audit found a 3 Oct Ashby capture whose
+   multiple-choice checkbox question was stored as four questions answered
+   Yes or No, and whose two radio groups were named by their first option,
+   the sponsorship choice stored as its own question. The form was still
+   live and was read without typing: each question a legendless
+   `<fieldset>` captioned by its first child, a `<label>` whose `for`
+   names nothing. `.claude/rules/extension.md` has the rule and the case.
+   - **Built:** `answers.js:caption()` (legend, else a first child that
+     holds and labels no control, for a fieldset holding only one
+     question's options), `boxSetOf()` (a set of checkboxes answers once,
+     with the boxes ticked; the edit backstop defers to it), and a last
+     resort that never returns an option's label. Three new extension
+     checks from the live markup (443 in all); on the old code the fixture
+     gives the real record's rows exactly.
+   - **Repaired:** the record's six wrong rows became the three the new
+     reader captures, questions from the live form, answers the options
+     the rows showed ticked, the capture's time and form order kept;
+     snapshot first (`2026-10-07-ashby-captioned-answers.json`). Its visa
+     bucket was already "needs" (the broken row happened to read as one)
+     and stayed so.
+   - **Sized, not repaired:** the same class on 7 older applications
+     (three LinkedIn Easy Apply, two Workday, one Greenhouse, one Phenom),
+     whose group questions were never stored; the author's call whether to
+     delete those rows.
+

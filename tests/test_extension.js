@@ -1057,6 +1057,75 @@ console.log("\nanswers.js sweep: Lever's custom questions, named by the block be
         ["Enter the code we emailed you", null, null, null, null, null]);
 }
 
+console.log("\nanswers.js sweep: Ashby's questions, captioned inside their fieldset (read live 7 Oct 2026)");
+{
+  // Ashby's application form, the live markup with a placeholder employer.
+  // Each multiple-choice question is a <fieldset> with NO legend: its first
+  // child is a <label> holding the question, whose `for` names no control,
+  // and each option sits three levels down, an <input> beside a <div>, with
+  // its own <label for>. On the old code the checkbox set was four
+  // questions ("United States", "Singapore", "No", "N.A. …") answered Yes or
+  // No, and each radio group took its first option's label as its question
+  // — so the option ticked first was stored as its own answer: the real
+  // record of 3 Oct 2026, exactly.
+  const captioned = (q, opts) => node("fieldset", { class: "_fieldEntry" }, [
+    node("label", { for: "_systemfield_" + q.length, class: "ashby-application-form-question-title" }, [q]),
+    node("div", { class: "_options" }, opts)]);
+  const opt = (type, name, id, label, picked) => node("div", { class: "_option" }, [
+    node("div", {}, [node("input", { type, name, id, ...(picked ? { checked: "checked" } : {}) })]),
+    node("label", { for: id }, [label])]);
+  const AUTH = "Are you authorized to work in the country this role is listed in?";
+  const SPONSOR = "Will you require sponsorship to continue or extend your current work authorization status?";
+  const US = "A “U.S. person” is a citizen, legal permanent resident, or legal temporary resident.";
+  const auth = captioned(AUTH, [opt("checkbox", "a1", "a1", "United States"),
+    opt("checkbox", "a2", "a2", "Singapore"), opt("checkbox", "a3", "a3", "No", true),
+    opt("checkbox", "a4", "a4", "N.A. - this is a remote position")]);
+  const sponsor = captioned(SPONSOR, [
+    opt("radio", "sp", "sp1", "Yes, I will require Contoso to sponsor my employment", true),
+    opt("radio", "sp", "sp2", "No, I do not require sponsorship to work in this country")]);
+  const us = captioned(US, [opt("radio", "us", "us1", "I am a U.S. person"),
+    opt("radio", "us", "us2", "I am a citizen of one of the listed countries"),
+    opt("radio", "us", "us3", "None of the above; I am a citizen of a different country", true)]);
+  // A lone box keeps its own label, the statement ticked; and a SECTION's
+  // fieldset, whose first child heads controls of several kinds, groups
+  // nothing.
+  const consent = captioned("I confirm that all information provided is true and complete.",
+    [opt("checkbox", "c1", "c1", "I have read and agree to the above terms and privacy notice.", true)]);
+  const section = node("fieldset", {}, [node("div", {}, ["Work history"]),
+    node("label", { for: "co" }, ["Company"]), node("input", { type: "text", id: "co", name: "co", value: "Fabrikam" }),
+    opt("checkbox", "cur", "cur", "I currently work here", true),
+    opt("checkbox", "rem", "rem", "This was a remote role")]);
+  const form = node("form", {}, [
+    node("div", {}, [node("label", { for: "nm" }, ["Full Name"]),
+      node("input", { type: "text", id: "nm", name: "nm", value: "Jane Doe" })]),
+    auth, sponsor, us, consent, section]);
+  check("a captioned fieldset is one question: the set answers with the boxes ticked, a group "
+        + "with its option, and neither ever names a question by an option",
+        sweepOf(form),
+        [{ question: "Full Name", answer: "Jane Doe", type: "text" },
+         { question: "I have read and agree to the above terms and privacy notice.", answer: "Yes", type: "checkbox" },
+         { question: "Company", answer: "Fabrikam", type: "text" },
+         { question: "I currently work here", answer: "Yes", type: "checkbox" },
+         { question: "This was a remote role", answer: "No", type: "checkbox" },
+         { question: SPONSOR, answer: "Yes, I will require Contoso to sponsor my employment", type: "radio" },
+         { question: US, answer: "None of the above; I am a citizen of a different country", type: "radio" },
+         { question: AUTH, answer: "No", type: "checkbox" }]);
+  // Ticking a box fires the edit backstop, which records a control alone
+  // unless the sweep stored its exact answer; a set's box must leave that to
+  // the set.
+  const sb = loadAnswers(node("form", {}, [captioned(AUTH, [opt("checkbox", "b1", "b1", "Singapore", true),
+                                                            opt("checkbox", "b2", "b2", "No")])]));
+  const box = sb.document.body.querySelector("input");
+  for (const fn of sb._listeners.change || []) fn({ target: box, composedPath: () => [box] });
+  check("…and a change on one of its boxes adds no row of its own",
+        sb.window.__trackerAnswers.take(), [{ question: AUTH, answer: "Singapore", type: "checkbox" }]);
+  // A group nothing names stays unrecorded rather than named by an option.
+  const bare = node("form", {}, [node("div", {}, [
+    opt("radio", "x", "x1", "Option one", true), opt("radio", "x", "x2", "Option two")])]);
+  check("…and a radio group with no caption, legend or text before it is not recorded under an option's label",
+        sweepOf(bare).filter((r) => r.question === "Option one"), []);
+}
+
 console.log("\nanswers.js normKey: one rule with pipeline/answers.py:norm_question");
 {
   // The same list tests/test_captures.py holds the server to. Until 24 Sep 2026

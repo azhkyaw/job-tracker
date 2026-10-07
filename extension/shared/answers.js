@@ -419,6 +419,54 @@
     return labelFor(el) || el.value || null;
   }
 
+  /* A fieldset's QUESTION: its <legend>, else its CAPTION — the first child,
+   * when that child holds no control and labels none. Ashby's application
+   * forms (read live 7 Oct 2026) ask every multiple-choice question so:
+   * <fieldset><label for="…">Are you authorized to work in…?</label>, then
+   * the options, each an <input> with its own <label for>, and the caption's
+   * `for` names no control at all. With no legend to read, a radio group took
+   * its FIRST OPTION's label for its question (radioQuestion's last resort),
+   * so "Yes, I will require … to sponsor my employment" was stored as both
+   * question and answer; and a set of checkboxes was read one box at a time,
+   * each option a "question" answered Yes or No. Read only for a fieldset of
+   * ONE question (holdsOnly): a section's fieldset opens with the section's
+   * heading, which names none of the controls inside. */
+  function caption(fs) {
+    if (!fs || fs.tagName !== "FIELDSET") return null;
+    const legend = fs.querySelector("legend");
+    if (legend && labelText(legend)) return labelText(legend);
+    const first = fs.children[0];
+    if (!first || first.tagName === "LEGEND") return null;
+    if ((first.matches && first.matches("input,select,textarea")) ||
+        (first.querySelector && first.querySelector("input,select,textarea"))) return null;
+    const id = first.tagName === "LABEL" ? first.getAttribute("for") : null;
+    if (id) {
+      const root = first.getRootNode ? first.getRootNode() : document;
+      const target = (root.getElementById && root.getElementById(id)) || document.getElementById(id);
+      if (target && target.matches && target.matches("input,select,textarea")) return null;
+    }
+    return labelText(first) || null;
+  }
+
+  // Does `fs` hold nothing but `members` — one question's options?
+  const holdsOnly = (fs, members) => collect(fs, []).every((c) => members.includes(c));
+
+  /* A fieldset of checkboxes that is ONE question (caption(), holdsOnly()),
+   * or null: its boxes, read as one answer, the labels of the boxes ticked.
+   * Two boxes at least: a lone checkbox is a statement ticked or not ("I have
+   * read and agree…"), and its own label is right. Cached per sweep. */
+  let boxSets = new Map();
+  function boxSetOf(el) {
+    const fs = closestDeep(el, "fieldset");
+    if (!fs) return null;
+    if (!boxSets.has(fs)) {
+      const boxes = collect(fs, [], "input[type='checkbox']");
+      boxSets.set(fs, boxes.length >= 2 && holdsOnly(fs, boxes) && caption(fs)
+        ? { fs, boxes } : null);
+    }
+    return boxSets.get(fs);
+  }
+
   function radioQuestion(el, option, shared, members) {
     const fs = closestDeep(el, "fieldset");
     const legend = fs && fs.querySelector("legend");
@@ -427,6 +475,10 @@
     if (group) {
       const own = ariaName(group);
       if (own) return own;
+    }
+    if (fs && members && holdsOnly(fs, members)) {
+      const cap = caption(fs);
+      if (cap) return cap;
     }
     if (shared) return shared;
     const w = closestDeep(el, "[role='radio']");
@@ -443,7 +495,12 @@
       const before = precedingText(box);
       if (before) return before;
     }
-    return labelFor(el);
+    // Never the first option's own label: that names an answer, not the
+    // question, and with nothing else to read it was stored as both (Ashby,
+    // 3 Oct 2026). No question is better than a wrong one; the sweep counts
+    // the group as unlabelled.
+    const own = labelFor(el);
+    return own && own !== option ? own : null;
   }
 
   // The nearest ancestor of every one of `members`.
@@ -754,9 +811,15 @@
     const seen = { controls: controls.length, kept: 0, disabled: 0,
                    noLabel: 0, noValue: 0, textarea: 0, drawn: 0 };
 
+    boxSets = new Map();
+    const sets = new Set();            // the checkbox sets met, each read once below
     for (const el of controls) {
       if (el.tagName === "TEXTAREA") seen.textarea++;
       if (el.disabled) { seen.disabled++; continue; }
+      if ((el.type || "").toLowerCase() === "checkbox") {
+        const set = boxSetOf(el);
+        if (set) { sets.add(set); continue; }
+      }
       if ((el.type || "").toLowerCase() === "radio") {
         // One entry per GROUP, keyed by name, read once every member is in
         // hand: radioGroup() needs them all to tell the question from the
@@ -783,7 +846,18 @@
       if (g.question && g.answer) {
         record(g.question, g.answer, "radio", next(g.question));
         seen.kept++;
+      } else if (g.answer) {
+        seen.noLabel++;                // answered, but nothing names the question
       }
+    }
+    // A checkbox set (boxSetOf): one question, answered by the boxes ticked.
+    for (const { fs, boxes } of sets) {
+      const question = caption(fs);
+      const ticked = boxes.filter((b) => b.checked && !b.disabled)
+        .map((b) => labelFor(b) || b.value).filter(Boolean);
+      if (!ticked.length) { seen.noValue++; continue; }
+      record(question, ticked.join(", ").slice(0, MAX_ANSWER), "checkbox", next(question));
+      seen.kept++;
     }
     // Drawn controls (drawn(), above): a radio read with its group, a
     // checkbox or switch on its own, answering as a native checkbox does.
@@ -847,6 +921,12 @@
       if (!el || !el.tagName ||
           !["INPUT", "SELECT", "TEXTAREA"].includes(el.tagName)) return;
       if ((el.type || "").toLowerCase() === "radio") { trySweep(); return; }
+      // A box of a checkbox set is the set's to answer, as a radio is its
+      // group's: recorded alone it would be an option standing as a question.
+      if ((el.type || "").toLowerCase() === "checkbox") {
+        boxSets = new Map();
+        if (boxSetOf(el)) { trySweep(); return; }
+      }
       const answer = valueOf(el);
       const question = labelFor(el);
       if (!question || !answer || machinery(el, question)) return;

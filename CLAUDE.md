@@ -786,7 +786,7 @@ Detail lives with each family's rule file; this is the index.
   says per build what to read on first real contact): every adapter
   selector is best-effort; JobStreet's race fix wants one clean submit;
   Indeed never exercised; `getRecruiter()` has one card of evidence;
-  textareas never stored from Easy Apply. Builds 0.9.0-0.27.2 carry
+  textareas never stored from Easy Apply. Builds 0.9.0-0.27.3 carry
   pieces proven only in tests or by rules run in a live page, waiting on:
   the next Easy Apply (0.9.0's `<dialog>` sweep, `getJob()`'s
   self-document fallback and `doc_source`, 0.10.1's
@@ -797,7 +797,8 @@ Detail lives with each family's rule file; this is the index.
   Phenom apply (0.25.2); an enabled Eightfold site (0.25.0); a
   SuccessFactors candidate experience with an upload (0.22.0, 0.26.1); the
   next iCIMS apply (0.27.1-0.27.2); a listing that asks for the CV by
-  email (0.27.0's receipt).
+  email (0.27.0's receipt); the next form with a multiple-choice
+  checkbox question or a legendless captioned fieldset, Ashby's (0.27.3).
 - **Mail** (`.claude/rules/mail-ingest.md`): IMAP verified on a real inbox
   28 Jul 2026; the web IMAP connect form, Gmail web OAuth and the full `-m 12`
   window are not.
@@ -818,7 +819,7 @@ Detail lives with each family's rule file; this is the index.
 
 ## Open work (as of 7 Oct 2026)
 
-The dated register behind each item, tasks 1-65 with their measurements, is
+The dated register behind each item, tasks 1-66 with their measurements, is
 `docs/worklog.md`; read the matching entry before acting on one.
 
 - **Follow-up drafting**, now on a page that has a place for it (task 61,
@@ -837,14 +838,15 @@ The dated register behind each item, tasks 1-65 with their measurements, is
 - **Listings that asked for the CV by email** (task 57, 4 Oct): 8
   applications owed the email on the day, listed first on `/follow-ups`;
   each is the author's "I emailed it", "Not needed" or an email sent.
-- **The 7 Oct audit's leftovers** (task 65). The author's: one
+- **The 7 Oct audit's leftovers** (tasks 65-66). The author's: one
   application whose job board reported a failed delivery after "sent"
-  (the mail was ignored in triage on 30 Sep; check the board). Code, not
-  built: an Ashby form's checkbox and radio questions stored option by
-  option, Workday answers stored as the platform's internal ids (a
-  30-character hex value as the answer), and a cookie banner's
-  checkboxes stored as answers on an Eightfold form. Sync and the worker
-  had stopped at 07:28 UTC that day: check the cron.
+  (the mail was ignored in triage on 30 Sep; check the board), and
+  whether to delete the option-as-question checkbox rows on 7 older
+  applications, whose questions were never stored. Code, not built:
+  Workday answers stored as the platform's internal ids (a 30-character
+  hex value as the answer), and a cookie banner's checkboxes stored as
+  answers on an Eightfold form. Sync and the worker had stopped at 07:28
+  UTC that day: check the cron.
 - **The legal-entity duplicates** (task 64, 7 Oct): the review strip's two
   rows on its first day were two applications filed twice on 2 Oct (a
   confirmation started a record beside the extension's Workday capture
@@ -853,8 +855,8 @@ The dated register behind each item, tasks 1-65 with their measurements, is
   bullet): re-measure its three candidate fixes. The "Filed twice?"
   band's merge has not met a live twin yet; read the record it opens on
   the first.
-- **Extension, next real Easy Apply:** verify the current build (0.27.2 on
-  4 Oct) is live on BOTH machines and the tab was opened after the
+- **Extension, next real Easy Apply:** verify the current build (0.27.3 on
+  7 Oct) is live on BOTH machines and the tab was opened after the
   reload; read `doc_source` and the sweep line, and check that the radio
   rows read Yes/No, not the question (task 42). From a search page, a
   `stale_pane` with `named` is 0.25.1's new check firing: the record then

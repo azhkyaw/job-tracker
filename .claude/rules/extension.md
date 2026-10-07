@@ -1380,6 +1380,40 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   "Choose a file or drop it here"). Every file field stored by then was a
   resume and none had reached `resume_file`. An upload is the resume when
   its label or its file's own name says resume/CV.
+- **A fieldset with no legend still has a caption, and a set of checkboxes is
+  ONE question** (found 7 Oct 2026 by that evening's data audit; extension
+  0.27.3, worklog task 66).
+  - **The shape, read live on an Ashby form:** each multiple-choice
+    question is a `<fieldset>` whose first child is a `<label>` holding the
+    question, its `for` naming no control; each option sits three levels
+    down, an `<input>` with its own `<label for>`. No legend, no
+    aria-labelledby, and the checkboxes of one question carry different
+    `name`s, so neither grouping signal the reader knew (legend, shared
+    name) could fire.
+  - **What it stored** on the 3 Oct apply: a checkbox set as four questions
+    ("United States", "Singapore", "No", "N.A. …") answered Yes or No; and
+    two radio groups named by their FIRST OPTION's label, radioQuestion's
+    last resort, so "Yes, I will require <employer> to sponsor my
+    employment" was stored as both question and answer.
+  - **The rule** (`answers.js:caption`, `boxSetOf`): a fieldset's question
+    is its legend, else its first child when that child holds no control
+    and labels none; read only for a fieldset holding nothing but one
+    question's options (`holdsOnly`), since a section's fieldset opens with
+    a heading. A checkbox set (two boxes or more) answers once, with the
+    labels of the boxes ticked; a lone box keeps its own label. The edit
+    backstop leaves a set's box to the sweep, as it does a radio. And the
+    last resort no longer returns an option's label: a group nothing names
+    is counted unlabelled, not stored under an answer.
+  - **Proven** in `tests/test_extension.js` from the live markup; on the old
+    code the fixture gives the real record's rows exactly. The record was
+    repaired from the live form's captions (snapshot
+    `2026-10-07-ashby-captioned-answers.json`).
+  - **The same class, older, not repairable:** the audit found option rows
+    on 7 more applications (a country list, a skills list, Full-time and
+    Part-time, agree and disagree pairs): three LinkedIn Easy Apply forms,
+    two Workday, one Greenhouse, one Phenom.
+    Their questions were never stored. Left as they are: the author's call
+    whether to delete them.
 
 ## Known-untested surfaces (verify on first real contact)
 
@@ -1811,3 +1845,12 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   Degree on the record as chosen, no "— Type to Search —" rows, and an
   answer count above 60 if the form is long. 0.27.0's receipt line for a
   listing that asks for the CV by email has never been seen either.
+
+- **0.27.3's captioned fieldsets and checkbox sets have met the live Ashby
+  form only as markup read from it (read-only) and as tests** (7 Oct 2026).
+  On the next Ashby apply, or any form with a multiple-choice question of
+  checkboxes: one row per question, the question being the caption and the
+  answer the options ticked; no row whose question is "Yes", "No", a
+  country or another option. A legendless fieldset on LinkedIn or Workday
+  that opens with a section heading must NOT become one row: their
+  fieldsets were not measured.
