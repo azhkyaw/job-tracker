@@ -1877,3 +1877,27 @@ the key to each real case.
      dropdown test reads the "Every record" group, the earlier pill test
      counts twins). Seen in the dev Chrome, dark theme: the run, its
      confirmation page (opened, not sent) and the strip.
+
+65. **A data audit, the second** (7 Oct 2026). Asked to make sure nothing
+   about the data was odd. The 24 Sep scripts re-run read-only, and a
+   third written for the shapes found since (twins, the legal-entity
+   class, the 60-answer cap, the radio artefact, sensitive-answer drift,
+   pipeline health); scripts and outputs in
+   `job-tracker-snapshots/audit-2026-10-07/`, outside git.
+   - **Clean:** no orphans or broken links between mail, events and
+     records; no answer-key drift and no sensitive answer stored; no twin
+     pending and no other legal-entity duplicate; no event in the future.
+   - **Found and reported:** sync and the worker had stopped at 07:28 UTC
+     that day (9 JD extractions waiting, no mail since); one application's
+     job board had written ten hours after "your application was sent"
+     that delivery failed, and that mail had been ignored in triage by a
+     click on 30 Sep, so the record still reads applied (the author's to
+     check); a 3 Oct Ashby form's answers stored in a new wrong shape;
+     and, sized only, Workday answers stored as the platform's
+     internal ids and a cookie banner's checkboxes stored as answers.
+   - **Looked odd, fine:** same-title pairs at one employer are reposts or
+     separate requisitions (three mail-made records of one title carry
+     three requisition numbers); the outcomes dated before "applied" are
+     the popover-time shape; posting names differing from their job are
+     merge leftovers. The decided items of 24 Sep (two names, differing
+     answers, double rejections, 26 kept radio artefacts) were left alone.

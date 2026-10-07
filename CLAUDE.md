@@ -818,7 +818,7 @@ Detail lives with each family's rule file; this is the index.
 
 ## Open work (as of 7 Oct 2026)
 
-The dated register behind each item, tasks 1-64 with their measurements, is
+The dated register behind each item, tasks 1-65 with their measurements, is
 `docs/worklog.md`; read the matching entry before acting on one.
 
 - **Follow-up drafting**, now on a page that has a place for it (task 61,
@@ -837,6 +837,14 @@ The dated register behind each item, tasks 1-64 with their measurements, is
 - **Listings that asked for the CV by email** (task 57, 4 Oct): 8
   applications owed the email on the day, listed first on `/follow-ups`;
   each is the author's "I emailed it", "Not needed" or an email sent.
+- **The 7 Oct audit's leftovers** (task 65). The author's: one
+  application whose job board reported a failed delivery after "sent"
+  (the mail was ignored in triage on 30 Sep; check the board). Code, not
+  built: an Ashby form's checkbox and radio questions stored option by
+  option, Workday answers stored as the platform's internal ids (a
+  30-character hex value as the answer), and a cookie banner's
+  checkboxes stored as answers on an Eightfold form. Sync and the worker
+  had stopped at 07:28 UTC that day: check the cron.
 - **The legal-entity duplicates** (task 64, 7 Oct): the review strip's two
   rows on its first day were two applications filed twice on 2 Oct (a
   confirmation started a record beside the extension's Workday capture
