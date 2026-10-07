@@ -1318,6 +1318,15 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
     click (`departsTo`). Through a redirector or a career-site → ATS hop it
     links nothing, which leaves a duplicate, never a wrong merge. It shows
     as `opener-kept` in the provenance line.
+    **First met live 7 Oct 2026, refusing as designed** (worklog task 63):
+    two applies to one employer from one LinkedIn tab, both Apply links
+    leaving for the employer's own career site, which hands over to
+    SuccessFactors on another host. The first bound through Chrome's live
+    opener (still there 34 s after the click); for the second it was gone,
+    the kept opener's `dest` was the career site, not the ATS, and the
+    submit filed beside the popover's record (`candidates: 2, linked:
+    null`). /triage's "Filed twice?" band now offers that merge. A kept
+    opener has not yet been seen LINKING.
   - **Fix 2, the form's id:** that alone would not have linked this apply.
     The Phenom form's id was the whole-query fallback, which the handoff
     reads as "no id", and on an enabled site a binding with no id needs

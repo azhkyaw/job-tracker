@@ -1066,3 +1066,12 @@ same rule 13 uses for `after_round`.
   `/follow-ups` row ("They got in touch on 22 Sep, nothing since"). Never
   looked at. What to look at: whether a select, two buttons, a note input
   and a date fit one row at the list's width.
+
+- **Triage's redraw (7 Oct 2026, rule 19, task 64)** was seen in the dev
+  Chrome, dark theme, on real data: the approaches lane's referral run,
+  its bulk confirmation page (opened, never sent) and the review strip.
+  Never met live: the "Filed twice?" band and its merge (no twin pending
+  that day, only the suite's), a pick pressed on a real email, the bulk
+  POST, and "Looks right". On the first real twin, read the record the
+  merge opens: one applied event at the form's submit time, the answers,
+  both postings, the ATS id.

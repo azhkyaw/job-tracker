@@ -791,7 +791,8 @@ Detail lives with each family's rule file; this is the index.
   the next Easy Apply (0.9.0's `<dialog>` sweep, `getJob()`'s
   self-document fallback and `doc_source`, 0.10.1's
   `normKey`, 0.23.1's radio rows, 0.25.1's stale-pane checks from a search
-  page); the next external apply (0.26.0's kept opener); a Greenhouse job
+  page); the next external apply (0.26.0's kept opener, seen only
+  refusing a career site's hop to its ATS, 7 Oct); a Greenhouse job
   board with a picked country (0.23.0); LinkedIn → SmartRecruiters
   (0.24.1); an ATS form with drawn checkboxes or switches (0.24.0); a
   Phenom apply (0.25.2); an enabled Eightfold site (0.25.0); a
