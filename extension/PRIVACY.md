@@ -16,7 +16,8 @@ system it runs on. It keeps no access to that site afterwards.
 **Hiring systems' own application pages.** The extension also runs on the
 sites of the hiring systems employers use to take applications (Greenhouse,
 Lever, Ashby, Workable, Workday, SuccessFactors' career pages, SmartRecruiters,
-iCIMS, JazzHR, Breezy). There it does what it does on LinkedIn's Easy Apply:
+iCIMS, JazzHR, Breezy, Darwinbox's candidate portals but not the HR system
+on the same site). There it does what it does on LinkedIn's Easy Apply:
 when YOU click the form's own submit button, it saves the job and the form's
 questions and answers to your tracker. It does not take a sign-in form for
 an application: a password field anywhere in the form rules it out, and so

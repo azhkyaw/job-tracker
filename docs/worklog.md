@@ -1928,3 +1928,56 @@ the key to each real case.
      whose group questions were never stored; the author's call whether to
      delete those rows.
 
+67. **Darwinbox: the first apply on it, missed, and why** (8 Oct 2026,
+   extension 0.28.0). An energy group's LinkedIn listing handed over to
+   its Darwinbox candidate portal (`<tenant>.darwinbox.com/ms/candidatev2/
+   …`, a vendor in neither the table nor the manifest); the author turned
+   the site on from the popup and applied, and nothing was filed. The
+   extension's buffers (LevelDB and Session Storage copies, snapshotted
+   outside git) said why: the kept opener HAD bound the tab to the right
+   listing (0.26.0's first live success), the answer store held 1,824
+   entries, and the submit was refused as "the button is outside the
+   application form". Read live afterwards, on the submitted application
+   (its form still opens; nothing typed, nothing saved or sent) and in
+   the portal's own scripts:
+   - **The form's Submit reads "Submit Submit"**: two spans, the second
+     `display:none`, so it matched no submit word and the form was never
+     taken as the root. Pressing it opens a confirmation ("Submit" /
+     "Cancel") appended to `<body>`; THAT Submit sends, and it was the
+     near miss logged.
+   - **Every field is a web component** (`dbx-textinput`, `dbx-dropdown`,
+     `dbx-date-picker`, `dbx-radio-group`), its label beside the HOST, so
+     the sweep named fields by placeholder ("Enter Here", "Select Date").
+     A dropdown's hidden `<select>` was named by its combobox wrapper's
+     whole text, each of its options (a checkbox in `role=option`) was
+     recorded as a question answered "No" (1,790 entries), and the Yes/No
+     radios, nameless and with a broken `<label for>`, not at all.
+   - **Built, 0.28.0:** a control's label is the text it shows
+     (`generic.js:shown`); a Submit in a dialog that asks nothing, over a
+     page whose application is found outside it, sends it
+     (`confirmsApplication`); a control inside a component is named as the
+     component is (`answers.js:componentName`, just before the placeholder
+     fallback); a wrapper's text names a control only when it wraps it
+     alone; a listbox option's box and a search box beside a select are
+     machinery. Darwinbox joins the vendor table and the manifest at
+     `*://*.darwinbox.com/ms/candidate*` (the tenant's host also serves
+     its HR system), and `background.js:syncSites` no longer registers an
+     enabled site the manifest already reaches (`jobposting.js:
+     hostCovered`), which would have run two copies there. Run live as
+     pasted code on every step of the real form: each field named by its
+     label, both Yes/No questions answered, the Submit read "Submit".
+     Seven new extension checks (461 in all), five red on the old code.
+   - **Repaired:** the record filed through `POST /captures` with the
+     handoff's job (LinkedIn id, JD, the portal's job id) and `/edit` for
+     the applied time; no answers, since no stored entry carried a real
+     question (payload and buffers in `job-tracker-snapshots/
+     2026-10-08-darwinbox/`).
+   - **Not verified:** the confirmation's markup (modelled as
+     `role="dialog"`; if it carries none, the form's own Submit has already
+     captured, one click early); a Darwinbox apply NOT reached from a job
+     board, whose listing publishes no JobPosting and titles its tab "Job
+     Details Page"; and a form where step 1 shows no file input (a resume
+     already on the profile): the address says `applications`, which no
+     rule reads as an apply flow, so nothing would root steps 1-6 before
+     the Submit.
+

@@ -273,11 +273,33 @@
     .map((s) => (s.assignedNodes ? s.assignedNodes({ flatten: true }) : [])
       .map((n) => n.textContent || "").join(" "))
     .join(" ");
-  // What a control says: its own text, else what is slotted into it
-  // (<ui5-button>Submit</ui5-button>, 29 Sep 2026), else an input's value,
-  // else its accessible name.
-  const label = (el) => clean(el.textContent) || clean(slotted(el)) || clean(el.value) ||
-    clean(el.getAttribute && el.getAttribute("aria-label"));
+  // The text a control SHOWS: its own, leaving out every part that renders no
+  // box. Darwinbox's submit (read live 8 Oct 2026) holds its word twice,
+  // <span class="text">Submit</span><span class="text-2">Submit</span>, the
+  // second display:none, and its textContent "Submit Submit" matched no
+  // submit word: the form's own Submit was never taken for one, and the
+  // application it sent went unrecorded. A <slot> renders no box either
+  // (display: contents), so a web component's inner button reads nothing
+  // here and falls through to slotted(), as before.
+  const shown = (el) => {
+    const walk = (n) => {
+      let out = "";
+      for (const c of n.childNodes || []) {
+        if (c.nodeType === 3) { out += c.textContent; continue; }
+        if (c.nodeType !== 1) continue;
+        if (c.getClientRects && c.getClientRects().length === 0) continue;
+        out += " " + walk(c);
+      }
+      return out;
+    };
+    return clean(walk(el));
+  };
+  // What a control says: what it shows, else its whole text (a control whose
+  // every part is hidden), else what is slotted into it (<ui5-button>Submit
+  // </ui5-button>, 29 Sep 2026), else an input's value, else its accessible
+  // name.
+  const label = (el) => shown(el) || clean(el.textContent) || clean(slotted(el)) ||
+    clean(el.value) || clean(el.getAttribute && el.getAttribute("aria-label"));
 
   const MIN_FORM_FIELDS = 5;
 
@@ -311,10 +333,26 @@
     return !passwordsIn(doc).some(rendered);
   }
 
+  /* A CONFIRMATION over the application. Darwinbox's candidate portal
+   * (8 Oct 2026, read in its own code, since pressing it would send) answers
+   * the form's "Submit" with a modal, "Submit" / "Cancel", and only the
+   * modal's Submit sends. The modal is appended to <body>, outside the form,
+   * so the press that sent a real application was turned down as "the button
+   * is outside the application form". A dialog that asks nothing (no control
+   * but a box to tick, a consent) over a page whose application is found
+   * outside it is that application's last step. A dialog holding fields is a
+   * form of its own, and one the root sits inside is the form itself. */
+  const DIALOG = "dialog, [role='dialog'], [role='alertdialog'], [aria-modal='true']";
+  function confirmsApplication(el, root) {
+    const dlg = closestDeep(el, DIALOG);
+    if (!dlg || inside(root, dlg)) return false;
+    return controlsIn(dlg).every((c) => (c.getAttribute("type") || "").toLowerCase() === "checkbox");
+  }
+
   function isSubmitControl(el, doc, loc) {
     if (!submitWorded(el)) return false;
     const root = applicationRoot(doc, loc);
-    return root ? inside(el, root) : reviewStep(doc, loc);
+    return root ? inside(el, root) || confirmsApplication(el, root) : reviewStep(doc, loc);
   }
 
   /* Why a submit-worded control was NOT taken for the application's submit,
@@ -327,7 +365,8 @@
     if (!submitWorded(el)) return null;
     const root = applicationRoot(doc, loc);
     if (!root) return reviewStep(doc, loc) ? null : "no application form found on this page";
-    return inside(el, root) ? null : "the button is outside the application form";
+    return inside(el, root) || confirmsApplication(el, root)
+      ? null : "the button is outside the application form";
   }
 
   /* QUICK APPLY (jobposting.js:quickApplies; docs/career-sites.md §16.3

@@ -1126,6 +1126,80 @@ console.log("\nanswers.js sweep: Ashby's questions, captioned inside their field
         sweepOf(bare).filter((r) => r.question === "Option one"), []);
 }
 
+console.log("\nanswers.js sweep: Darwinbox's form, built from web components (read live 8 Oct 2026)");
+{
+  // Darwinbox's candidate portal, the live markup with placeholder answers.
+  // Every field is a web component whose open shadow root holds the control,
+  // and its question is a <label> in the light DOM beside the HOST (a text
+  // field, a date) or beside the host's wrapper (a dropdown): nothing inside
+  // the root names the control. A dropdown keeps its choice in a hidden
+  // <select> inside <div role="combobox">, beside a search box and a listbox
+  // whose every option is a checkbox; a Yes/No question is two radios with an
+  // EMPTY name, each <label for> pointing at an id that is not the radio's.
+  // On the old code the fields read as their placeholders ("Enter Here",
+  // "Select Date"), each select as its whole widget's text, every option as
+  // a question answered "No", and the radios not at all: option boxes were
+  // 1,790 of a real application's 1,824 entries.
+  const field = (label, host) => node("div", { class: "form-group" },
+    [node("label", {}, [`${label} `, node("span", {}, ["*"])]), host]);
+  const textinput = (tag, placeholder, value) => attachShadow(
+    node(tag, { class: "amplify-form-control hydrated" }),
+    [node("div", { part: "input-container" }, [node("div", {}, [node("div", {}, [
+      node("input", { type: "text", placeholder, ...(value ? { value } : {}) })])])])]);
+  const dropdown = (label, picked, options) => {
+    const select = node("select", { id: "select", hidden: "" },
+                        [node("option", { value: "1", selected: "selected" }, [picked])]);
+    select.getClientRects = () => [];
+    const opts = options.map((o) => {
+      const box = node("input", { type: "checkbox", ...(o === picked ? { checked: "checked" } : {}) });
+      box.getClientRects = () => [];
+      return node("div", { role: "option", "aria-selected": String(o === picked) }, [box, o]);
+    });
+    const host = attachShadow(node("dbx-dropdown", { class: "amplify-form-control hydrated" }), [
+      node("div", {}, [node("div", { role: "combobox", "aria-haspopup": "true" }, [
+        node("div", {}, [select, node("div", {}, [
+          node("div", {}, ["Search and Select"]),
+          node("div", { "aria-selected": "true" }, [node("span", { title: picked }, [picked]),
+                                                   node("button", { type: "button" }, ["Remove item"])]),
+          node("input", { type: "search", name: "search_terms", role: "textbox",
+                          "aria-label": "Search and Select", placeholder: picked })])]),
+        node("div", { "aria-expanded": "false" }, [node("div", { role: "listbox" }, opts)])])])]);
+    return node("div", { class: "form-group" }, [
+      node("label", { class: "db-label" }, [`${label} `, node("span", {}, ["*"])]),
+      node("div", { class: "dropdown" }, [host])]);
+  };
+  const yesNo = (picked) => attachShadow(node("dbx-radio-group", {}), [node("div", {}, [node("div", {},
+    ["Yes", "No"].map((o) => node("div", {}, [
+      node("input", { type: "radio", name: "", id: `_${o}`, ...(o === picked ? { checked: "checked" } : {}) }),
+      node("label", { for: `undefined_${o}` }, [o])])))])]);
+  // A work-pass question, as the live form asked one: an age question, the
+  // other Yes/No pair there, is withheld by isSensitive and proves less.
+  const PASS = "Do you require a work pass for this role?";
+  const form = node("form", {}, [
+    dropdown("Salutation", "Mr.", ["Mr.", "Mrs.", "Ms.", "Dr."]),
+    field("First Name", textinput("dbx-textinput", "Enter Here", "Jane")),
+    field("From Date", textinput("dbx-date-picker", "Select Date", "01-03-2021")),
+    dropdown("Country", "Singapore", ["Afghanistan", "Albania", "Singapore", "Zimbabwe"]),
+    field(PASS, yesNo("Yes"))]);
+  check("each component's control is named by the label beside it; a dropdown answers with its "
+        + "choice, never its options or its search box; a nameless Yes/No pair is one question",
+        sweepOf(form),
+        [{ question: "Salutation *", answer: "Mr.", type: "select" },
+         { question: "First Name *", answer: "Jane", type: "text" },
+         { question: "From Date *", answer: "01-03-2021", type: "text" },
+         { question: "Country *", answer: "Singapore", type: "select" },
+         { question: `${PASS} *`, answer: "Yes", type: "radio" }]);
+  // Typing in the search box fires the edit backstop: what was typed to find
+  // an option is not the answer (iCIMS's box is a combobox; Darwinbox's a
+  // search box).
+  const sb = loadAnswers(node("form", {}, [dropdown("Country", "Singapore", ["Singapore", "Spain"])]));
+  const search = sb.document.body.querySelector(".dropdown").children[0].shadowRoot.querySelector("input");
+  search._attrs.value = "singa";
+  for (const fn of sb._listeners.input || []) fn({ target: search, composedPath: () => [search] });
+  check("…and what was typed into its search box is no answer",
+        sb.window.__trackerAnswers.take(), [{ question: "Country *", answer: "Singapore", type: "select" }]);
+}
+
 console.log("\nanswers.js normKey: one rule with pipeline/answers.py:norm_question");
 {
   // The same list tests/test_captures.py holds the server to. Until 24 Sep 2026
@@ -1857,6 +1931,37 @@ console.log("\njobposting.js matchPatternRegex: which pages the icon (and the po
         J.atsOfUrl("https://career44.sapsf.com/portalcareer?_s.crb=AbC%253d"), "successfactors");
   check("…and names its tenant like the older data centres",
         J.tenantOf("https://career44.sapsf.com/career?company=Contoso&career_ns=job_application"), "contoso");
+  // Darwinbox (8 Oct 2026): each employer a tenant host that also serves its
+  // HR system, so only the candidate portal's paths are injected on.
+  const DBX = "https://hrcontoso.darwinbox.com";
+  check("a Darwinbox tenant's listing and form are injected on, as darwinbox",
+        [`${DBX}/ms/candidatev2/main/careers/jobDetails/b7c4e19d02f3a6`,
+         `${DBX}/ms/candidatev2/main/applications/b7c4e19d02f3a6`]
+          .map((url) => [injected.some((p) => cover(p, url)), J.atsOfUrl(url)]),
+        [[true, "darwinbox"], [true, "darwinbox"]]);
+  check("…and its HR system, on the same host, is not", injected.some((p) => cover(p, `${DBX}/ms/hrms/home`)), false);
+}
+
+console.log("\njobposting.js hostCovered: a site the user enabled that the manifest already reaches");
+{
+  // background.js:syncSites registers the capture scripts for an enabled site
+  // only where the manifest does not already reach its host: two copies would
+  // capture every submit twice. A Darwinbox tenant was enabled the day before
+  // Darwinbox joined the manifest (8 Oct 2026). Host semantics are the match
+  // patterns', path aside: a host covered on one path is covered.
+  const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, "extension/manifest.json"), "utf8"));
+  const injected = manifest.content_scripts.flatMap((cs) => cs.matches);
+  const cases = [
+    ["hrcontoso.darwinbox.com", true],
+    ["career44.sapsf.com", true],
+    ["jobs.lever.co", true],
+    ["careers.contoso.com", false],
+    ["darwinbox.com.evil.example", false],
+    ["evil-darwinbox.com", false],
+  ];
+  for (const [host, want] of cases) check(`the manifest covers ${host}: ${want}`, J.hostCovered(injected, host), want);
+  check("…an all-hosts pattern covers any host", J.hostCovered(["*://*/*"], "careers.contoso.com"), true);
+  check("…and nothing covers no host", J.hostCovered(injected, ""), false);
 }
 
 console.log("\nmanifest: every origin the extension asks Chrome for is one it declared (28 Sep 2026)");
@@ -2659,6 +2764,62 @@ console.log("\ngeneric.js: Eightfold's candidate site under an employer's domain
         [inHouse.window.__trackerAdapter.answerFormRoot() === q.form,
          inHouse.window.__trackerAdapter.hiringSystem(inHouse.document, inHouse.location),
          inHouse.window.__trackerAdapter.atsJobId()], [true, false, null]);
+}
+
+console.log("\ngeneric.js: Darwinbox's form, its submit and its confirmation (read live 8 Oct 2026)");
+{
+  // Darwinbox's candidate portal, placeholder tenant and id. One <form> holds
+  // the wizard's fields (web components, answers.js names them) AND its
+  // navigation, whose last button is <button type=submit> holding its word
+  // twice, the second span display:none: textContent read "Submit Submit",
+  // no submit word matched, and a real application went unrecorded. Pressing
+  // it opens a confirmation, "Submit" / "Cancel", appended to <body> outside
+  // the form; that Submit sends. Read in the portal's own code, never pressed:
+  // the dialog's markup is modelled (role="dialog", as ngx-bootstrap's modal
+  // container carries), not seen.
+  const DBX = "https://hrcontoso.darwinbox.com/ms/candidatev2/main/applications/b7c4e19d02f3a6";
+  const comp = (label, value) => node("div", { class: "form-group" }, [
+    node("label", {}, [label]),
+    attachShadow(node("dbx-textinput", {}), [node("div", {}, [
+      node("input", { type: "text", placeholder: "Enter Here", ...(value ? { value } : {}) })])])]);
+  const twinButton = (word) => {
+    const twin = node("span", { class: "text-2" }, [` ${word}`]);
+    twin.getClientRects = () => [];
+    return node("button", { type: "submit", class: "db-btn style-primary action-btn" },
+                [node("span", { class: "text" }, [` ${word}`]), twin]);
+  };
+  const page = ({ dialogField = false } = {}) => {
+    const submit = twinButton("Submit");
+    const back = button("Back", { type: "button" });
+    const form = node("form", { novalidate: "" }, [
+      node("div", { class: "tab-container" }, [node("div", { class: "navigation" }, [back, submit])]),
+      node("div", { class: "form-body" }, [
+        comp("How did you hear about this role?", "Job Board"), comp("Total years of experience", "9"),
+        comp("Referrer Name"), comp("Referrer Email Address"), comp("Notice period", "1 month")])]);
+    const confirm = twinButton("Submit");
+    const cancel = button("Cancel", { type: "button" });
+    const dialog = node("div", { role: "dialog", "aria-modal": "true", class: "modal" }, [
+      node("div", { class: "confirm-modal" }, [
+        node("h4", {}, ["Submit application"]),
+        node("p", {}, ["Please review your details before you submit."]),
+        ...(dialogField ? [node("input", { type: "text", "aria-label": "Your comments" })] : []),
+        cancel, confirm])]);
+    return { kids: [form, dialog], form, submit, back, confirm, cancel };
+  };
+  const p = page();
+  const sb = genericSandbox(p.kids, DBX, "Contoso Group");
+  const a = sb.window.__trackerAdapter;
+  check("the form is the root: its own Submit reads as it shows, 'Submit', not 'Submit Submit'",
+        [a.answerFormRoot() === p.form, a.isCompletion(p.submit), a.isCompletion(p.back)], [true, true, false]);
+  check("the confirmation's Submit sends the application; its Cancel does not",
+        [a.isCompletion(p.confirm), a.nearMiss(p.confirm), a.isCompletion(p.cancel)], [true, null, false]);
+  check("the page is Darwinbox's, and its id is the job's on it",
+        [a.hiringSystem(sb.document, sb.location), a.atsJobId()],
+        [true, "hrcontoso.darwinbox.com/b7c4e19d02f3a6"]);
+  const q = page({ dialogField: true });
+  const b = loadGeneric(q.kids, DBX, "Contoso Group");
+  check("…a dialog that asks something is a form of its own, never the application's confirmation",
+        [b.isCompletion(q.confirm), b.nearMiss(q.confirm)], [false, "the button is outside the application form"]);
 }
 
 console.log("\ngeneric.js getJob: a listing proposes its hiring system's id (P4)");

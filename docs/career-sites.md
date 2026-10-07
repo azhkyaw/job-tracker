@@ -1003,6 +1003,17 @@ for the second.
   name, promoted to `resume_file` (worklog task 41). §4 measured the FORM
   on four vendors; this was the first measurement of what a listing without
   structured data costs.
+- **A vendor in neither list: Darwinbox (0.28.0, 8 Oct 2026).** An HR
+  suite whose tenants (`<tenant>.darwinbox.com`, the HR system on the same
+  host) serve a candidate portal under `/ms/candidatev2/`. The site was
+  enabled from the popup (phase C) and the LinkedIn handoff bound, yet the
+  application was refused: the form's Submit holds its word twice, one
+  copy hidden, so it matched no submit word, and the Submit that sends is
+  in a confirmation outside the form. Every field is a web component
+  labelled beside its host, and every dropdown option is a checkbox, so
+  the answers were 1,824 rows with no real question. §4's structural rules
+  held once they read what a control SHOWS and what names a COMPONENT; the
+  only vendor-specific line is the table's (worklog task 67).
 - Nothing else has run on a real apply; `.claude/rules/extension.md` says
   what to read on the next one.
 

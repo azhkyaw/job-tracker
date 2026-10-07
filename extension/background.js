@@ -395,11 +395,20 @@ async function _enabledSites() {
   return enabledSites;
 }
 
+/* A host the manifest's own content scripts already reach, on any path. Its
+ * registered copy would run beside the manifest's on every page both match,
+ * and two copies capture every submit twice. First met when a vendor joined
+ * the manifest after the user had enabled one of its tenants (Darwinbox,
+ * 8 Oct 2026). The manifest's path limit then stands for the whole host: the
+ * tenant's other pages, its HR system on the same host, get nothing. */
+const manifestCovers = (host) => self.__trackerJobPosting.hostCovered(
+  chrome.runtime.getManifest().content_scripts.flatMap((cs) => cs.matches), host);
+
 async function syncSites() {
   const sites = await _enabledSites();
   const { origins = [] } = await chrome.permissions.getAll();
   const granted = new Set(origins);
-  const want = sites.filter((h) => granted.has(`*://${h}/*`));
+  const want = sites.filter((h) => granted.has(`*://${h}/*`) && !manifestCovers(h));
   const have = (await chrome.scripting.getRegisteredContentScripts())
     .map((s) => s.id).filter((id) => id.startsWith("site-"));
   const drop = have.filter((id) => !want.some((h) => siteScriptId(h) === id));

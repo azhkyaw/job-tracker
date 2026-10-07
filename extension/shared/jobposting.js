@@ -56,6 +56,9 @@
     ["phenompeople.com", "phenom"],
     ["avature.net", "avature"], ["avacdn.net", "avature"],
     ["vscdn.net", "eightfold"], ["eightfold.ai", "eightfold"],
+    // Each employer is its own tenant, <tenant>.darwinbox.com, which serves
+    // its HR system too; the candidate portal is /ms/candidate… (8 Oct 2026).
+    ["darwinbox.com", "darwinbox"],
   ];
 
   function hostOf(href, base) {
@@ -1048,11 +1051,27 @@
     return `^${scheme}://${host}(:[0-9]+)?${path}`;
   }
 
+  /* Does any of these match patterns reach `host`, on any path? The same
+   * host semantics as matchPatternRegex. Asked by background.js:syncSites of
+   * a site the user enabled: one the manifest already covers must not get a
+   * second, registered copy of the capture scripts (Darwinbox, 8 Oct 2026,
+   * enabled for one tenant the day before the vendor joined the manifest). */
+  function hostCovered(patterns, host) {
+    const want = String(host || "").toLowerCase();
+    return !!want && (patterns || []).some((p) => {
+      const m = /^(\*|https?):\/\/([^/]+)\//.exec(p || "");
+      if (!m) return false;
+      const h = m[2].toLowerCase();
+      if (h === "*") return true;
+      return h.startsWith("*.") ? want === h.slice(2) || want.endsWith(h.slice(1)) : want === h;
+    });
+  }
+
   // `self` in the service worker, which imports this file for sameJob so the
   // rule exists once; `window` in a page, where the two are the same object.
   (typeof window !== "undefined" ? window : self).__trackerJobPosting =
     { read, idFrom, pageId, tenantOf, atsHandoff, atsCandidates, hasPosting, siteOwner, pickDeparture,
       handoffFits, learnsAlias, rebind, knowsId, keepOpener, openerOf, departsTo, quickApplies, quickApplySent, atsOfUrl, vendorOf, htmlToText, sameJob,
       pickListed, siteOf, APPLY_SEGMENTS, VENDORS,
-      matchPatternRegex, stripRequisition, suggestCompany };
+      matchPatternRegex, hostCovered, stripRequisition, suggestCompany };
 })();

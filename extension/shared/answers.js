@@ -364,9 +364,16 @@
     // assistive tech would. This has to sit ABOVE the placeholder/name fallback:
     // those inputs carry generated names ("radio-group-«rg»") that would
     // otherwise be recorded as the question.
+    // Its TEXT only when it wraps this control alone: a combobox's wrapper also
+    // holds the listbox it opens, and its text is the choice plus every option.
+    // Darwinbox's dropdown (read live 8 Oct 2026) keeps a hidden <select> with
+    // the choice inside <div role="combobox">, beside a search box and a
+    // listbox of 300 countries, and the select's question was stored as
+    // "Singapore Search and Select Singapore Remove item Afghanistan…".
     const widget = closestDeep(el, WIDGET);
     if (widget && widget !== el) {
-      const t = ariaName(widget) || labelText(widget);
+      const alone = collect(widget, []).every((c) => c === el);
+      const t = ariaName(widget) || (alone ? labelText(widget) : "");
       if (t) return t;
     }
     const fs = closestDeep(el, "fieldset");
@@ -385,7 +392,37 @@
       const before = precedingText(el);
       if (before) return before;
     }
+    const host = componentName(el);
+    if (host) return host;
     return (el.getAttribute("placeholder") || el.name || "").trim() || null;
+  }
+
+  /* A control inside a COMPONENT is named as the component is named. Darwinbox
+   * builds its application form from web components (read live 8 Oct 2026):
+   * <label>First Name *</label> sits beside <dbx-textinput>, whose open shadow
+   * root holds the <input placeholder="Enter Here">, and nothing inside the
+   * root names it, so every field was stored as "Enter Here" or "Select
+   * Date". precedingText() climbs parentElement, which ends at the top of the
+   * shadow root; the label is beside the HOST. So: what names the host, read
+   * the way labelFor() reads a control, when nothing inside named the control
+   * itself. The block before the host is read only when the HOST is on
+   * screen, as precedingText(el) is only for a control on screen; the control
+   * itself may be hidden: the dropdown keeps its choice in a hidden <select>. */
+  function componentName(el) {
+    const r = el.getRootNode ? el.getRootNode() : null;
+    const host = r && r.host;
+    if (!host) return null;
+    const root = host.getRootNode ? host.getRootNode() : document;
+    if (host.id && root.querySelector) {
+      const l = root.querySelector(`label[for="${CSS.escape(host.id)}"]`);
+      if (l && labelText(l)) return labelText(l);
+    }
+    const wrapping = closestDeep(host, "label");
+    if (wrapping && labelText(wrapping)) return labelText(wrapping);
+    const own = ariaName(host);
+    if (own) return own;
+    if (!host.getClientRects || host.getClientRects().length > 0) return precedingText(host);
+    return null;
   }
 
   /* A native radio's OPTION text and its group's QUESTION.
@@ -770,16 +807,26 @@
    * only by its placeholder "— Type to Search —", holds whatever was typed to
    * find the option ("singa"), and the edit backstop stored that as the
    * answer, 9 times on the first iCIMS apply. Two levels up at most: the
-   * select shares the box's field, not merely its form. */
+   * select shares the box's field, not merely its form. Darwinbox's
+   * (8 Oct 2026) is <input type="search" role="textbox"> beside a hidden
+   * <select>, so a search-typed box counts as a combobox's does. */
   function filterBox(el) {
-    if (el.tagName !== "INPUT" || el.getAttribute("role") !== "combobox") return false;
+    if (el.tagName !== "INPUT") return false;
+    if (el.getAttribute("role") !== "combobox" &&
+        (el.getAttribute("type") || "").toLowerCase() !== "search") return false;
     for (let n = el.parentElement, hops = 0; n && hops < 2; n = n.parentElement, hops++) {
       if (n.querySelector && n.querySelector("select")) return true;
     }
     return false;
   }
+  /* And an OPTION's own box. Darwinbox draws each option of a dropdown as
+   * <div role="option"><input type="checkbox">…</div> (8 Oct 2026): the sweep
+   * read every one as a question, "No" for each country not picked, 1,790 of
+   * one application's 1,824 entries. An option is a choice, never a
+   * question; the dropdown's answer is its select's. */
+  const OPTION = "[role='option']";
   function machinery(el, question) {
-    if (filterBox(el)) return true;
+    if (filterBox(el) || closestDeep(el, OPTION)) return true;
     if (rendered(el)) return false;
     const own = ((el.getAttribute && el.getAttribute("placeholder")) || el.name || "").trim();
     return !!own && question === own;
@@ -831,7 +878,9 @@
         continue;
       }
       const question = labelFor(el);
-      if (question && machinery(el, question)) continue;
+      // Before the label check: an option's box often has no name at all,
+      // and 531 of them counted as "no label resolved" on Darwinbox's form.
+      if (machinery(el, question)) continue;
       const answer = valueOf(el);
       // Counted before the value check so an unlabelled control shows up in
       // the diagnostic even when it's also empty — "no label resolved" is the

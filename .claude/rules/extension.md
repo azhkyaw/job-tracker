@@ -1423,6 +1423,70 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
     two Workday, one Greenhouse, one Phenom.
     Their questions were never stored. Left as they are: the author's call
     whether to delete them.
+- **Darwinbox: a form of web components, a Submit that says its word twice,
+  and a confirmation outside the form** (8 Oct 2026; extension 0.28.0,
+  worklog task 67). The first apply on it (an energy group's tenant,
+  reached from LinkedIn, the site enabled from the popup) filed nothing.
+  Read from the extension's buffers, then live on the SUBMITTED
+  application, whose form still opens (step buttons only; Save, Submit and
+  the fields untouched), and in the portal's own scripts:
+  - **Address:** listing `/ms/candidatev2/main/careers/jobDetails/<14 hex>`,
+    form `/ms/candidatev2/main/applications/<same id>`; `idFrom` reads the
+    id from both, Python agrees (`tests/job_urls.json`). The tenant's host
+    also serves its HR system, hence the manifest's path limit. The listing
+    publishes no JobPosting and its tab reads "Job Details Page"; the
+    handoff's job carried the identity.
+  - **The form:** one `<form>` holding a seven-step wizard AND its
+    navigation; the last step's `<button type=submit>` is
+    `<span class=text>Submit</span><span class=text-2>Submit</span>`, the
+    second `display:none`. `label()` read textContent, "Submit Submit", no
+    submit word, so rule 2 never took the form, rule 3 rooted the visible
+    fields only, and nothing was a completion. Pressing that Submit, when
+    the form validates, emits to a page that opens a confirmation (strings
+    `commonForm.applicationModalTitle` / `submitModalDesc`, buttons
+    `common.submit` / `common.cancel`) appended to `<body>`; its Submit is
+    the one that sends, and it was the near miss logged. Fixed by
+    `generic.js:shown()` (a control says what it shows; a `<slot>` renders
+    no box, so UI5's inner buttons fall through to `slotted()` as before)
+    and `confirmsApplication()` (a submit-worded control in a dialog that
+    asks nothing, over a page whose root is outside it). Both presses now
+    count: the form's captures, the dialog's (past the 3 s guard) moves the
+    applied time to the real send with `completed`. A form that fails
+    validation still captures at the first press, as every vendor's does.
+  - **The fields:** `dbx-textinput`, `dbx-dropdown`, `dbx-date-picker`,
+    `dbx-radio-group`, each control in the host's open shadow root and its
+    `<label>` beside the host (a dropdown's beside the host's wrapper).
+    `precedingText` climbs `parentElement`, which ends at the shadow root,
+    so fields fell to the placeholder. `answers.js:componentName` names a
+    control by its host, read as labelFor reads a control, just before the
+    placeholder fallback, so nothing that resolved before changes. The
+    dropdown is Choices.js-shaped: `div[role=combobox]` > hidden `<select>`
+    holding the choice, the shown choice with a "Remove item" button,
+    `<input type=search role=textbox aria-label="Search and Select">`, and
+    `div[role=listbox]` of `div[role=option]`, each with an
+    `<input type=checkbox>`. The wrapper's text named the select (now only a
+    wrapper holding the control alone names it by text), every option box
+    was a question (now machinery: `[role=option]`), and the search box is
+    a filter box like iCIMS's (`filterBox` now takes `type=search`). The
+    radios have `name=""` and `<label for="undefined_Yes">` against
+    `id="_Yes"`; named by their host, both members share the question and
+    `radioGroup`'s shared-name path answers with the row's text.
+  - **Measured on the real form with the new rules pasted in:** every step's
+    fields named by their labels (Salutation, First Name, From Date,
+    Educational category, Current Country…), both Yes/No questions answered
+    (a minimum-age one, withheld by `isSensitive`, and a work-pass one), 72
+    machinery controls skipped on the last step. The old store had no real
+    question in 1,824 entries, so the record was filed with none.
+  - **A site enabled before its vendor joined the manifest** would run two
+    copies of the scripts on the pages both reach, capturing every submit
+    twice: `background.js:syncSites` now skips a host the manifest reaches
+    (`jobposting.js:hostCovered`).
+  - **Probing a live page from claude-in-chrome:** the tab was frozen
+    (hidden: rAF never fired, a 100 ms timer took 1,012 ms) and a fetch of
+    the extension's sources from a local server never settled (a frozen
+    tab, or Chrome's local-network prompt); pasting the functions into
+    `javascript_tool` works synchronously, and top-level function
+    declarations persist between calls (a `const` does not).
 
 ## Known-untested surfaces (verify on first real contact)
 
@@ -1863,3 +1927,21 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   country or another option. A legendless fieldset on LinkedIn or Workday
   that opens with a section heading must NOT become one row: their
   fieldsets were not measured.
+
+- **0.28.0's Darwinbox rules have met the live form only as code pasted into
+  a submitted application's form, and as tests** (8 Oct 2026). On the next
+  Darwinbox apply (reload the extension first; the enabled tenant is now
+  the manifest's, and `syncSites` drops its registered copy): ONE record,
+  bound to the job board's listing when reached from one; the receipt at
+  the form's Submit, and the applied time moved to the confirmation's
+  Submit when that dialog carries `role="dialog"`/`aria-modal` (its
+  markup was never seen: pressing it would have re-sent); answers named
+  by their labels, a dropdown by its choice, each Yes/No question once,
+  no row named "Enter Here", "Select Date", "Search and Select" or a
+  country. Still open: a form whose step 1 shows no file input (a resume
+  already attached) roots nothing before the last step, since
+  `/applications/` is no apply-flow segment and `applications` cannot join
+  `APPLY_SEGMENTS` without breaking `idFrom`; and what `read()` takes for
+  the title of a Darwinbox apply NOT reached from a job board, whose
+  listing publishes no JobPosting and whose tab reads "Job Details Page"
+  (unmeasured).

@@ -786,7 +786,7 @@ Detail lives with each family's rule file; this is the index.
   says per build what to read on first real contact): every adapter
   selector is best-effort; JobStreet's race fix wants one clean submit;
   Indeed never exercised; `getRecruiter()` has one card of evidence;
-  textareas never stored from Easy Apply. Builds 0.9.0-0.27.3 carry
+  textareas never stored from Easy Apply. Builds 0.9.0-0.28.0 carry
   pieces proven only in tests or by rules run in a live page, waiting on:
   the next Easy Apply (0.9.0's `<dialog>` sweep, `getJob()`'s
   self-document fallback and `doc_source`, 0.10.1's
@@ -799,7 +799,9 @@ Detail lives with each family's rule file; this is the index.
   SuccessFactors candidate experience with an upload (0.22.0, 0.26.1); the
   next iCIMS apply (0.27.1-0.27.2); a listing that asks for the CV by
   email (0.27.0's receipt); the next form with a multiple-choice
-  checkbox question or a legendless captioned fieldset, Ashby's (0.27.3).
+  checkbox question or a legendless captioned fieldset, Ashby's (0.27.3);
+  the next Darwinbox apply (0.28.0: a Submit that shows its word once,
+  its confirmation dialog, fields named beside their web components).
 - **Mail** (`.claude/rules/mail-ingest.md`): IMAP verified on a real inbox
   28 Jul 2026; the web IMAP connect form, Gmail web OAuth and the full `-m 12`
   window are not.
@@ -856,8 +858,8 @@ The dated register behind each item, tasks 1-66 with their measurements, is
   bullet): re-measure its three candidate fixes. The "Filed twice?"
   band's merge has not met a live twin yet; read the record it opens on
   the first.
-- **Extension, next real Easy Apply:** verify the current build (0.27.3 on
-  7 Oct) is live on BOTH machines and the tab was opened after the
+- **Extension, next real Easy Apply:** verify the current build (0.28.0 on
+  8 Oct) is live on BOTH machines and the tab was opened after the
   reload; read `doc_source` and the sweep line, and check that the radio
   rows read Yes/No, not the question (task 42). From a search page, a
   `stale_pane` with `named` is 0.25.1's new check firing: the record then
@@ -870,6 +872,8 @@ The dated register behind each item, tasks 1-66 with their measurements, is
   `.claude/rules/extension.md`). Real applies have been captured through
   Oracle, SuccessFactors (classic and candidate experience, `sapsf.com`
   too), Greenhouse, SmartRecruiters, Phenom, Workday, Ashby and iCIMS;
+  the first Darwinbox apply (8 Oct) was missed and filed by hand, its
+  fixes in 0.28.0 (worklog task 67);
   each fix's "what to read on the next apply" is in extension.md's
   Known-untested. Still NOT run live: the popup's injection on a page
   with no adapter, enabling an employer's site and then applying there
