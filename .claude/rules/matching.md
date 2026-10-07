@@ -223,6 +223,21 @@ route deletes events and may delete an application.
     it changes ONE decision, this one, to triage (0.65, no title), and at
     30 or 60 it also admits an unrelated capture of the same vendor.
   The class stays rare; re-measure before reopening.
+  **It recurred twice more, made 2 Oct and found 7 Oct 2026 by triage's
+  review strip** (`pipeline/triage.py`, "it started this record"): a bank
+  and an investment bank, each captured from Workday under its legal
+  entity with a company code in front, each confirmation 11-12 s later
+  naming the brand, the titles byte for byte the same. Zero candidates
+  again: the brand shares no whole word with the entity (it is a prefix of
+  one). One record's own Workday id was printed in a later mail's subject,
+  and `match_by_ats_id` could not use it because the company gate refuses
+  first. Three of the class in four days, so the re-measure is due.
+  Repaired the same day at the author's word: every email re-filed onto
+  the extension record through `refile_email`, which deleted the emptied
+  records; snapshot first (`2026-10-07-workday-entity-refile.json`). One of
+  the two had been rejected by email five days before, and only the
+  email-made record had said so: the extension record, the one with the
+  answers, still read as waiting.
   The other twins in the same NULL-score sweep were not the matcher's: three
   LinkedIn confirmations made records because the captures they confirmed
   carried ANOTHER job's identity (`.claude/rules/extension.md`, the 30 Sep

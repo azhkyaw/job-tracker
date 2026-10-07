@@ -347,7 +347,9 @@
 <h2 id="emails">Emails</h2>
 <ul class="list">
   {% for m in emails %}
-  <li><span class="k when">{{ m.received_at | dtt }}</span>
+  {#- An anchor per email: triage's review strip links a filing it is less
+      sure of straight to its line here, where the re-file form is. -#}
+  <li id="email-{{ m.id }}"><span class="k when">{{ m.received_at | dtt }}</span>
       <span class="v"><span class="mail-sub">{{ m.subject or "(no subject)" }}</span>
         <span class="mail-from">{{ m.sender }}{% if m.classification %}, read as <span class="badge" style="--c:var(--viewed)">{{ m.classification | replace('_', ' ') }}</span>{% endif %}</span>
         {# The same disclosure triage has. Absent, not empty, when the body

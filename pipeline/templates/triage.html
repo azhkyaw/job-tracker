@@ -2,23 +2,35 @@
 {% block title %}triage — tracker{% endblock %}
 {% block nav_triage %}active{% endblock %}
 {% block content %}
-<h1>Triage</h1>
-<div class="tabs" style="margin-bottom:1.1rem">
-  <a href="/triage?lane=actionable" class="{{ 'active' if lane == 'actionable' }}">
-    Actionable{% if actionable_n %}<span class="pill">{{ actionable_n }}</span>{% endif %}</a>
-  <a href="/triage?lane=inbound" class="{{ 'active' if lane == 'inbound' }}">
-    Inbound{% if inbound_n %}<span class="pill">{{ inbound_n }}</span>{% endif %}</a>
-</div>
-{% if lane == 'inbound' %}
-<p class="lede" style="margin-top:-.4rem">Recruiter and employer outreach about roles you
-  didn't apply to. “Track as lead” files it honestly: a real record with no applied
-  event, so it never counts toward your funnel or response rate unless you actually apply.</p>
-{% endif %}
-{% if not emails and not dupes %}
-<p class="empty">Nothing waiting in this lane.</p>
-{% endif %}
-{% for e in emails %}
-<div class="tri">
+{#- Triage, redrawn 7 Oct 2026 (pipeline/triage.py has the rules and their
+    measurements). A card names the records the matcher itself weighed, best
+    first, as one-click filings, and says in a sentence why the email waited
+    for a person; the list of every record stays behind "Another record",
+    nearest the email first. A run of one sender's identical mail is one
+    card. The first lane adds an application filed twice and the matcher's
+    own less certain filings of the week. Nothing here is coloured: every
+    control is the user's move, not a wait on anyone (rule 1). -#}
+
+{%- macro when(o) -%}
+  {%- if o.applied_at %}applied {{ o.applied_at | day }}
+  {%- elif o.started_at %}{{ 'approached' if o.origin == 'inbound' else 'saved' if o.origin == 'saved' else 'since' }} {{ o.started_at | day }}
+  {%- endif %}
+{%- endmacro %}
+
+{%- macro pick(e, o, primary, small) %}
+<form method="post" action="/triage/{{ e.id }}" class="pick">
+  <input type="hidden" name="lane" value="{{ lane }}">
+  <input type="hidden" name="application_id" value="{{ o.id }}">
+  <button class="{{ 'primary' if primary }}{{ ' small' if small }}" name="action" value="link">File under
+    {{ o.company_display }}, {{ o.title_canonical }}</button>
+  {#- The date opens the record: two records can read alike to the day
+      (seen 7 Oct 2026), and a look before filing costs one click. -#}
+  <a class="quiet sans sm" href="/applications/{{ o.id }}">{{ when(o) }}</a>
+</form>
+{%- endmacro %}
+
+{%- macro card(e) %}
+<div class="tri" id="email-{{ e.id }}">
   <div class="top">
     <span class="subject">{{ e.subject or "(no subject)" }}</span>
     {% if e.classification %}<span class="badge" style="--c:var(--age)">{{ e.classification | replace('_', ' ') }}</span>{% endif %}
@@ -26,23 +38,35 @@
   <div class="line">
     {{ e.sender }}, {{ e.received_at | dtt }}
     {%- if e.extraction %}. Reads as {{ e.extraction.company or "an unknown company" }},
-      {{ e.extraction.role_title or "role unknown" }}, via {{ e.extraction.platform }}
-      {%- if e.match_score is not none %}; closest match scored {{ e.match_score }}{% endif %}
-    {%- endif %}
+      {{ e.extraction.role_title or "role unknown" }}, via {{ e.extraction.platform }}{% endif %}.
+    Waiting {{ e.waiting | days_text }}.
   </div>
+  {% if e.why %}<p class="why">{{ e.why }}</p>{% endif %}
   {% if e.body_text %}
-  <details class="plain" style="margin:.1rem 0">
+  <details class="plain">
     <summary>Read the email</summary>
     <pre class="text">{{ e.body_text }}</pre>
   </details>
   {% endif %}
+  {% if e.picks %}
+  <div class="picks">
+    {% for o in e.picks %}{{ pick(e, o, loop.first, false) }}{% endfor %}
+  </div>
+  <details class="plain another"><summary>Another record</summary>
+  {% endif %}
   <form method="post" action="/triage/{{ e.id }}">
     <input type="hidden" name="lane" value="{{ lane }}">
     <select name="application_id" aria-label="Application to file this under">
-      {% include "_application_options.html" %}
+      {% with near = e.near %}{% include "_application_options.html" %}{% endwith %}
     </select>
-    <button class="primary" name="action" value="link">File under this one</button>
-    <span class="quiet sm">or start a new record for</span>
+    <button class="{{ 'primary' if not e.picks }}" name="action" value="link">File under this one</button>
+  </form>
+  {% if e.picks %}</details>{% endif %}
+  {#- Its own form, and its button first in it, so Enter in the company box
+      starts the record that box names. -#}
+  <form method="post" action="/triage/{{ e.id }}">
+    <input type="hidden" name="lane" value="{{ lane }}">
+    <span class="quiet sm">Or start a new record for</span>
     <input type="text" name="company" value="{{ (e.extraction.company if e.extraction else '') or '' }}"
            placeholder="Company or agency" aria-label="Company" style="max-width:12rem">
     {% if lane == 'inbound' %}
@@ -53,6 +77,112 @@
     <button name="action" value="ignore" style="margin-left:auto">Ignore</button>
   </form>
 </div>
+{%- endmacro %}
+
+{%- macro run(c) %}
+{% set head = c.emails[0] %}
+<div class="tri run">
+  <div class="top">
+    <span class="subject">{{ head.subject or "(no subject)" }}</span>
+    {% if head.classification %}<span class="badge" style="--c:var(--age)">{{ head.classification | replace('_', ' ') }}</span>{% endif %}
+  </div>
+  <div class="line">
+    {{ c.emails | length }} emails from {{ head.sender }},
+    {% if c.first | dtt == c.last | dtt %}{{ c.last | dtt }}{% else %}{{ c.first | dtt }} to {{ c.last | dtt }}{% endif %}.
+    Waiting {{ c.emails[-1].waiting | days_text }}.
+  </div>
+  <ul class="run-rows">
+    {% for e in c.emails %}
+    {% set co = (e.extraction.company if e.extraction else none) %}
+    <li>
+      <a class="ro" href="/triage?email={{ e.id }}">{{ (e.extraction.role_title if e.extraction else none) or "role unknown" }}</a>
+      {#- The best record only: a run of fourteen rows, each with three tied
+          picks, was forty-two buttons. The rest are on the email's own card. -#}
+      {% if e.picks %}{{ pick(e, e.picks[0], false, true) }}
+        {%- if e.picks | length > 1 %} <a class="quiet sans sm" href="/triage?email={{ e.id }}">or {{ e.picks | length - 1 }} more</a>{% endif %}
+      {%- endif %}
+      <form method="post" action="/triage/{{ e.id }}" class="row-acts">
+        <input type="hidden" name="lane" value="{{ lane }}">
+        {% if co %}<button class="small" name="action" value="{{ 'lead' if lane == 'inbound' else 'create' }}">
+          {{- 'Track as lead' if lane == 'inbound' else 'Create application' }}</button>{% endif %}
+        <button class="small" name="action" value="ignore">Ignore</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+  <form method="get" action="/triage/batch">
+    <input type="hidden" name="lane" value="{{ lane }}">
+    {% for e in c.emails %}<input type="hidden" name="ids" value="{{ e.id }}">{% endfor %}
+    <button name="action" value="{{ 'lead' if lane == 'inbound' else 'create' }}">
+      {{- 'Track all ' ~ (c.emails | length) ~ ' as leads' if lane == 'inbound'
+          else 'Create ' ~ (c.emails | length) ~ ' applications' }}…</button>
+    <button name="action" value="ignore">Ignore all {{ c.emails | length }}…</button>
+    <span class="quiet sm">Each opens a page listing what it will do.</span>
+  </form>
+</div>
+{%- endmacro %}
+
+<h1>Triage</h1>
+<div class="tabs" style="margin-bottom:1.1rem">
+  <a href="/triage?lane=actionable" class="{{ 'active' if lane == 'actionable' }}">
+    {{ lanes.actionable }}{% if actionable_n %}<span class="pill">{{ actionable_n }}</span>{% endif %}</a>
+  <a href="/triage?lane=inbound" class="{{ 'active' if lane == 'inbound' }}">
+    {{ lanes.inbound }}{% if inbound_n %}<span class="pill">{{ inbound_n }}</span>{% endif %}</a>
+</div>
+
+{% if done is not none and did %}
+<div class="note"><strong>{{ done }} {{ did }}.</strong></div>
+{% endif %}
+
+{% if single %}
+<p class="lede" style="margin-top:-.4rem">One email from a run. <a href="/triage?lane={{ lane }}">Back to the whole lane</a>.</p>
+{% elif lane == 'inbound' %}
+<p class="lede" style="margin-top:-.4rem">Recruiter and employer approaches about roles you
+  didn't apply to. “Track as lead” files it honestly: a real record with no applied
+  event, so it never counts toward your funnel or response rate unless you actually apply.</p>
+{% else %}
+<p class="lede" style="margin-top:-.4rem">Mail the matcher would not file on its own. Where it
+  weighed a record, the card names it; one click files it there.</p>
+{% endif %}
+
+{% if twins %}
+<h2>Filed twice?</h2>
+<p class="hint">The employer's form and the job board each made a record of what looks
+  like one application, minutes apart. Merging keeps the board's record, with its name and
+  job description, and moves the form's answers and submit time onto it.</p>
+{% for t in twins %}
+<div class="tri twin">
+  <div class="pair">
+    <div class="side">
+      <span class="lab">{{ t.board_words }}, captured {{ t.board_created | dtt }}</span>
+      <a href="/applications/{{ t.board_app }}">{{ t.board_company }}, {{ t.board_title }}</a>
+      <small>{{ 'Has' if t.board_jd else 'No' }} job description, {{ t.board_answers }} answer{{ '' if t.board_answers == 1 else 's' }}</small>
+    </div>
+    <div class="side">
+      <span class="lab">The employer's form, submitted {{ (t.form_applied or t.form_created) | dtt }}</span>
+      <a href="/applications/{{ t.form_app }}">{{ t.form_company }}, {{ t.form_title }}</a>
+      <small>{{ 'Has' if t.form_jd else 'No' }} job description, {{ t.form_answers }} answer{{ '' if t.form_answers == 1 else 's' }}</small>
+    </div>
+  </div>
+  <div class="line">Made {% if t.gap_seconds < 120 %}{{ t.gap_seconds }} seconds{% else %}{{ (t.gap_seconds / 60) | round | int }} minutes{% endif %} apart.</div>
+  <form method="post" action="/triage/twins">
+    <input type="hidden" name="form_app" value="{{ t.form_app }}">
+    <input type="hidden" name="board_app" value="{{ t.board_app }}">
+    <button class="primary" name="action" value="merge">One application: merge them</button>
+    <button name="action" value="apart">Two different applications</button>
+  </form>
+</div>
+{% endfor %}
+{% endif %}
+
+{% if twins %}<h2>Mail to file</h2>{% endif %}
+{% if not cards and not dupes and not twins and not review %}
+<p class="empty">Nothing waiting in this lane.</p>
+{% elif not cards and (twins or dupes or review) %}
+<p class="quiet sm">No mail waiting.</p>
+{% endif %}
+{% for c in cards %}
+{% if c.run %}{{ run(c) }}{% else %}{{ card(c.email) }}{% endif %}
 {% endfor %}
 
 {% if dupes %}
@@ -74,5 +204,37 @@
   </form>
 </div>
 {% endfor %}
+{% endif %}
+
+{% if review %}
+<h2>Filed on their own, less sure</h2>
+<p class="hint">The matcher filed {{ 'this' if review | length == 1 else 'these' }} without you in the last
+  {{ review_days }} days with less to go on than usual: a record it started, a weak fit, or
+  a company that reads differently. Open the record to re-file one that landed wrong; each
+  stays here until you mark it, or for {{ review_days }} days.</p>
+<div class="card rv">
+  {% for r in review %}
+  <div class="rv-row">
+    <span class="when">{{ r.processed_at | dtt }}</span>
+    <span class="what">
+      <span class="subject" title="{{ r.sender }}">{{ r.subject or "(no subject)" }}</span>
+      {%- if r.ids | length > 1 %} <span class="quiet sans sm">and {{ r.ids | length - 1 }} more in the thread</span>{% endif %}
+      <span class="quiet">filed under</span>
+      <a href="/applications/{{ r.app_id }}#email-{{ r.id }}">{{ r.company_display }}, {{ r.title_canonical }}</a>
+      <small>{{ r.why }}.</small>
+    </span>
+    <form method="post" action="/triage/review">
+      {% for i in r.ids %}<input type="hidden" name="ids" value="{{ i }}">{% endfor %}
+      <button class="small">Looks right</button>
+    </form>
+  </div>
+  {% endfor %}
+</div>
+{% if review | length > 1 %}
+<form method="post" action="/triage/review">
+  {% for r in review %}{% for i in r.ids %}<input type="hidden" name="ids" value="{{ i }}">{% endfor %}{% endfor %}
+  <p class="bar" style="margin-top:.6rem"><button>All {{ review | length }} look right</button></p>
+</form>
+{% endif %}
 {% endif %}
 {% endblock %}

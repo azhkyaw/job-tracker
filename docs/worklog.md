@@ -1822,4 +1822,58 @@ the key to each real case.
      every count asserted, then the commit.
    - **Not built:** a kept opener that also links when the hiring system's
      page names, as its referrer, the host the Apply left for. Measure
-     that career site's referrer first.
+     that career site's referrer first. Task 64's "Filed twice?" band now
+     offers this merge in one click instead of a script.
+
+64. **Triage names what the matcher knew** (7 Oct 2026, migration 020).
+   Asked to analyse `/triage` and propose bold changes, then to build all
+   of them. `.claude/rules/web-ui.md` rule 19 has the design.
+   - **Measured first:** the first lane was empty; the second held 15
+     referral notices of 28 Aug from one sender, 14 under one subject, left
+     there on 24 Sep, each card
+     carrying all 402 records (6,030 options, 858 KB). Over the search, 231
+     emails had been filed by hand (median 18 hours after arrival, 50 after
+     three days or more), 190 of them onto an existing record. Replaying
+     the matcher over those 190, the record chosen was its own best
+     candidate in 113, second or third once, never lower; 45 were no
+     candidate and 31 named no company. The JD-similarity duplicates band
+     had never rendered (no embeddings), while six applications had been
+     filed twice by an employer's form and a job board in ten days, each
+     merged by a script.
+   - **Built:** the matcher's picks as one-click filings with the reason in
+     words (`matcher.scored_candidates` split out of `find_match`
+     unchanged, so the page reads the ranking the matcher decides on); a
+     run of identical mail as one card, its bulk actions confirmed on a
+     page; the "Filed twice?" band, counted in the nav pill by the same
+     function, merging onto the board's record; the matcher's own less
+     certain filings as a strip with "Looks right" (`emails.reviewed_at`,
+     migration 020, applied to the dev DB by hand the same day); the
+     fallback list nearest the email first; the lanes renamed; each card's
+     age.
+   - **Two proposals were wrong as first stated, and measuring said so
+     before they were built.** Hiding records created after the email
+     would have hidden 9 of the 52 records people had chosen by hand where
+     the matcher offered nothing. A score band alone for the review strip
+     would have missed the 23 Sep stranger, which scored 1.0.
+   - **Three more corrections came from seeing it on real data**, all made
+     before the last suite run: the strip as first built (0.85, a short
+     name inside a long one counted as differing) showed 18 rows, mostly a
+     contained name or one recruiter thread, and now uses 0.80, the gate's
+     own containment and one row per thread; a run's rows offer only their
+     best record (14 rows had carried 42 buttons); and an approach is
+     offered a record only at the matcher's bar, since a data scientist's
+     referral had been offered a software engineer's record.
+   - **What it found on first use:** the strip's two rows were both silent
+     duplicates, made 2 Oct by confirmations beside Workday captures filed
+     under a legal entity's name (`.claude/rules/matching.md`, the
+     abbreviation bullet). Repaired the same day at the author's word,
+     each email re-filed onto the extension record through the route
+     (snapshot `2026-10-07-workday-entity-refile.json`); one turned out to
+     have been rejected by email on 2 Oct while its extension record still
+     read as waiting.
+   - The page takes 1.4-1.5 s on the dev DB, about 19 ms a round trip, from
+     roughly three matcher queries per pending email.
+   - Suites: all nine pass; 40 new checks in `test_web`, 2 adapted (the
+     dropdown test reads the "Every record" group, the earlier pill test
+     counts twins). Seen in the dev Chrome, dark theme: the run, its
+     confirmation page (opened, not sent) and the strip.

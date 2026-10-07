@@ -644,6 +644,36 @@ pre.text{white-space:pre-wrap;font:inherit;margin:.5rem 0 0;max-width:70ch}
 .tri .subject{font-weight:600}
 .tri .line{font-family:var(--sans);font-size:.82rem;color:var(--muted);overflow-wrap:anywhere}
 .tri form{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center}
+/* What a card says for the matcher (7 Oct 2026, pipeline/triage.py): why it
+   waited, in the serif since it is a sentence, then the records it weighed,
+   one per line, each a button. A record's name can be long, so a pick's
+   button wraps rather than pushing its date off the card. */
+.tri .why{margin:0;max-width:64ch}
+.tri .picks{display:grid;gap:.45rem}
+.tri .pick button{text-align:left;max-width:100%}
+.tri details.another form{margin-top:.5rem}
+/* A run: one sender's identical mail as rows inside one card. */
+.tri .run-rows{list-style:none;margin:0;padding:0}
+.tri .run-rows li{display:flex;flex-wrap:wrap;gap:.35rem .8rem;align-items:center;
+                  padding:.45rem 0;border-top:1px solid var(--line)}
+.tri .run-rows .ro{flex:1 1 16rem;min-width:0;color:var(--ink);text-decoration:none}
+.tri .run-rows .row-acts{margin-left:auto;flex-wrap:nowrap}
+/* An application filed twice: the board's record beside the form's. */
+.twin .pair{display:grid;grid-template-columns:1fr 1fr;gap:.6rem 1.4rem}
+.twin .side{min-width:0}
+.twin .side .lab{display:block;font-family:var(--sans);font-size:.78rem;color:var(--muted)}
+.twin .side a{font-weight:600;color:var(--ink);text-decoration:none;overflow-wrap:anywhere}
+.twin .side small{display:block;font-family:var(--sans);font-size:.8rem;color:var(--muted)}
+/* A list of filings: the review strip, and a run's confirmation page. */
+.rv-row{display:grid;grid-template-columns:8.5rem minmax(0,1fr) max-content;gap:0 1rem;
+        padding:.55rem 1rem;border-bottom:1px solid var(--line);align-items:baseline}
+.rv-row:last-child{border-bottom:0}
+.rv-row .when{font-family:var(--sans);font-size:.82rem;color:var(--muted);
+              font-variant-numeric:tabular-nums}
+.rv-row .what{min-width:0;overflow-wrap:anywhere}
+.rv-row .what a{color:var(--ink)}
+.rv-row .what small{display:block;font-family:var(--sans);font-size:.8rem;color:var(--muted)}
+.rv-row form{margin:0}
 
 @media (prefers-reduced-motion: no-preference){
   .tri,tr,a.tl{transition:background .12s ease}
@@ -654,6 +684,7 @@ pre.text{white-space:pre-wrap;font:inherit;margin:.5rem 0 0;max-width:70ch}
   .two{grid-template-columns:1fr}
   .thread li{grid-template-columns:1fr}
   .thread form.why{margin-left:0}
+  .twin .pair,.rv-row{grid-template-columns:1fr}
   .list li{grid-template-columns:1fr}
   .forest{columns:1}
   .vm-row{grid-template-columns:minmax(0,1fr);gap:.35rem}

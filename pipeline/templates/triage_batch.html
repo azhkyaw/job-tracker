@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}file a run — tracker{% endblock %}
+{% block nav_triage %}active{% endblock %}
+{% block content %}
+{#- A run's bulk action, shown before it happens (7 Oct 2026,
+    web.triage_batch_confirm): exactly the emails the POST will file, each
+    with what it becomes, carrying their ids. The POST re-reads them
+    (web._batch_rows), so an email filed in between is left alone. Modelled
+    on /follow-ups' bulk close; an ignored email has no page to be found on
+    again, which is why this is a page and not a button. -#}
+{% set verb = {'ignore': 'Ignore', 'lead': 'Track', 'create': 'Create'}[action] %}
+<h1>{{ verb }} {{ doable | length }} in one go</h1>
+<p class="lede">
+  {%- if action == 'ignore' %}Each leaves triage as ignored and joins no record.
+  {%- elif action == 'lead' %}Each becomes its own lead on the Inbound page: a record with no
+  applied event, under the company the email names.
+  {%- else %}Each becomes its own application, under the company the email names.{% endif %}
+  {% set skipped = (rows | length) - (doable | length) %}
+  {%- if skipped %} {{ skipped }} of these {{ 'names' if skipped == 1 else 'name' }} no company
+  and {{ 'is' if skipped == 1 else 'are' }} left as {{ 'it is' if skipped == 1 else 'they are' }};
+  open {{ 'it' if skipped == 1 else 'each' }} from the run to file by hand.{% endif %}</p>
+{% if rows %}
+<form method="post" action="/triage/batch">
+<input type="hidden" name="action" value="{{ action }}">
+<input type="hidden" name="lane" value="{{ lane }}">
+<div class="card rv">
+  {% for r in rows %}
+  <div class="rv-row">
+    <span class="when">{{ r.received_at | dtt }}</span>
+    <span class="what">
+      <span class="subject">{{ r.role or r.subject or "(no subject)" }}</span>
+      <small>{{ r.sender }}</small>
+    </span>
+    <span class="quiet sans sm">
+      {%- if r.fate %}<input type="hidden" name="ids" value="{{ r.id }}">{{ r.fate }}
+      {%- else %}left as it is: no company{% endif %}</span>
+  </div>
+  {% endfor %}
+</div>
+<p class="bar" style="margin-top:.8rem">
+  {% if doable %}<button class="primary">{{ verb }} {{ doable | length }}</button>{% endif %}
+  <a href="/triage?lane={{ lane }}">Back without changing anything</a></p>
+</form>
+{% else %}
+<p class="empty">None of these is waiting any more. <a href="/triage?lane={{ lane }}">Back to triage</a>.</p>
+{% endif %}
+{% endblock %}

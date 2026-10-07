@@ -248,6 +248,40 @@ REMINDER_DAYS = int(os.environ.get("TRACKER_REMINDER_DAYS", "10"))
 REAPPLIED_TITLE_MIN = 0.9
 REAPPLIED_JD_MIN = 0.5
 
+# /triage beyond the unfiled mail (7 Oct 2026, pipeline/triage.py).
+#
+# An application FILED TWICE: the hiring system's form submit and the job
+# board's popover record of one external apply, when the extension's handoff
+# did not bind them. Six real twins between 28 Sep and 7 Oct 2026, each
+# merged by hand from a snapshot: five were 10 to 41 seconds apart, and the
+# sixth (the form first, the board's record 44 minutes later) is beyond any
+# window that stays precise. With those merged, no other hiring-system/board
+# pair of extension captures on the dev DB fell within five minutes; the
+# nearest was two different jobs, 15 minutes apart.
+TWIN_WINDOW_MINUTES = 5
+# Mail the matcher filed ON ITS OWN with less to go on, offered for a glance:
+# a record it started (a confirmation with no candidate), a score under
+# REVIEW_SCORE_BELOW, or a record its company reaches by no term of the
+# company gate (triage._names_differ). A score band alone was the first idea
+# and is not enough: the 23 Sep stranger (four emails of a live interview
+# thread filed on an agency) scored 1.0, and only its names differed. Every
+# known wrong auto-filing on record falls in one of the three: that one, the
+# 24 Sep agency lead filed at exactly 0.75, and the records started by a
+# confirmation that had a record already (4 Aug, 7 Sep, 30 Sep, 2 Oct).
+# 0.80 because the threshold sweep (docs/worklog.md task 1) found the
+# matcher's least certain true matches packed between 0.75 and 0.80; the
+# first build used 0.85 and, with containment counted as differing names,
+# flagged 84 of 388 auto-filings, 18 rows on the day it was looked at. Shown
+# for REVIEW_DAYS after filing, a thread as one row, until marked as right.
+REVIEW_SCORE_BELOW = 0.80
+REVIEW_DAYS = 7
+# The fallback list's first group: the records whose start is nearest the
+# email's arrival. Of the 52 hand links the matcher could not have suggested
+# (no company, or the record was no candidate), the chosen record was the
+# nearest for 15 and in the nearest three for 17. Nine of the 52 records were
+# created AFTER their email arrived, so the list never hides a record.
+NEAREST_RECORDS = 5
+
 # --- Phase 4 -----------------------------------------------------------------
 
 # Signing/encryption root for sessions and stored Gmail credentials. REQUIRED

@@ -359,7 +359,10 @@ with db.connect() as conn, conn.transaction():
             "VALUES (%s, %s, 'applied', 'extension', %s, '{}')", (user_id, twin, applied))
         twin_jobs.append(job)
 # Every pending email carries its own copy of the dropdown; read the first.
+# Since 7 Oct 2026 it opens with the records nearest the email
+# (triage.nearest), so read its "Every record" group, the whole list.
 first_select = client.get("/triage").text.split("<select", 1)[1].split("</select>", 1)[0]
+first_select = first_select.split('label="Every record"')[-1]
 twins = re.findall(r'<option value="[^"]+">(Contoso Markets, Platform Engineer[^<]*)</option>',
                    first_select)
 check("same-titled records are told apart by their applied dates, newest first",
@@ -441,12 +444,15 @@ r = client.get("/triage?lane=inbound")
 check("inbound lane lists it", "Hiring for Senior Software Engineer" in r.text)
 
 print("triage: nav badge excludes recruiter_outreach")
+from pipeline import triage as _triage
 with db.connect() as conn:
+    # An application filed twice counts too (7 Oct 2026), by the rule the
+    # page's band draws.
     expected_pending = conn.execute(
         "SELECT (SELECT count(*) FROM emails WHERE triage_state = 'pending' "
         "        AND classification IS DISTINCT FROM 'recruiter_outreach') + "
         "       (SELECT count(*) FROM duplicate_candidates WHERE state = 'pending') AS n"
-    ).fetchone()["n"]
+    ).fetchone()["n"] + len(_triage.twins(conn, user_id))
 r = client.get("/")
 # Everything actionable was already resolved above, so the only pending item
 # left is the recruiter_outreach email just seeded — the triage pill (which
@@ -3356,5 +3362,327 @@ with db.connect() as conn, conn.transaction():
     conn.execute("UPDATE applications SET origin = 'inbound' WHERE id = %s::uuid", (_ea5,))
 check("a response, and an approach a recruiter started, owe no email",
       _ea4 not in _owed()[0] and _ea5 not in _owed()[0], _owed())
+
+print("triage, redrawn: the matcher's picks, runs, twins, the review strip (7 Oct 2026)")
+from pipeline import ingest as _ing, triage as _tri
+from pipeline.email_classifier import norm_company
+
+_now = datetime.now(timezone.utc)
+with db.connect() as conn:
+    _tu = db.single_user_id(conn)
+
+
+def _rec(company, title, applied, platform="linkedin", pid=None, jd=None,
+         answers=0, captured_via="extension", ats_job_id=None, source="extension"):
+    """One captured record the way /captures files it: upsert + applied event
+    (+ answers). Returns (application id, job id, posting id). No JD by
+    default: a JD enqueues extraction, and this suite runs no worker."""
+    with db.connect() as conn, conn.transaction():
+        r = _ing.upsert_record(conn, _tu, platform=platform, captured_via=captured_via,
+                               platform_job_id=pid, company=company, title=title, jd_text=jd,
+                               ats_job_id=ats_job_id)
+        if applied is not None:
+            conn.execute(
+                "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+                "VALUES (%s, %s, 'applied', %s, %s, %s)",
+                (_tu, r["application_id"], source, applied, Json({"external": True})))
+        for i in range(answers):
+            conn.execute(
+                "INSERT INTO application_answers (user_id, application_id, posting_id, question, "
+                "question_norm, answer, occurrence, ordinal) VALUES (%s, %s, %s, %s, %s, 'Yes', 0, %s)",
+                (_tu, r["application_id"], r["posting_id"], f"Question {i}?", f"question {i}", i))
+    return str(r["application_id"]), str(r["job_id"]), str(r["posting_id"])
+
+
+def _mail(gm, subject, company, role, received, classification="status_update",
+          sender="Careers <careers@quillfeather.example>", state="pending",
+          app=None, score=None, processed=None, platform="direct"):
+    with db.connect() as conn, conn.transaction():
+        return str(conn.execute(
+            """INSERT INTO emails (user_id, gmail_message_id, sender, subject, body_text,
+                                   received_at, classification, extraction, triage_state,
+                                   matched_application_id, match_score, processed_at)
+               VALUES (%s, %s, %s, %s, 'body', %s, %s, %s, %s, %s, %s, COALESCE(%s::timestamptz, now()))
+               RETURNING id""",
+            (_tu, gm, sender, subject, received, classification,
+             Json({"company": company, "role_title": role, "platform": platform, "ats": None,
+                   "event_date": None, "status_detail": None, "recruiter": None, "notes": None}),
+             state, app, score, processed)).fetchone()["id"])
+
+
+def _card(html, email_id):
+    """One email's card out of the page: from its anchor to the next card."""
+    part = html.split(f'id="email-{email_id}"', 1)
+    return part[1].split('<div class="tri', 1)[0] if len(part) == 2 else ""
+
+
+r = client.get("/triage")
+check("the lanes are named for what they hold",
+      "Your applications" in r.text and "Approaches" in r.text
+      and "Actionable" not in r.text, r.text[:2000])
+
+# -- the matcher's own picks, and why the email waited ------------------------
+_tie_a, _, _ = _rec("Quillfeather Robotics", "Lattice Platform Engineer", _now - timedelta(days=3),
+                    pid="LI-quill-1")
+_tie_b, _, _ = _rec("Quillfeather Robotics", "Lattice Platform Engineer", _now - timedelta(days=2),
+                    pid="LI-quill-2")
+_tie_mail = _mail("gm-tri-tie", "Your application was viewed", "Quillfeather Robotics",
+                  "Lattice Platform Engineer", _now - timedelta(hours=5))
+r = client.get("/triage")
+c = _card(r.text, _tie_mail)
+check("two records that tie are both offered, and the card says they tie",
+      "2 records fit about equally." in c and c.count('class="pick"') == 2
+      and f'name="application_id" value="{_tie_a}"' in c
+      and f'name="application_id" value="{_tie_b}"' in c, c[:3000])
+check("the best pick is the primary button, the list of every record moves behind a disclosure",
+      c.index('class="primary"') < c.index('class="pick"', c.index('class="pick"') + 1)
+      and "<summary>Another record</summary>" in c, c[:3000])
+check("the card says how long it has waited", "Waiting 5 hours." in c, c[:1500])
+r = client.post(f"/triage/{_tie_mail}", data={"action": "link", "application_id": _tie_b,
+                                               "lane": "actionable"})
+with db.connect() as conn:
+    row = conn.execute("SELECT triage_state, matched_application_id FROM emails WHERE id = %s",
+                       (_tie_mail,)).fetchone()
+check("a pick files through the route the dropdown always used",
+      r.status_code == 303 and row["triage_state"] == "resolved"
+      and str(row["matched_application_id"]) == _tie_b, row)
+
+_weak_app, _, _ = _rec("Inkwell Analytics", "Data Platform Lead", _now - timedelta(days=45),
+                       pid="LI-inkwell-1")
+_weak_mail = _mail("gm-tri-weak", "Thanks for applying", "Inkwell Analytics",
+                   "Junior Frontend Developer", _now - timedelta(days=1))
+_none_mail = _mail("gm-tri-none", "A message from a recruiter", None, None,
+                   _now - timedelta(days=2))
+_nobody_mail = _mail("gm-tri-nobody", "Your application", "Nobodyhere Holdings", "Engineer",
+                     _now - timedelta(days=2))
+r = client.get("/triage")
+c = _card(r.text, _weak_mail)
+check("a weak fit names the record and says which signals held it back",
+      "The nearest record is a weak fit: the role reads differently and you applied 44 days "
+      "before it." in c and f'value="{_weak_app}"' in c.split("<select")[0], c[:3000])
+c = _card(r.text, _none_mail)
+check("an email that names no company says so, and its list is not hidden",
+      "It names no company, so no record was searched." in c
+      and 'class="pick"' not in c and "Another record" not in c and "<select" in c, c[:3000])
+c = _card(r.text, _nobody_mail)
+check("no record under the company: said in words, no picks",
+      "No record is filed under that company." in c and 'class="pick"' not in c, c[:3000])
+
+# -- the fallback list, nearest the email first --------------------------------
+_opts = [{"id": "a", "started_at": _now - timedelta(days=30)},
+         {"id": "b", "started_at": _now - timedelta(days=1)},
+         {"id": "c", "started_at": None},
+         {"id": "d", "started_at": _now + timedelta(hours=2)}]
+check("nearest orders by distance from the email either side, and skips undated records",
+      [o["id"] for o in _tri.nearest(_opts, _now, 3)] == ["d", "b", "a"])
+c = _card(r.text, _weak_mail)
+_sel = c.split("<select", 1)[1].split("</select>", 1)[0]
+check("the fallback list opens with the records that started nearest the email, "
+      "and still holds every record after them",
+      _sel.index('label="Started nearest this email"') < _sel.index('label="Every record"')
+      and _sel.split('label="Every record"')[1].count("<option ") >= 1, _sel[:1500])
+
+# -- a run of one sender's identical mail --------------------------------------
+_run_ids = [
+    _mail("gm-tri-run-1", "You've been REFERRED to a role!", "Featherline", "Backend Engineer",
+          _now - timedelta(days=1, minutes=3), classification="recruiter_outreach",
+          sender="HR Central <referrals@featherline.example>"),
+    _mail("gm-tri-run-2", "You've been referred  to a role!", "Featherline", "Data Engineer",
+          _now - timedelta(days=1, minutes=2), classification="recruiter_outreach",
+          sender="Featherline Careers <REFERRALS@featherline.example>"),
+    _mail("gm-tri-run-3", "you've been referred to a role!", None, "ML Engineer",
+          _now - timedelta(days=1, minutes=1), classification="recruiter_outreach",
+          sender="<referrals@featherline.example>"),
+]
+_run_other = _mail("gm-tri-run-4", "A different subject", "Featherline", "SRE",
+                   _now - timedelta(days=1), classification="recruiter_outreach",
+                   sender="HR Central <referrals@featherline.example>")
+cards = _tri.runs([{"sender": s, "subject": j, "received_at": t, "id": i} for i, s, j, t in (
+    (1, "A <x@y.z>", "Hello", _now), (2, "B <X@Y.Z>", " hello ", _now - timedelta(1)),
+    (3, "A <x@y.z>", "Other", _now - timedelta(2)))])
+check("runs: one address and one subject, case and spacing folded, is one card at its newest",
+      [c["run"] for c in cards] == [True, False]
+      and [e["id"] for e in cards[0]["emails"]] == [1, 2], cards)
+r = client.get("/triage?lane=inbound")
+check("the three identical notices are one card, the fourth its own",
+      "3 emails from" in r.text and 'id="email-' + _run_other + '"' in r.text
+      and all(f'href="/triage?email={i}"' in r.text for i in _run_ids), r.text[:3000])
+r = client.get(f"/triage?email={_run_ids[0]}")
+check("a run's row opens its email as a full card, in its own lane",
+      r.status_code == 200 and _card(r.text, _run_ids[0]) and "One email from a run" in r.text
+      and 'name="lane" value="inbound"' in r.text, r.text[:2000])
+q = "&".join(f"ids={i}" for i in _run_ids)
+r = client.get(f"/triage/batch?action=lead&lane=inbound&{q}")
+check("the bulk action is a page that lists what it will do, and what it cannot",
+      r.status_code == 200 and "Track 2 in one go" in r.text
+      and r.text.count("a new lead under Featherline") == 2
+      and "left as it is: no company" in r.text and "1 of these names no company" in r.text,
+      r.text[:3000])
+r = client.post("/triage/batch", data={"action": "lead", "lane": "inbound",
+                                        "ids": _run_ids + [_run_other, "not-a-uuid"]})
+with db.connect() as conn:
+    states = {str(e["id"]): (e["triage_state"], e["origin"]) for e in conn.execute(
+        "SELECT e.id, e.triage_state, a.origin FROM emails e "
+        "LEFT JOIN applications a ON a.id = e.matched_application_id WHERE e.id = ANY(%s::uuid[])",
+        (_run_ids + [_run_other],)).fetchall()}
+check("the POST files exactly the ones it can, each as one lead, and says how many",
+      r.status_code == 303 and "done=3&did=lead" in r.headers["location"]
+      and states[_run_ids[0]] == ("resolved", "inbound")
+      and states[_run_ids[1]] == ("resolved", "inbound")
+      and states[_run_ids[2]] == ("pending", None)
+      and states[_run_other] == ("resolved", "inbound"), (r.headers.get("location"), states))
+check("the receipt says it in words", "3 tracked as leads." in client.get(r.headers["location"]).text)
+r = client.post("/triage/batch", data={"action": "ignore", "lane": "inbound", "ids": _run_ids})
+with db.connect() as conn:
+    st = conn.execute("SELECT triage_state FROM emails WHERE id = %s", (_run_ids[2],)).fetchone()
+check("an email filed since the page was drawn is left alone; the rest are ignored",
+      "done=1&did=ignore" in r.headers["location"] and st["triage_state"] == "ignored",
+      (r.headers.get("location"), st))
+check("an unknown bulk action is refused",
+      client.post("/triage/batch", data={"action": "delete", "ids": _run_ids}).status_code == 400)
+_run2 = [_mail(f"gm-tri-run2-{n}", "Roles you may like at Quillfeather", "Quillfeather Robotics",
+               "Lattice Platform Engineer", _now - timedelta(hours=n),
+               classification="recruiter_outreach", sender="Talent <talent@quillfeather.example>")
+         for n in (1, 2)]
+r = client.get("/triage?lane=inbound")
+_run2_card = r.text.split("2 emails from Talent", 1)[1].split('<form method="get"', 1)[0]
+check("a run's row offers its best record only, and links to the others on its own card",
+      _run2_card.count('class="pick"') == 2 and _run2_card.count("or 1 more") == 2, _run2_card[:2000])
+check("and each pick's date opens its record, for a look before filing",
+      f'href="/applications/{_tie_a}"' in _run2_card or f'href="/applications/{_tie_b}"' in _run2_card,
+      _run2_card[:2000])
+_weak_approach = _mail("gm-tri-weak-approach", "A role you may like", "Inkwell Analytics",
+                       "Junior Frontend Developer", _now - timedelta(hours=3),
+                       classification="recruiter_outreach",
+                       sender="Inkwell Talent <talent@inkwell.example>")
+c = _card(client.get("/triage?lane=inbound").text, _weak_approach)
+check("an approach is offered a record only at the matcher's own bar, since its lane says no "
+      "“weak fit”", c and 'class="pick"' not in c, c[:2000])
+
+# -- an application filed twice ------------------------------------------------
+_t0 = _now - timedelta(minutes=1)
+_form_app, _form_job, _ = _rec(None, "Quantum Ledger Archivist", _t0, platform="other",
+                               pid="career9.successfactors.com/tenantq/4242", jd=None, answers=3,
+                               ats_job_id="career9.successfactors.com/tenantq/4242")
+_board_app, _board_job, _ = _rec("Brightwater Holdings", "Quantum Ledger Archivist",
+                                 _t0 + timedelta(seconds=40), pid="LI-twin-4242")
+def _pair():
+    with db.connect() as conn:
+        return [(str(t["form_app"]), str(t["board_app"])) for t in _tri.twins(conn, _tu)]
+check("a nameless form and the board's record of its title, minutes apart, are a twin",
+      (_form_app, _board_app) in _pair(), _pair())
+_stranger_form, _, _ = _rec("Cobalt Shipping", "Harbour Systems Analyst", _t0, platform="other",
+                            pid="cobalt.wd3.myworkdayjobs.com/r123")
+_stranger_board, _, _ = _rec("Juniper Bakeries", "Harbour Systems Analyst", _t0, pid="LI-juniper-1")
+check("two named employers that do not agree are not, whatever the title",
+      (_stranger_form, _stranger_board) not in _pair(), _pair())
+r = client.get("/triage")
+check("the band shows both records with what each holds",
+      "Filed twice?" in r.text and f'value="{_form_app}"' in r.text
+      and "Brightwater Holdings, Quantum Ledger Archivist" in r.text
+      and "3 answers" in r.text, r.text[:4000])
+with db.connect() as conn:
+    expected = conn.execute(
+        "SELECT (SELECT count(*) FROM emails WHERE triage_state = 'pending' "
+        "        AND classification IS DISTINCT FROM 'recruiter_outreach') + "
+        "       (SELECT count(*) FROM duplicate_candidates WHERE state = 'pending') AS n"
+    ).fetchone()["n"] + len(_tri.twins(conn, _tu))
+check("the nav pill counts the twin, by the same rule the band draws",
+      f'class="pill">{expected}<' in r.text.split('href="/triage"')[1].split("</a>")[0], expected)
+r = client.post("/triage/twins", data={"action": "merge", "form_app": _form_app,
+                                        "board_app": _board_app})
+with db.connect() as conn:
+    gone = conn.execute("SELECT 1 FROM applications WHERE id = %s", (_form_app,)).fetchone()
+    evs = conn.execute("SELECT type, occurred_at FROM events WHERE application_id = %s",
+                       (_board_app,)).fetchall()
+    n_ans = conn.execute("SELECT count(*) AS n FROM application_answers WHERE application_id = %s",
+                         (_board_app,)).fetchone()["n"]
+    job = conn.execute("SELECT ats_job_id, company_norm FROM jobs WHERE id = %s",
+                       (_board_job,)).fetchone()
+    n_post = conn.execute("SELECT count(*) AS n FROM postings WHERE job_id = %s",
+                          (_board_job,)).fetchone()["n"]
+check("merging opens the board's record",
+      r.status_code == 303 and r.headers["location"] == f"/applications/{_board_app}",
+      r.headers.get("location"))
+check("one application: the board's, with the form's answers, posting and job id",
+      gone is None and n_ans == 3 and n_post == 2
+      and job["ats_job_id"] == "career9.successfactors.com/tenantq/4242"
+      and job["company_norm"] == norm_company("Brightwater Holdings"), (gone, n_ans, n_post, job))
+check("and one applied event, the form's submit time",
+      [e["type"] for e in evs] == ["applied"] and evs[0]["occurred_at"] == _t0, evs)
+check("a stale merge does nothing",
+      client.post("/triage/twins", data={"action": "merge", "form_app": _form_app,
+                                         "board_app": _board_app}).headers["location"] == "/triage")
+_f2, _, _ = _rec("Saltmarsh Logistics Pte Ltd", "Routing Engineer", _t0, platform="other",
+                 pid="saltmarsh.wd1.myworkdayjobs.com/r9")
+_b2, _, _ = _rec("Saltmarsh Logistics", "Routing Engineer II", _t0, pid="LI-saltmarsh-9")
+check("names that agree by the gate pair, whatever the titles", (_f2, _b2) in _pair(), _pair())
+client.post("/triage/twins", data={"action": "apart", "form_app": _f2, "board_app": _b2})
+with db.connect() as conn:
+    both = conn.execute("SELECT count(*) AS n FROM applications WHERE id = ANY(%s::uuid[])",
+                        ([_f2, _b2],)).fetchone()["n"]
+check("“Two different applications” keeps both and the pair never returns",
+      both == 2 and (_f2, _b2) not in _pair(), _pair())
+
+# -- the matcher's own less certain filings ------------------------------------
+_rv_app, _, _ = _rec("Halcyon Freight", "Customs Data Engineer", _now - timedelta(days=4),
+                     pid="LI-halcyon-1")
+_rv_new = _mail("gm-tri-rv-new", "Thank you for applying", "Halcyon Freight", "Customs Data Engineer",
+                _now - timedelta(hours=3), classification="confirmation", state="auto_matched",
+                app=_rv_app, score=None)
+_rv_weak = _mail("gm-tri-rv-weak", "Application update", "Halcyon Freight", "Customs Data Engineer",
+                 _now - timedelta(hours=2), state="auto_matched", app=_rv_app, score=0.78)
+_rv_name = _mail("gm-tri-rv-name", "Interview", "Tidewater Partners", "Customs Data Engineer",
+                 _now - timedelta(hours=1), classification="interview_invite",
+                 state="auto_matched", app=_rv_app, score=1.0)
+_rv_fine = _mail("gm-tri-rv-fine", "Viewed", "Halcyon Freight", "Customs Data Engineer",
+                 _now - timedelta(hours=1), state="auto_matched", app=_rv_app, score=0.95)
+_rv_old = _mail("gm-tri-rv-old", "Old", "Tidewater Partners", "Customs Data Engineer",
+                _now - timedelta(days=9), state="auto_matched", app=_rv_app, score=0.76,
+                processed=_now - timedelta(days=9))
+_rv_th1 = _mail("gm-tri-rv-th1", "Opportunity at Halcyon", "Halcyon Freight", "Customs Data Engineer",
+                _now - timedelta(hours=6), state="auto_matched", app=_rv_app, score=0.76,
+                processed=_now - timedelta(hours=6))
+_rv_th2 = _mail("gm-tri-rv-th2", "RE:  re: Opportunity at Halcyon", "Halcyon Freight",
+                "Customs Data Engineer", _now - timedelta(hours=4), state="auto_matched",
+                app=_rv_app, score=0.77, processed=_now - timedelta(hours=4))
+_rv_short = _mail("gm-tri-rv-short", "Short name", "Halcyon", "Customs Data Engineer",
+                  _now - timedelta(hours=1), state="auto_matched", app=_rv_app, score=1.0)
+with db.connect() as conn:
+    _rows = _tri.review(conn, _tu, _now)
+    rv = {str(x["id"]): x["why"] for x in _rows}
+check("a reply thread on one record is one row, carrying every email in it, newest first",
+      [x["ids"] for x in _rows if _rv_th2 in x["ids"]] == [[_rv_th2, _rv_th1]], _rows)
+check("a short name inside the record's longer one is the gate working, not a difference",
+      _rv_short not in rv, rv)
+check("the strip holds a record the mail started, a weak fit and names that differ, each said",
+      rv.get(_rv_new) == "It started this record" and rv.get(_rv_weak) == "A weak fit"
+      and rv.get(_rv_name) == "The email reads “Tidewater Partners”", rv)
+check("and not a sure filing, nor one older than the window",
+      _rv_fine not in rv and _rv_old not in rv, rv)
+r = client.get("/triage")
+check("the page shows the strip, each row linking to its email on the record",
+      "Filed on their own, less sure" in r.text
+      and f'href="/applications/{_rv_app}#email-{_rv_name}"' in r.text, r.text[-4000:])
+check("the record's page has that anchor",
+      f'id="email-{_rv_name}"' in client.get(f"/applications/{_rv_app}").text)
+client.post("/triage/review", data={"ids": [_rv_new]})
+with db.connect() as conn:
+    rv = {str(x["id"]) for x in _tri.review(conn, _tu, _now)}
+check("“Looks right” takes one off the strip", _rv_new not in rv and _rv_weak in rv, rv)
+client.post("/triage/review", data={"ids": [_rv_weak, _rv_name, "junk"]})
+with db.connect() as conn:
+    rv = {str(x["id"]) for x in _tri.review(conn, _tu, _now)}
+    left = conn.execute("SELECT triage_state FROM emails WHERE id = %s", (_rv_name,)).fetchone()
+check("“All look right” takes the rest, and leaves who filed it unchanged",
+      not ({_rv_weak, _rv_name} & rv) and left["triage_state"] == "auto_matched", (rv, left))
+client.post("/triage/review", data={"ids": [_rv_th1, _rv_th2]})
+# This section's leftover mail, filed through the same bulk route so the
+# suites after this one see no triage they did not make.
+r = client.post("/triage/batch", data={"action": "ignore", "lane": "actionable",
+                                        "ids": [_weak_mail, _none_mail, _nobody_mail,
+                                                _weak_approach] + _run2})
+check("the leftovers are ignored in one go", "done=6&did=ignore" in r.headers["location"],
+      r.headers.get("location"))
 
 print("\nALL WEB PATHS PASS")

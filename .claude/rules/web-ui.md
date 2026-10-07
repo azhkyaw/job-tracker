@@ -724,6 +724,75 @@ is a private artifact, linked from the memory file
       newest month is not all in, since comparisons count settled
       applications only. On the day: July 22%, August 22%, September 14%,
       September's interval 7-25%.
+19. **Triage names what the matcher knew** (7 Oct 2026, task 64;
+    `pipeline/triage.py`). Asked for bold changes to the page. Measured
+    first over the 231 emails filed there by hand: 190 went onto an
+    existing record, and in 113 of those the record chosen was the
+    matcher's own best candidate, which the card had shown as "closest
+    match scored 0.62" beside a dropdown of 402 records, copied into every
+    card (6,030 options on a lane of 15 identical referral notices).
+    - **The card names the records and says why it waited.** `suggest`
+      reads `matcher.scored_candidates`, the list `find_match` decides on,
+      so a suggestion is never a second opinion: the best record and every
+      one within `AUTO_MATCH_MARGIN` of it, as one-click "File under"
+      buttons, each its own little form posting the route the dropdown
+      always used. The sentence above them is the reason in words ("2
+      records fit about equally", "the nearest record is a weak fit: the
+      role reads differently and you applied 44 days before it", "it names
+      no company") — one of `_score`'s three signals named where it fell
+      under half its weight. The dropdown stays behind "Another record",
+      opening with the records that started nearest the email
+      (`triage.nearest`): first for 15 of the 52 hand links the matcher
+      could not have suggested. It is an order, never a filter: the first
+      proposal was to hide records created after the email, and 9 of those
+      52 records were exactly that. A pick's date links to its record, since
+      two records can read alike to the day.
+    - **An approach is offered a record only at the matcher's bar**
+      (`AUTO_MATCH_SCORE`). Its lane has no sentence to say "a weak fit",
+      and over the search an approach went onto the matcher's best record 3
+      times in 46. Seen in the browser before this: every row of a referral
+      run offered a record, a data scientist's role among them offered a
+      software engineer's.
+    - **Two forms per card, by Enter.** "Start a new record for [company]"
+      is its own form with its button first, so Enter in the company box
+      starts that record; in one form, Enter would have pressed whichever
+      button came first in the tree.
+    - **A run is one card** (`triage.runs`): one sender ADDRESS and one
+      subject, case and spacing folded. Each row keeps its own actions with
+      only its best record (fourteen rows of three tied picks was 42
+      buttons), and opens its email as a full card (`/triage?email=`). The
+      bulk actions open a page listing what each email becomes
+      (`triage_batch.html`), as /follow-ups' bulk close does: an ignored
+      email has no page to be found on again.
+    - **An application filed twice gets a band** (`triage.twins`), counted
+      in the nav pill by the same function. The employer's form and the
+      board's popover record within `TWIN_WINDOW_MINUTES` (5) whose
+      employers agree by the matcher's company gate, or the form named none
+      and the titles agree. Five of the six real twins of 28 Sep - 7 Oct
+      were 10-41 s apart and pass; the sixth, 44 minutes in reverse order,
+      stays out by design. The merge keeps the BOARD record (name, JD, board
+      id) and the form's submit time, the shape every hand repair took; the
+      JD-similarity band's merge keeps the older job, the form, so it could
+      not be reused. "Two different applications" writes a `rejected`
+      `duplicate_candidates` pair, the answer dedup records for postings.
+    - **The matcher's own less certain filings get a strip**
+      (`triage.review`), not counted in the pill: a record it started, a
+      score under `REVIEW_SCORE_BELOW`, or a company that reaches the record
+      by no term of the gate. A score band alone would have missed the
+      23 Sep stranger, which scored 1.0. Built with 0.85 and with a short
+      name inside a long one counted as differing, it showed 18 rows on the
+      day, most of them a contained name or one recruiter thread; now 0.80,
+      containment is the gate working, and a reply thread on one record is
+      one row. "Looks right" is `emails.reviewed_at` (migration 020), not a
+      `triage_state`: auto against hand-filed is the matcher's tuning data.
+      Its first render on real data held two rows, and both were silent
+      duplicates from 2 Oct: a confirmation had started a record beside the
+      extension's Workday capture of the same apply, filed 11-12 s earlier
+      under the employer's legal entity with a company code in front
+      (`.claude/rules/matching.md`, the abbreviation bullet).
+    - Lanes renamed "Your applications" and "Approaches"; the `lane` values
+      stayed, so old links land. Every card says how long it has waited,
+      in grey: the wait is the user's.
 
 ## Invariant #2 in detail (moved from CLAUDE.md, 25 Sep 2026)
 

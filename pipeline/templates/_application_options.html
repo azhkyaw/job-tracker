@@ -4,11 +4,26 @@
     imported macro, so the `day` filter still sees the request (its timezone).
     The date is what tells apart two records with the same company and title:
     the submission, else how the record started — the recruiter's approach
-    for a lead, which has no applied event by design (invariant #9). -#}
-<option value="">Pick an application</option>
-{% for o in options %}
+    for a lead, which has no applied event by design (invariant #9).
+
+    `near` (triage only, 7 Oct 2026, triage.nearest): the records that
+    started nearest the email, first in a group of their own. An order, not a
+    filter: every record is still in the second group, because 9 of the 52
+    records people chose here by hand were created after their email
+    arrived. -#}
+{%- macro opt(o) -%}
 <option value="{{ o.id }}">{{ o.company_display }}, {{ o.title_canonical }}
   {%- if o.applied_at %} (applied {{ o.applied_at | day }})
   {%- elif o.started_at %} ({{ 'approached' if o.origin == 'inbound' else 'saved' if o.origin == 'saved' else 'since' }} {{ o.started_at | day }})
   {%- endif %}</option>
-{% endfor %}
+{%- endmacro %}
+<option value="">Pick an application</option>
+{% if near %}<optgroup label="Started nearest this email">
+{% for o in near %}{{ opt(o) }}
+{% endfor %}</optgroup>
+<optgroup label="Every record">
+{% endif %}
+{%- for o in options %}
+{{ opt(o) }}
+{%- endfor %}
+{% if near %}</optgroup>{% endif %}

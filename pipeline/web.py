@@ -26,7 +26,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import hmac
 
 import psycopg
-from fastapi import FastAPI, Form, Header, HTTPException, Request
+from fastapi import FastAPI, Form, Header, HTTPException, Query, Request
 from jinja2 import pass_context
 from pydantic import BaseModel
 from fastapi.responses import RedirectResponse
@@ -34,7 +34,7 @@ from fastapi.templating import Jinja2Templates
 
 from . import (analytics, answers, auth, config, db, dedup, email_apply, email_classifier,
                gmail_imap, gmail_oauth, ingest, insights, jd_extraction, joburl, mailbox,
-               matcher, trace)
+               matcher, trace, triage)
 from .email_classifier import norm_company
 
 app = FastAPI(title="Job Tracker")
@@ -289,12 +289,17 @@ def _pending_count(conn) -> int:
     """Nav badge — actionable lane only. recruiter_outreach pending emails
     have their own inbound triage lane and their own count; surfacing them
     here would nag the nav badge with cold-pitch volume the user can't act on
-    the same way as a rejection to file."""
+    the same way as a rejection to file.
+
+    Counts an application filed twice too (7 Oct 2026), by the same
+    `triage.twins` the page draws, so the badge and the band cannot
+    disagree. Not the review strip: those are filings that are probably
+    right, offered for a glance, and the page says how many."""
     return conn.execute(
         "SELECT (SELECT count(*) FROM emails WHERE triage_state = 'pending' "
         "        AND classification IS DISTINCT FROM 'recruiter_outreach') + "
         "       (SELECT count(*) FROM duplicate_candidates WHERE state = 'pending') AS n"
-    ).fetchone()["n"]
+    ).fetchone()["n"] + len(triage.twins(conn))
 
 
 def _funnel(conn, user_id, inbound: bool | None = None) -> list[dict]:
@@ -2447,23 +2452,69 @@ def _application_options(conn, user_id) -> list[dict]:
         """, (user_id,)).fetchall()
 
 
+# The two lanes, as the page names them (7 Oct 2026). The `lane` values are
+# unchanged so an old link still lands; "Actionable" was the log's word for
+# what the first lane holds, mail about your own applications.
+_LANES = {"actionable": "Your applications", "inbound": "Approaches"}
+# A run's bulk action, as its confirmation page and its receipt say it.
+_BATCH = {"ignore": "ignored", "lead": "tracked as leads", "create": "started as records"}
+
+
+def _lane_of(classification: str | None) -> str:
+    return "inbound" if classification == "recruiter_outreach" else "actionable"
+
+
+def _pending_emails(conn, user_id) -> list[dict]:
+    return conn.execute(
+        """
+        SELECT id, user_id, sender, subject, received_at, classification,
+               match_score, extraction, body_text
+        FROM emails
+        WHERE user_id = %s AND triage_state = 'pending'
+        ORDER BY received_at DESC
+        """, (user_id,)).fetchall()
+
+
 @app.get("/triage")
-def triage(request: Request, lane: str = "actionable"):
-    lane = lane if lane in ("actionable", "inbound") else "actionable"
+def triage_page(request: Request, lane: str = "actionable", email: str | None = None,
+                done: int | None = None, did: str | None = None):
+    """Mail the matcher would not file, and since 7 Oct 2026 what the page
+    can say about it (pipeline/triage.py): each card names the records the
+    matcher weighed, best first, as one-click filings, and why the email
+    waited; a run of one sender's identical mail is one card; an application
+    filed twice gets a band; and the matcher's own less certain filings of
+    the week get a strip. The full list of records stays, behind "Another
+    record" when there is a suggestion, ordered nearest the email first.
+
+    `email` opens one pending email as a full card, which is where a run's
+    row links. `done`/`did` are a run's receipt (triage_batch)."""
+    lane = lane if lane in _LANES else "actionable"
     user = _login_user(request)
+    now = datetime.now(timezone.utc)
     with db.connect_scoped(user["id"]) as conn:
         user_id = user["id"]
-        all_pending = conn.execute(
-            """
-            SELECT id, sender, subject, received_at, classification,
-                   match_score, extraction, body_text
-            FROM emails
-            WHERE user_id = %s AND triage_state = 'pending'
-            ORDER BY received_at DESC
-            """, (user_id,)).fetchall()
-        inbound = [e for e in all_pending if e["classification"] == "recruiter_outreach"]
-        actionable = [e for e in all_pending if e["classification"] != "recruiter_outreach"]
+        all_pending = _pending_emails(conn, user_id)
+        inbound = [e for e in all_pending if _lane_of(e["classification"]) == "inbound"]
+        actionable = [e for e in all_pending if _lane_of(e["classification"]) == "actionable"]
+        single = next((e for e in all_pending if str(e["id"]) == email), None) if email else None
+        if single is not None:
+            lane = _lane_of(single["classification"])
+        shown = [single] if single is not None else (inbound if lane == "inbound" else actionable)
         options = _application_options(conn, user_id)
+        by_id = {str(o["id"]): o for o in options}
+        for e in shown:
+            s = triage.suggest(conn, user_id, e)
+            e["picks"] = [by_id[i] for i in s["picks"] if i in by_id]
+            e["why"] = s["why"]
+            e["near"] = triage.nearest(options, e["received_at"])
+            e["waiting"] = (now - e["received_at"]).total_seconds() / 86400
+        cards = ([{"run": False, "email": single}] if single is not None
+                 else triage.runs(shown))
+        on_lane = lane == "actionable" and single is None
+        twins = triage.twins(conn) if on_lane else []
+        for t in twins:
+            t["board_words"] = triage.PLATFORM_WORDS.get(t["board_platform"], t["board_platform"])
+        review = triage.review(conn, user_id, now) if on_lane else []
         dupes = conn.execute(
             """
             SELECT d.id, d.title_sim, d.cosine_sim,
@@ -2479,77 +2530,201 @@ def triage(request: Request, lane: str = "actionable"):
             WHERE d.user_id = %s AND d.state = 'pending'
             ORDER BY d.cosine_sim DESC
             """, (user_id,)).fetchall()
+        pending = _pending_count(conn)
         return templates.TemplateResponse(request=request, name="triage.html", context={
-            "emails": inbound if lane == "inbound" else actionable,
+            "cards": cards,
             "options": options,
-            "dupes": dupes if lane == "actionable" else [],
+            "dupes": dupes if on_lane else [],
+            "twins": twins,
+            "review": review,
+            "review_days": config.REVIEW_DAYS,
             "lane": lane,
-            "actionable_n": len(actionable) + len(dupes),
+            "lanes": _LANES,
+            "single": single is not None,
+            # The first lane's count IS the nav pill's: one definition.
+            "actionable_n": pending,
             "inbound_n": len(inbound),
-            "pending": _pending_count(conn),
+            "done": done, "did": _BATCH.get(did) if did else None,
+            "pending": pending,
         })
+
+
+def _pending_email(conn, email_id: str) -> dict | None:
+    try:
+        return conn.execute(
+            "SELECT * FROM emails WHERE id = %s::uuid AND triage_state = 'pending'",
+            (email_id,)).fetchone()
+    except psycopg.errors.InvalidTextRepresentation:
+        # Not a uuid. The transaction is aborted now, so the caller 404s
+        # without another query.
+        return None
+
+
+def _resolve_one(conn, email: dict, action: str, application_id: str | None = None,
+                 company: str = "") -> None:
+    """File one pending email as a person decided: `link` onto a record,
+    `create` a record (an application), `lead` (an inbound record, no applied
+    event), or `ignore`. The one body both the card's buttons and a run's
+    bulk action (triage_batch) run, so a bulk ignore is fifteen of exactly
+    the ignore a card files. HTTPException 400 for a decision that cannot be
+    filed (no record picked, no company to create under)."""
+    user_id = email["user_id"]
+    x = matcher.extraction_from_raw(email["extraction"])
+    company_s = company.strip()
+    if company_s:
+        # Agency pitches often withhold the client's name (extraction.company
+        # is null); the agency itself is who the user is actually in a
+        # process with, so let the human supply/override it here rather
+        # than hiding the create/lead actions entirely.
+        x = _replace(x, company=company_s)
+
+    if action == "ignore":
+        conn.execute(
+            "UPDATE emails SET triage_state = 'ignored', processed_at = now() "
+            "WHERE id = %s", (email["id"],))
+    elif action == "link":
+        if not application_id:
+            raise HTTPException(400, "pick an application to link to")
+        a = _get_application(conn, application_id)
+        matcher._append_event(conn, user_id, a["id"], email,
+                              email["classification"] or "other", x)
+        conn.execute(
+            "UPDATE emails SET matched_application_id = %s, "
+            "triage_state = 'resolved', processed_at = now() WHERE id = %s",
+            (a["id"], email["id"]))
+    elif action == "create":
+        if not (x.company or "").strip():
+            raise HTTPException(400, "no company — enter one, link, or ignore instead")
+        new_id = matcher._create_application(conn, user_id, email, x,
+                                            email["classification"] or "confirmation")
+        conn.execute(
+            "UPDATE emails SET matched_application_id = %s, "
+            "triage_state = 'resolved', processed_at = now() WHERE id = %s",
+            (new_id, email["id"]))
+    elif action == "lead":
+        if not (x.company or "").strip():
+            raise HTTPException(400, "no company — enter one, link, or ignore instead")
+        new_id = matcher._create_application(conn, user_id, email, x,
+                                            email["classification"] or "recruiter_outreach",
+                                            origin="inbound")
+        conn.execute(
+            "UPDATE emails SET matched_application_id = %s, "
+            "triage_state = 'resolved', processed_at = now() WHERE id = %s",
+            (new_id, email["id"]))
+    else:
+        raise HTTPException(400, "unknown action")
+
+
+def _batch_rows(conn, user_id, ids: list[str], action: str) -> list[dict]:
+    """The pending emails among `ids`, newest first, each with `fate`: what a
+    run's bulk action files for it, or None when it cannot (a record started
+    for no company). Read by the confirmation page AND the POST, so the page
+    lists exactly what the button does."""
+    wanted = set(ids)
+    rows = []
+    for e in _pending_emails(conn, user_id):
+        if str(e["id"]) not in wanted:
+            continue
+        x = matcher.extraction_from_raw(e["extraction"])
+        co = (x.company or "").strip()
+        e["role"] = x.role_title
+        e["fate"] = ("ignored" if action == "ignore"
+                     else None if not co
+                     else f"a new lead under {co}" if action == "lead"
+                     else f"a new application under {co}")
+        rows.append(e)
+    return rows
+
+
+@app.get("/triage/batch")
+def triage_batch_confirm(request: Request, action: str = "ignore", lane: str = "actionable",
+                         ids: list[str] = Query([])):
+    """A run's bulk action, shown before it happens (7 Oct 2026): every email
+    it will touch and what each becomes. An ignored email has no page to
+    find it on again, which is why fifteen of them get a page of their own
+    rather than a button beside a count, as /follow-ups' bulk close does."""
+    if action not in _BATCH:
+        raise HTTPException(400, "unknown action")
+    lane = lane if lane in _LANES else "actionable"
+    user = _login_user(request)
+    with db.connect_scoped(user["id"]) as conn:
+        rows = _batch_rows(conn, user["id"], ids, action)
+        return templates.TemplateResponse(request=request, name="triage_batch.html", context={
+            "rows": rows, "action": action, "lane": lane,
+            "doable": [r for r in rows if r["fate"]],
+            "pending": _pending_count(conn)})
+
+
+@app.post("/triage/batch")
+def triage_batch(request: Request, action: str = Form(""), lane: str = Form("actionable"),
+                 ids: list[str] = Form([])):
+    """File the listed emails in one transaction, each through _resolve_one.
+    An email no longer pending (filed since the page was drawn) is left
+    alone, as is one that cannot take the action. Back to the lane with the
+    count."""
+    if action not in _BATCH:
+        raise HTTPException(400, "unknown action")
+    lane = lane if lane in _LANES else "actionable"
+    user = _login_user(request)
+    n = 0
+    with db.connect_scoped(user["id"]) as conn, conn.transaction():
+        for e in _batch_rows(conn, user["id"], ids, action):
+            if e["fate"]:
+                _resolve_one(conn, e, action)
+                n += 1
+    return RedirectResponse(f"/triage?lane={lane}&done={n}&did={action}", status_code=303)
+
+
+@app.post("/triage/twins")
+def triage_twins(request: Request, action: str = Form(""), form_app: str = Form(""),
+                 board_app: str = Form("")):
+    """An application filed twice (triage.twins): `merge` makes it one on the
+    board's record and opens it; `apart` records that they are two. Either
+    re-checks the pair against the rule first, so a stale page does nothing."""
+    if action not in ("merge", "apart"):
+        raise HTTPException(400, "unknown action")
+    user = _login_user(request)
+    with db.connect_scoped(user["id"]) as conn, conn.transaction():
+        if action == "merge":
+            if triage.merge_twin(conn, user["id"], form_app, board_app):
+                return RedirectResponse(f"/applications/{board_app}", status_code=303)
+        else:
+            triage.keep_apart(conn, user["id"], form_app, board_app)
+    return RedirectResponse("/triage", status_code=303)
+
+
+@app.post("/triage/review")
+def triage_reviewed(request: Request, ids: list[str] = Form([])):
+    """"Looks right" on the matcher's less certain filings (triage.review):
+    `emails.reviewed_at`, migration 020. Only an email the matcher filed and
+    nobody has marked; anything else in `ids` is ignored."""
+    import uuid
+    valid = []
+    for i in ids:
+        try:
+            valid.append(str(uuid.UUID(i)))
+        except ValueError:
+            continue
+    user = _login_user(request)
+    with db.connect_scoped(user["id"]) as conn, conn.transaction():
+        if valid:
+            conn.execute(
+                "UPDATE emails SET reviewed_at = now() WHERE id = ANY(%s::uuid[]) "
+                "AND triage_state = 'auto_matched' AND reviewed_at IS NULL", (valid,))
+    return RedirectResponse("/triage", status_code=303)
 
 
 @app.post("/triage/{email_id}")
 def resolve(request: Request, email_id: str, action: str = Form(...),
             application_id: str | None = Form(None), company: str = Form(""),
             lane: str = Form("actionable")):
-    lane = lane if lane in ("actionable", "inbound") else "actionable"
+    lane = lane if lane in _LANES else "actionable"
     user = _login_user(request)
     with db.connect_scoped(user["id"]) as conn, conn.transaction():
-        try:
-            email = conn.execute(
-                "SELECT * FROM emails WHERE id = %s::uuid AND triage_state = 'pending'",
-                (email_id,)).fetchone()
-        except psycopg.errors.InvalidTextRepresentation:
-            email = None
+        email = _pending_email(conn, email_id)
         if email is None:
             raise HTTPException(404, "pending email not found")
-        user_id = email["user_id"]
-        x = matcher.extraction_from_raw(email["extraction"])
-        company_s = company.strip()
-        if company_s:
-            # Agency pitches often withhold the client's name (extraction.company
-            # is null); the agency itself is who the user is actually in a
-            # process with, so let the human supply/override it here rather
-            # than hiding the create/lead actions entirely.
-            x = _replace(x, company=company_s)
-
-        if action == "ignore":
-            conn.execute(
-                "UPDATE emails SET triage_state = 'ignored', processed_at = now() "
-                "WHERE id = %s", (email["id"],))
-        elif action == "link":
-            if not application_id:
-                raise HTTPException(400, "pick an application to link to")
-            a = _get_application(conn, application_id)
-            matcher._append_event(conn, user_id, a["id"], email,
-                                  email["classification"] or "other", x)
-            conn.execute(
-                "UPDATE emails SET matched_application_id = %s, "
-                "triage_state = 'resolved', processed_at = now() WHERE id = %s",
-                (a["id"], email["id"]))
-        elif action == "create":
-            if not (x.company or "").strip():
-                raise HTTPException(400, "no company — enter one, link, or ignore instead")
-            new_id = matcher._create_application(conn, user_id, email, x,
-                                                email["classification"] or "confirmation")
-            conn.execute(
-                "UPDATE emails SET matched_application_id = %s, "
-                "triage_state = 'resolved', processed_at = now() WHERE id = %s",
-                (new_id, email["id"]))
-        elif action == "lead":
-            if not (x.company or "").strip():
-                raise HTTPException(400, "no company — enter one, link, or ignore instead")
-            new_id = matcher._create_application(conn, user_id, email, x,
-                                                email["classification"] or "recruiter_outreach",
-                                                origin="inbound")
-            conn.execute(
-                "UPDATE emails SET matched_application_id = %s, "
-                "triage_state = 'resolved', processed_at = now() WHERE id = %s",
-                (new_id, email["id"]))
-        else:
-            raise HTTPException(400, "unknown action")
+        _resolve_one(conn, email, action, application_id, company)
     return RedirectResponse(f"/triage?lane={lane}", status_code=303)
 
 

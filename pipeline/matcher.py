@@ -285,11 +285,21 @@ def _score(cand: dict, occurred_at: datetime, platform_identifiable: bool) -> fl
     return (config.W_TITLE * title + config.W_DATE * date + config.W_PLATFORM * platform)
 
 
-def find_match(conn, user_id, extraction: Extraction, occurred_at: datetime) -> MatchResult:
+def platform_identifiable(extraction: Extraction) -> bool:
+    """Does the email say which job board it came from? Only then can the
+    platform signal score for or against a candidate (_score)."""
+    return extraction.platform in ("linkedin", "jobstreet", "indeed")
+
+
+def scored_candidates(conn, user_id, extraction: Extraction,
+                      occurred_at: datetime) -> list[tuple[float, dict]]:
+    """Every record find_match weighs for this extraction, best first, each
+    with its score: the company gate's candidates, else the rescue's. Empty
+    when the email names no company. find_match decides on this list;
+    triage.suggest names it, so a suggestion is the matcher's own ranking."""
     company = norm_company(extraction.company or "")
     if not company:
-        return MatchResult("pending")
-    platform_identifiable = extraction.platform in ("linkedin", "jobstreet", "indeed")
+        return []
     params = {
         "user_id": user_id,
         "company": company,
@@ -306,12 +316,15 @@ def find_match(conn, user_id, extraction: Extraction, occurred_at: datetime) -> 
         # there were none; AUTO_MATCH_SCORE and AUTO_MATCH_MARGIN still decide
         # the outcome. See _CANDIDATES_RESCUE_SQL.
         cands = conn.execute(_CANDIDATES_RESCUE_SQL, params).fetchall()
-    if not cands:
+    pi = platform_identifiable(extraction)
+    return sorted(((_score(c, occurred_at, pi), c) for c in cands),
+                  key=lambda pair: pair[0], reverse=True)
+
+
+def find_match(conn, user_id, extraction: Extraction, occurred_at: datetime) -> MatchResult:
+    scored = scored_candidates(conn, user_id, extraction, occurred_at)
+    if not scored:
         return MatchResult("pending")
-    scored = sorted(
-        ((_score(c, occurred_at, platform_identifiable), c) for c in cands),
-        key=lambda pair: pair[0], reverse=True,
-    )
     best_score, best = scored[0]
     margin_ok = len(scored) == 1 or (best_score - scored[1][0]) >= config.AUTO_MATCH_MARGIN
     if best_score >= config.AUTO_MATCH_SCORE and margin_ok:

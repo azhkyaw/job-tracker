@@ -166,6 +166,16 @@ An invariant keeps its RULE here and its case history in the rule file.
   "viewed" notice is not one, and counting it reversed a comparison)
 - `pipeline/charts.py` — the analytics page's flow and curve geometry (marks
   in a stretched SVG, words in HTML over it)
+- `pipeline/triage.py` — what `/triage` shows beside the box to file mail
+  by hand (7 Oct 2026), each rule ONCE so the page and the nav pill agree:
+  `suggest` (the records the matcher weighed, off `matcher.scored_candidates`,
+  the list `find_match` decides on, with why the email waited), `runs` (one
+  sender's identical mail as one card, bulk actions confirmed on a page),
+  `twins` (an application filed twice: the employer's form beside the
+  board's popover record, minutes apart; `merge_twin` folds onto the BOARD
+  record, which dedup's own band would not), `review` (the matcher's own
+  less certain filings of the week; "Looks right" is `emails.reviewed_at`,
+  migration 020) and `nearest` (the fallback list's order, never a filter)
 - `pipeline/llm.py` — the ONE door to every model call (8 Sep 2026). Two
   backends behind `Client.complete()`: Anthropic (default; the request is
   byte-identical to what the stages sent before, so every measured
@@ -801,10 +811,14 @@ Detail lives with each family's rule file; this is the index.
   `/follow-ups`' lead rows (28 Sep, task 38), and its round rows and the
   detail page's "Heard nothing since?" (29 Sep, task 40), were rendered
   through TestClient against real data only, never looked at.
+  `/triage`'s redraw (7 Oct, task 64) was seen in the dark theme on real
+  data: the inbound run, its confirmation page (opened, not sent) and the
+  review strip. No twin was pending on the day, so the "Filed twice?" band
+  and its merge have run only in the suite.
 
 ## Open work (as of 7 Oct 2026)
 
-The dated register behind each item, tasks 1-62 with their measurements, is
+The dated register behind each item, tasks 1-64 with their measurements, is
 `docs/worklog.md`; read the matching entry before acting on one.
 
 - **Follow-up drafting**, now on a page that has a place for it (task 61,
@@ -823,6 +837,14 @@ The dated register behind each item, tasks 1-62 with their measurements, is
 - **Listings that asked for the CV by email** (task 57, 4 Oct): 8
   applications owed the email on the day, listed first on `/follow-ups`;
   each is the author's "I emailed it", "Not needed" or an email sent.
+- **The legal-entity duplicates** (task 64, 7 Oct): the review strip's two
+  rows on its first day were two applications filed twice on 2 Oct (a
+  confirmation started a record beside the extension's Workday capture
+  under a legal entity's name), repaired the same day. The class is now
+  three cases in four days (`.claude/rules/matching.md`, the abbreviation
+  bullet): re-measure its three candidate fixes. The "Filed twice?"
+  band's merge has not met a live twin yet; read the record it opens on
+  the first.
 - **Extension, next real Easy Apply:** verify the current build (0.27.2 on
   4 Oct) is live on BOTH machines and the tab was opened after the
   reload; read `doc_source` and the sweep line, and check that the radio
