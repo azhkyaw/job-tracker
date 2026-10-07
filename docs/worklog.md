@@ -1797,3 +1797,29 @@ the key to each real case.
      its divider 6px below the head. Thirteen new checks, three adapted
      (the on-platform tag, the record's "no divider" check now naming the
      pin's two, the count's new place).
+
+63. **An external apply filed twice: a kept opener cannot follow a career
+   site's handoff** (7 Oct 2026). Asked what happened to the two newest
+   records: one application to an investment firm, filed as the
+   employer's form (no company, 75 answers, the requisition) and as the
+   LinkedIn popover's record (the name, the JD, no answers), created 41 s
+   apart.
+   - **Read from the extension's storage, not guessed:** two applies to the
+     same employer from one LinkedIn tab, two minutes apart, both Apply
+     links leaving for the employer's own career site, which hands over to
+     SuccessFactors on another host. The first bound `opener+handoff`,
+     Chrome's live opener still standing 34 s after the click. The
+     second's tab never got a handoff, and its submit's provenance reads
+     two candidates and no link: Chrome had dropped the opener, and
+     0.26.0's kept opener is trusted only on the host the Apply left for,
+     which was the career site, not the hiring system. So the kept opener
+     cannot cover an employer whose Apply passes through its own site
+     first. What made Chrome drop it is not recorded.
+   - **Repair**, at the author's word: `merge_jobs` onto the LinkedIn
+     record, the popover's `applied` removed and the form's submit time
+     kept, the 3 Oct shape. Snapshot first
+     (`2026-10-07-sf-linkedin-twins.json`); a dry run in a transaction with
+     every count asserted, then the commit.
+   - **Not built:** a kept opener that also links when the hiring system's
+     page names, as its referrer, the host the Apply left for. Measure
+     that career site's referrer first.
