@@ -223,13 +223,25 @@ WHERE a.user_id = %(user_id)s
 """
 
 
-def _ats_token(ats_job_id: str) -> str | None:
-    """The part of an ATS id a letter can print: what follows the host, when
-    it is id-shaped (a digit, four characters at least, no query)."""
+def _ats_pattern(ats_job_id: str) -> re.Pattern | None:
+    """How a letter prints an ATS id: what follows the host, when it is
+    id-shaped (a digit, no query). Four characters or more count anywhere,
+    as a whole token. A three-character one counts only inside parentheses,
+    the way SuccessFactors' confirmations print a requisition ("… (431)"):
+    a bare three-digit number is in every letter (a time, a floor, a price).
+    The old four-character floor kept two real three-digit requisitions
+    (3 and 8 Oct 2026) from ever deciding a match, the second on a record
+    the capture could not name, which only its id could have found. Replayed
+    over the 618 stored emails before it was written: one decision changed,
+    the 3 Oct confirmation, onto the record it was already filed on.
+    Shorter than three never counts."""
     tok = ats_job_id.rsplit("/", 1)[-1]
-    if len(tok) < 4 or not any(c.isdigit() for c in tok) or any(c in tok for c in "?=&"):
+    if len(tok) < 3 or not any(c.isdigit() for c in tok) or any(c in tok for c in "?=&"):
         return None
-    return tok
+    esc = re.escape(tok)
+    if len(tok) >= 4:
+        return re.compile(rf"(?<![0-9a-z]){esc}(?![0-9a-z])", re.IGNORECASE)
+    return re.compile(rf"\(\s*{esc}\s*\)", re.IGNORECASE)
 
 
 def match_by_ats_id(conn, user_id, email_row, extraction: Extraction) -> str | None:
@@ -241,8 +253,8 @@ def match_by_ats_id(conn, user_id, email_row, extraction: Extraction) -> str | N
         "cmin": config.COMPANY_TRGM_MIN}).fetchall()
     hits = set()
     for r in rows:
-        tok = _ats_token(r["ats_job_id"])
-        if tok and re.search(rf"(?<![0-9a-z]){re.escape(tok)}(?![0-9a-z])", text, re.IGNORECASE):
+        pat = _ats_pattern(r["ats_job_id"])
+        if pat and pat.search(text):
             hits.add(str(r["application_id"]))
     return hits.pop() if len(hits) == 1 else None
 

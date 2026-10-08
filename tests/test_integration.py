@@ -56,6 +56,8 @@ FAKE_CLASSIFY = {
     "litware-both": Classification(True, "interview_invite", 0.93, "stub"),
     "nameless-confirmation": Classification(True, "confirmation", 0.93, "stub"),
     "stranger-number": Classification(True, "interview_invite", 0.93, "stub"),
+    "short-req-confirmation": Classification(True, "confirmation", 0.93, "stub"),
+    "short-req-bare": Classification(True, "interview_invite", 0.93, "stub"),
 }
 def _fake_extraction(**kw):
     """Mirror the real extract_email(): raw always carries the full payload."""
@@ -161,6 +163,13 @@ FAKE_EXTRACT["nameless-confirmation"] = _fake_extraction(company="Contoso", role
                                                          platform="ats")
 FAKE_EXTRACT["stranger-number"] = _fake_extraction(company="Fabrikam",
                                                    role_title="Principal AI Engineer", platform="direct")
+# A three-digit requisition (8 Oct 2026): the confirmation prints it in
+# parentheses and names an employer the nameless record cannot be compared to;
+# another letter has the same digits bare.
+FAKE_EXTRACT["short-req-confirmation"] = _fake_extraction(
+    company="Wingtip Research", role_title="Research Engineer", platform="ats")
+FAKE_EXTRACT["short-req-bare"] = _fake_extraction(
+    company="Wingtip Research", role_title="Research Engineer", platform="ats")
 
 CLASSIFY_CALLS: list[tuple[str, bool]] = []   # (subject, sent) — what the worker asked
 
@@ -707,6 +716,28 @@ with db.connect() as conn:
                        "ILIKE 'staff engineer%%'", (user_id,)).fetchone()["n"] == 1)
     check("another employer's mail containing the same number is not matched by it",
           s22["matched_application_id"] is None or str(s22["matched_application_id"]) != want, s22)
+
+    # A three-digit requisition (8 Oct 2026). Its confirmation prints it in
+    # parentheses; the record could not be named, so only the id can find it.
+    short = _ats_app("unknown company", "Research Engineer", "career44.sapsf.com/tenantw/431")
+    conn.commit()
+    e23 = _seed_body("short-req-confirmation", "Thank you for applying for Research Engineer (431).",
+                     "noreply@wingtip.example")
+    e24 = _seed_body("short-req-bare", "Your interview is in room 431 at 10:00.",
+                     "noreply@wingtip.example")
+    conn.commit()
+    drain(conn)
+    s23, s24 = email_state(conn, e23), email_state(conn, e24)
+    check("a three-digit requisition in parentheses finds the nameless record",
+          s23["triage_state"] == "auto_matched" and str(s23["matched_application_id"]) == short
+          and s23["match_score"] == 1.0, s23)
+    check("...but the same three digits bare do not",
+          str(s24["matched_application_id"]) != short, s24)
+    check("matcher: a three-character id counts only in parentheses, a shorter one never",
+          matcher._ats_pattern("h/tenant/431").search("Engineer (431)") is not None
+          and matcher._ats_pattern("h/tenant/431").search("room 431") is None
+          and matcher._ats_pattern("h/tenant/43") is None
+          and matcher._ats_pattern("h/tenant/4310").search("ref 4310.") is not None)
 
     print("path 4: failure backoff")
     db.enqueue(conn, user_id, "classify_email",
