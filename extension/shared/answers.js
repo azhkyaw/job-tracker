@@ -98,6 +98,9 @@
   let seq = Object.keys(items).length;
   let key = formKey();
   let stats = null;       // per-sweep diagnostics, read by take()
+  // element -> the key a sweep last recorded from it, so a field emptied in
+  // place can give that key back (giveBack, below).
+  let swept = new WeakMap();
 
   // These SPAs swap jobs without a page load, so the frame (and this store)
   // outlives the form it was filled for. Re-check before every read or write:
@@ -111,6 +114,7 @@
     seq = 0;
     stats = null;
     takenOn = null;
+    swept = new WeakMap();
   }
 
   // pipeline/answers.py:norm_question, character for character (it also strips
@@ -163,6 +167,20 @@
       type,
       i: prev ? prev.i : seq++,
     };
+    return k;
+  }
+
+  /* A field a sweep read an answer from, and now finds empty, was emptied in
+   * place, by the user or by the page, and its answer goes. Until 8 Oct 2026
+   * an empty field was only skipped, so the store kept whatever an earlier
+   * sweep had read there: a SuccessFactors form sent one paragraph as the
+   * answer to four "Brief Job Responsibilities" its candidate had left blank
+   * on purpose. Only when the SAME element recorded that SAME key: a later
+   * wizard step's blank field under one label is another question, and
+   * leaves the earlier step's answer alone. */
+  function giveBack(el, k) {
+    if (swept.get(el) === k) delete items[k];
+    swept.delete(el);
   }
 
   // How many occurrences of this question the store already holds — the index
@@ -900,8 +918,11 @@
       // the diagnostic even when it's also empty — "no label resolved" is the
       // failure that loses a real answer; "empty" is the user not filling it.
       if (!question) { seen.noLabel++; continue; }
-      if (!answer) { seen.noValue++; continue; }
-      record(question, answer, kindOf(el), next(question));
+      // Numbered filled or not, so a blank field keeps its place among
+      // same-labelled ones and the next one keeps its key.
+      const occurrence = next(question);
+      if (!answer) { seen.noValue++; giveBack(el, `${normKey(question)}#${occurrence}`); continue; }
+      swept.set(el, record(question, answer, kindOf(el), occurrence));
       seen.kept++;
     }
     for (const members of radioGroups.values()) {
@@ -992,6 +1013,14 @@
       }
       const answer = valueOf(el);
       const question = labelFor(el);
+      // A field only this backstop answered for, emptied: its answer goes too.
+      if (!answer && editKey.has(el)) {
+        syncKey();
+        delete items[editKey.get(el)];
+        editKey.delete(el);
+        save(items);
+        return;
+      }
       if (!question || !answer || machinery(el, question)) return;
       syncKey();
 

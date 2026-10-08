@@ -1229,6 +1229,58 @@ console.log("\nanswers.js sweep: Darwinbox's form, built from web components (re
         sb.window.__trackerAnswers.take(), [{ question: "Country *", answer: "Singapore", type: "select" }]);
 }
 
+console.log("\nanswers.js sweep: a field emptied after a sweep read it gives its answer back (8 Oct 2026)");
+{
+  const field = (id, label, value) => {
+    const input = node("input", { id, type: "text", value });
+    return { input, row: node("div", {}, [node("label", { for: id }, [label]), input]) };
+  };
+  const form = () => {
+    const f = { b0: field("b0", "Brief Job Responsibilities", "One paragraph"),
+                b1: field("b1", "Brief Job Responsibilities", "One paragraph"),
+                city: field("city", "City", "Singapore") };
+    f.root = node("form", {}, [f.b0.row, f.b1.row, f.city.row]);
+    return f;
+  };
+  // A sweep reads all three; both repeats are blank by the submit.
+  let f = form();
+  let sb = loadAnswers(f.root);
+  for (const fn of sb._listeners.click) fn({});
+  f.b0.input._attrs.value = ""; f.b1.input._attrs.value = "";
+  check("two repeats emptied after a sweep read them are not sent",
+        sb.window.__trackerAnswers.take(), [{ question: "City", answer: "Singapore", type: "text" }]);
+  // Only the first emptied: the second keeps its own key, not the first's.
+  f = form();
+  sb = loadAnswers(f.root);
+  for (const fn of sb._listeners.click) fn({});
+  f.b0.input._attrs.value = ""; f.b1.input._attrs.value = "Second employer";
+  check("…and one emptied leaves the next repeat its own answer, once",
+        sb.window.__trackerAnswers.take(),
+        [{ question: "Brief Job Responsibilities", answer: "Second employer", type: "text" },
+         { question: "City", answer: "Singapore", type: "text" }]);
+  // A later wizard step's blank field under the same label is another field.
+  const stepA = node("div", {}, [field("p1", "Phone", "91234567").row]);
+  const stepB = node("div", {}, [field("p2", "Phone", "").row]);
+  check("…but a later step's blank field under one label leaves the earlier answer",
+        sweepStepsOf([stepA, stepB]), [{ question: "Phone", answer: "91234567", type: "text" }]);
+  // The edit backstop's own fields (outside what a sweep can reach) likewise.
+  f = form();
+  sb = loadAnswers(f.root);
+  const code = node("input", { type: "text", "aria-label": "Referral code", value: "AB12" });
+  code._doc = sb.document;
+  sb.document.body.childNodes.push(code);
+  code.parentElement = sb.document.body;
+  for (const fn of sb._listeners.input) fn({ composedPath: () => [code] });
+  const held = sb.window.__trackerAnswers.diagnostics().kept;
+  code._attrs.value = "";
+  for (const fn of sb._listeners.input) fn({ composedPath: () => [code] });
+  check("…the edit backstop held a field no sweep can reach (the control)",
+        [held, sb.window.__trackerAnswers.diagnostics().kept], [4, 3]);
+  check("…and so does a field only the edit backstop could read",
+        sb.window.__trackerAnswers.take().map((a) => a.question),
+        ["Brief Job Responsibilities", "Brief Job Responsibilities", "City"]);
+}
+
 console.log("\nanswers.js normKey: one rule with pipeline/answers.py:norm_question");
 {
   // The same list tests/test_captures.py holds the server to. Until 24 Sep 2026
