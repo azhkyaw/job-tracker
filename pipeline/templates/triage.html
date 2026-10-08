@@ -95,7 +95,7 @@
     {% for e in c.emails %}
     {% set co = (e.extraction.company if e.extraction else none) %}
     <li>
-      <a class="ro" href="/triage?email={{ e.id }}">{{ (e.extraction.role_title if e.extraction else none) or "role unknown" }}</a>
+      <a class="ro" href="/triage?email={{ e.id }}">{{ (e.extraction.role_title if e.extraction else none) or e.who or "role unknown" }}</a>
       {#- The best record only: a run of fourteen rows, each with three tied
           picks, was forty-two buttons. The rest are on the email's own card. -#}
       {% if e.picks %}{{ pick(e, e.picks[0], false, true) }}

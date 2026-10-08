@@ -2506,6 +2506,7 @@ def triage_page(request: Request, lane: str = "actionable", email: str | None = 
             s = triage.suggest(conn, user_id, e)
             e["picks"] = [by_id[i] for i in s["picks"] if i in by_id]
             e["why"] = s["why"]
+            e["who"] = triage.who(e["extraction"])
             e["near"] = triage.nearest(options, e["received_at"])
             e["waiting"] = (now - e["received_at"]).total_seconds() / 86400
         cards = ([{"run": False, "email": single}] if single is not None

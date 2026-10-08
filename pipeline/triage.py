@@ -131,8 +131,31 @@ _ADDRESS = re.compile(r"<([^>]+)>")
 
 
 def _sender_key(sender: str | None) -> str:
-    m = _ADDRESS.search(sender or "")
-    return (m.group(1) if m else (sender or "")).strip().lower()
+    """Who a mail is from, for a run: its address AND the name shown with
+    it, case, spacing and quotes folded. An address alone was the key until
+    8 Oct 2026, and a relay address speaks for many people: LinkedIn sends
+    every person's connection request from invitations@linkedin.com under
+    one subject, so five recruiters' requests were one card headed by the
+    newest one's name. Measured over all stored mail that day: 4 of 169
+    address runs split by name, each correctly (people on LinkedIn's relay,
+    two employers on one vendor's), and the 14 identical referral notices
+    runs were made for stay one."""
+    s = sender or ""
+    m = _ADDRESS.search(s)
+    address = (m.group(1) if m else s).strip().lower()
+    name = " ".join(_ADDRESS.sub(" ", s).replace('"', " ").lower().split()) if m else ""
+    return f"{name} <{address}>"
+
+
+def who(extraction: dict | None) -> str | None:
+    """The person and company an email names, "Jane Recruiter, Contoso",
+    for a row whose role is unknown: a recruiter's connection request names
+    no role, so a run of them read "role unknown" on every row."""
+    x = extraction or {}
+    rec = x.get("recruiter")
+    name = rec.get("name") if isinstance(rec, dict) else rec if isinstance(rec, str) else None
+    parts = [p.strip() for p in (name, x.get("company")) if p and p.strip()]
+    return ", ".join(parts) or None
 
 
 def _subject_key(subject: str | None) -> str:
@@ -142,8 +165,9 @@ def _subject_key(subject: str | None) -> str:
 def runs(emails: list[dict]) -> list[dict]:
     """The pending emails as cards, in the order given (newest first).
 
-    Two or more from one sender ADDRESS under one subject, case and spacing
-    folded, are one card at its newest member's place: {"run": True,
+    Two or more from one sender (address and name, _sender_key) under one
+    subject, case and spacing folded, are one card at its newest member's
+    place: {"run": True,
     "emails", "first", "last"}. Every other email is {"run": False,
     "email"}. A run keeps each member's own actions; the card adds the ones
     for all of them. The case was a referral tool that sent one notice per

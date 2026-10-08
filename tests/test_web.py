@@ -1253,6 +1253,7 @@ with db.connect() as conn:
           unchanged["company_norm"] == "edit test co"
           and unchanged["title_canonical"] == "Senior Backend Engineer", unchanged)
 
+
 print("edit application: URL already owned by another record is refused")
 r = client.post(f"/applications/{edit_app}/edit", data={
     "company": "Edit Test Co", "title": "Senior Backend Engineer", "platform": "linkedin",
@@ -3396,7 +3397,7 @@ def _rec(company, title, applied, platform="linkedin", pid=None, jd=None,
 
 def _mail(gm, subject, company, role, received, classification="status_update",
           sender="Careers <careers@quillfeather.example>", state="pending",
-          app=None, score=None, processed=None, platform="direct"):
+          app=None, score=None, processed=None, platform="direct", recruiter=None):
     with db.connect() as conn, conn.transaction():
         return str(conn.execute(
             """INSERT INTO emails (user_id, gmail_message_id, sender, subject, body_text,
@@ -3406,7 +3407,7 @@ def _mail(gm, subject, company, role, received, classification="status_update",
                RETURNING id""",
             (_tu, gm, sender, subject, received, classification,
              Json({"company": company, "role_title": role, "platform": platform, "ats": None,
-                   "event_date": None, "status_detail": None, "recruiter": None, "notes": None}),
+                   "event_date": None, "status_detail": None, "recruiter": recruiter, "notes": None}),
              state, app, score, processed)).fetchone()["id"])
 
 
@@ -3486,23 +3487,53 @@ check("the fallback list opens with the records that started nearest the email, 
 _run_ids = [
     _mail("gm-tri-run-1", "You've been REFERRED to a role!", "Featherline", "Backend Engineer",
           _now - timedelta(days=1, minutes=3), classification="recruiter_outreach",
-          sender="HR Central <referrals@featherline.example>"),
+          sender="Featherline Careers <referrals@featherline.example>"),
     _mail("gm-tri-run-2", "You've been referred  to a role!", "Featherline", "Data Engineer",
           _now - timedelta(days=1, minutes=2), classification="recruiter_outreach",
           sender="Featherline Careers <REFERRALS@featherline.example>"),
     _mail("gm-tri-run-3", "you've been referred to a role!", None, "ML Engineer",
           _now - timedelta(days=1, minutes=1), classification="recruiter_outreach",
-          sender="<referrals@featherline.example>"),
+          sender='"featherline  careers" <referrals@featherline.example>'),
 ]
 _run_other = _mail("gm-tri-run-4", "A different subject", "Featherline", "SRE",
                    _now - timedelta(days=1), classification="recruiter_outreach",
                    sender="HR Central <referrals@featherline.example>")
 cards = _tri.runs([{"sender": s, "subject": j, "received_at": t, "id": i} for i, s, j, t in (
-    (1, "A <x@y.z>", "Hello", _now), (2, "B <X@Y.Z>", " hello ", _now - timedelta(1)),
-    (3, "A <x@y.z>", "Other", _now - timedelta(2)))])
-check("runs: one address and one subject, case and spacing folded, is one card at its newest",
-      [c["run"] for c in cards] == [True, False]
+    (1, "Ann Lee <x@y.z>", "Hello", _now), (2, '"ann  LEE" <X@Y.Z>', " hello ", _now - timedelta(1)),
+    (3, "Ann Lee <x@y.z>", "Other", _now - timedelta(2)),
+    (4, "Bo Tan <x@y.z>", "Hello", _now - timedelta(3)))])
+check("runs: one sender, address and name, under one subject, case, spacing and quotes folded, "
+      "is one card at its newest",
+      [c["run"] for c in cards] == [True, False, False]
       and [e["id"] for e in cards[0]["emails"]] == [1, 2], cards)
+# 8 Oct 2026: LinkedIn sends every person's connection request from one
+# address under one subject; the name is who.
+cards = _tri.runs([{"sender": f"{n} <invitations@linkedin.com>", "subject": "You have an invitation",
+                    "received_at": _now - timedelta(days=k), "id": k} for k, n in enumerate(
+                        ("Jane Recruiter", "John Sourcer", "Jane Recruiter"))])
+check("runs: one relay address, two people, is two cards, each person's mail together",
+      sorted([e["id"] for e in c["emails"]] if c["run"] else [c["email"]["id"]] for c in cards)
+      == [[0, 2], [1]], cards)
+check("who: the person and company an email names, for a row with no role",
+      [_tri.who({"recruiter": {"name": "Jane Recruiter", "email": None}, "company": "Contoso Talent"}),
+       _tri.who({"recruiter": None, "company": "Contoso Talent"}),
+       _tri.who({"recruiter": "Jane Recruiter", "company": " "}), _tri.who(None)]
+      == ["Jane Recruiter, Contoso Talent", "Contoso Talent", "Jane Recruiter", None])
+_invites = [_mail(f"gm-tri-inv-{k}", "You have an invitation", co, None,
+                  _now - timedelta(days=3, minutes=k), classification="recruiter_outreach",
+                  sender=f"{n} <invitations@linkedin.com>", recruiter={"name": n, "email": None})
+            for k, (n, co) in enumerate((("Jane Recruiter", "Contoso Talent"),
+                                         ("Jane Recruiter", "Contoso Talent"),
+                                         ("John Sourcer", "Fabrikam Search")))]
+r = client.get("/triage?lane=inbound")
+check("one person's two requests are a run headed by their name, its rows naming them "
+      "where no role is known; another person's request is its own card",
+      "2 emails from Jane Recruiter &lt;invitations@linkedin.com&gt;" in r.text
+      and r.text.count(">Jane Recruiter, Contoso Talent</a>") == 2
+      and 'id="email-' + _invites[2] + '"' in r.text
+      and "emails from John Sourcer" not in r.text, r.text[:3000])
+with db.connect() as conn, conn.transaction():
+    conn.execute("DELETE FROM emails WHERE id = ANY(%s::uuid[])", (_invites,))
 r = client.get("/triage?lane=inbound")
 check("the three identical notices are one card, the fourth its own",
       "3 emails from" in r.text and 'id="email-' + _run_other + '"' in r.text
