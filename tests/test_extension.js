@@ -1706,6 +1706,17 @@ console.log("\njobposting.js: the handoff from a listing to its hiring system (P
   const onAts = J.read(pageDoc([node("h1", {}, ["Engineer"])], "Engineer | Fabrikam Talent"),
                        makeLoc("https://jobs.lever.co/fabrikam/53e23908-0da6-47a5-a482-39be676e9ee6"));
   check("on a hiring system's host the tab title's owner is never the company", onAts.company, null);
+  // 8 Oct 2026: the same kind of listing, whose tab title ends in the
+  // SuccessFactors tenant its Apply hands over to, not a name.
+  const coded = J.read(pageDoc([
+    node("span", { itemprop: "title" }, ["Research Engineer"]),
+    node("div", { itemscope: "", itemtype: "http://schema.org/JobPosting" },
+         [node("span", { itemprop: "description" }, ["Build planning services."])]),
+    node("meta", { property: "og:title", content: "Research Engineer" }),
+    node("script", {}, [`{"ssoCompanyId" : 'CONTOSOPRD', "ssoUrl" : 'https://career44.sapsf.com'}`]),
+  ], "Research Engineer Job Details | CONTOSOPRD"), makeLoc("https://careers.contoso.com/job/Research-Engineer/431-en_GB/"));
+  check("a tab-title owner that is the page's own tenant is a code, not the company",
+        [coded.company, coded.title, coded.jd_text], [null, "Research Engineer", "Build planning services."]);
 
   // pickDeparture: which listing the hiring system's first page binds to.
   const NOW = 1_800_000_000_000;

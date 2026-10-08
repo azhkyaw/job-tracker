@@ -612,6 +612,13 @@
     // vendor or an arbitrary tenant brand, so it is never read there.
     if (!job.company && !atsOfUrl(loc.href)) {
       job.company = siteOwner(doc.title, job.title);
+      // ...unless it is the page's own hiring-system tenant, a CODE: a
+      // Career Site Builder listing titled "… Job Details | <TENANTPRD>"
+      // whose inline config hands over to that same tenant (8 Oct 2026, a
+      // listing with no hiringOrganization and no og:site_name). The receipt
+      // then asks for the employer instead of a code being filed as one.
+      const hand = job.company ? atsHandoff(doc) : null;
+      if (hand && hand.tenant && hand.tenant.toLowerCase() === job.company.toLowerCase()) job.company = null;
       if (job.company) job._prov.weak.push("company");
     }
     const bare = stripRequisition(job.title, id);
