@@ -371,22 +371,25 @@ check("round_fate: the list's bucket over the two facts and the closing reason â
       and analytics.round_fate("well", "quiet") == "unexplained"
       and analytics.round_fate(None, "quiet") == "quiet"
       and analytics.round_fate("well", "rejected") == "rejected"
-      and analytics.round_fate("well", "rejected", "visa") == "visa"
-      and analytics.round_fate("badly", "rejected", "skills") == "rejected"
+      and all(analytics.round_fate("well", "rejected", r) == "stopped" for r in analytics.STOP_REASONS)
+      and all(analytics.round_fate("badly", "rejected", r) == "rejected"
+              for r in ("skills", "seniority", "other", "unstated", None))
       and analytics.round_fate(None, None, "visa") is None
       and all(f["round_fate"] == analytics.round_fate(f["went"], f["went_next"], f["reason"])
               for f in fb.values())
-      and set(analytics.LOST_FATES) < set(analytics.ROUND_FATES) and "visa" not in analytics.LOST_FATES,
+      and set(analytics.LOST_FATES) < set(analytics.ROUND_FATES) and "stopped" not in analytics.LOST_FATES
+      and set(analytics.STOP_WORDS) == set(analytics.STOP_REASONS),
       {(w, n): analytics.round_fate(w, n) for w in (None, "well") for n in insights.NEXT_LABELS})
-# A visa stop after a screen (9 Oct 2026): the thread's closing reason, on
-# whichever rejected event carries it, makes it visa, never lost.
+# A stop after a round (9 Oct 2026): the thread's closing reason, on
+# whichever rejected event carries it, decides â€” a visa or the role closing
+# is not the interview's doing; skills or no reason is.
 v1 = app(status="rejected")
 fv = facts_of([v1], [ev(v1, "applied", ago(30)),
                      ev(v1, "interview_invite", ago(20), went="well", round_kind="screen"),
                      ev(v1, "rejected", ago(10)),
-                     ev(v1, "rejected", ago(9), source="manual", reason="visa")])[0]
-check("a rejection after a round whose closing reason is visa is 'stopped on a visa', not lost",
-      fv["round_fate"] == "visa" and fv["went_next"] == "rejected" and fv["reason"] == "visa")
+                     ev(v1, "rejected", ago(9), source="manual", reason="role_closed")])[0]
+check("a rejection after a round whose closing reason is the role closing is 'stopped', not lost",
+      fv["round_fate"] == "stopped" and fv["went_next"] == "rejected" and fv["reason"] == "role_closed")
 
 print("sponsorship: what an answer told the employer")
 import json                                                   # noqa: E402

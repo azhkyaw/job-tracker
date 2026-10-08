@@ -914,12 +914,17 @@ is a private artifact, linked from the memory file
     bucket's count is the rows it opens. Silence after an interview rated
     WELL is deliberately its own count, not a loss and not nothing: it is
     the author's other sentence, "I know I did well and heard nothing".
-    **A visa stop after a round is not lost either** (9 Oct 2026): a
-    rejection whose closing reason is `visa` — rule 13's rule, the market
-    fact that wins whatever the stage — is the `visa` bucket, "stopped on
-    a visa, not the interview", after the lost clause and never in it. A
-    recruiter screen followed by "we do not sponsor" says nothing about
-    the screen.
+    **A stop for a reason that was not the interview is not lost either**
+    (9 Oct 2026, first for a visa, then generalised the same evening): a
+    rejection whose closing reason is one of `analytics.STOP_REASONS` —
+    visa, the role closing, pay, location; a fact about the employer or
+    the market, rule 13's rule for visa — is the `stopped` bucket,
+    "stopped, not the interview", its figure's sub-line naming each
+    reason's count ("1 visa · 1 role closed", `STOP_WORDS`), after the
+    lost figure and never in it. Skills, seniority, "other" or no reason
+    at all stay lost: after a round the honest default is that the round
+    decided. A recruiter screen followed by "we do not sponsor", or a test
+    followed by "the role is closed", says nothing about the round.
     **Rounds are derived and shown, never counted from events** (the same
     day, worklog task 76). One interview is several `interview_invite`
     events, so `trace.rounds` groups them by the interview day the email

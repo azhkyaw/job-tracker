@@ -102,13 +102,20 @@ def summary(conn, user_id, inbound: bool | None = None) -> dict:
                count(*) FILTER (WHERE fate IN {_LOST_FATES})  AS lost,
                count(*) FILTER (WHERE fate = 'rejected')      AS lost_rejected,
                count(*) FILTER (WHERE fate = 'lost_quiet')    AS lost_quiet,
-               count(*) FILTER (WHERE fate = 'visa')          AS visa,
+               count(*) FILTER (WHERE fate = 'stopped')       AS stopped,
+               {", ".join(f"count(*) FILTER (WHERE fate = 'stopped' AND reason = '{k}') AS stopped_{k}"
+                          for k in STOP_REASONS)},
                count(*) FILTER (WHERE fate = 'unexplained')   AS unexplained
-        FROM (SELECT apps.*, {round_fate_sql('apps')} AS fate FROM apps) apps
+        FROM (SELECT apps.*, {round_fate_sql('apps')} AS fate,
+                     {closing_reason_sql('apps')} AS reason FROM apps) apps
         WHERE %(inbound)s::bool IS NULL OR (origin = 'inbound') = %(inbound)s
     """, {"user_id": user_id, "inbound": inbound}).fetchone()
     row["response_rate"] = (round(100.0 * row["responded"] / row["applied"])
                             if row["applied"] else None)
+    # The stopped figure's sub-line: each reason's word and count, in
+    # STOP_REASONS' order, the empty ones left out.
+    row["stopped_by"] = [(STOP_WORDS[k], row[f"stopped_{k}"]) for k in STOP_REASONS
+                         if row[f"stopped_{k}"]]
     return row
 
 
@@ -271,11 +278,15 @@ def sat_sql(r: str) -> str:
 ROUND_FATES = {
     "rejected":    "followed by a rejection",
     "lost_quiet":  "you rated mixed or badly, then silence",
-    # A rejection whose closing reason is visa (rejected_how's rule 13: a
-    # market fact that wins whatever the stage) is not the interview's
-    # doing, so not lost — the author's call, 9 Oct 2026, on a screen after
-    # which the recruiter said they do not sponsor.
-    "visa":        "stopped on a visa, not the interview",
+    # A rejection whose closing reason is not about the interview — a visa,
+    # the role closing, pay, location (STOP_REASONS; rejected_how's rule 13
+    # for visa: a fact about the employer or the market wins whatever the
+    # stage) — is not lost: the author's call, 9 Oct 2026, on a screen after
+    # which the recruiter said they do not sponsor, then on a test after
+    # which the role closed. A reason about you in the room (skills,
+    # seniority, "other") or none at all stays lost: after a round, the
+    # honest default is that the round decided.
+    "stopped":     "stopped for a reason that was not the interview",
     "unexplained": "you rated well, then silence",
     "quiet":       "unrated, then silence",
     "ended":       "you closed yourself",
@@ -284,8 +295,14 @@ ROUND_FATES = {
 }
 LOST_FATES = ("rejected", "lost_quiet")
 LOST_WORDS = ("mixed", "badly")
+# The stated reasons (web._EVENT_REASONS keys; web asserts the subset) that
+# stop a thread without judging the interview, and the figure's word for
+# each ("1 visa · 1 role closed" under "stopped, not the interview").
+STOP_REASONS = ("visa", "role_closed", "salary", "location")
+STOP_WORDS = {"visa": "visa", "role_closed": "role closed", "salary": "pay", "location": "location"}
 _LOST_FATES = _sql_list(LOST_FATES)
 _LOST_WORDS = _sql_list(LOST_WORDS)
+_STOP_REASONS = _sql_list(STOP_REASONS)
 # What ends a round's wait: a further round, or a close.
 _OUTCOME_TYPES = _sql_list(ROUND_EVENTS + tuple(sorted(trace.TERMINAL)))
 
@@ -298,11 +315,20 @@ def round_fate(went: str | None, went_next: str | None, reason: str | None = Non
     if went_next is None:
         return None
     if went_next == "rejected":
-        return "visa" if reason == "visa" else "rejected"
+        return "stopped" if reason in STOP_REASONS else "rejected"
     if went_next == "quiet":
         return ("lost_quiet" if went in LOST_WORDS else
                 "unexplained" if went == "well" else "quiet")
     return {"progressed": "on", "ended": "ended", "waiting": "waiting"}[went_next]
+
+
+def closing_reason_sql(a: str) -> str:
+    """Application `a`'s closing reason: rejection_reasons' rule, the newest
+    rejected event carrying one, else the newest (NULL)."""
+    return f"""(SELECT e.payload->>'reason' FROM events e
+                 WHERE e.application_id = {a}.id AND e.type = 'rejected'
+                 ORDER BY (e.payload->>'reason') IS NOT NULL DESC, e.occurred_at DESC, e.created_at DESC
+                 LIMIT 1)"""
 
 
 def round_fate_sql(a: str) -> str:
@@ -316,7 +342,8 @@ def round_fate_sql(a: str) -> str:
     2026 record)."""
     return f"""(SELECT CASE
             WHEN o.type IS NULL THEN 'waiting'
-            WHEN o.type = 'rejected' THEN CASE WHEN rr.reason = 'visa' THEN 'visa' ELSE 'rejected' END
+            WHEN o.type = 'rejected' THEN
+                 CASE WHEN rr.reason IN {_STOP_REASONS} THEN 'stopped' ELSE 'rejected' END
             WHEN o.type = 'withdrawn' AND o.closed = 'went_quiet' THEN
                  CASE WHEN r.payload->>'went' IN {_LOST_WORDS} THEN 'lost_quiet'
                       WHEN r.payload->>'went' = 'well' THEN 'unexplained' ELSE 'quiet' END
@@ -340,13 +367,7 @@ def round_fate_sql(a: str) -> str:
             SELECT c.type, c.payload->>'closed' AS closed FROM events c
              WHERE c.application_id = {a}.id AND c.type IN {_CLOSES}
              ORDER BY c.occurred_at DESC, c.created_at DESC LIMIT 1) c ON true
-          -- the thread's closing reason: rejection_reasons' rule, the newest
-          -- rejected event carrying one, else the newest
-          LEFT JOIN LATERAL (
-            SELECT e.payload->>'reason' AS reason FROM events e
-             WHERE e.application_id = {a}.id AND e.type = 'rejected'
-             ORDER BY (e.payload->>'reason') IS NOT NULL DESC, e.occurred_at DESC, e.created_at DESC
-             LIMIT 1) rr ON true
+          LEFT JOIN LATERAL (SELECT {closing_reason_sql(a)} AS reason) rr ON true
           CROSS JOIN LATERAL (
             SELECT COALESCE(n.type, c.type) AS type,
                    CASE WHEN n.type IS NOT NULL THEN n.closed ELSE c.closed END AS closed) o)"""

@@ -54,10 +54,10 @@
    sans and the label the serif (rule 3), nothing wears colour (rule 1). #}
 {#- The interview figures (analytics.round_fate_sql, 8-9 Oct 2026): sat, the
     lost — a rejection after, or silence after one you rated mixed or badly,
-    its two parts under the figure — a visa stop, which is not the
-    interview's doing, and silence after a good one, a different fact. Each
-    opens its rows (?interviews=). The same macro over each page's own
-    summary. #}
+    its two parts under the figure — the stopped, whose stated reason was
+    not the interview (analytics.STOP_REASONS, each reason's count under the
+    figure), and silence after a good one, a different fact. Each opens its
+    rows (?interviews=). The same macro over each page's own summary. #}
 {% macro interview_figures(s) -%}
   {%- if s.sat %}
   <a class="fig" href="{{ list_url(interviews='sat') }}"><b>{{ s.sat }}</b><span>interview{{ '' if s.sat == 1 else 's' }}</span></a>
@@ -65,8 +65,9 @@
   <a class="fig" href="{{ list_url(interviews='lost') }}"><b>{{ s.lost }}</b><span>lost</span>
     <small>{% if s.lost_rejected %}{{ s.lost_rejected }} after a rejection{% endif %}{% if s.lost_rejected and s.lost_quiet %} · {% endif %}{% if s.lost_quiet %}{{ s.lost_quiet }} quiet after a mixed or bad one{% endif %}</small></a>
   {%- endif %}
-  {%- if s.visa %}
-  <a class="fig" href="{{ list_url(interviews='visa') }}"><b>{{ s.visa }}</b><span>stopped on a visa</span></a>
+  {%- if s.stopped %}
+  <a class="fig" href="{{ list_url(interviews='stopped') }}"><b>{{ s.stopped }}</b><span>stopped, not the interview</span>
+    <small>{% for word, n in s.stopped_by %}{{ n }} {{ word }}{% if not loop.last %} · {% endif %}{% endfor %}</small></a>
   {%- endif %}
   {%- if s.unexplained %}
   <a class="fig" href="{{ list_url(interviews='unexplained') }}"><b>{{ s.unexplained }}</b><span>quiet after a good one</span></a>

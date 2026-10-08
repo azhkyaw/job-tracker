@@ -925,6 +925,9 @@ _REASON_FILTERS = {**_EVENT_REASONS, _REASON_UNRECORDED: "not recorded"}
 assert set(email_classifier.STATED_REASONS) <= set(_EVENT_REASONS)
 # And what stage 4 may say a round is must be a kind the page can show.
 assert set(email_classifier.INVITE_KINDS) <= set(analytics.ROUND_KINDS)
+# A reason that stops a thread without judging the interview is a reason
+# the why-select can record.
+assert set(analytics.STOP_REASONS) <= set(_EVENT_REASONS)
 # What an invitation mail did, in the timeline's words, when it was no round
 # (trace.NON_ROUND_ROLES): the line says why it has no round number.
 _INVITE_ROLE_WORDS = {"scheduling": "arranging it, not a round", "cancellation": "cancelled"}

@@ -2441,6 +2441,16 @@ the key to each real case.
      back 27% · 12 interviews · 5 lost (3 after a rejection · 2 quiet
      after a mixed or bad one) · 1 stopped on a visa. Rule 10b records
      the three forms the head has had.
+   - **"Stopped" generalised** (the same evening): a test after which the
+     role closed — "do you think we should count it in or out" — out, by
+     the same argument, and no second special case: `STOP_REASONS` (visa,
+     role closed, pay, location — a stated reason that is not about the
+     interview; the author placed pay and location on that side) make the
+     `stopped` bucket, its figure's sub-line counting each reason
+     (`STOP_WORDS`); skills, seniority, other or none stay lost.
+     `closing_reason_sql` is the ONE closing-reason rule the fate and the
+     summary read. On the day it moved two threads out of lost beside the
+     two visa stops.
    - **Not built:** the two source faults for `email_classify_v3`: a
      "Canceled event" mail and a recruiter's InMail reply are not
      invitations.
