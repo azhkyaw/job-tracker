@@ -275,9 +275,9 @@ check("clean keeps every answer to a repeated question, numbered in form order",
 # arrow, an icon font's Private Use Area glyph.
 check("an icon glyph is no answer, and is dropped from one that has words",
       [(r["question"], r["answer"]) for r in clean([
-          {"question": "Industry", "answer": ""},
-          {"question": "Functional Area", "answer": "  \U000f0001 "},
-          {"question": "Country ", "answer": "Singapore "}])]
+          {"question": "Industry", "answer": "\ue1ef"},
+          {"question": "Functional Area", "answer": " \ue1ef \U000f0001 "},
+          {"question": "Country \ue1ef", "answer": "Singapore \ue1ef"}])]
       == [("Country", "Singapore")])
 check("occurrence counts per question, not across the form",
       [r["occurrence"] for r in clean([
