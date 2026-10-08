@@ -2035,3 +2035,44 @@ the key to each real case.
    - **Seen on the way:** sync and the worker had both stopped (the newest
      email 02:45 UTC, 9 jobs pending since 04:00 UTC), as on 7 Oct.
 
+69. **Four records for three applications: a name in brackets** (8 Oct
+   2026). Asked why the research agency of task 68 now had four records.
+   Two were new applications that afternoon (their captures took the
+   agency's short name from the tenant task 68 had named); the fourth was
+   made by mail. Sync had resumed, and the agency's three confirmations,
+   signed with its long name and its abbreviation in brackets, reached
+   none of the records: `norm_company` drops the bracket, the two keys
+   shared no word, and the mail printed no requisition. The first minted a
+   record; the second auto-filed onto that record (its only candidate) as
+   a different job's confirmation; the third waited in triage. Task 68's
+   choice of the short name set it up: the mail spells the name out.
+   - **Repaired:** the three confirmations re-filed onto their own records
+     through `refile_email`, which deleted the emptied fourth; the two new
+     records given their listing's URL and JD through `/edit`, applied
+     instants restored.
+   - **Built:** `matcher.stated_abbreviation`, a bracket whose letters are
+     the initials of the name before it is the company's other name, in the
+     company gate by equality (`.claude/rules/matching.md`). Replayed over
+     every stored email first: 3 companies state one, 4 decisions moved,
+     all this agency's, none wrong. Three checks in path 3k.
+   - **A test fixture tipped another suite.** The first suite run failed
+     test_web's "worth a nudge" check: every suite shares one user, and
+     the new integration record moved the reply curve the follow-up queue
+     reads (quiet_after 10, a 12-day row "gone quiet"). HEAD passed the same
+     check, which settled whose it was; the fixture now deletes itself.
+
+70. **Workday mail that printed its record's id, refused by the record's
+   name** (8 Oct 2026). Asked why three confirmations from one employer's
+   Workday sat in triage, each suggesting another job. Each printed its
+   own record's Workday id; the records were named by Workday's legal
+   entity ("1234 <ABBR> SG Svc Pte Ltd Company"), which shares no word
+   with the brand the mail signs with, so the company gate refused them
+   before `match_by_ats_id` could read the id, and offered the one
+   same-brand record whose entity name holds the word (a different job,
+   0.518). Filed by hand onto their records (`refile_email`, snapshot
+   first). **Built:** a record also passes the id lookup when the mail is
+   from its own Workday tenant (`matcher.workday_tenant`,
+   `.claude/rules/matching.md`); replayed against an id-shape variant
+   first, 6 decisions each, the tenant rule's all onto the record a human
+   had chosen. Three checks in path 3k, the fixture removing itself.
+

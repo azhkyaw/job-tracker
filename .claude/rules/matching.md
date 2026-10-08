@@ -409,3 +409,57 @@ route deletes events and may delete an application.
   What it fixes is the case name matching fails by construction: two records
   of one employer and ONE title (a sibling role, 28 Sep 2026), where the
   margin can never clear. `match_score` 1.0 marks a match made this way.
+- **An employer that signs "Long Name (ABBR)" goes by ABBR too** (8 Oct
+  2026, worklog task 69). A research agency's three applications were named
+  by its abbreviation; its mail signs with the long name and the
+  abbreviation in brackets, and `norm_company` drops every parenthetical,
+  so the two keys shared no word, the gate admitted nothing and no
+  requisition was printed. The first confirmation, finding no candidate,
+  minted a fourth record under the long name; the second, two hours later,
+  found that record its ONLY candidate and auto-filed onto it at 0.829, a
+  different job's; the third waited in triage at 0.493. Repaired through
+  `refile_email`, which deleted the emptied record.
+  - **The rule:** `matcher.stated_abbreviation` reads the LAST
+    parenthetical as a second name when its letters, in order, are initials
+    of the words before it, starting with the first ("…Research (A*NR)",
+    a subsequence, since an abbreviation skips "for" and keeps "and").
+    `(Singapore)`, `(SG)` after a bank, `(Thailand)`, a brand like
+    `(ConTech)` are no abbreviation of the name before them. The alias
+    joins `_COMPANY_GATE` by EQUALITY only (`j.company_norm =
+    ANY(aliases)`): the containment terms would let a two-letter alias
+    admit every record with that word (`sg` is in Workday legal-entity
+    names). `norm_company` is untouched (invariant #4); triage's review
+    strip counts the alias as a term of the gate.
+  - **Replayed** over every stored, extracted email: 3 companies state an
+    abbreviation, and only their 19 emails can change. 4 decisions moved,
+    all the agency's and none wrong: a confirmation that had minted a
+    duplicate now waits in triage with its record first (0.9), two more
+    likewise, one auto-files onto its record. In triage rather than auto
+    because the replay saw all three of the agency's records at once;
+    three research titles hours apart fail the margin, as they should.
+  - **Not covered:** the reverse, a record stored under "Long Name (ABBR)"
+    and mail signed ABBR alone (the record's key has no alias); and an
+    abbreviation that is not initials (a portmanteau like "ConTech").
+- **Mail from the record's own Workday tenant is matched by the id it
+  prints, whatever name it signs with** (8 Oct 2026, worklog task 70). The
+  abbreviation bullet's 7 Oct note said it: a record Workday named by its
+  legal entity ("1234 <ABBR> SG Svc Pte Ltd Company") was refused by the
+  company gate before `match_by_ats_id` could read the id its mail
+  printed. That day three confirmations signed with the brand each printed
+  their record's own `R…` id and waited in triage, the only same-brand
+  record the gate admitted being a different job's (0.518). `_ATS_ID_SQL`
+  now also admits a record when the mail's sender is that record's tenant:
+  `<tenant>@myworkday.com` (`matcher.workday_tenant`) against the id's
+  host `<tenant>.wdN.myworkdayjobs.com`. Only that employer's own Workday
+  sends from it, so the 28 Sep guard holds: a stranger's number still
+  passes nothing. Exactly one record must still be named.
+  - **Replayed** over all 633 stored emails, against a second variant
+    (any id of letters and digits, 6+ characters, skips the gate): the
+    tenant rule changed 6 decisions, the three confirmations and a bank's
+    three 2 Oct mails, each onto the record a human had filed it on. The
+    shape rule also changed 6, missed the bank (its ids are all digits)
+    and would have attached an account-verification mail the author had
+    ignored.
+  - **Not covered:** any other vendor. SuccessFactors writes from
+    `system@successfactors.com` or an employer-named address, and no
+    other sender measured names its tenant.

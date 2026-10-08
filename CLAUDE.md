@@ -861,7 +861,11 @@ The dated register behind each item, tasks 1-66 with their measurements, is
   three cases in four days (`.claude/rules/matching.md`, the abbreviation
   bullet): re-measure its three candidate fixes. The "Filed twice?"
   band's merge has not met a live twin yet; read the record it opens on
-  the first.
+  the first. A fourth shape, 8 Oct (task 69), mail signed "Long Name
+  (ABBR)" against records named ABBR, is handled since by
+  `matcher.stated_abbreviation`; its reverse is not. And Workday mail that
+  prints its record's id now matches it from the record's own tenant,
+  whatever the names (task 70, `matcher.workday_tenant`).
 - **Extension, next real Easy Apply:** verify the current build (0.28.0 on
   8 Oct) is live on BOTH machines and the tab was opened after the
   reload; read `doc_source` and the sweep line, and check that the radio
