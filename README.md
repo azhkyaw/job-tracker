@@ -60,9 +60,21 @@ what separates this from anything that drives a logged-in session for you.
   offer is a round, not an end: the thread stays open until you decline it,
   they withdraw it, or it goes quiet. Every rejection can carry a *reason*,
   quoted verbatim from the email when the email states one.
-- **Follow-ups** ("Your move"): the applications worth a nudge, the leads
-  awaiting your reply, the rounds gone quiet, the listings that asked for your
-  CV by email and are still owed it — sectioned by the move each row offers.
+- **Interview rounds are read off the mail, then yours to correct.** One
+  interview is several invitation mails (the invitation, the calendar
+  notice, a reminder, the reply arranging it); a fourth model stage says
+  what each mail *does* — invitation, reschedule, cancellation, reminder,
+  scheduling chatter — what kind of round it concerns and the day it names,
+  and the thread's rounds are grouped from that. Each round takes a kind
+  (coding test, recruiter screen, technical, hiring manager, panel, final,
+  or an automated questionnaire, which is not a round) and your own word on
+  how it went, asked the morning after; one click marks a stray line "not a
+  round". A rejection whose stated reason was not the interview — a visa,
+  the role closing, pay, location — is "stopped", never "lost".
+- **Follow-ups** ("Your move"): the rounds you sat and have not yet said how
+  they went, the applications worth a nudge, the leads awaiting your reply,
+  the rounds gone quiet, the listings that asked for your CV by email and
+  are still owed it — sectioned by the move each row offers.
   The "gone quiet" cut-off is not a constant: it is the day past which fewer
   than 5% of *your own* applications ever heard back, from the same
   Kaplan-Meier curve the analytics page draws.
@@ -213,8 +225,8 @@ grey.
 | `/` | Your applications, with a shared-axis timeline per row, filters, sort, search |
 | `/inbound` | Threads a recruiter or employer started (`origin = inbound`), kept on their own page |
 | `/triage` | Mail the matcher would not file alone, with the records it weighed; identical mail from one sender as one card; applications filed twice; the week's less certain filings for a "Looks right" |
-| `/follow-ups` | Your move: CV owed by email, worth a nudge, applied to again, gone quiet after a round, leads awaiting your reply; a confirmed bulk close for the ones past the odds |
-| `/analytics` | The reply curve and window, cohorts, employers, which resume, how rejections ended, the visa matrix |
+| `/follow-ups` | Your move: how did yesterday's interview go, CV owed by email, worth a nudge, applied to again, gone quiet after a round, leads awaiting your reply; a confirmed bulk close for the ones past the odds |
+| `/analytics` | The reply curve and window, cohorts, employers, which resume, how rejections ended, the visa matrix, your interviews as you rated them and how far each thread got |
 | `/answers` | Every screening question across every application, grouped by question |
 | `/applications/{id}` | One application: timeline, events filed by hand, contacts, answers, JD extraction, cover letter |
 | `/applications/new` | Manual entry — paste a job URL and the id is derived the way the extension derives it |
@@ -261,6 +273,7 @@ attributable and selectively re-runnable.
 | Classify an email | `claude-sonnet-5-5` | `email_classify_v2` / `email_classify_sent_v1` | `TRACKER_CLASSIFY_MODEL` |
 | Extract company / role / date / recruiter | `claude-haiku-4-5-20251001` | `email_extract_v1` | `TRACKER_EXTRACT_MODEL` |
 | Rejection reason, quoted from the mail | `claude-sonnet-5` | `rejection_reason_v1` | `TRACKER_REASON_MODEL` |
+| What an invitation mail does, the kind of round, the day | `claude-sonnet-5` | `invite_detail_v1` | `TRACKER_INVITE_MODEL` |
 | JD extraction | `claude-sonnet-5`, effort `medium` | `jd_extract_v2` | `TRACKER_JD_MODEL`, `TRACKER_JD_EFFORT` |
 | Cover letter | `claude-sonnet-5` | `cover_letter_v1` | `TRACKER_COVER_MODEL` |
 | Embeddings (optional) | `voyage-3.5-lite` | — | `TRACKER_EMBED_MODEL` |

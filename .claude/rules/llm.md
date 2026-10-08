@@ -310,3 +310,11 @@ page rather than a file.
 - **Voyage embeddings live call** (`pipeline/embeddings.py`, ~25 lines) —
   never executed against the real API; verify model name/dimension (schema is
   `vector(1024)`) on first use.
+- **Stage 4 on a mail arriving live** (`invite_detail_v1`, 9 Oct 2026):
+  replayed over the 60 stored invitation mails and backfilled through
+  `scripts/replay_invites.py`, never yet called by the worker on new mail.
+  On the next invitation, reminder or cancellation that arrives, read the
+  event's `invite_role` / `round_kind` / `stated_date` on the record's
+  page and the round label it produced. The replay's one bias: "screen"
+  where the author said technical or hiring manager (2 of 21) — a v2
+  prompt note once there is more evidence, not before.

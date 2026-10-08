@@ -82,7 +82,7 @@ and design records; the code and `migrations/` win where they disagree.
   this install. Read its §3 first: the author's right to earn in Singapore
   decides the rest. Confirms `docs/open-source.md` and says what would
   reopen the question.
-- `docs/worklog.md` — the dated task register (tasks 1-74 with their
+- `docs/worklog.md` — the dated task register (tasks 1-78 with their
   measurements); what is still open is summarised under "Open work" below.
 
 **Path-scoped rules.** Dated case history that only matters when touching
@@ -152,8 +152,10 @@ An invariant keeps its RULE here and its case history in the rule file.
   that has passed unrated on an open thread, `rating_owed_sql` the ONE
   rule), `round_fate_sql` (the same day: what came of the round you sat,
   ONE bucket per application — `ROUND_FATES` — the list's `?interviews=`
-  filter and the lede's "N interviews, M lost"; `round_fate` is its Python
-  twin over `insights._went`, held equal by the web suite) and
+  filter and the head's figures; `round_fate` is its Python twin over
+  `insights._went`, held equal by the web suite; a stated reason in
+  `STOP_REASONS` makes a rejection "stopped, not the interview", never
+  lost, off `closing_reason_sql`, the ONE closing-reason rule) and
   `queue_count` (the nav pill, ONE statement, the rows that carry a move),
   `awaiting_you_sql` (the ONE "awaiting your call" rule for an inbound lead:
   no reply of yours since they last wrote, `reply_sql`/`theirs_sql`; the pin,
@@ -172,7 +174,8 @@ An invariant keeps its RULE here and its case history in the rule file.
   `DIMENSIONS`, the comparison registry the pure
   suite loops, and `interviews` (8 Oct 2026: each round you sat by your own
   rating of it, `payload.went`, against what came of it; a rating filed
-  after the outcome is counted as hindsight). Two words kept apart everywhere: HEARD BACK (any response,
+  after the outcome is counted as hindsight) and `depth` (the same grid by
+  rounds reached, `trace.rounds`). Two words kept apart everywhere: HEARD BACK (any response,
   the list's "reply") and ANSWERED (a rejection or a round — LinkedIn's
   "viewed" notice is not one, and counting it reversed a comparison)
 - `pipeline/charts.py` — the analytics page's flow and curve geometry (marks
@@ -425,7 +428,10 @@ An invariant keeps its RULE here and its case history in the rule file.
    (`web.set_round_went`, the door `set_rejection_reason` is), never a
    reason on the close and never a status; `/analytics` reads it beside
    what came of the round, and a rating filed after the outcome counts as
-   hindsight (web-ui.md rule 20).
+   hindsight (web-ui.md rule 20). The round's kind (`round_kind`), your
+   "not a round" (`round_is`) and what the mail did (`invite_role`, stage
+   4) sit on the invitation event the same way — qualifiers in JSONB,
+   never a type or a status.
    **`engaged`** (a person reaching out, no next step yet) ranks strictly
    between `viewed` — `matcher.py`'s passive, auto-detected signal only —
    and `interview_invite`, in gapped precedence values. **An offer is a
@@ -856,7 +862,9 @@ Detail lives with each family's rule file; this is the index.
   `email_classify_v2` (8 Oct, task 71) was replayed on every recruiter
   request and 102 job emails, never on non-job mail, whose bodies are
   purged: a stray `recruiter_outreach` in triage is how a false positive
-  would show.
+  would show. Stage 4, `invite_detail_v1` (9 Oct, task 77), was replayed
+  over the 60 stored invitation mails against the author's labels and
+  backfilled; it has never read a mail arriving live through the worker.
 - **Matching** (`.claude/rules/matching.md`): `stated_abbreviation` and
   `workday_tenant` (8 Oct, tasks 69-70) and the three-character id rule
   (task 68) were replayed over stored mail; none has filed a NEW email
@@ -886,10 +894,28 @@ Detail lives with each family's rule file; this is the index.
   labels with their "not a round" buttons, the detail badge, the list's
   "N rounds" tag, and "How far you got" on `/analytics`.
 
-## Open work (as of 8 Oct 2026)
+## Open work (as of 9 Oct 2026)
 
-The dated register behind each item, tasks 1-74 with their measurements, is
+The dated register behind each item, tasks 1-78 with their measurements, is
 `docs/worklog.md`; read the matching entry before acting on one.
+
+- **Interview rounds, their kinds, and what came of them** (tasks 75-78,
+  8-9 Oct): a round you sat takes your rating (`payload.went`, the day
+  after, on `/follow-ups`' first section), a kind, "not a round" per
+  line; stage 4 (`invite_detail_v1`) reads every invitation mail's role,
+  kind and day, backfilled over the 60 stored ones so all 18 threads read
+  the counts the author corrected by hand. The lists' head is a row of
+  figures. The author's clicks: rate each interview the morning after (5
+  were scheduled 9-29 Oct); the 4 Aug and 11 Sep inbound rounds are
+  unrated. Never met live: stage 4 on a mail arriving through the worker
+  (the stage's one bias in the replay, "screen" where the author said
+  technical or hiring manager, is a prompt note for a v2 once there is
+  more evidence); the "How did it go?" rows; the figures row and the
+  rounds' surfaces in a browser, either theme. Not built: `/analytics` by
+  kind ("where it stops" — kinds now sit on 24 of 26 rounds), the
+  calendar UID at ingest (future mail only, both providers, invariant
+  #10), and a reschedule rule where a later invitation follows a
+  cancellation on one thread.
 
 - **Follow-up drafting**, now on a page that has a place for it (task 61,
   7 Oct): `/follow-ups` is "Your move", sectioned by the move each row
