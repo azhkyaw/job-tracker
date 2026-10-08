@@ -271,6 +271,14 @@ check("clean keeps every answer to a repeated question, numbered in form order",
            "field_type": None, "ordinal": 1, "occurrence": 0},
           {"question": "A?", "question_norm": "a", "answer": "3",
            "field_type": None, "ordinal": 2, "occurrence": 1}])
+# 3-8 Oct 2026: a blank SuccessFactors combobox answered with its dropdown
+# arrow, an icon font's Private Use Area glyph.
+check("an icon glyph is no answer, and is dropped from one that has words",
+      [(r["question"], r["answer"]) for r in clean([
+          {"question": "Industry", "answer": ""},
+          {"question": "Functional Area", "answer": "  \U000f0001 "},
+          {"question": "Country ", "answer": "Singapore "}])]
+      == [("Country", "Singapore")])
 check("occurrence counts per question, not across the form",
       [r["occurrence"] for r in clean([
           {"question": "City", "answer": "SG"}, {"question": "Industry", "answer": "SaaS"},

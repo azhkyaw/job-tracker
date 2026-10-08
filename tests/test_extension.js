@@ -936,6 +936,35 @@ console.log("\nanswers.js sweep: Greenhouse's job-board form (read live 29 Sep 2
   check("…and nothing before a file is chosen", sweepOf(upload(null)), []);
 }
 
+console.log("\nanswers.js sweep: a combobox's live region and icon are not its answer (3-8 Oct 2026)");
+{
+  // SuccessFactors' classic form, modelled from what 22 stored rows held: an
+  // input role=combobox, empty when nothing is picked, beside the dropdown's
+  // icon (a Private Use Area glyph) and a live region that announces results.
+  const sf = (shown) => node("div", { class: "row" }, [
+    node("span", { id: "ind-label" }, ["Industry"]),
+    node("div", { class: "combo" }, [
+      node("input", { type: "text", role: "combobox", "aria-labelledby": "ind-label" }),
+      ...(shown ? [node("span", { class: "chosen" }, [shown])] : []),
+      node("span", { class: "icon" }, ["\ue1ef"]),
+      node("span", { role: "status", "aria-live": "polite", class: "offscreen" },
+           ["One or more results available. Press Up or Down Arrow Keys to navigate the selection list."]),
+    ]),
+  ]);
+  check("a blank combobox answers nothing, not its live region or its icon", sweepOf(sf(null)), []);
+  check("…and a shown choice answers without the icon",
+        sweepOf(sf("Information Technology")),
+        [{ question: "Industry", answer: "Information Technology", type: "text" }]);
+  // iCIMS's select2 (3 Oct 2026): a dash-wrapped placeholder and its own
+  // status region, aria-live absent, role alone.
+  const ic = node("div", {}, [node("span", { id: "rel" }, ["Relationship"]), node("div", { class: "c" }, [
+    node("input", { type: "text", role: "combobox", "aria-labelledby": "rel" }),
+    node("span", { class: "placeholder" }, ["— Make a Selection —"]),
+    node("span", { role: "status" }, ["1 result available. Use down and up arrow keys to navigate."]),
+  ])]);
+  check("…nor a dash-wrapped placeholder beside a status region", sweepOf(ic), []);
+}
+
 console.log("\nanswers.js sweep: a SmartRecruiters screening step, drawn by web components (read live 30 Sep 2026)");
 {
   // The screening step of a LinkedIn → SmartRecruiters apply, placeholder

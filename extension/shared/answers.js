@@ -626,8 +626,22 @@
   }
 
   // Placeholder options ("Select an option") are the absence of an answer, not
-  // an answer — recording them would fill the bank with noise.
-  const PLACEHOLDER = /^(select an option|select(\.\.\.|…)|please select|choose(\.\.\.| an option)?|-+|—)$/i;
+  // an answer — recording them would fill the bank with noise. Dashes either
+  // side are decoration ("— Make a Selection —", iCIMS, 3 Oct 2026).
+  const PLACEHOLDER = /^[\s\-–—]*(select an option|select(\.\.\.|…)|please select|make a selection|choose(\.\.\.| an option)?)?[\s\-–—]*$/i;
+
+  /* A live region speaks a widget's state to a screen reader; it is never
+   * the widget's value. SuccessFactors' comboboxes keep one beside the input
+   * ("One or more results available. Press Up or Down Arrow Keys…"), iCIMS's
+   * another ("1 result available. Use down and up arrow keys…"), and those,
+   * with the dropdown's arrow drawn by an icon font as a Private Use Area
+   * character (U+E1EF), stood as the answer to blank comboboxes: 22 rows on
+   * 7 applications, 3-8 Oct 2026. Neither is a choice anyone sees. */
+  const SPOKEN = /^(status|alert|log|marquee|timer)$/i;
+  const announces = (n) => {
+    const live = (n.getAttribute("aria-live") || "").toLowerCase();
+    return (live !== "" && live !== "off") || SPOKEN.test(n.getAttribute("role") || "");
+  };
 
   /* The choice a combobox SHOWS rather than holds. React-select, on
    * Greenhouse's job boards (read live 29 Sep 2026): its <input
@@ -650,7 +664,7 @@
       for (const c of n.childNodes) {
         if (c.nodeType === 3) { out += c.textContent; continue; }
         if (c.nodeType !== 1 || c === el || c.getAttribute("aria-hidden") === "true") continue;
-        if (skip.has(c.getAttribute("id"))) continue;
+        if (skip.has(c.getAttribute("id")) || announces(c)) continue;
         out += " " + own(c);
       }
       return out;
@@ -658,7 +672,7 @@
     for (let n = el.parentElement, hops = 0; n && hops < 3; n = n.parentElement, hops++) {
       if (n.tagName === "LABEL" || (n.querySelector && n.querySelector("label")) ||
           question.some((q) => holds(n, q))) return null;
-      const t = own(n).replace(/\s+/g, " ").trim();
+      const t = own(n).replace(/\p{Co}/gu, "").replace(/\s+/g, " ").trim();
       if (t) return PLACEHOLDER.test(t) ? null : t.slice(0, MAX_ANSWER);
     }
     return null;

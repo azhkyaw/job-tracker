@@ -229,6 +229,16 @@ def norm_question(q: str) -> str:
                             for c in s).split())
 
 
+def _drawn_text(s: str) -> str:
+    """Text as a reader sees it: without the Private Use Area characters an
+    icon font draws its glyphs with. A combobox's dropdown arrow came through
+    as one (U+E1EF on SuccessFactors) and stood as the answer to a field left
+    blank, 15 times on 5 applications, 3-8 Oct 2026; no answer is made of
+    them. The extension's reader drops them too (answers.js:shownChoice);
+    this is the second line."""
+    return "".join(c for c in s if unicodedata.category(c) != "Co")
+
+
 def clean(items) -> list[dict]:
     """Normalise a capture's raw answer list: trim, cap, drop the unusable, and
     number repeats. Returns items ready to insert, in form order.
@@ -241,8 +251,8 @@ def clean(items) -> list[dict]:
     out: list[dict] = []
     seen: dict[str, int] = {}
     for i, raw in enumerate(items or []):
-        question = (raw.get("question") or "").strip()
-        answer = (raw.get("answer") or "").strip()
+        question = _drawn_text(raw.get("question") or "").strip()
+        answer = _drawn_text(raw.get("answer") or "").strip()
         norm = norm_question(question)
         if not norm or not answer:
             continue
