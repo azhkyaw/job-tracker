@@ -743,11 +743,10 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
                 + (f" ({analytics.ROUND_KINDS.get(x['kind'], x['kind'])})" if x["kind"] else "")
                 for x in rds)
 
-        # The inbound page's lede is a different sentence from the record's:
-        # not applications and replies, but approaches, how many still wait on
-        # the user, and how many turned into an interview — counted over any
-        # invite on the timeline, not the current status, since a thread that
-        # went to interview and then closed still went to interview.
+        # The inbound page's lede: the same sentence in the same shape as the
+        # record's (9 Oct 2026), with approaches and how many still wait on
+        # the user where the record has applications and replies; the
+        # interviews clause comes from `summary`, scoped to the page.
         inbound_summary = conn.execute(
             f"""
             SELECT count(*) AS approaches,
@@ -755,11 +754,7 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
                    -- first_applied has the reason).
                    min((SELECT min(e.occurred_at) FROM events e
                          WHERE e.application_id = a.id)) AS first_at,
-                   count(*) FILTER (WHERE {_AWAITING}) AS awaiting,
-                   count(*) FILTER (WHERE EXISTS (
-                       SELECT 1 FROM events e
-                        WHERE e.application_id = a.id
-                          AND e.type = 'interview_invite')) AS interviewed
+                   count(*) FILTER (WHERE {_AWAITING}) AS awaiting
             FROM applications a
             JOIN application_status s ON s.application_id = a.id
             WHERE a.user_id = %s AND a.origin = 'inbound'
@@ -787,11 +782,9 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
             # Only the default sort pins leads, so only it gets the divider —
             # an explicitly chosen sort should be exactly what it says.
             "leads_pinned": sort == _DEFAULT_SORT,
-            # Scoped to the page, so the lede's count is the count label's.
+            # Scoped to the page, so the lede's count is the count label's,
+            # and the interviews clause is the page's own on /inbound too.
             "summary": analytics.summary(conn, user_id, is_inbound),
-            # The lede's first clause: what moved in the last WEEK_DAYS.
-            "week": analytics.week(conn, user_id, is_inbound),
-            "week_days": analytics.WEEK_DAYS,
             "months": months,
             "inbound_summary": inbound_summary,
             "triage_inbound": triage_inbound,

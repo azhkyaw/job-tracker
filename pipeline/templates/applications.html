@@ -43,43 +43,39 @@
 <div class="note" style="--c:var(--rejected)">Deleted <strong>{{ deleted }}</strong>.</div>
 {% endif %}
 
-{# The search in a sentence rather than four tiles, and since 7 Oct 2026 the
-   sentence leads with what MOVED in the last week (analytics.week): the
-   whole-search totals read the same on every visit, and the funnel beneath
-   and /analytics carry them, so they shrink to the trailing clause. The
-   inbound page leads with its now-state instead — the approaches awaiting
-   the user — then the week, then the whole: approaches and how many reached
-   an interview (any invite on the timeline, not the current status: a
-   thread that interviewed and then closed still interviewed). #}
+{# The search in a sentence rather than four tiles — ONE sentence in ONE
+   shape on both pages (9 Oct 2026): since the first record, how many, the
+   page's own second clause (heard back on the record, awaiting your call on
+   /inbound), then the interviews and the lost among them, the clause below,
+   shared. The week's numbers led the sentence from 7 Oct to 9 Oct 2026
+   (analytics.week, now gone) and were dropped at the author's word; the
+   funnel beneath and /analytics carry what moved. #}
+{#- Interviews, by what came of them (analytics.round_fate_sql, 8 Oct 2026):
+    the lost — a rejection after, or silence after one you rated mixed or
+    badly — with its two parts, and silence after a good one, which is a
+    different fact. Each count opens exactly its rows (?interviews=), in
+    the words the filter note then repeats (_INTERVIEW_FILTERS). The same
+    macro on both pages, over each page's own summary. #}
+{% macro interviews_clause(s) -%}
+  {%- if s.sat %}, <b>{{ s.sat }}</b> interview{{ '' if s.sat == 1 else 's' }}
+  {%- if s.lost %}, <a href="{{ list_url(interviews='lost') }}"><b>{{ s.lost }}</b> lost</a>
+  ({% if s.lost_rejected %}<a href="{{ list_url(interviews='rejected') }}">{{ s.lost_rejected }} {{ interview_filters['rejected'] }}</a>{% endif %}
+  {%- if s.lost_rejected and s.lost_quiet %}, {% endif %}
+  {%- if s.lost_quiet %}<a href="{{ list_url(interviews='lost_quiet') }}">{{ s.lost_quiet }} {{ interview_filters['lost_quiet'] }}</a>{% endif %})
+  {%- endif %}
+  {%- if s.unexplained %}, <a href="{{ list_url(interviews='unexplained') }}">{{ s.unexplained }} {{ interview_filters['unexplained'] }}</a>{% endif %}
+  {%- endif %}
+{%- endmacro %}
 {% if page == 'inbound' %}
 {% if inbound_summary.approaches %}
-<p class="lede"><b>{{ inbound_summary.awaiting }}</b> awaiting your call,
-  <b>{{ week.started }}</b> new in the last {{ week_days }} days{% if week.interviews %},
-  <b>{{ week.interviews }}</b> interview invitation{{ '' if week.interviews == 1 else 's' }}{% endif %}.
-  Since {{ inbound_summary.first_at | day }}:
-  <b>{{ inbound_summary.approaches }}</b> approach{{ '' if inbound_summary.approaches == 1 else 'es' }}{% if inbound_summary.interviewed %},
-  <b>{{ inbound_summary.interviewed }}</b> reached an interview{% endif %}.</p>
+<p class="lede">Since {{ inbound_summary.first_at | day }}:
+  <b>{{ inbound_summary.approaches }}</b> approach{{ '' if inbound_summary.approaches == 1 else 'es' }},
+  <b>{{ inbound_summary.awaiting }}</b> awaiting your call{{ interviews_clause(summary) }}.</p>
 {% endif %}
 {% elif summary.applied %}
-<p class="lede">In the last {{ week_days }} days: <b>{{ week.sent }}</b> sent,
-  <b>{{ week.heard }}</b> heard back{% if week.interviews %},
-  <b>{{ week.interviews }}</b> interview invitation{{ '' if week.interviews == 1 else 's' }}{% endif %}{% if week.offers %},
-  <b>{{ week.offers }}</b> offer{{ '' if week.offers == 1 else 's' }}{% endif %}.
-  Since {{ summary.first_applied | day }}: <b>{{ summary.responded }}</b> of <b>{{ summary.applied }}</b>
-  heard back{% if summary.response_rate is not none %} (<b>{{ summary.response_rate }}%</b>){% endif %}.
-  {#- Interviews, by what came of them (analytics.round_fate_sql, 8 Oct 2026):
-      the lost — a rejection after, or silence after one you rated mixed or
-      badly — with its two parts, and silence after a good one, which is a
-      different fact. Each count opens exactly its rows (?interviews=), in
-      the words the filter note then repeats (_INTERVIEW_FILTERS). #}
-  {%- if summary.sat %} <b>{{ summary.sat }}</b> interview{{ '' if summary.sat == 1 else 's' }}
-  {%- if summary.lost %}, <a href="{{ list_url(interviews='lost') }}"><b>{{ summary.lost }}</b> lost</a>
-  ({% if summary.lost_rejected %}<a href="{{ list_url(interviews='rejected') }}">{{ summary.lost_rejected }} {{ interview_filters['rejected'] }}</a>{% endif %}
-  {%- if summary.lost_rejected and summary.lost_quiet %}, {% endif %}
-  {%- if summary.lost_quiet %}<a href="{{ list_url(interviews='lost_quiet') }}">{{ summary.lost_quiet }} {{ interview_filters['lost_quiet'] }}</a>{% endif %})
-  {%- endif %}
-  {%- if summary.unexplained %}, <a href="{{ list_url(interviews='unexplained') }}">{{ summary.unexplained }} {{ interview_filters['unexplained'] }}</a>{% endif %}.
-  {%- endif %}</p>
+<p class="lede">Since {{ summary.first_applied | day }}:
+  <b>{{ summary.applied }}</b> application{{ '' if summary.applied == 1 else 's' }},
+  <b>{{ summary.responded }}</b> heard back{% if summary.response_rate is not none %} (<b>{{ summary.response_rate }}%</b>){% endif %}{{ interviews_clause(summary) }}.</p>
 {% endif %}
 
 {% if funnel %}

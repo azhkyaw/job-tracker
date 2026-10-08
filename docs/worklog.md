@@ -2405,6 +2405,19 @@ the key to each real case.
      rounds now carry a kind.
    - **Not built:** the calendar identity at ingest (the ICS UID and the
      meeting link, future mail only) and `/analytics` by kind.
+
+78. **The two ledes, one sentence** (9 Oct 2026). "Remove weekly summary
+   from Applications and Inbound pages' headers. Add 'lost' summary to
+   Inbound header. Basically try to sync them as much as possible." The
+   week's clause (task 62's E, two days old) and `analytics.week` went;
+   both pages now read "Since <first record>: N applications |
+   approaches, R heard back (pct) | A awaiting your call, I interviews, L
+   lost (…), U you rated well, then silence", the interviews clause one
+   template macro over each page's own `analytics.summary` — so /inbound
+   counts its own lost interviews and its "lost" opens
+   `/inbound?interviews=lost`. The inbound query dropped its "reached an
+   interview" count (any invitation on the timeline) for the shared
+   "interviews" (rounds sat, questionnaires and not-a-round lines out).
    - **Not built:** the two source faults for `email_classify_v3`: a
      "Canceled event" mail and a recruiter's InMail reply are not
      invitations.

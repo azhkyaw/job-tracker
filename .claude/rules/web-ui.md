@@ -372,15 +372,23 @@ is a private artifact, linked from the memory file
      make", "Add one by hand") share `.listbar`; the links sit inside the
      GET form for layout only. `.rowline` left this page (the detail page
      still uses it).
-   - **The lede says the week** (`analytics.week`, `WEEK_DAYS` = 7, a
-     rolling window so a Monday's lede is not empty): "In the last 7 days:
-     44 sent, 12 heard back, 2 interview invitations. Since 16 Jul 2026: 103
-     of 351 heard back (29%)." The whole-search sentence read the same on
-     every visit; the totals shrank to its tail. Its "since" now comes from
-     `summary.first_applied`, the same rows as its counts: it read the trace
-     axis, which is the VISIBLE rows', so a search moved the date
-     ("Since 23 Sep") and not the numbers beside it. The average days to a
-     first response left the lede; /analytics' curve says it better.
+   - **The lede said the week, from 7 to 9 Oct 2026** (`analytics.week`, a
+     rolling 7 days: "In the last 7 days: 44 sent, 12 heard back, 2
+     interview invitations. Since 16 Jul 2026: 103 of 351 heard back
+     (29%)."), and the author had it removed: "remove weekly summary from
+     Applications and Inbound pages' headers … try to sync them as much as
+     possible". The function went with it. Since then the two pages say
+     ONE sentence in ONE shape — "Since <first record>: N applications |
+     approaches, R heard back (pct) | A awaiting your call, I interviews, L
+     lost (…), U you rated well, then silence" — the interviews clause a
+     macro shared by both ledes over each page's own `analytics.summary`
+     (scoped by `inbound`), so /inbound counts its own lost interviews.
+     What survives of the 7 Oct change: the "since" comes from
+     `summary.first_applied` (the record) and the first approach (/inbound),
+     the same rows as the counts — it had read the trace axis, which is the
+     VISIBLE rows', so a search moved the date and not the numbers. The
+     average days to a first response left the lede on 7 Oct; /analytics'
+     curve says it better.
 11. **The funnel strip and its legend are the status filter** (29 Aug 2026;
     `web.py`'s `status` query param, validated against `FUNNEL_ORDER`) — not
     a separate dropdown next to `sort`/`q`. A segment's own href is

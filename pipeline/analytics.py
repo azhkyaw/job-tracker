@@ -111,44 +111,6 @@ def summary(conn, user_id, inbound: bool | None = None) -> dict:
     return row
 
 
-# The window of the lists' first sentence (7 Oct 2026). Seven days back from
-# now rather than the calendar week /analytics groups by: a lede read on a
-# Monday should not say nothing happened.
-WEEK_DAYS = 7
-
-
-def week(conn, user_id, inbound: bool, days: int = WEEK_DAYS) -> dict:
-    """What moved in the last `days` days on one list page — the lede's first
-    clause (7 Oct 2026). Until then the lede was the whole search in one
-    sentence ("351 applications, 103 replies (29%) ..."), the same sentence on
-    every visit; the funnel beneath and /analytics already carry those
-    totals, and what a daily visit asks is what happened since the last one.
-    Counted per APPLICATION, scoped to the page the way summary() is:
-      sent        its first `applied` event falls in the window
-      started     its first event of any kind does: on /inbound, the approach
-      heard       a response of any kind (RESPONSE_TYPES, the list's "reply")
-                  occurred in the window — so an old application rejected
-                  yesterday counts, which is the point
-      interviews  an interview invitation in the window
-      offers      an offer in the window"""
-    def moved(types):
-        return (f"EXISTS (SELECT 1 FROM events e WHERE e.application_id = a.id "
-                f"AND e.type IN {types} AND e.occurred_at >= w.since)")
-    return conn.execute(f"""
-        SELECT count(*) FILTER (WHERE (SELECT min(e.occurred_at) FROM events e
-                                        WHERE e.application_id = a.id AND e.type = 'applied')
-                                      >= w.since) AS sent,
-               count(*) FILTER (WHERE (SELECT min(e.occurred_at) FROM events e
-                                        WHERE e.application_id = a.id) >= w.since) AS started,
-               count(*) FILTER (WHERE {moved(_RESPONSE_TYPES)}) AS heard,
-               count(*) FILTER (WHERE {moved("('interview_invite')")}) AS interviews,
-               count(*) FILTER (WHERE {moved("('offer')")}) AS offers
-        FROM applications a,
-             (SELECT now() - make_interval(days => %(days)s) AS since) w
-        WHERE a.user_id = %(user_id)s AND (a.origin = 'inbound') = %(inbound)s
-    """, {"user_id": user_id, "inbound": inbound, "days": days}).fetchone()
-
-
 def rejection_reasons(conn, user_id, inbound: bool | None = None):
     """Why applications closed, counted per APPLICATION from the rejected
     event's `payload.reason` — the closed vocabulary web.py's timeline form

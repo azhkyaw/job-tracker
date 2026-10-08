@@ -3244,29 +3244,25 @@ check("...and both leave the queue, the nudge stays, and the page says what it c
       and "They went quiet" in client.get(f"/applications/{_qu}").text
       and "You applied again" in client.get(f"/applications/{_old}").text)
 
-print("the lists: the week in the lede, months as landmarks, who approached (7 Oct 2026)")
-with db.connect() as conn:
-    _wk0 = analytics.week(conn, user_id, False)
+print("the lists: one sentence in one shape, months as landmarks, who approached (7-9 Oct 2026)")
 _wk_app = _new_app("Week Fresh Co", 1)
 with db.connect() as conn:
-    _wk = analytics.week(conn, user_id, False)
-    _wk_in = analytics.week(conn, user_id, True)
     _summ = analytics.summary(conn, user_id, False)
-check("an application sent yesterday is one more sent in the week, and nothing else moves",
-      _wk["sent"] == _wk0["sent"] + 1 and _wk["heard"] == _wk0["heard"], (_wk0, _wk))
 r = client.get("/")
 _lede = r.text.split('<p class="lede">')[1].split("</p>")[0]
-check("the record's lede leads with the week, then the whole search",
-      f"In the last {analytics.WEEK_DAYS} days: <b>{_wk['sent']}</b> sent" in _lede
-      and f"<b>{_wk['heard']}</b> heard back" in _lede
-      and (f"<b>{_wk['interviews']}</b> interview invitation" in _lede) == bool(_wk["interviews"])
-      and f"<b>{_summ['responded']}</b> of <b>{_summ['applied']}</b>" in _lede, _lede)
+check("the record's lede is the whole search in one sentence — since, how many, heard back, the "
+      "interviews — and no week (dropped 9 Oct 2026)",
+      _lede.startswith("Since ") and f"<b>{_summ['applied']}</b> applications" in _lede
+      and f"<b>{_summ['responded']}</b> heard back" in _lede
+      and (f"<b>{_summ['sat']}</b> interview" in _lede) == bool(_summ["sat"])
+      and "In the last" not in _lede and "days:" not in _lede
+      and not hasattr(analytics, "week"), _lede)
 _since = re.search(r"Since ([^:]+):", _lede)
 _lede_q = client.get("/?q=Week+Fresh").text.split('<p class="lede">')[1].split("</p>")[0]
 check("...its “since” is the page's first application, so a search moves neither the date nor "
       "the numbers",
       _since is not None and f"Since {_since.group(1)}:" in _lede_q
-      and f"<b>{_summ['responded']}</b> of <b>{_summ['applied']}</b>" in _lede_q, (_lede, _lede_q))
+      and f"<b>{_summ['applied']}</b> applications" in _lede_q, (_lede, _lede_q))
 
 # Months: a divider at each month's first row, and the head's index jumping to it.
 _rows_n = r.text.count('<a class="tl"')
@@ -3315,10 +3311,26 @@ check("a recruiter's name finds their threads, on either page",
       "Who Lead Co" in client.get("/inbound?q=jane+recr").text
       and "Who Record Co" in client.get("/?q=john+sourcer").text
       and "Who Lead Co" not in client.get("/?q=jane+recr").text)
-_ilede = _i.split('<p class="lede">')[1].split("</p>")[0]
-check("the inbound lede leads with what awaits you, then the week, then the whole",
-      _ilede.index("awaiting your call") < _ilede.index(f"new in the last {analytics.WEEK_DAYS} days")
-      < _ilede.index("Since ") and f"<b>{_wk_in['started'] + 1}</b> new" in _ilede, _ilede)
+# The inbound lede, the same sentence in the same shape (9 Oct 2026): an
+# approach interviewed and then rejected gives it a lost interview to say.
+_ll = _new_lead("Lost Lead Co", _ago(40))
+client.post(f"/applications/{_ll}/events", data={"type": "interview_invite", "occurred_on": _ago(20)})
+client.post(f"/applications/{_ll}/events", data={"type": "rejected", "occurred_on": _ago(10)})
+with db.connect() as conn:
+    _isumm = analytics.summary(conn, user_id, True)
+_ilede = re.sub(r"\s+", " ", client.get("/inbound").text.split('<p class="lede">')[1].split("</p>")[0])
+check("the inbound lede is the same sentence in the same shape: since, how many approaches, awaiting "
+      "your call, then the interviews and the lost among them from the page's own counts — no week",
+      _ilede.startswith("Since ") and "</b> approaches, <b>" in _ilede
+      and "</b> awaiting your call, <b>" in _ilede
+      and f"<b>{_isumm['sat']}</b> interview" in _ilede and _isumm["lost"] >= 1
+      and f'href="/inbound?interviews=lost"><b>{_isumm["lost"]}</b> lost</a>' in _ilede
+      and f'href="/inbound?interviews=rejected">{_isumm["lost_rejected"]} followed by a rejection</a>'
+      in _ilede and "In the last" not in _ilede, _ilede)
+check("...and the lost link opens exactly its rows on /inbound",
+      client.get("/inbound?interviews=lost").text.count('<a class="tl" href="/applications/')
+      == _isumm["lost"] and f'href="/applications/{_ll}"' in client.get("/inbound?interviews=lost").text)
+client.post(f"/applications/{_ll}/delete")
 
 print("a listing that asked for the CV by email (4 Oct 2026)")
 _EA_JD = ("We are hiring.\nPlease send your updated resume in Word format to "
