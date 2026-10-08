@@ -306,9 +306,14 @@ def _went(evs) -> dict:
     went_at = anchor.get("went_at")
     hindsight = bool(went_at and outcome is not None and went_at > outcome["occurred_at"])
     went = anchor.get("went")
-    # The list's bucket over the same two facts (analytics.round_fate_sql).
+    # The list's bucket over the same two facts and the thread's closing
+    # reason (analytics.round_fate_sql; the closing rejection is
+    # rejection_reasons' — the newest carrying a reason, else the newest).
+    rej = [e for e in evs if e["type"] == "rejected"]
+    close = (max(rej, key=lambda e: (e.get("reason") is not None, e["occurred_at"], e["created_at"]))
+             if rej else None)
     return {"went": went, "went_next": nxt, "went_hindsight": hindsight,
-            "round_fate": analytics.round_fate(went, nxt)}
+            "round_fate": analytics.round_fate(went, nxt, close.get("reason") if close else None)}
 
 
 def _stated(e):

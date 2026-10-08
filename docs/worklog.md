@@ -2418,6 +2418,17 @@ the key to each real case.
    `/inbound?interviews=lost`. The inbound query dropped its "reached an
    interview" count (any invitation on the timeline) for the shared
    "interviews" (rounds sat, questionnaires and not-a-round lines out).
+   - **A visa stop after a round is not lost** (the same day). Asked how
+     the inbound "6 interviews, 2 lost" were counted; one of the two was a
+     recruiter screen after which the recruiter said they do not sponsor,
+     and a second thread had the same shape — "we should count these
+     scenarios out". Rule 13 already keeps a visa close apart from "after
+     a round" because the reason is a market fact that wins whatever the
+     stage; `ROUND_FATES` now does the same: a rejection whose CLOSING
+     reason is visa (rejection_reasons' event, the newest carrying one) is
+     `visa`, "stopped on a visa, not the interview", its own count after
+     the lost clause and never inside it, on both pages. Both records
+     already carried the reason; no data moved.
    - **Not built:** the two source faults for `email_classify_v3`: a
      "Canceled event" mail and a recruiter's InMail reply are not
      invitations.

@@ -362,18 +362,31 @@ check("how far you got: rows by rounds reached (3+ capped), the interviews panel
       [(r["key"], r["n"]) for r in dp["rows"]])
 check("no thread with a round: no grid", insights.depth([fr[b0["id"]]]) is None)
 
-check("round_fate: the list's bucket over the two facts — every (word, outcome) pair lands in "
-      "the registry, and the registry is reached in full",
-      {analytics.round_fate(w, n) for w in (None, *analytics.WENT_LABELS) for n in insights.NEXT_LABELS}
+check("round_fate: the list's bucket over the two facts and the closing reason — every (word, "
+      "outcome, reason) triple lands in the registry, and the registry is reached in full",
+      {analytics.round_fate(w, n, r) for w in (None, *analytics.WENT_LABELS) for n in insights.NEXT_LABELS
+       for r in (None, "visa", "skills")}
       == set(analytics.ROUND_FATES)
       and analytics.round_fate("badly", "quiet") == analytics.round_fate("mixed", "quiet") == "lost_quiet"
       and analytics.round_fate("well", "quiet") == "unexplained"
       and analytics.round_fate(None, "quiet") == "quiet"
       and analytics.round_fate("well", "rejected") == "rejected"
-      and analytics.round_fate(None, None) is None
-      and all(f["round_fate"] == analytics.round_fate(f["went"], f["went_next"]) for f in fb.values())
-      and set(analytics.LOST_FATES) < set(analytics.ROUND_FATES),
+      and analytics.round_fate("well", "rejected", "visa") == "visa"
+      and analytics.round_fate("badly", "rejected", "skills") == "rejected"
+      and analytics.round_fate(None, None, "visa") is None
+      and all(f["round_fate"] == analytics.round_fate(f["went"], f["went_next"], f["reason"])
+              for f in fb.values())
+      and set(analytics.LOST_FATES) < set(analytics.ROUND_FATES) and "visa" not in analytics.LOST_FATES,
       {(w, n): analytics.round_fate(w, n) for w in (None, "well") for n in insights.NEXT_LABELS})
+# A visa stop after a screen (9 Oct 2026): the thread's closing reason, on
+# whichever rejected event carries it, makes it visa, never lost.
+v1 = app(status="rejected")
+fv = facts_of([v1], [ev(v1, "applied", ago(30)),
+                     ev(v1, "interview_invite", ago(20), went="well", round_kind="screen"),
+                     ev(v1, "rejected", ago(10)),
+                     ev(v1, "rejected", ago(9), source="manual", reason="visa")])[0]
+check("a rejection after a round whose closing reason is visa is 'stopped on a visa', not lost",
+      fv["round_fate"] == "visa" and fv["went_next"] == "rejected" and fv["reason"] == "visa")
 
 print("sponsorship: what an answer told the employer")
 import json                                                   # noqa: E402

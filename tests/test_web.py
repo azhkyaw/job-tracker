@@ -3965,7 +3965,8 @@ print("interviews lost: the list's count opens exactly its rows (8 Oct 2026)")
 # every application in this database.
 _lf = {}
 for _co, _went, _end in (("Lost Rejected Co", "well", "rejected"), ("Lost Quiet Co", "mixed", "quiet"),
-                         ("Unexplained Co", "well", "quiet"), ("Quiet Unrated Co", None, "quiet")):
+                         ("Unexplained Co", "well", "quiet"), ("Quiet Unrated Co", None, "quiet"),
+                         ("Visa Stop Co", "well", "visa")):
     _id = _new_app(_co, 40)
     with db.connect() as conn:
         conn.execute(
@@ -3974,6 +3975,10 @@ for _co, _went, _end in (("Lost Rejected Co", "well", "rejected"), ("Lost Quiet 
             (user_id, _id, Json({"went": _went, "went_at": "2026-09-09T00:00:00+00:00"} if _went else {})))
     if _end == "rejected":
         client.post(f"/applications/{_id}/events", data={"type": "rejected", "occurred_on": _ago(20)})
+    elif _end == "visa":
+        # A screen, then "we do not sponsor": a rejection with the visa reason.
+        client.post(f"/applications/{_id}/events", data={"type": "rejected", "reason": "visa",
+                                                         "occurred_on": _ago(20)})
     else:
         client.post(f"/applications/{_id}/close", data={"action": "quiet", "occurred_on": _ago(20)})
     _lf[_co] = _id
@@ -3987,10 +3992,11 @@ _py = {str(f["id"]): f["round_fate"] for f in insights.build_facts(_fa, _fe, dat
 check("the SQL bucket is insights._went's, on every application in this database",
       {k: v[1] for k, v in _rows.items()} == _py and len(_rows) > 20,
       [(k, _rows[k][1], _py.get(k)) for k in _rows if _rows[k][1] != _py.get(k)][:5])
-check("the four fixtures land in their buckets",
+check("the five fixtures land in their buckets — a visa stop after a round is its own, not lost",
       _rows[_lf["Lost Rejected Co"]][1] == "rejected" and _rows[_lf["Lost Quiet Co"]][1] == "lost_quiet"
       and _rows[_lf["Unexplained Co"]][1] == "unexplained"
-      and _rows[_lf["Quiet Unrated Co"]][1] == "quiet", {k: _rows[v][1] for k, v in _lf.items()})
+      and _rows[_lf["Quiet Unrated Co"]][1] == "quiet"
+      and _rows[_lf["Visa Stop Co"]][1] == "visa", {k: _rows[v][1] for k, v in _lf.items()})
 check("every bucket the SQL returned has a label", {v[1] for v in _rows.values()} - {None}
       <= set(analytics.ROUND_FATES), {v[1] for v in _rows.values()})
 _lede = client.get("/").text.split('<p class="lede">')[1].split("</p>")[0]
@@ -4002,7 +4008,9 @@ check("the lede counts the interviews and the lost, with its two parts and the u
       and f'href="/?interviews=lost_quiet">{_summ["lost_quiet"]} you rated mixed or badly, then silence</a>'
       in _lede
       and f'href="/?interviews=unexplained">{_summ["unexplained"]} you rated well, then silence</a>' in _lede
-      and _summ["lost"] == _summ["lost_rejected"] + _summ["lost_quiet"] >= 2 and _summ["unexplained"] >= 1,
+      and f'href="/?interviews=visa">{_summ["visa"]} stopped on a visa, not the interview</a>' in _lede
+      and _summ["lost"] == _summ["lost_rejected"] + _summ["lost_quiet"] >= 2 and _summ["unexplained"] >= 1
+      and _summ["visa"] >= 1,
       _lede)
 
 

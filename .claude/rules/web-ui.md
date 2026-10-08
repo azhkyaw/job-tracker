@@ -901,6 +901,12 @@ is a private artifact, linked from the memory file
     bucket's count is the rows it opens. Silence after an interview rated
     WELL is deliberately its own count, not a loss and not nothing: it is
     the author's other sentence, "I know I did well and heard nothing".
+    **A visa stop after a round is not lost either** (9 Oct 2026): a
+    rejection whose closing reason is `visa` — rule 13's rule, the market
+    fact that wins whatever the stage — is the `visa` bucket, "stopped on
+    a visa, not the interview", after the lost clause and never in it. A
+    recruiter screen followed by "we do not sponsor" says nothing about
+    the screen.
     **Rounds are derived and shown, never counted from events** (the same
     day, worklog task 76). One interview is several `interview_invite`
     events, so `trace.rounds` groups them by the interview day the email

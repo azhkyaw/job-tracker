@@ -63,6 +63,9 @@
   {%- if s.lost_rejected and s.lost_quiet %}, {% endif %}
   {%- if s.lost_quiet %}<a href="{{ list_url(interviews='lost_quiet') }}">{{ s.lost_quiet }} {{ interview_filters['lost_quiet'] }}</a>{% endif %})
   {%- endif %}
+  {#- A visa stop after a round is not the interview's doing (rule 13's
+      "visa" bucket): its own count, never inside "lost". #}
+  {%- if s.visa %}, <a href="{{ list_url(interviews='visa') }}">{{ s.visa }} {{ interview_filters['visa'] }}</a>{% endif %}
   {%- if s.unexplained %}, <a href="{{ list_url(interviews='unexplained') }}">{{ s.unexplained }} {{ interview_filters['unexplained'] }}</a>{% endif %}
   {%- endif %}
 {%- endmacro %}
