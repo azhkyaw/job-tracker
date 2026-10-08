@@ -304,10 +304,13 @@ check("an employer-side type from the sent prompt fails validation and is repair
 cl = ScriptedClient(verdict(type="reply"), verdict(type="interview_invite"))
 c = email_classifier.classify_email(cl, "HR <hr@example.com>", "Interview", _WHEN,
                                     "Can you do Tuesday?")
-check("received mail keeps email_classify_v1 and its vocabulary, byte for byte",
-      cl.calls[0]["system"] == _prompt("email_classify_v1") and c.type == "interview_invite"
-      and c.prompt_version == "email_classify_v1" and len(cl.calls) == 2,
+check("received mail keeps its own prompt (email_classify_v2 since 8 Oct) and vocabulary, byte for byte",
+      cl.calls[0]["system"] == _prompt("email_classify_v2") and c.type == "interview_invite"
+      and c.prompt_version == "email_classify_v2" and len(cl.calls) == 2,
       (c.type, c.prompt_version, len(cl.calls)))
+check("v2 differs from v1 only by its connection-request rule",
+      [l for l in _prompt("email_classify_v2").splitlines() if l not in _prompt("email_classify_v1").splitlines()]
+      == [l for l in _prompt("email_classify_v2").splitlines() if l.startswith(("2. ", "2a. "))])
 
 cl = ScriptedClient(json.dumps({"job_related": False, "type": None, "confidence": 0.95,
                                 "reason": "personal"}))

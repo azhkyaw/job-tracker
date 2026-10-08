@@ -31,7 +31,20 @@ from typing import Any, Callable
 from . import config, llm, quotes
 
 PROMPT_DIR = Path(__file__).resolve().parent.parent / "prompts"
-CLASSIFY_PROMPT_VERSION = "email_classify_v1"
+# v2 (8 Oct 2026) splits v1's rule 2: a LinkedIn connection request was
+# "platform account mail", job_related=false, and the models disagreed with
+# the rule on a recruiter's request: Haiku and Sonnet 5 sent 5 of 7 recruiter
+# requests to triage anyway (all 5 became leads, 4 of them real threads),
+# while Sonnet 5.5 obeys it and dropped every one from 3 Oct, body and all.
+# v2 rule 2a: a request whose sender's own headline says they recruit is
+# recruiter_outreach; anyone else's, and an accepted request, stay false.
+# Replayed on the production model: the 7 recruiter requests that keep a
+# body, outreach 3/3 each (v1: dropped 3/3 each); 3 accepted notices and 3
+# synthetic non-recruiter requests stay false 3/3; and over the 102 received
+# emails it had classified since 3 Oct, v2 matched every stored label, the
+# one v1/v2 difference an account welcome v2 calls `other` as stored.
+# Rows classified under v1 stay v1 (invariant #5).
+CLASSIFY_PROMPT_VERSION = "email_classify_v2"
 # Mail the USER sent (emails.sent_by_user, Gmail's SENT label — migration 016)
 # gets its own prompt rather than a v2 of the one above: that prompt's whole
 # vocabulary is what an EMPLOYER did, and asked about the user's own reply to
