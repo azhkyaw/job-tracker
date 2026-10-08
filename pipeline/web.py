@@ -695,10 +695,12 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
               AND (%(how)s::text = '' OR (rr.id IS NOT NULL AND {_HOW_CASE} = %(how)s))
               AND (%(visa)s::text = '' OR {_VISA_GROUP} = %(visa)s)
               AND (%(formv)s::text = '' OR {_FORM_VISA} = %(formv)s)
-              -- What came of the round you sat: a bucket, or `lost`, the
-              -- two buckets the lede sums (analytics.LOST_FATES).
+              -- What came of the round you sat: a bucket, `lost` (the two
+              -- buckets the figures sum, analytics.LOST_FATES) or `sat`
+              -- (any bucket: a round you sat at all).
               AND (%(fate)s::text = '' OR {_FATE} = %(fate)s
-                   OR (%(fate)s = 'lost' AND {_FATE} IN {_LOST_FATES}))
+                   OR (%(fate)s = 'lost' AND {_FATE} IN {_LOST_FATES})
+                   OR (%(fate)s = 'sat' AND {_FATE} IS NOT NULL))
             ORDER BY {_SORTS[sort]}
             """, {"user_id": user_id, "inbound": is_inbound, "status": status,
                   "reason": reason if reason in _EVENT_REASONS else "",
@@ -957,6 +959,7 @@ _HOW_FILTERS = analytics.HOW_LABELS
 # follow "interviews": the lede's counts and the filter note read one
 # vocabulary.
 _INTERVIEW_FILTERS = {
+    "sat": "you sat",      # every bucket: the figures row's "interviews" (9 Oct 2026)
     "lost": "you lost: " + " or ".join(analytics.ROUND_FATES[k] for k in analytics.LOST_FATES),
     **analytics.ROUND_FATES,
 }

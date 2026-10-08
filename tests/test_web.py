@@ -2878,7 +2878,7 @@ r = client.get(f"/applications/{_rep}")
 check("its timeline says “You replied”, by LinkedIn message",
       "You replied" in r.text and "LinkedIn message" in r.text, r.status_code)
 _i = client.get("/inbound").text
-_m = re.search(r"<b>(\d+)</b> awaiting your call", _i)
+_m = re.search(r"<b>(\d+)</b><span>awaiting your call", _i)
 _nav = _i.split('href="/inbound"')[1].split("</a>")[0]
 check("/inbound lists it below the pin, and its lede and nav pill both count what the pin holds",
       _i.index('<div class="tl-sep">Underway or closed</div>') < _i.index("Reply Lead Co")
@@ -3249,20 +3249,20 @@ _wk_app = _new_app("Week Fresh Co", 1)
 with db.connect() as conn:
     _summ = analytics.summary(conn, user_id, False)
 r = client.get("/")
-_lede = r.text.split('<p class="lede">')[1].split("</p>")[0]
-check("the record's lede is the whole search in one sentence — since, how many, heard back, the "
-      "interviews — and no week (dropped 9 Oct 2026)",
-      _lede.startswith("Since ") and f"<b>{_summ['applied']}</b> applications" in _lede
-      and f"<b>{_summ['responded']}</b> heard back" in _lede
-      and (f"<b>{_summ['sat']}</b> interview" in _lede) == bool(_summ["sat"])
-      and "In the last" not in _lede and "days:" not in _lede
-      and not hasattr(analytics, "week"), _lede)
-_since = re.search(r"Since ([^:]+):", _lede)
-_lede_q = client.get("/?q=Week+Fresh").text.split('<p class="lede">')[1].split("</p>")[0]
+_figs = re.sub(r"\s+", " ", r.text.split('<div class="figures"')[1].split("</div>")[0])
+check("the record's head is the whole search in figures — how many since the first, heard back "
+      "with its rate, the interviews — and no week (dropped 9 Oct 2026), no sentence",
+      f'<b>{_summ["applied"]}</b><span>applications</span> <small>since ' in _figs
+      and f'<b>{_summ["responded"]}</b><span>heard back<em>{_summ["response_rate"]}%</em></span>' in _figs
+      and (f'<b>{_summ["sat"]}</b><span>interviews</span>' in _figs) == bool(_summ["sat"])
+      and "In the last" not in r.text and '<p class="lede">' not in r.text
+      and not hasattr(analytics, "week"), _figs)
+_since = re.search(r"<small>since ([^<]+)</small>", _figs)
+_figs_q = re.sub(r"\s+", " ", client.get("/?q=Week+Fresh").text.split('<div class="figures"')[1].split("</div>")[0])
 check("...its “since” is the page's first application, so a search moves neither the date nor "
       "the numbers",
-      _since is not None and f"Since {_since.group(1)}:" in _lede_q
-      and f"<b>{_summ['applied']}</b> applications" in _lede_q, (_lede, _lede_q))
+      _since is not None and f"<small>since {_since.group(1)}</small>" in _figs_q
+      and f'<b>{_summ["applied"]}</b><span>applications</span>' in _figs_q, (_figs, _figs_q))
 
 # Months: a divider at each month's first row, and the head's index jumping to it.
 _rows_n = r.text.count('<a class="tl"')
@@ -3318,15 +3318,16 @@ client.post(f"/applications/{_ll}/events", data={"type": "interview_invite", "oc
 client.post(f"/applications/{_ll}/events", data={"type": "rejected", "occurred_on": _ago(10)})
 with db.connect() as conn:
     _isumm = analytics.summary(conn, user_id, True)
-_ilede = re.sub(r"\s+", " ", client.get("/inbound").text.split('<p class="lede">')[1].split("</p>")[0])
-check("the inbound lede is the same sentence in the same shape: since, how many approaches, awaiting "
-      "your call, then the interviews and the lost among them from the page's own counts — no week",
-      _ilede.startswith("Since ") and "</b> approaches, <b>" in _ilede
-      and "</b> awaiting your call, <b>" in _ilede
-      and f"<b>{_isumm['sat']}</b> interview" in _ilede and _isumm["lost"] >= 1
-      and f'href="/inbound?interviews=lost"><b>{_isumm["lost"]}</b> lost</a>' in _ilede
-      and f'href="/inbound?interviews=rejected">{_isumm["lost_rejected"]} followed by a rejection</a>'
-      in _ilede and "In the last" not in _ilede, _ilede)
+_ifigs = re.sub(r"\s+", " ", client.get("/inbound").text.split('<div class="figures"')[1].split("</div>")[0])
+check("the inbound head is the same row in the same order: how many approaches since the first, "
+      "awaiting your call, then the interviews and the lost among them from the page's own counts",
+      "</b><span>approaches</span> <small>since " in _ifigs
+      and "</b><span>awaiting your call</span>" in _ifigs
+      and f'href="/inbound?interviews=sat"><b>{_isumm["sat"]}</b><span>interviews</span>' in _ifigs
+      and _isumm["lost"] >= 1
+      and f'href="/inbound?interviews=lost"><b>{_isumm["lost"]}</b><span>lost</span> <small>'
+          f'{_isumm["lost_rejected"]} after a rejection</small>' in _ifigs
+      and "In the last" not in _ifigs, _ifigs)
 check("...and the lost link opens exactly its rows on /inbound",
       client.get("/inbound?interviews=lost").text.count('<a class="tl" href="/applications/')
       == _isumm["lost"] and f'href="/applications/{_ll}"' in client.get("/inbound?interviews=lost").text)
@@ -3999,32 +4000,33 @@ check("the five fixtures land in their buckets — a visa stop after a round is 
       and _rows[_lf["Visa Stop Co"]][1] == "visa", {k: _rows[v][1] for k, v in _lf.items()})
 check("every bucket the SQL returned has a label", {v[1] for v in _rows.values()} - {None}
       <= set(analytics.ROUND_FATES), {v[1] for v in _rows.values()})
-_lede = client.get("/").text.split('<p class="lede">')[1].split("</p>")[0]
-check("the lede counts the interviews and the lost, with its two parts and the unexplained, each "
-      "a link to its rows",
-      f"<b>{_summ['sat']}</b> interviews" in _lede
-      and f'href="/?interviews=lost"><b>{_summ["lost"]}</b> lost</a>' in _lede
-      and f'href="/?interviews=rejected">{_summ["lost_rejected"]} followed by a rejection</a>' in _lede
-      and f'href="/?interviews=lost_quiet">{_summ["lost_quiet"]} you rated mixed or badly, then silence</a>'
-      in _lede
-      and f'href="/?interviews=unexplained">{_summ["unexplained"]} you rated well, then silence</a>' in _lede
-      and f'href="/?interviews=visa">{_summ["visa"]} stopped on a visa, not the interview</a>' in _lede
+_figs = re.sub(r"\s+", " ", client.get("/").text.split('<div class="figures"')[1].split("</div>")[0])
+check("the figures count the interviews and the lost, with its two parts under the figure, the "
+      "visa stop and the unexplained, each a link to its rows",
+      f'href="/?interviews=sat"><b>{_summ["sat"]}</b><span>interviews</span></a>' in _figs
+      and f'href="/?interviews=lost"><b>{_summ["lost"]}</b><span>lost</span> <small>'
+          f'{_summ["lost_rejected"]} after a rejection · {_summ["lost_quiet"]} quiet after a mixed or bad '
+          f'one</small></a>' in _figs
+      and f'href="/?interviews=visa"><b>{_summ["visa"]}</b><span>stopped on a visa</span></a>' in _figs
+      and f'href="/?interviews=unexplained"><b>{_summ["unexplained"]}</b><span>quiet after a good one</span>'
+      in _figs
       and _summ["lost"] == _summ["lost_rejected"] + _summ["lost_quiet"] >= 2 and _summ["unexplained"] >= 1
       and _summ["visa"] >= 1,
-      _lede)
+      _figs)
 
 
 def _fate_count(key, inbound):
     return sum(1 for o, v in _rows.values() if (o == "inbound") == inbound
-               and (v == key or (key == "lost" and v in analytics.LOST_FATES)))
+               and (v == key or (key == "lost" and v in analytics.LOST_FATES)
+                    or (key == "sat" and v is not None)))
 
 
-check("the lede's numbers are the record page's rows",
-      _summ["sat"] == sum(_fate_count(k, False) for k in analytics.ROUND_FATES)
+check("the figures' numbers are the record page's rows",
+      _summ["sat"] == sum(_fate_count(k, False) for k in analytics.ROUND_FATES) == _fate_count("sat", False)
       and _summ["lost"] == _fate_count("lost", False), (_summ["sat"], _summ["lost"]))
 # The registry, looped, on both pages: a bucket added later is covered the
 # day it is added.
-for _k in ["lost", *analytics.ROUND_FATES]:
+for _k in ["sat", "lost", *analytics.ROUND_FATES]:
     for _pg, _inb in (("/", False), ("/inbound", True)):
         _shown = client.get(f"{_pg}?interviews={_k}").text.count('<a class="tl" href="/applications/')
         check(f"{_pg}?interviews={_k}: {_fate_count(_k, _inb)} counted, {_shown} shown",

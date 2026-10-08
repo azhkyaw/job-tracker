@@ -43,42 +43,52 @@
 <div class="note" style="--c:var(--rejected)">Deleted <strong>{{ deleted }}</strong>.</div>
 {% endif %}
 
-{# The search in a sentence rather than four tiles — ONE sentence in ONE
-   shape on both pages (9 Oct 2026): since the first record, how many, the
-   page's own second clause (heard back on the record, awaiting your call on
-   /inbound), then the interviews and the lost among them, the clause below,
-   shared. The week's numbers led the sentence from 7 Oct to 9 Oct 2026
-   (analytics.week, now gone) and were dropped at the author's word; the
-   funnel beneath and /analytics carry what moved. #}
-{#- Interviews, by what came of them (analytics.round_fate_sql, 8 Oct 2026):
-    the lost — a rejection after, or silence after one you rated mixed or
-    badly — with its two parts, and silence after a good one, which is a
-    different fact. Each count opens exactly its rows (?interviews=), in
-    the words the filter note then repeats (_INTERVIEW_FILTERS). The same
-    macro on both pages, over each page's own summary. #}
-{% macro interviews_clause(s) -%}
-  {%- if s.sat %}, <b>{{ s.sat }}</b> interview{{ '' if s.sat == 1 else 's' }}
-  {%- if s.lost %}, <a href="{{ list_url(interviews='lost') }}"><b>{{ s.lost }}</b> lost</a>
-  ({% if s.lost_rejected %}<a href="{{ list_url(interviews='rejected') }}">{{ s.lost_rejected }} {{ interview_filters['rejected'] }}</a>{% endif %}
-  {%- if s.lost_rejected and s.lost_quiet %}, {% endif %}
-  {%- if s.lost_quiet %}<a href="{{ list_url(interviews='lost_quiet') }}">{{ s.lost_quiet }} {{ interview_filters['lost_quiet'] }}</a>{% endif %})
+{# The search in figures (9 Oct 2026): a row of number-and-label pairs, the
+   same row in the same order on both pages — how many since the first
+   record, the page's own second figure (heard back on the record, awaiting
+   your call on /inbound), then the interviews and what came of them. It was
+   a sentence from 28 Jul, and from 7 to 9 Oct 2026 the sentence led with the
+   week (analytics.week, gone); by then it held eight numbers in a line and
+   the author asked for something easier to absorb. A figure is a link where
+   a filter exists, so a number opens exactly its rows; the number wears the
+   sans and the label the serif (rule 3), nothing wears colour (rule 1). #}
+{#- The interview figures (analytics.round_fate_sql, 8-9 Oct 2026): sat, the
+    lost — a rejection after, or silence after one you rated mixed or badly,
+    its two parts under the figure — a visa stop, which is not the
+    interview's doing, and silence after a good one, a different fact. Each
+    opens its rows (?interviews=). The same macro over each page's own
+    summary. #}
+{% macro interview_figures(s) -%}
+  {%- if s.sat %}
+  <a class="fig" href="{{ list_url(interviews='sat') }}"><b>{{ s.sat }}</b><span>interview{{ '' if s.sat == 1 else 's' }}</span></a>
+  {%- if s.lost %}
+  <a class="fig" href="{{ list_url(interviews='lost') }}"><b>{{ s.lost }}</b><span>lost</span>
+    <small>{% if s.lost_rejected %}{{ s.lost_rejected }} after a rejection{% endif %}{% if s.lost_rejected and s.lost_quiet %} · {% endif %}{% if s.lost_quiet %}{{ s.lost_quiet }} quiet after a mixed or bad one{% endif %}</small></a>
   {%- endif %}
-  {#- A visa stop after a round is not the interview's doing (rule 13's
-      "visa" bucket): its own count, never inside "lost". #}
-  {%- if s.visa %}, <a href="{{ list_url(interviews='visa') }}">{{ s.visa }} {{ interview_filters['visa'] }}</a>{% endif %}
-  {%- if s.unexplained %}, <a href="{{ list_url(interviews='unexplained') }}">{{ s.unexplained }} {{ interview_filters['unexplained'] }}</a>{% endif %}
+  {%- if s.visa %}
+  <a class="fig" href="{{ list_url(interviews='visa') }}"><b>{{ s.visa }}</b><span>stopped on a visa</span></a>
+  {%- endif %}
+  {%- if s.unexplained %}
+  <a class="fig" href="{{ list_url(interviews='unexplained') }}"><b>{{ s.unexplained }}</b><span>quiet after a good one</span></a>
+  {%- endif %}
   {%- endif %}
 {%- endmacro %}
 {% if page == 'inbound' %}
 {% if inbound_summary.approaches %}
-<p class="lede">Since {{ inbound_summary.first_at | day }}:
-  <b>{{ inbound_summary.approaches }}</b> approach{{ '' if inbound_summary.approaches == 1 else 'es' }},
-  <b>{{ inbound_summary.awaiting }}</b> awaiting your call{{ interviews_clause(summary) }}.</p>
+<div class="figures" aria-label="The approaches in figures">
+  <span class="fig"><b>{{ inbound_summary.approaches }}</b><span>approach{{ '' if inbound_summary.approaches == 1 else 'es' }}</span>
+    <small>since {{ inbound_summary.first_at | day }}</small></span>
+  <span class="fig"><b>{{ inbound_summary.awaiting }}</b><span>awaiting your call</span></span>
+  {{- interview_figures(summary) }}
+</div>
 {% endif %}
 {% elif summary.applied %}
-<p class="lede">Since {{ summary.first_applied | day }}:
-  <b>{{ summary.applied }}</b> application{{ '' if summary.applied == 1 else 's' }},
-  <b>{{ summary.responded }}</b> heard back{% if summary.response_rate is not none %} (<b>{{ summary.response_rate }}%</b>){% endif %}{{ interviews_clause(summary) }}.</p>
+<div class="figures" aria-label="The search in figures">
+  <span class="fig"><b>{{ summary.applied }}</b><span>application{{ '' if summary.applied == 1 else 's' }}</span>
+    <small>since {{ summary.first_applied | day }}</small></span>
+  <span class="fig"><b>{{ summary.responded }}</b><span>heard back{% if summary.response_rate is not none %}<em>{{ summary.response_rate }}%</em>{% endif %}</span></span>
+  {{- interview_figures(summary) }}
+</div>
 {% endif %}
 
 {% if funnel %}

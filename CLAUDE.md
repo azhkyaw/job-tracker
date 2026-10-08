@@ -881,8 +881,8 @@ Detail lives with each family's rule file; this is the index.
   it go?" select on a round's timeline line, `/follow-ups`' first section
   of the same name, `/analytics`' "Your interviews, as you rated them"
   (a five-column grid on the visa matrix's CSS, phone width untested), and
-  the list lede's "N interviews, M lost (…)" with its `?interviews=`
-  filter and note. And the rounds' (task 76): the "round 2 of 4" line
+  the lists' head — a row of figures since 9 Oct (`.figures`), each a
+  link into its `?interviews=` filter, with its note. And the rounds' (task 76): the "round 2 of 4" line
   labels with their "not a round" buttons, the detail badge, the list's
   "N rounds" tag, and "How far you got" on `/analytics`.
 

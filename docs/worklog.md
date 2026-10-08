@@ -2429,6 +2429,18 @@ the key to each real case.
      `visa`, "stopped on a visa, not the interview", its own count after
      the lost clause and never inside it, on both pages. Both records
      already carried the reason; no data moved.
+   - **The sentence became a row of figures** (the same day: "make those
+     header summary texts easier to read and absorb — you may think of
+     different UI/UX approaches too"). Eight numbers in a line of prose;
+     now `.figures`, number-and-label pairs in the same order on both
+     pages (the data-viz guidance's KPI row: label sentence case, value in
+     the sans, proportional figures at display size), the lost figure's
+     two parts and the "since" as sub-lines, each figure a link where a
+     filter exists — `?interviews=sat` added for the interviews figure, in
+     the registry loop. `/`: 388 applications since 16 Jul · 105 heard
+     back 27% · 12 interviews · 5 lost (3 after a rejection · 2 quiet
+     after a mixed or bad one) · 1 stopped on a visa. Rule 10b records
+     the three forms the head has had.
    - **Not built:** the two source faults for `email_classify_v3`: a
      "Canceled event" mail and a recruiter's InMail reply are not
      invitations.

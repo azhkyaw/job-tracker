@@ -389,6 +389,19 @@ is a private artifact, linked from the memory file
      VISIBLE rows', so a search moved the date and not the numbers. The
      average days to a first response left the lede on 7 Oct; /analytics'
      curve says it better.
+     **And then the sentence became figures** (later the same day): "make
+     those header summary texts easier to read and absorb". Eight numbers
+     in one line of prose could not be taken in at a glance, so the head is
+     a row of number-and-label pairs (`.figures` / `.fig`, the data-viz
+     guidance's KPI row): the number in the sans at display size with
+     PROPORTIONAL figures (tabular is for columns), the label in the serif,
+     muted, a sub-line for the lost figure's two parts and for "since"; a
+     pair is a link where a filter exists (`?interviews=sat` was added for
+     the interviews figure), underlining its label on hover; no colour. The
+     same macro over each page's own summary; the record's second figure is
+     heard back with its rate, /inbound's is awaiting your call. "The
+     search in a sentence rather than four tiles" (28 Jul) held while the
+     sentence had four numbers.
 11. **The funnel strip and its legend are the status filter** (29 Aug 2026;
     `web.py`'s `status` query param, validated against `FUNNEL_ORDER`) — not
     a separate dropdown next to `sort`/`q`. A segment's own href is

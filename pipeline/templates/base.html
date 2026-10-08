@@ -85,6 +85,19 @@ summary:focus-visible,.tl:focus-visible{outline:2px solid var(--accent);outline-
 .sm{font-size:.9rem}
 .hint{font-size:.9rem;color:var(--muted);max-width:60ch;margin:.45rem 0 0}
 .lede{margin:0 0 1.2rem;font-size:1.05rem;max-width:64ch}
+/* The search in figures (9 Oct 2026): number-and-label pairs in a row, the
+   number in the sans at display size with proportional figures (tabular is
+   for columns), the label in the serif, muted; a pair is a link where a
+   filter exists and underlines its label on hover. No colour: a figure is a
+   count, not the state of a wait (rule 1). */
+.figures{display:flex;flex-wrap:wrap;gap:.7rem 1.7rem;margin:0 0 1.2rem;align-items:flex-start}
+.fig{display:flex;flex-direction:column;gap:.1rem;min-width:0;color:inherit;text-decoration:none}
+.fig b{font-family:var(--sans);font-size:1.6rem;font-weight:500;line-height:1.05;letter-spacing:-.01em}
+.fig b em{font-style:normal}
+.fig span{font-size:.9rem;color:var(--muted);line-height:1.25}
+.fig span em{font-family:var(--sans);font-style:normal;font-size:.8rem;margin-left:.35em}
+.fig small{font-family:var(--sans);font-size:.74rem;color:var(--muted);line-height:1.3}
+a.fig:hover span{color:var(--ink);text-decoration:underline}
 .lede b,.hint b{font-family:var(--sans);font-weight:500;font-size:.94em;
                 font-variant-numeric:tabular-nums}
 
