@@ -86,6 +86,38 @@ Three things the run turned up:
 
 Run files: `job-tracker-snapshots/llm-alt-2026-10-03/`.
 
+`CLASSIFY_PROMPT_VERSION` moved to `email_classify_v2` on 8 Oct 2026, a
+prompt change, not a model one (worklog task 71). v1's rule 2 listed
+"connection requests" as platform account mail, job_related=false, and the
+models had disagreed with it on a recruiter's request: Haiku and Sonnet 5
+sent 5 of 7 recruiter requests to triage anyway, and the author made all 5
+leads, 4 of them real threads; Sonnet 5.5, obeying the rule, dropped every
+request from 3 Oct, and `INGEST_ALL`'s purge took their bodies. v2 rule 2a
+states what the earlier models had inferred: a request whose sender's own
+headline says they recruit (recruiter, talent acquisition, sourcing,
+headhunter, executive search, a recruitment or staffing firm's consultant,
+account manager or team lead) is `recruiter_outreach`; anyone else's, and
+a notice that someone accepted the user's request, stay false. Replays on
+Sonnet 5.5, US$1.75 in all:
+
+- **The requests:** the 7 recruiter requests that keep a body went to
+  outreach 3/3 each under v2 and were dropped 3/3 each under v1; the 3
+  "accepted your invitation" notices stayed false 3/3; 3 synthetic
+  non-recruiter requests (one real body, the title swapped for an engineer,
+  a product manager, an in-house HR partner) stayed false 3/3. Every stored
+  request is a recruiter's, so the negative half had no real case.
+- **Everything else:** the 102 received emails Sonnet 5.5 had classified
+  under v1 since 3 Oct (every type), v1 against v2 on the same model, each
+  difference re-run 3x per prompt: v2 matched all 102 stored labels. The one
+  difference, an employer's career-site welcome stored `other`, is `other`
+  4/4 under v2 and not job-related 4/4 under v1, so it is v1 that no longer
+  reproduces the stored label.
+- **Not checkable:** non-job mail that v2 might now call outreach, since
+  its bodies are purged; the requests above are the only such corpus.
+
+Rows classified under v1 stay v1. `tests/test_llm.py` holds v2 to v1 except
+its rule 2 lines.
+
 ## Why the resume profile is a column (moved from CLAUDE.md, 25 Sep 2026)
 
 `covers.load_profile()` reads `users.resume_profile` only; the `profile.md`

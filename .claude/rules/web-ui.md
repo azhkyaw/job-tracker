@@ -757,13 +757,24 @@ is a private artifact, linked from the memory file
       is its own form with its button first, so Enter in the company box
       starts that record; in one form, Enter would have pressed whichever
       button came first in the tree.
-    - **A run is one card** (`triage.runs`): one sender ADDRESS and one
-      subject, case and spacing folded. Each row keeps its own actions with
+    - **A run is one card** (`triage.runs`): one sender, its address AND
+      the name shown with it, and one subject, case, spacing and quotes
+      folded. Each row keeps its own actions with
       only its best record (fourteen rows of three tied picks was 42
       buttons), and opens its email as a full card (`/triage?email=`). The
       bulk actions open a page listing what each email becomes
       (`triage_batch.html`), as /follow-ups' bulk close does: an ignored
       email has no page to be found on again.
+      **The name joined the key on 8 Oct 2026** (worklog task 72): the
+      address alone folded five recruiters' LinkedIn connection requests,
+      all from `invitations@linkedin.com` under one subject, into one card
+      headed "5 emails from <the newest one's name>", its rows all "role
+      unknown". A relay address speaks for many people; the name is who.
+      Over all stored mail, 4 of 169 address runs split by name, each
+      correctly (LinkedIn's people, and two employers on one vendor's
+      address), and the referral notices the runs were made for stay one
+      card. A row with no role now reads as who sent it
+      (`triage.who`: "Jane Recruiter, Contoso").
     - **An application filed twice gets a band** (`triage.twins`), counted
       in the nav pill by the same function. The employer's form and the
       board's popover record within `TWIN_WINDOW_MINUTES` (5) whose

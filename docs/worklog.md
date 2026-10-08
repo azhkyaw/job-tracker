@@ -2076,3 +2076,49 @@ the key to each real case.
    first, 6 decisions each, the tenant rule's all onto the record a human
    had chosen. Three checks in path 3k, the fixture removing itself.
 
+71. **A recruiter's LinkedIn connection request is an approach**
+   (8 Oct 2026, prompt `email_classify_v2`). Asked how the app treats
+   connection invites from recruiters. Of 13 requests stored since July,
+   classify had sent 5 to triage as `recruiter_outreach` (Haiku, Sonnet 5)
+   and dropped 8, though v1's rule 2 called every connection request
+   account mail; two dropped in August were recruiters' requests of the
+   exact shape the 5 had, and Sonnet 5.5 had dropped all 3 since 3 Oct,
+   their bodies purged. The 5 became leads, 4 of them real threads. v2
+   states the rule the earlier models inferred: a request whose sender's
+   headline says they recruit is outreach, anyone else's is not
+   (`.claude/rules/llm.md`, model history, for the replays: 7 of 7
+   recruiter requests now outreach, 6 controls false, and 102 other emails
+   unchanged; US$1.75). Then, at the author's request, every invitation
+   mail since the search began was re-fetched from Gmail, read-only
+   (`EXAMINE`, `BODY.PEEK[]`): Gmail held 16, all already stored, so
+   ingest had missed none. The 6 purged bodies were restored and 11 rows
+   re-classified under v2 (the 5 the author had made leads were left as
+   they were): all 8 recruiter requests are now approaches in triage, 3
+   accepted-request notices stayed false and were purged again. Snapshot
+   first, outside the repo.
+
+72. **Five recruiters' requests on one triage card** (8 Oct 2026). Seen
+   right after task 71: triage showed "5 emails from <one person>", five
+   rows of "role unknown". `triage.runs` folded pending mail by sender
+   ADDRESS and subject, and LinkedIn sends every request from one address
+   under one subject. The key is now the address and the name shown with
+   it (`triage._sender_key`), measured first over all stored mail: 4 of 169
+   address runs split, each correctly, and the referral run the feature
+   was built for stays whole; the test fixture that had given one run
+   three different names now gives it one. A row with no role reads as
+   who sent it (`triage.who`). One request's extraction had missed its
+   company, so its row offered no "Track as lead"; that card's own company
+   box still files it.
+
+73. **A lead's edit form demanded an applied date** (8 Oct 2026). A lead
+   tracked from a recruiter's request could not have its role set: `/edit`
+   required the applied date in the HTML and in the route. Now a record
+   with no "You applied" event saves with the date blank and files nothing
+   ("Applied on, if you have"; "How you applied" waits for a date); a date
+   given later files the application as before; a record that has applied
+   cannot blank its date there, since the form deletes no events and the
+   thread's own delete is how an application is un-filed; a time without a
+   date is refused. On the way: the URL's parse sat inside the date's
+   branch, so moving the date check would have blanked a lead's URL and
+   posting id on every save; it now runs whatever the date.
+
