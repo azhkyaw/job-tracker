@@ -172,6 +172,73 @@ fs_ = {f["id"]: f for f in facts_of([screened], [
 check("facts carry the fetched screen into the bucket",
       fs_[screened["id"]]["how"] == "sponsorship_screen")
 
+print("how a round went: your rating beside what came of it (8 Oct 2026)")
+b0 = app()                      # no round sat
+b1 = app(status="rejected")     # rated badly before the rejection
+b2 = app(status="withdrawn")    # two invitations, the later rated well, then silence
+b3 = app(status="engaged")      # a call, unrated, waiting
+b4 = app(status="rejected")     # rated after the rejection: hindsight
+b5 = app(status="offer")        # rated well, then an offer
+b6 = app(status="withdrawn")    # rated mixed, then you declined
+events = [
+    ev(b0, "applied", ago(20)),
+    ev(b1, "applied", ago(30)), ev(b1, "interview_invite", ago(20), went="badly", went_at=ago(18)),
+    ev(b1, "rejected", ago(10)),
+    ev(b2, "applied", ago(40)), ev(b2, "interview_invite", ago(30)),
+    ev(b2, "interview_invite", ago(29), went="well", went_at=ago(27)),
+    ev(b2, "withdrawn", ago(2), source="manual", closed_as="went_quiet"),
+    ev(b3, "applied", ago(12)), ev(b3, "engaged", ago(4)),
+    # A rejection filed by hand at noon; the interview's own mail that evening.
+    ev(b4, "applied", ago(30)), ev(b4, "rejected", ago(10), source="manual"),
+    ev(b4, "interview_invite", ago(10, hours=-6), went="badly", went_at=ago(1)),
+    ev(b5, "applied", ago(30)), ev(b5, "interview_invite", ago(20), went="well", went_at=ago(19)),
+    ev(b5, "offer", ago(5)),
+    ev(b6, "applied", ago(30)), ev(b6, "engaged", ago(20), went="mixed", went_at=ago(19)),
+    ev(b6, "withdrawn", ago(15), source="manual", closed_as="declined"),
+]
+fb = {f["id"]: f for f in facts_of([b0, b1, b2, b3, b4, b5, b6], events)}
+
+
+def went_of(b):
+    f = fb[b["id"]]
+    return f["went"], f["went_next"], f["went_hindsight"]
+
+
+check("rated before the rejection: badly, rejected, no hindsight",
+      went_of(b1) == ("badly", "rejected", False), went_of(b1))
+check("the newest rated round is the anchor; silence after it is 'went quiet'",
+      went_of(b2) == ("well", "quiet", False), went_of(b2))
+check("an unrated call is waiting, with no word", went_of(b3) == (None, "waiting", False), went_of(b3))
+check("a close filed before the interview's own mail is still what came of it, and a rating "
+      "after that close is hindsight", went_of(b4) == ("badly", "rejected", True), went_of(b4))
+check("an offer after it is a further round", went_of(b5) == ("well", "progressed", False), went_of(b5))
+check("declining is a close of your own, not silence", went_of(b6) == ("mixed", "ended", False), went_of(b6))
+check("no round sat: nothing to say", went_of(b0) == (None, None, False), went_of(b0))
+check("every outcome _went can name has a column, and the fixture reaches each",
+      {f["went_next"] for f in fb.values() if f["went_next"]} == set(insights.NEXT_LABELS),
+      {f["went_next"] for f in fb.values()})
+iv = insights.interviews(list(fb.values()))
+check("the panel: rows are the words then the unrated, columns the outcomes, in order",
+      [r["key"] for r in iv["rows"]] == [*analytics.WENT_LABELS, "unrated"]
+      and [c["key"] for c in iv["cols"]] == list(insights.NEXT_LABELS), iv["rows"])
+
+
+def cell(rk, ck):
+    return next(c for r in iv["rows"] if r["key"] == rk for c in r["cells"] if c["next"] == ck)
+
+
+check("each record sits in exactly its cell, as a square linking to it",
+      cell("badly", "rejected")["n"] == 2 and cell("well", "quiet")["n"] == 1
+      and cell("unrated", "waiting")["n"] == 1 and cell("well", "progressed")["n"] == 1
+      and cell("mixed", "ended")["n"] == 1 and cell("well", "rejected")["n"] == 0
+      and {u["id"] for u in cell("badly", "rejected")["units"]} == {b1["id"], b4["id"]},
+      [(r["key"], [c["n"] for c in r["cells"]]) for r in iv["rows"]])
+check("the totals: six records with a round, five rated, one in hindsight, and the margins sum",
+      iv["n"] == 6 and iv["rated"] == 5 and iv["hindsight"] == 1
+      and sum(r["n"] for r in iv["rows"]) == 6 and sum(c["n"] for c in iv["cols"]) == 6,
+      {k: iv[k] for k in ("n", "rated", "hindsight")})
+check("no record with a round sat: no panel", insights.interviews([fb[b0["id"]]]) is None)
+
 print("sponsorship: what an answer told the employer")
 import json                                                   # noqa: E402
 from pipeline import answers                                  # noqa: E402

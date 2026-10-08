@@ -805,6 +805,45 @@ is a private artifact, linked from the memory file
       stayed, so old links land. Every card says how long it has waited,
       in grey: the wait is the user's.
 
+20. **How an interview went is your annotation on the round, rated before
+    the answer** (8 Oct 2026, worklog task 75). Asked with two real
+    records: an interview the author was sure had gone badly, closed as
+    rejected by hand the same day with no reason, and one they knew had
+    gone well, an approach closed as gone quiet — and the record read the
+    same for both, "rejected after a round" and "they went quiet". Two
+    facts that rule 12 keeps apart: the close's reason is the employer's,
+    said later; how the round went is yours, and comes first. So
+    `payload.went` (`analytics.WENT_LABELS`: well / mixed / badly) sits on
+    the ROUND event — an `interview_invite` or `engaged`,
+    `analytics.RATED_EVENTS`; an offer is a round reached, not one sat —
+    whatever its source, through `web.set_round_went`, the door
+    `set_rejection_reason` is: it writes the two keys and leaves the
+    email's facts alone. A select on every such timeline line ("How did it
+    go?"); the edit route carries it across a re-save like `origin_was`,
+    and re-typing the event as something that is not a round drops it. Not
+    a new type (rule 12's costing), and not a rejection reason: "my
+    interview" as a reason would fold the user's reading into the
+    employer's stated one, which rule 13's `rejected_how` keeps apart on
+    purpose.
+    **`went_at` is the point.** A rating filed once the outcome is on
+    record can only agree with it; the comparison is honest only for
+    ratings made before the answer. `insights._went` anchors each record
+    on its newest rated round (else its newest round), reads what came of
+    it — a further round, rejected, went quiet, you ended it, waiting
+    (`insights.NEXT_LABELS`); the thread's close when that sits BEFORE the
+    round's own mail, a rejection filed by hand at noon with the interview's
+    reminder arriving that evening (the 10 Sep 2026 record) — and flags
+    hindsight when `went_at` is after that outcome. `/analytics`' "Your
+    interviews, as you rated them" is the visa matrix's shape (rows your
+    words then the unrated, columns the outcomes, squares linking to each
+    record), with the hindsight count in its hint; counts only, no rate
+    (rule 7: 18 rounds on the day). Re-saving the same word keeps the first
+    filing's time, so a second click cannot launder a hindsight rating into
+    a prior one. The honest ratings get made where the question is asked
+    the day after the interview, before anything comes back:
+    `/follow-ups`, in the order its moves are due — see the worklog entry
+    for whether that prompt is built yet.
+
 ## Invariant #2 in detail (moved from CLAUDE.md, 25 Sep 2026)
 
 CLAUDE.md keeps the rule; this is the rest of its text as it stood there.
@@ -858,6 +897,13 @@ is on the thread), on `rejected` with a reason when they withdraw it, or on
 "They went quiet". `analytics.summary`'s `offered` is an EXISTS over the
 events, so an offer that was made still counts whatever came after; the
 same rule 13 uses for `after_round`.
+
+**How a round you sat went is your annotation on it** (8 Oct 2026):
+`payload.went` with `went_at` on an `interview_invite` or `engaged` event
+whatever its source, through `web.set_round_went` — rule 12's narrow door
+again, for the same reason an emailed rejection takes a reason. Never a
+status (nothing moves), never a reason on the close (that is the
+employer's). Rule 20 has the why and the hindsight rule.
 
 ## Gotchas learned the hard way
 

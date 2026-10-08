@@ -1387,6 +1387,10 @@ def application_detail(request: Request, app_id: str, saved: str | None = None,
             "event_reasons": _EVENT_REASONS,
             "event_channels": _EVENT_CHANNELS,
             "decline_why": _DECLINE_WHY,
+            # How a round you sat went (set_round_went): its words and the
+            # event types the select appears on.
+            "round_went": analytics.WENT_LABELS,
+            "rated_events": analytics.RATED_EVENTS,
             # The statuses the close panel asks about on your own application.
             "open_round": analytics.OPEN_ROUND,
             "today": datetime.now(request.state.tz).strftime("%Y-%m-%d"),
@@ -1955,6 +1959,12 @@ def edit_event(
                 payload["reply"] = True
             if type == e["type"] == "note" and e["payload"].get("emailed"):
                 payload["emailed"] = e["payload"]["emailed"]
+            # And a round you sat that stays one keeps how you said it went
+            # (set_round_went), and when you said so.
+            if type in analytics.RATED_EVENTS and e["type"] in analytics.RATED_EVENTS:
+                for k in ("went", "went_at"):
+                    if k in e["payload"]:
+                        payload[k] = e["payload"][k]
             conn.execute(
                 "UPDATE events SET type = %s, occurred_at = %s, payload = %s WHERE id = %s",
                 (type, occurred_at, Json(payload), e["id"]))
@@ -2250,6 +2260,51 @@ def set_rejection_reason(request: Request, app_id: str, event_id: str,
         else:
             conn.execute("UPDATE events SET payload = payload - 'reason' - 'reason_source'"
                          " - 'reason_quote' WHERE id = %s", (row["id"],))
+    return RedirectResponse(f"/applications/{app_id}", status_code=303)
+
+
+@app.post("/applications/{app_id}/events/{event_id}/went")
+def set_round_went(request: Request, app_id: str, event_id: str, went: str = Form("")):
+    """Say how a round you sat went — on any interview invitation or
+    `engaged` event (analytics.RATED_EVENTS), whatever its source.
+
+    set_rejection_reason's shape, for its reason: the invitation is the
+    email's fact and stays read-only; how the interview went is yours. Asked
+    for on 8 Oct 2026 as two sentences the record could not tell apart —
+    "I'm almost sure I didn't hear because I didn't do the interview well"
+    and "I know I did well and don't know why" — both of which read
+    "rejected after a round" or "they went quiet". The rating is a fact about
+    the ROUND, never a reason on the close (those stay the employer's words,
+    rule 12), and /analytics' interviews panel reads the two side by side.
+    `went_at` goes with it, since a rating filed once the outcome is on
+    record is hindsight and the panel counts those apart (insights._went);
+    re-saving the same word keeps the first filing's time. Not a round you
+    sat? 404, like a reason on anything but a rejection. Blank clears it."""
+    if went and went not in analytics.WENT_LABELS:
+        raise HTTPException(400, "unknown rating")
+    user = _login_user(request)
+    with db.connect_scoped(user["id"]) as conn, conn.transaction():
+        a = _get_application(conn, app_id)
+        try:
+            row = conn.execute(
+                "SELECT id, type FROM events WHERE id = %s::uuid AND application_id = %s",
+                (event_id, a["id"])).fetchone()
+        except psycopg.errors.InvalidTextRepresentation:
+            row = None
+        if row is None or row["type"] not in analytics.RATED_EVENTS:
+            raise HTTPException(404, "round not found")
+        if went:
+            # ::text — jsonb_build_object takes "any", which cannot type an
+            # untyped parameter (the `%s IS NULL` gotcha, CLAUDE.md).
+            conn.execute(
+                """UPDATE events SET payload = CASE
+                       WHEN payload->>'went' = %(w)s::text THEN payload
+                       ELSE payload || jsonb_build_object('went', %(w)s::text, 'went_at', now()) END
+                   WHERE id = %(id)s""",
+                {"w": went, "id": row["id"]})
+        else:
+            conn.execute("UPDATE events SET payload = payload - 'went' - 'went_at' WHERE id = %s",
+                         (row["id"],))
     return RedirectResponse(f"/applications/{app_id}", status_code=303)
 
 

@@ -2155,3 +2155,30 @@ the key to each real case.
      was probably not yet reloaded; nothing recorded it); only the
      re-opened captures have run.
 
+75. **How an interview went, in your own judgement** (8 Oct 2026). Asked
+   with two records: an interview the author was sure had gone badly
+   (applied 8 Sep, interviewed 10 Sep, rejected by hand the same day with
+   no reason; the interview's own reminder mail arrived that evening, after
+   the hand-filed noon close) and one they knew had gone well (an approach,
+   interviews 3-4 Aug, chased 26 Aug, closed as gone quiet on the day). The
+   record read the same for both. On the day 18 applications had reached
+   an interview: 8 still at the invitation, 8 rejected (5 with no reason),
+   2 gone quiet; 53 of 78 rejections overall carry no reason.
+   - **Built:** `payload.went` + `went_at` on any `interview_invite` or
+     `engaged` whatever its source (`analytics.RATED_EVENTS`,
+     `WENT_LABELS`; `web.set_round_went`, `set_rejection_reason`'s shape,
+     re-saving the same word keeping the first time); the select on each
+     such timeline line; the edit route carries it across a re-save and a
+     re-type to a non-round drops it; `insights._went` / `interviews` and
+     the `/analytics` panel "Your interviews, as you rated them" — rows
+     the words then the unrated, columns a further round / rejected / went
+     quiet / you ended it / waiting, hindsight counted apart in the hint
+     (`.claude/rules/web-ui.md` rule 20). The pure suite reaches every
+     column; the web suite drives the door on an emailed invitation and a
+     hand-filed call.
+   - **Not built:** `/follow-ups` asking "How did it go?" on a round whose
+     date has passed unrated — the prompt that gets ratings made BEFORE
+     the answer, the only kind the panel can learn from.
+   - **The author's clicks:** the two records above, rated in hindsight
+     (the panel will say so), and the next interview rated the day after.
+

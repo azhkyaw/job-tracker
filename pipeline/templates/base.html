@@ -416,6 +416,8 @@ a.u:hover,a.u:focus-visible{outline:1.5px solid var(--ink);outline-offset:1px}
 .vm-n{flex:none;min-width:1.6rem;font-family:var(--sans);font-size:.84rem;font-weight:500;
       font-variant-numeric:tabular-nums;line-height:1}
 .vm-cell .quiet{font-family:var(--sans);font-size:.84rem}
+/* The interviews panel: the same grid, five outcome columns of one width. */
+.vm.iv .vm-row{grid-template-columns:minmax(7rem,10rem) repeat(5,minmax(0,1fr))}
 
 /* The flow. Marks in a stretched SVG, words in HTML at the same heights —
    charts.py has why. Wider than a phone on purpose; the card scrolls. */
@@ -687,7 +689,7 @@ pre.text{white-space:pre-wrap;font:inherit;margin:.5rem 0 0;max-width:70ch}
   .twin .pair,.rv-row{grid-template-columns:1fr}
   .list li{grid-template-columns:1fr}
   .forest{columns:1}
-  .vm-row{grid-template-columns:minmax(0,1fr);gap:.35rem}
+  .vm-row,.vm.iv .vm-row{grid-template-columns:minmax(0,1fr);gap:.35rem}
   .vm-head{display:none}
   .vm-cell::before{content:attr(data-col);font-family:var(--sans);font-size:.72rem;color:var(--muted);
                    flex:none;width:6.5rem}

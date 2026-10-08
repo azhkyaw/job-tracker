@@ -103,7 +103,7 @@ of them can be Read directly at any time.
   `refile_email` in practice
 - `.claude/rules/web-ui.md` — `web.py`, `templates/**`, `trace.py`,
   `analytics.py`, `insights.py`, `charts.py`: the UI design system (rules
-  1-18), every Jinja, CSS, FastAPI and ORDER BY gotcha, and invariant #2 in
+  1-20), every Jinja, CSS, FastAPI and ORDER BY gotcha, and invariant #2 in
   detail
 - `.claude/rules/llm.md` — `llm.py`, `email_classifier.py`,
   `jd_extraction.py`, `covers.py`, `worker.py`, `prompts/**`:
@@ -161,7 +161,9 @@ An invariant keeps its RULE here and its case history in the rule file.
   cohorts, employers, `visa_matrix` (the form's visa bucket × the JD's
   visa group, each cell linking to the list rows it counts), and
   `DIMENSIONS`, the comparison registry the pure
-  suite loops. Two words kept apart everywhere: HEARD BACK (any response,
+  suite loops, and `interviews` (8 Oct 2026: each round you sat by your own
+  rating of it, `payload.went`, against what came of it; a rating filed
+  after the outcome is counted as hindsight). Two words kept apart everywhere: HEARD BACK (any response,
   the list's "reply") and ANSWERED (a rejection or a round — LinkedIn's
   "viewed" notice is not one, and counting it reversed a comparison)
 - `pipeline/charts.py` — the analytics page's flow and curve geometry (marks
@@ -399,7 +401,14 @@ An invariant keeps its RULE here and its case history in the rule file.
    2026; never "rejected", which would count as an answer). Your reply to a
    recruiter is a `note` + `payload.reply` whose
    effect (whose move it is) is DERIVED, `analytics.awaiting_you_sql`
-   (28 Sep 2026; web-ui.md rule 17).
+   (28 Sep 2026; web-ui.md rule 17). **How a round you sat went is YOUR
+   annotation on the round** (8 Oct 2026): `payload.went` — well / mixed /
+   badly, `analytics.WENT_LABELS` — with `went_at`, on any
+   `interview_invite` or `engaged` whatever its source
+   (`web.set_round_went`, the door `set_rejection_reason` is), never a
+   reason on the close and never a status; `/analytics` reads it beside
+   what came of the round, and a rating filed after the outcome counts as
+   hindsight (web-ui.md rule 20).
    **`engaged`** (a person reaching out, no next step yet) ranks strictly
    between `viewed` — `matcher.py`'s passive, auto-detected signal only —
    and `interview_invite`, in gapped precedence values. **An offer is a

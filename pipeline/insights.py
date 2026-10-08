@@ -40,6 +40,7 @@ from .ingest import UNKNOWN_COMPANY
 
 RESPONSE = frozenset(analytics.RESPONSE_TYPES)
 ROUND = frozenset(analytics.ROUND_EVENTS)
+RATED = frozenset(analytics.RATED_EVENTS)
 ANSWER = ROUND | {"rejected"}
 # The statuses that end a thread — trace.TERMINAL's, so the squares and the
 # list's traces close on the same events. An offer in hand is open
@@ -234,6 +235,7 @@ def build_facts(apps, events, now: datetime, reminder_days: int) -> list[dict]:
         # An approach you closed yourself (web.close_approach): which kind.
         f["closed_as"] = next((e.get("closed_as") for e in reversed(evs)
                                if e["type"] == "withdrawn" and e.get("closed_as")), None)
+        f.update(_went(evs))
 
         start = f["start"]
         f["age"] = days(now - start) if start else None
@@ -256,6 +258,45 @@ def build_facts(apps, events, now: datetime, reminder_days: int) -> list[dict]:
                      else ("live" if f["live"] else "wait"))
         out.append(f)
     return out
+
+
+# What came of the round you rated, in the interviews panel's column order.
+# "progressed" is a further round of any kind, an offer included; "ended" is
+# a close of your own other than silence: you declined, withdrew, or applied
+# to the role again.
+NEXT_LABELS = {"progressed": "a further round", "rejected": "rejected",
+               "quiet": "went quiet", "ended": "you ended it", "waiting": "waiting"}
+
+
+def _went(evs) -> dict:
+    """Your reading of a round you sat (analytics.RATED_EVENTS,
+    `payload.went`) beside what came of it. One anchor per application: the
+    newest rated round carrying a rating, else the newest rated round — the
+    interview the outcome speaks to. `went_next` is the first round or close
+    after it, or the thread's close when that sits BEFORE it (a rejection
+    filed by hand at noon, the interview's own mail arriving that evening —
+    the 10 Sep 2026 record), else waiting. `went_hindsight`: the rating was
+    filed once that outcome was on record, so it could read the outcome back;
+    the panel counts those apart, since they can only agree with it."""
+    rounds = [i for i, e in enumerate(evs) if e["type"] in RATED]
+    if not rounds:
+        return {"went": None, "went_next": None, "went_hindsight": False}
+    rated = [i for i in rounds if evs[i].get("went")]
+    i = (rated or rounds)[-1]
+    anchor = evs[i]
+    after = next((e for e in evs[i + 1:] if e["type"] in ROUND or e["type"] in CLOSED), None)
+    outcome = after or trace.closing(evs)
+    if outcome is None:
+        nxt = "waiting"
+    elif outcome["type"] in ROUND:
+        nxt = "progressed"
+    elif outcome["type"] == "rejected":
+        nxt = "rejected"
+    else:
+        nxt = "quiet" if outcome.get("closed_as") == "went_quiet" else "ended"
+    went_at = anchor.get("went_at")
+    hindsight = bool(went_at and outcome is not None and went_at > outcome["occurred_at"])
+    return {"went": anchor.get("went"), "went_next": nxt, "went_hindsight": hindsight}
 
 
 def _plural(n: int, one: str, many: str | None = None) -> str:
@@ -773,6 +814,37 @@ def visa_matrix(facts) -> dict | None:
             "n": len(mine)}
 
 
+def interviews(facts) -> dict | None:
+    """Every record with a round you sat, placed by how you said it went
+    (rows: analytics.WENT_LABELS, then the unrated) and what came of it
+    (columns: NEXT_LABELS, off _went), each cell holding its records as the
+    page's squares, visa_matrix's shape. The rows are your judgement and the
+    columns the employer's answer, which is the comparison asked for on
+    8 Oct 2026: whether silence follows the interviews you knew went badly
+    or the ones you knew went well. Fixed rows and columns, so the numbers
+    compare between visits; `hindsight` counts the ratings filed once the
+    outcome was already on record."""
+    mine = [f for f in facts if f.get("went_next")]
+    if not mine:
+        return None
+    cells = defaultdict(list)
+    for f in mine:
+        cells[(f["went"] or "unrated", f["went_next"])].append(f)
+    cols = [{"key": k, "label": v} for k, v in NEXT_LABELS.items()]
+    rows = []
+    for key, label in [*analytics.WENT_LABELS.items(), ("unrated", "not rated")]:
+        row_cells = []
+        for c in cols:
+            fs = sorted(cells[(key, c["key"])], key=_unit_key)
+            row_cells.append({"next": c["key"], "n": len(fs), "units": [unit(f) for f in fs]})
+        rows.append({"key": key, "label": label, "cells": row_cells,
+                     "n": sum(c["n"] for c in row_cells)})
+    return {"rows": rows, "cols": [{**c, "n": sum(r["cells"][i]["n"] for r in rows)}
+                                   for i, c in enumerate(cols)],
+            "n": len(mine), "rated": sum(1 for f in mine if f["went"]),
+            "hindsight": sum(1 for f in mine if f["went_hindsight"])}
+
+
 # ---------------------------------------------------------------------- flow
 
 FLOW_ORDER = ("applied", "viewed", "engaged", "interview_invite", "offer",
@@ -1009,6 +1081,7 @@ def report(apps, events, now: datetime, tz, reminder_days: int,
         "head": headline(facts, now),
         "cohorts": cohorts(facts, now, tz),
         "visa": visa_matrix(facts),
+        "interviews": interviews(facts),
         "flow": flow(facts, window, status_word, how_words or analytics.HOW_LABELS),
         "timing": timing(facts),
         "compare": compare(facts, now, tz),

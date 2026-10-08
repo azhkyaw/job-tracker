@@ -223,6 +223,20 @@ def rejection_reasons(conn, user_id, inbound: bool | None = None):
 ROUND_EVENTS = ("interview_invite", "engaged", "offer")
 ROUND_TYPES = _sql_list(ROUND_EVENTS)
 
+# The rounds you SAT — an interview, a call or message (`engaged`) — and so
+# the ones that take your own reading of how it went: `payload.went`, a key
+# of WENT_LABELS, written by web.set_round_went on the round event whatever
+# its source, with `went_at`, when you said so (8 Oct 2026). An offer is a
+# round the thread reached, not one you performed in; it takes none. Two
+# facts kept apart on purpose: the rating is yours, about the round, and
+# comes first; a close's reason is the employer's, about the close, and comes
+# later (rule 12). "I'm sure I didn't hear because the interview went badly"
+# and "I know it went well and heard nothing" were one record each until
+# then, and read the same — "rejected after a round", "they went quiet".
+# insights.interviews reads the rating beside what came of the round.
+RATED_EVENTS = ("interview_invite", "engaged")
+WENT_LABELS = {"well": "went well", "mixed": "mixed", "badly": "went badly"}
+
 # What each bucket is called on a page — the list's `how` chips, the
 # /analytics table and the flow's branches. Fixed order, not by count (web.py
 # has the reasoning). Here, beside the bucket rule, so every page reads one
@@ -822,7 +836,8 @@ def facts(conn, user_id) -> tuple[list[dict], list[dict]]:
     breakdown reads: `reason` (the closing event is chosen in insights.py by
     the rule rejection_reasons() documents) and `mail_platform`, the closing
     email's own extracted platform, which is how "LinkedIn's letter" is told
-    from an ATS's. `external` is only ever set on an `applied` event."""
+    from an ATS's. `external` is only ever set on an `applied` event; `went`
+    and `went_at` only on a round you sat (RATED_EVENTS)."""
     apps = conn.execute("""
         SELECT a.id, a.origin, a.resume_file, s.status,
                -- Awaiting your call: the pin's own predicate, so a square
@@ -865,6 +880,8 @@ def facts(conn, user_id) -> tuple[list[dict], list[dict]]:
                e.payload->>'reason'                          AS reason,
                (e.payload ? 'superseded_by')                 AS superseded,
                e.payload->>'closed'                          AS closed_as,
+               e.payload->>'went'                            AS went,
+               (e.payload->>'went_at')::timestamptz          AS went_at,
                em.extraction->>'platform'                    AS mail_platform
         FROM events e
         JOIN applications a ON a.id = e.application_id

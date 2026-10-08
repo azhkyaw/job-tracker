@@ -68,6 +68,7 @@
   <a href="#answered">What gets answered</a>
   {% if r.employers.rows %}<a href="#employers">Employers</a>{% endif %}
   {% if r.lags or by_end or by_reason %}<a href="#ended">Endings</a>{% endif %}
+  {% if r.interviews %}<a href="#interviews">Interviews</a>{% endif %}
   {% if r.calendar or r.hours %}<a href="#rhythm">Rhythm</a>{% endif %}
   <a href="#seen">What this page can see</a>
 </nav>
@@ -370,6 +371,39 @@
   backlog. Click it to tag them.</p>
 </div>
 {% endif %}
+</div>
+{% endif %}
+
+{# ---------------------------------------------------------------- interviews #}
+{% set iv = r.interviews %}
+{% if iv %}
+<h2 id="interviews">Your interviews, as you rated them</h2>
+<p class="hint">Every record with an interview or a call you sat, placed by how you said it went
+  on its timeline (rows) and what came of it (columns), each square in the colour of its wait as
+  above. The rows are your judgement and the columns the employer's answer: silence after an
+  interview you knew went well is a different fact from silence after one you knew went badly.
+  {%- if iv.rated < iv.n %} <b>{{ iv.n - iv.rated }}</b> not rated yet — each interview line on a
+  record's page asks.{% endif %}
+  {%- if iv.hindsight %} <b>{{ iv.hindsight }}</b> rated after the outcome was known, which can
+  only agree with it; rate the next one before you hear back.{% endif %}</p>
+<div class="card pad vm-card">
+  <div class="vm iv" role="table" aria-label="Interviews by your rating and what came of them">
+    <div class="vm-row vm-head" role="row">
+      <span role="columnheader"></span>
+      {% for c in iv.cols %}<span class="vm-col" role="columnheader">{{ c.label }} <b>{{ c.n }}</b></span>{% endfor %}
+    </div>
+    {% for row in iv.rows %}
+    <div class="vm-row" role="row">
+      <span class="vm-rh" role="rowheader">{{ row.label }} <b>{{ row.n }}</b></span>
+      {% for cell in row.cells %}
+      <span class="vm-cell" role="cell" data-col="{{ iv.cols[loop.index0].label }}">
+        {% if cell.n %}<span class="vm-n">{{ cell.n }}</span><span class="units">{{ squares(cell.units) }}</span>
+        {% else %}<span class="quiet">—</span>{% endif %}
+      </span>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
 </div>
 {% endif %}
 

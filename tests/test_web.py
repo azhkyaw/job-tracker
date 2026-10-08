@@ -3761,4 +3761,120 @@ r = client.post("/triage/batch", data={"action": "ignore", "lane": "actionable",
 check("the leftovers are ignored in one go", "done=6&did=ignore" in r.headers["location"],
       r.headers.get("location"))
 
+print("how a round went, in your judgement (8 Oct 2026)")
+# Two real records read the same — "rejected after a round", "they went
+# quiet" — while the author knew one interview had gone badly and the other
+# well. The rating is yours, on the round (an invitation the email filed, or
+# a call filed by hand), never a reason on the close; its time goes with it,
+# so a rating made in hindsight is counted apart on /analytics.
+_wt = _new_app("Rated Round Co", 30)
+with db.connect() as conn:
+    _wt_inv = conn.execute(
+        "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+        "VALUES (%s, %s, 'interview_invite', 'email', now() - interval '20 days', %s) RETURNING id",
+        (user_id, _wt, Json({"stated_date": _ago(19)}))).fetchone()["id"]
+    _wt_rej = conn.execute(
+        "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+        "VALUES (%s, %s, 'rejected', 'email', now() - interval '10 days', '{}') RETURNING id",
+        (user_id, _wt)).fetchone()["id"]
+
+
+def _wt_event(eid):
+    with db.connect() as conn:
+        return conn.execute("SELECT type, source, occurred_at, payload FROM events WHERE id = %s",
+                            (eid,)).fetchone()
+
+
+r = client.get(f"/applications/{_wt}")
+check("the invitation's line asks how it went; the rejection's keeps its why-select",
+      f'action="/applications/{_wt}/events/{_wt_inv}/went"' in r.text and "How did it go?" in r.text
+      and f"/events/{_wt_rej}/reason" in r.text and f"/events/{_wt_rej}/went" not in r.text,
+      r.status_code)
+check("...and nothing else on the thread asks", r.text.count('/went"') == 1, r.text.count('/went"'))
+_before = _wt_event(_wt_inv)
+r = client.post(f"/applications/{_wt}/events/{_wt_inv}/went", data={"went": "badly"})
+_after = _wt_event(_wt_inv)
+check("rating an emailed invitation redirects to the thread and writes the word with its time",
+      r.status_code == 303 and _after["payload"].get("went") == "badly"
+      and _after["payload"].get("went_at"), _after["payload"])
+check("only the rating moved — type, source, date and the email's own keys are untouched",
+      _after["type"] == "interview_invite" and _after["source"] == "email"
+      and _after["occurred_at"] == _before["occurred_at"]
+      and {k: v for k, v in _after["payload"].items() if k not in ("went", "went_at")}
+      == _before["payload"], _after)
+_page = client.get(f"/applications/{_wt}").text
+check("the timeline shows it selected, and offers to clear it",
+      "selected>went badly" in _page and "Clear the rating" in _page)
+_t1 = _after["payload"]["went_at"]
+client.post(f"/applications/{_wt}/events/{_wt_inv}/went", data={"went": "badly"})
+check("re-saving the same word keeps the first filing's time",
+      _wt_event(_wt_inv)["payload"]["went_at"] == _t1, _wt_event(_wt_inv)["payload"])
+client.post(f"/applications/{_wt}/events/{_wt_inv}/went", data={"went": "mixed"})
+_p = _wt_event(_wt_inv)["payload"]
+check("another word is a new filing: the time moves with it",
+      _p["went"] == "mixed" and _p["went_at"] > _t1, _p)
+r = client.post(f"/applications/{_wt}/events/{_wt_inv}/went", data={"went": "brilliantly"})
+check("a word outside the vocabulary is refused", r.status_code == 400, r.status_code)
+r = client.post(f"/applications/{_wt}/events/{_wt_rej}/went", data={"went": "well"})
+check("a rating on anything but a round you sat is 404, like a reason off a rejection",
+      r.status_code == 404, r.status_code)
+r = client.post(f"/applications/{northwind_app}/events/{_wt_inv}/went", data={"went": "well"})
+check("and so is another application's round", r.status_code == 404, r.status_code)
+
+_wt2 = _new_app("Rated Call Co", 12)
+client.post(f"/applications/{_wt2}/events", data={"type": "engaged", "occurred_on": _ago(4)})
+with db.connect() as conn:
+    _wt2_call = conn.execute("SELECT id FROM events WHERE application_id = %s AND type = 'engaged'",
+                             (_wt2,)).fetchone()["id"]
+r = client.post(f"/applications/{_wt2}/events/{_wt2_call}/went", data={"went": "well"})
+check("a call filed by hand takes a rating too",
+      r.status_code == 303 and _wt_event(_wt2_call)["payload"]["went"] == "well")
+_t2 = _wt_event(_wt2_call)["payload"]["went_at"]
+r = client.post(f"/applications/{_wt2}/events/{_wt2_call}/edit",
+                data={"type": "engaged", "occurred_on": _ago(5), "note": "the hiring manager rang"})
+_p = _wt_event(_wt2_call)["payload"]
+check("re-saving the event through the edit form carries the rating and its time across",
+      r.status_code == 303 and _p.get("went") == "well" and _p.get("went_at") == _t2
+      and _p.get("note") == "the hiring manager rang", _p)
+r = client.post(f"/applications/{_wt2}/events/{_wt2_call}/edit",
+                data={"type": "note", "occurred_on": _ago(5), "note": "the hiring manager rang"})
+check("re-typed as something that is not a round, it drops the rating",
+      r.status_code == 303 and "went" not in _wt_event(_wt2_call)["payload"],
+      _wt_event(_wt2_call)["payload"])
+client.post(f"/applications/{_wt2}/events/{_wt2_call}/edit",
+            data={"type": "engaged", "occurred_on": _ago(5)})
+client.post(f"/applications/{_wt2}/events/{_wt2_call}/went", data={"went": "well"})
+
+with db.connect() as conn:
+    _apps, _evs = analytics.facts(conn, user_id)
+_fx = {str(f["id"]): f for f in insights.build_facts(_apps, _evs, datetime.now(timezone.utc), 10)}
+check("facts: the rejected one reads its rating beside the rejection, filed in hindsight",
+      _fx[_wt]["went"] == "mixed" and _fx[_wt]["went_next"] == "rejected"
+      and _fx[_wt]["went_hindsight"],
+      {k: _fx[_wt][k] for k in ("went", "went_next", "went_hindsight")})
+check("the call is rated well and still waiting, which is not hindsight",
+      _fx[_wt2]["went"] == "well" and _fx[_wt2]["went_next"] == "waiting"
+      and not _fx[_wt2]["went_hindsight"],
+      {k: _fx[_wt2][k] for k in ("went", "went_next", "went_hindsight")})
+r = client.get("/analytics")
+_pnl = r.text.split("Your interviews, as you rated them")[1].split("</h2>", 1)[1].split("<h2")[0]
+check("the page has the panel: a row per word plus the unrated, a column per outcome, each "
+      "record a square linking to it",
+      r.status_code == 200
+      and all(w in _pnl for w in ("went well", "mixed", "went badly", "not rated"))
+      and all(w in _pnl for w in insights.NEXT_LABELS.values())
+      and f'href="/applications/{_wt}"' in _pnl and f'href="/applications/{_wt2}"' in _pnl,
+      _pnl[:800])
+check("...and says how many were rated after the fact",
+      "rated after the outcome was known" in _pnl and 'href="#interviews"' in r.text)
+
+r = client.post(f"/applications/{_wt}/events/{_wt_inv}/went", data={"went": ""})
+check("blank clears the rating and its time; nothing else moves",
+      r.status_code == 303 and _wt_event(_wt_inv)["payload"] == _before["payload"],
+      _wt_event(_wt_inv)["payload"])
+# This section's records go, so the suites after count what they counted.
+for _id in (_wt, _wt2):
+    client.post(f"/applications/{_id}/delete")
+check("this section's records are gone", client.get(f"/applications/{_wt}").status_code == 404)
+
 print("\nALL WEB PATHS PASS")
