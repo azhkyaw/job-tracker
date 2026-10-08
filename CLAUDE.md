@@ -144,7 +144,10 @@ An invariant keeps its RULE here and its case history in the rule file.
   `queue()` (7 Oct 2026: `/follow-ups` sectioned by the MOVE each row
   offers — after a round, worth a nudge, applied to again, gone quiet,
   nobody to write to — off `reply_odds`, the SAME Kaplan-Meier curve
-  `/analytics` draws, from one query; `insights.quiet_after` is the cut) and
+  `/analytics` draws, from one query; `insights.quiet_after` is the cut),
+  `ratings_owed` (8 Oct 2026: the page's first section, a round you sat
+  that has passed unrated on an open thread, `rating_owed_sql` the ONE
+  rule) and
   `queue_count` (the nav pill, ONE statement, the rows that carry a move),
   `awaiting_you_sql` (the ONE "awaiting your call" rule for an inbound lead:
   no reply of yours since they last wrote, `reply_sql`/`theirs_sql`; the pin,
@@ -860,6 +863,10 @@ Detail lives with each family's rule file; this is the index.
   and its merge have run only in the suite. Its runs keyed by sender NAME
   (8 Oct, task 72) and a lead's edit form with no applied date (task 73)
   were rendered through TestClient against real data, not looked at.
+  So were the round rating's three surfaces (8 Oct, task 75): the "How did
+  it go?" select on a round's timeline line, `/follow-ups`' first section
+  of the same name, and `/analytics`' "Your interviews, as you rated them"
+  (a five-column grid on the visa matrix's CSS, phone width untested).
 
 ## Open work (as of 8 Oct 2026)
 

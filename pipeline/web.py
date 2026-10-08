@@ -2264,7 +2264,8 @@ def set_rejection_reason(request: Request, app_id: str, event_id: str,
 
 
 @app.post("/applications/{app_id}/events/{event_id}/went")
-def set_round_went(request: Request, app_id: str, event_id: str, went: str = Form("")):
+def set_round_went(request: Request, app_id: str, event_id: str, went: str = Form(""),
+                   redirect_to: str = Form("")):
     """Say how a round you sat went — on any interview invitation or
     `engaged` event (analytics.RATED_EVENTS), whatever its source.
 
@@ -2279,7 +2280,9 @@ def set_round_went(request: Request, app_id: str, event_id: str, went: str = For
     `went_at` goes with it, since a rating filed once the outcome is on
     record is hindsight and the panel counts those apart (insights._went);
     re-saving the same word keeps the first filing's time. Not a round you
-    sat? 404, like a reason on anything but a rejection. Blank clears it."""
+    sat? 404, like a reason on anything but a rejection. Blank clears it.
+    `redirect_to` is /follow-ups' (its "How did it go?" rows,
+    analytics.ratings_owed), validated against a fixed list like add_event's."""
     if went and went not in analytics.WENT_LABELS:
         raise HTTPException(400, "unknown rating")
     user = _login_user(request)
@@ -2305,7 +2308,8 @@ def set_round_went(request: Request, app_id: str, event_id: str, went: str = For
         else:
             conn.execute("UPDATE events SET payload = payload - 'went' - 'went_at' WHERE id = %s",
                          (row["id"],))
-    return RedirectResponse(f"/applications/{app_id}", status_code=303)
+    dest = redirect_to if redirect_to in ("/follow-ups",) else f"/applications/{app_id}"
+    return RedirectResponse(dest, status_code=303)
 
 
 # --------------------------------------------------------------------------- contacts
@@ -3387,12 +3391,30 @@ def follow_ups_page(request: Request, closed: int | None = None):
         for r in by_email:
             r["ask"] = _email_ask(r["jds"], r["title_canonical"])
             r["days"] = (now - r["applied_at"]).days
+        # A round you sat, waiting for your word (8 Oct 2026,
+        # analytics.ratings_owed). First of all: it is due the day after,
+        # and only a rating made before the answer tells /analytics anything.
+        # The row names the round's day — the one the invitation stated,
+        # else the event's — and counts from it; the stated day is read here
+        # rather than cast in SQL, as the rule's comment says.
+        rate = analytics.ratings_owed(conn, user["id"])
+        tz = request.state.tz
+        for r in rate:
+            try:
+                day = date.fromisoformat(r["stated"] or "")
+                words = "Interview on"
+            except ValueError:
+                day = r["round_at"].astimezone(tz).date()
+                words = _MOVED_AS[r["round_type"]]
+            r["day_words"] = f"{words} {day.strftime('%d %b %Y').lstrip('0')}"
+            r["days"] = (now.astimezone(tz).date() - day).days
         # The pill is these rows, and analytics.queue_count is the same
         # number everywhere else (tests hold them equal).
-        moves = len(by_email) + len(q["rounds"]) + len(q["nudge"])
+        moves = len(rate) + len(by_email) + len(q["rounds"]) + len(q["nudge"])
         return templates.TemplateResponse(
             request=request, name="follow_ups.html",
-            context={"by_email": by_email, "rounds": q["rounds"], "nudge": q["nudge"],
+            context={"rate": rate, "round_went": analytics.WENT_LABELS,
+                     "by_email": by_email, "rounds": q["rounds"], "nudge": q["nudge"],
                      "again": q["again"],
                      "quiet_n": len(q["quiet"]), "waiting_n": len(q["waiting"]),
                      "moves": moves, "closed": closed,

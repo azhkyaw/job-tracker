@@ -8,11 +8,13 @@
    the day, 150 of them past the point where any application had ever heard
    back, 126 with nobody to write to, and five follow-ups filed in the whole
    search. A wait is the list's to draw, as heat; this page is for work (UI
-   rule 9). Sections in the order the moves are due: the email a listing
+   rule 9). Sections in the order the moves are due: a round you sat,
+   waiting for your word on how it went (8 Oct 2026); the email a listing
    asked for; threads after a round; applications worth a nudge (inside the
    odds, someone to write to, best odds first); then two COUNTS, not rows —
    the quiet ones, with one confirmed close for all of them, and the recent
-   ones nobody can be written to. analytics.queue places every row.
+   ones nobody can be written to. analytics.queue places every row but the
+   first two sections' (ratings_owed, emails_owed).
 
    Its history: a plain block at the top of the list (Jul), collapsed into a
    <details> (28 Jul), a page of its own (21 Aug), sectioned (7 Oct). The
@@ -22,7 +24,7 @@
 {% if closed %}
 <div class="note"><strong>Closed {{ closed }}</strong> as gone quiet. Each is undone on its own page, by deleting the event.</div>
 {% endif %}
-{% if not by_email and not rounds and not nudge and not again and not quiet_n %}
+{% if not rate and not by_email and not rounds and not nudge and not again and not quiet_n %}
 <p class="empty">Nothing is waiting on you. Every application either got a reply,
 is younger than {{ reminder_days }} days, or has nobody to write to yet; every thread
 an interview or a person opened has moved within {{ reminder_days }} days or is
@@ -35,8 +37,42 @@ closed. <a href="/">Back to the applications</a>.</p>
   Acting on a row records it on the thread and clears it from here.</p>
 {% endif %}
 
+{# A round you sat, waiting for your word (analytics.rating_owed_sql, 8 Oct
+   2026): an interview or a call on an open thread, its day passed, unrated,
+   no offer since. First of all, because it is due the day after and only a
+   rating made before anything comes back tells /analytics' interviews panel
+   anything — one filed after the answer can only agree with it. Grey, like
+   the emails: the move is yours, not a wait on anyone; the number is days
+   since the round. The select posts to the round's own event
+   (web.set_round_went) and comes back here. #}
+{% if rate %}
+<h2 id="rate">How did it go?</h2>
+<p class="lede"><b>{{ rate | length }}</b> interview{{ '' if rate | length == 1 else 's' }} or call{{ '' if rate | length == 1 else 's' }}
+  you sat, and no word yet on how it went. Say it now, before you hear back: a rating
+  made after the answer can only agree with it.</p>
+<div class="card fu">
+  {% for r in rate %}
+  <div class="fu-row">
+    <a class="fu-name" href="/applications/{{ r.id }}">
+      <span class="co">{{ r.company_display }}</span>
+      <span class="ro">{{ r.title_canonical }}</span>
+    </a>
+    <span class="fu-d" title="Days since the round">{{ r.days }}d</span>
+    <form method="post" action="/applications/{{ r.id }}/events/{{ r.event_id }}/went">
+      <input type="hidden" name="redirect_to" value="/follow-ups">
+      <select name="went" aria-label="How it went, in your judgement">
+        {% for value, label in round_went.items() %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+      </select>
+      <button title="Record it on the thread and clear this row">Save</button>
+    </form>
+    <p class="fu-again">{{ r.day_words }}</p>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
 {# Listings that asked for the CV by email, and nothing says it went
-   (analytics.email_owed_sql, 4 Oct 2026). First, because the move is yours
+   (analytics.email_owed_sql, 4 Oct 2026). Next, because the move is yours
    and due now; grey, because it is not a wait on anyone (UI rule 1) — the
    number is days since you applied, at heat 0. Mail you send clears a row by
    itself once synced; the buttons are for the rest (web.py, mark_emailed). #}

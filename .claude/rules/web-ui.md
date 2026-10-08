@@ -223,6 +223,34 @@ is a private artifact, linked from the memory file
    numbers. 19 on the day against 197 (8 emails owed, 5 after a round, 6
    worth a nudge), beside 23 applied to again, 129 gone quiet and 34
    recent with nobody to write to.
+
+   **Since 8 Oct 2026 a section before the emails: "How did it go?"**
+   (rule 20, worklog task 75). An open thread whose newest round you sat —
+   an `interview_invite` or `engaged`, `analytics.RATED_EVENTS` — has
+   passed with no `went`, and no offer since (then the outcome is on
+   record and a rating would be hindsight). First of all, because it is
+   due the day after and only a rating made before the answer tells the
+   interviews panel anything. `analytics.rating_owed_sql` is the ONE rule,
+   formatted into the rows (`ratings_owed`) and the pill (`queue_count`,
+   which counts it with the rest). The round's day is the one its email
+   stated, else the event's own, compared as TEXT against the database
+   clock's day: a date-shaped string the extractor validated by regex can
+   still fail a `::date` cast, and this predicate runs in the pill on
+   every page — so `web.follow_ups_page` parses the stated day in Python
+   for the row's words ("Interview on 10 Sep 2026", else "They got in
+   touch on …") and its day count. The database clock is UTC on the dev
+   DB, so a round is asked about from 08:00 the morning after, in
+   Singapore. The select posts to the round's own event
+   (`web.set_round_went`, `redirect_to=/follow-ups`), and the row leaves
+   on save. A newer invitation for a day still to come takes a thread
+   off the list until that day has passed; it is then the round asked
+   about — the same "newest round" anchor `insights._went` reads. Grey,
+   like the emails: the move is yours. On the day 8 open threads ended in
+   an unrated invitation, each with a stated day, none in a bare
+   `engaged`: 3 had passed and were rows, 5 named interviews 1 to 21 days
+   ahead and were held back. `tests/test_web.py`'s `_row_on` takes a
+   section heading since: a thread can be in this section and "After a
+   round" at once.
 9b. **How you applied is on the row, in GREY** (21 Aug 2026): `on-platform` /
    `employer site`, read from the applied event's own `payload.external` — the
    same event the date comes from, so the two can't describe different
@@ -840,9 +868,9 @@ is a private artifact, linked from the memory file
     (rule 7: 18 rounds on the day). Re-saving the same word keeps the first
     filing's time, so a second click cannot launder a hindsight rating into
     a prior one. The honest ratings get made where the question is asked
-    the day after the interview, before anything comes back:
-    `/follow-ups`, in the order its moves are due — see the worklog entry
-    for whether that prompt is built yet.
+    the day after, before anything comes back: `/follow-ups`' first
+    section, "How did it go?" (rule 9's 8 Oct paragraph,
+    `analytics.rating_owed_sql`).
 
 ## Invariant #2 in detail (moved from CLAUDE.md, 25 Sep 2026)
 

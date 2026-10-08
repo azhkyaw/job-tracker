@@ -2176,9 +2176,24 @@ the key to each real case.
      (`.claude/rules/web-ui.md` rule 20). The pure suite reaches every
      column; the web suite drives the door on an emailed invitation and a
      hand-filed call.
-   - **Not built:** `/follow-ups` asking "How did it go?" on a round whose
-     date has passed unrated — the prompt that gets ratings made BEFORE
-     the answer, the only kind the panel can learn from.
+   - **Built, second commit:** `/follow-ups` asks first of all, "How did it
+     go?" — an open thread whose newest round you sat has passed unrated,
+     no offer since (`analytics.rating_owed_sql`, one rule in the rows and
+     the pill; the day is compared as the text the extractor validated,
+     never cast, since the pill runs on every page; the database clock's
+     day, so from 08:00 the morning after in Singapore). The row names the
+     interview's stated day, else the event's, with the select posting to
+     that event and returning to the page. Measured on the day: 8 open
+     threads ended in an unrated invitation, every one with a stated day,
+     none in a bare `engaged`; 3 had passed (21 Sep, 22 Sep, 6 Oct) and
+     were the page's rows, and 5 named interviews still to come, 9 to
+     29 Oct, which the rule held back. Rendered through TestClient against
+     the dev DB: `/follow-ups`, `/analytics` (19 records with a round, none
+     rated: 8 rejected, 3 gone quiet, 8 waiting) and the 10 Sep record's
+     page, which offers the select on each of its two invitations. This is
+     the prompt that gets ratings made BEFORE the answer, the only kind the
+     panel can learn from.
    - **The author's clicks:** the two records above, rated in hindsight
-     (the panel will say so), and the next interview rated the day after.
+     (the panel will say so); the 3 rows on `/follow-ups`; and each of the
+     5 interviews ahead, the morning after.
 

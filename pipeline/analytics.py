@@ -767,17 +767,87 @@ def email_owed_count(conn, user_id) -> int:
                         (user_id,)).fetchone()["n"]
 
 
+# A round you sat, waiting for your word (8 Oct 2026): the thread is open,
+# its newest round you performed in (RATED_EVENTS) carries no `went`, that
+# round's day has passed — the interview day the invitation named
+# (`stated_date`), else the event's own — and no offer has come since, which
+# would put the outcome on record and make any rating hindsight. Asked on
+# /follow-ups first, the day after, before anything comes back: the only
+# rating the interviews panel (insights.interviews) can learn from. A day is
+# compared as the text the extractor validated (YYYY-MM-DD, by regex) against
+# today's, never cast: a date-shaped string can still fail a cast, and this
+# predicate runs in the pill on every page. The day is the DATABASE clock's
+# (UTC on the dev DB), so a round is asked about from the next UTC day —
+# 08:00 the morning after, in Singapore. Measured on the day: 8 open threads
+# ended in an unrated invitation, all with a stated day, none in a bare
+# `engaged`. ONE rule, formatted into the rows and the pill.
+_RATED_TYPES = _sql_list(RATED_EVENTS)
+_ISO_DAY = r"^\d{4}-\d{2}-\d{2}$"
+
+
+def last_sat_sql(a: str) -> str:
+    """The id of application `a`'s newest round you sat, as a subselect."""
+    return f"""(SELECT r.id FROM events r
+                 WHERE r.application_id = {a}.id AND r.type IN {_RATED_TYPES}
+                 ORDER BY r.occurred_at DESC, r.created_at DESC LIMIT 1)"""
+
+
+def round_day_sql(r: str) -> str:
+    """The day round event `r` fell on, as YYYY-MM-DD text: the day its
+    email stated when that is date-shaped, else the event's own."""
+    return f"""COALESCE(CASE WHEN {r}.payload->>'stated_date' ~ '{_ISO_DAY}'
+                             THEN {r}.payload->>'stated_date' END,
+                        to_char({r}.occurred_at, 'YYYY-MM-DD'))"""
+
+
+def rating_owed_sql(a: str) -> str:
+    """Application `a` owes a word on the newest round you sat."""
+    return f"""(NOT EXISTS (SELECT 1 FROM events c WHERE c.application_id = {a}.id
+                            AND c.type IN {_CLOSES})
+        AND EXISTS (SELECT 1 FROM events r
+                     WHERE r.id = {last_sat_sql(a)}
+                       AND NOT (r.payload ? 'went')
+                       AND {round_day_sql('r')} < to_char(now(), 'YYYY-MM-DD')
+                       AND NOT EXISTS (SELECT 1 FROM events o
+                                        WHERE o.application_id = {a}.id AND o.type = 'offer'
+                                          AND o.occurred_at > r.occurred_at)))"""
+
+
+def ratings_owed(conn, user_id) -> list[dict]:
+    """The applications owing a word on a round you sat, that round's day
+    first: the record, the event to rate (`event_id`, `round_type`,
+    `round_at`) and the day its email stated (`stated`, as written — web.py
+    reads it, for the same reason the rule compares it as text)."""
+    return conn.execute(f"""
+        SELECT a.id, j.title_canonical,
+               COALESCE((SELECT p.company_raw FROM postings p
+                          WHERE p.job_id = a.job_id AND p.company_raw IS NOT NULL
+                          ORDER BY p.captured_at DESC LIMIT 1),
+                        j.company_norm) AS company_display,
+               r.id AS event_id, r.type AS round_type, r.occurred_at AS round_at,
+               r.payload->>'stated_date' AS stated
+        FROM applications a
+        JOIN jobs j ON j.id = a.job_id
+        JOIN events r ON r.id = {last_sat_sql('a')}
+        WHERE a.user_id = %s AND {rating_owed_sql('a')}
+        ORDER BY {round_day_sql('r')}, r.occurred_at
+    """, (user_id,)).fetchall()
+
+
 def queue_count(conn, user_id) -> int:
-    """The nav pill: the rows on /follow-ups that carry a move — the emails
-    owed, the threads after a round, the applications worth a nudge — which
-    is queue()'s first three sections over _QUEUE_SQL and email_owed_sql, in
-    one statement because every page renders it (the full queue() is ~250 ms
-    on the dev DB; this and the odds are ~100). Until 7 Oct 2026 it counted
-    every unanswered application: 197 on the day, a number nobody could act
-    on. tests/test_web.py holds it to the page's rows."""
+    """The nav pill: the rows on /follow-ups that carry a move — the rounds
+    owed a word, the emails owed, the threads after a round, the
+    applications worth a nudge — which is the page's row sections over
+    rating_owed_sql, email_owed_sql and _QUEUE_SQL, in one statement because
+    every page renders it (the full queue() is ~250 ms on the dev DB; this
+    and the odds are ~100). Until 7 Oct 2026 it counted every unanswered
+    application: 197 on the day, a number nobody could act on.
+    tests/test_web.py holds it to the page's rows."""
     quiet_after = reply_odds(conn, user_id).quiet_after
     return conn.execute(f"""
         SELECT (SELECT count(*) FROM applications a
+                 WHERE a.user_id = %(user_id)s AND {rating_owed_sql('a')})
+             + (SELECT count(*) FROM applications a
                  WHERE a.user_id = %(user_id)s AND {email_owed_sql('a')})
              + (SELECT count(*) FROM ({_QUEUE_SQL}) w
                  WHERE w.kind <> 'unanswered'

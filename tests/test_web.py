@@ -2968,8 +2968,14 @@ def _new_app(company, applied_days_ago):
     return r.headers["location"].rsplit("/", 1)[1]
 
 
-def _row_on(page, company):
-    return client.get(page).text.split(company, 1)[1].split('class="fu-row"')[0]
+def _row_on(page, company, after=""):
+    """The row for `company`, from its name to the next row. `after` is a
+    section heading to look below: a thread can be in two sections at once
+    (a round owed a word and gone quiet, since 8 Oct 2026)."""
+    text = client.get(page).text
+    if after:
+        text = text.split(after, 1)[1]
+    return text.split(company, 1)[1].split('class="fu-row"')[0]
 
 
 _rnd = _new_app("Round Quiet Co", 30)
@@ -2979,7 +2985,7 @@ check("an interview silent 20 days is queued as a round, and the nav badge count
       _rnd in _rows and _rows[_rnd]["kind"] == "round" and 19 <= _rows[_rnd]["days_waiting"] <= 20
       and _cnt >= 1, (_rows.get(_rnd), _cnt, len(_rows)))
 _fu = client.get("/follow-ups").text
-_frow = _row_on("/follow-ups", "Round Quiet Co")
+_frow = _row_on("/follow-ups", "Round Quiet Co", after="After a round")
 check("its row says they invited you and when, beside “They went quiet” and “Followed up”",
       "They invited you to interview on" in _frow and 'value="quiet"' in _frow
       and "Followed up" in _frow and "gone quiet after an interview" in _fu
@@ -2997,7 +3003,8 @@ _rows = _queue(_uid)[0]
 check("chased 12 days ago and silent since: still queued, waiting from the follow-up",
       _rnd in _rows and _rows[_rnd]["moved_as"] == "followed_up"
       and 11 <= _rows[_rnd]["days_waiting"] <= 12, _rows.get(_rnd))
-check("...and its row says so", "You followed up on" in _row_on("/follow-ups", "Round Quiet Co"))
+check("...and its row says so",
+      "You followed up on" in _row_on("/follow-ups", "Round Quiet Co", after="After a round"))
 r = client.post(f"/applications/{_rnd}/events", data={"type": "follow_up_sent",
                                                       "redirect_to": "/follow-ups"})
 check("“Followed up” today restarts the clock: the row leaves, the thread stays open",
@@ -3164,6 +3171,7 @@ with db.connect() as conn:
     _q = analytics.queue(conn, _uid)
     _cnt = analytics.queue_count(conn, _uid)
     _owed_n = analytics.email_owed_count(conn, _uid)
+    _rate_n = len(analytics.ratings_owed(conn, _uid))
 
 
 def _ids(rows):
@@ -3187,17 +3195,20 @@ check("the page: the nudge row names the recruiter, the move and the odds; the u
       "Your move" in _fu and "Worth a nudge" in _fu
       and 'href="https://www.linkedin.com/in/jane-nudge">Jane Nudge</a> on LinkedIn' in _nrow
       and "of applications this old" in _nrow and 'value="follow_up_sent"' in _nrow
-      and "Unreachable Co" not in _fu and "Quiet Co" not in _fu
+      # The company cell, not the bare name: "Round Quiet Co" (an unrated
+      # open interview, above) is on the page since 8 Oct 2026.
+      and '>Unreachable Co<' not in _fu and '>Quiet Co<' not in _fu
       and f"<b>{len(_q['waiting'])}</b> recent application" in _fu
       and f"Close all {len(_q['quiet'])} as gone quiet" in _fu and 'href="/follow-ups/quiet"' in _fu
       and f"past <b>{_T}</b> days" in _fu, _fu[:300])
 _pill = re.search(r'href="/follow-ups" class="[^"]*">Follow-ups<span class="pill warm">(\d+)</span>', _fu)
 check("the pill counts the rows that carry a move — the page's rows, and analytics.queue_count "
       "everywhere else",
-      _pill is not None and int(_pill.group(1)) == _cnt == _owed_n + len(_q["rounds"]) + len(_q["nudge"])
+      _pill is not None
+      and int(_pill.group(1)) == _cnt == _rate_n + _owed_n + len(_q["rounds"]) + len(_q["nudge"])
       and _fu.count('class="fu-row"') == _cnt + len(_q["again"]),
-      (_pill and _pill.group(1), _cnt, _fu.count('class="fu-row"'), _owed_n, len(_q["rounds"]),
-       len(_q["nudge"]), len(_q["again"])))
+      (_pill and _pill.group(1), _cnt, _fu.count('class="fu-row"'), _rate_n, _owed_n,
+       len(_q["rounds"]), len(_q["nudge"]), len(_q["again"])))
 check("the list's aside says the same number, as moves to make",
       f">{_cnt} moves to make<" in client.get("/").text)
 
@@ -3826,9 +3837,64 @@ client.post(f"/applications/{_wt2}/events", data={"type": "engaged", "occurred_o
 with db.connect() as conn:
     _wt2_call = conn.execute("SELECT id FROM events WHERE application_id = %s AND type = 'engaged'",
                              (_wt2,)).fetchone()["id"]
-r = client.post(f"/applications/{_wt2}/events/{_wt2_call}/went", data={"went": "well"})
-check("a call filed by hand takes a rating too",
-      r.status_code == 303 and _wt_event(_wt2_call)["payload"]["went"] == "well")
+
+
+def _rating_owed():
+    with db.connect() as conn:
+        return {str(r["id"]): r for r in analytics.ratings_owed(conn, user_id)}
+
+
+# /follow-ups asks for the word (analytics.rating_owed_sql): an open thread
+# whose newest round you sat has passed unrated, no offer since.
+_o = _rating_owed()
+check("a round you sat on an open thread, its day passed and no word yet, is owed one — the call; "
+      "the rejected thread's interview is not",
+      _wt2 in _o and _o[_wt2]["round_type"] == "engaged"
+      and str(_o[_wt2]["event_id"]) == str(_wt2_call) and _wt not in _o, sorted(_o))
+_fu = client.get("/follow-ups").text
+_rrow = _row_on("/follow-ups", "Rated Call Co")
+check("the page asks first of all: the row names the call and its day, and its select posts to "
+      "that event and comes back here",
+      'id="rate"' in _fu
+      and all(_fu.index('id="rate"') < _fu.index(s) for s in ('id="by-email"', 'id="rounds"', 'id="nudge"')
+              if s in _fu)
+      and f'action="/applications/{_wt2}/events/{_wt2_call}/went"' in _rrow
+      and 'value="/follow-ups"' in _rrow and "They got in touch on" in _rrow
+      and '<option value="well">went well</option>' in _rrow and ">4d<" in _rrow, _rrow[:700])
+with db.connect() as conn:
+    _q = analytics.queue(conn, user_id)
+    _n = (analytics.queue_count(conn, user_id), len(_o), analytics.email_owed_count(conn, user_id),
+          len(_q["rounds"]), len(_q["nudge"]))
+check("the pill counts these rows with the rest of the page's moves", _n[0] == sum(_n[1:]), _n)
+with db.connect() as conn:
+    _fut = conn.execute(
+        "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+        "VALUES (%s, %s, 'interview_invite', 'email', now(), %s) RETURNING id",
+        (user_id, _wt2, Json({"stated_date": _ago(-1)}))).fetchone()["id"]
+check("a newer invitation for a day still to come takes the thread off the list until then",
+      _wt2 not in _rating_owed())
+with db.connect() as conn:
+    conn.execute("UPDATE events SET payload = %s WHERE id = %s", (Json({"stated_date": _ago(2)}), _fut))
+_o = _rating_owed()
+_rrow = _row_on("/follow-ups", "Rated Call Co")
+check("...and once that day has passed, it is the round asked about, by the interview's day, not "
+      "the email's",
+      _wt2 in _o and str(_o[_wt2]["event_id"]) == str(_fut)
+      and "Interview on " in _rrow and ">2d<" in _rrow, (_o.get(_wt2), _rrow[:400]))
+with db.connect() as conn:
+    _off = conn.execute(
+        "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+        "VALUES (%s, %s, 'offer', 'manual', now(), '{}') RETURNING id", (user_id, _wt2)).fetchone()["id"]
+check("an offer since puts the outcome on record: no longer asked", _wt2 not in _rating_owed())
+with db.connect() as conn:
+    conn.execute("DELETE FROM events WHERE id IN (%s, %s)", (_off, _fut))
+r = client.post(f"/applications/{_wt2}/events/{_wt2_call}/went",
+                data={"went": "well", "redirect_to": "/follow-ups"})
+check("a call filed by hand takes a rating too — from the page's own row, which then leaves",
+      r.status_code == 303 and r.headers["location"] == "/follow-ups"
+      and _wt_event(_wt2_call)["payload"]["went"] == "well"
+      and _wt2 not in _rating_owed() and "Rated Call Co" not in client.get("/follow-ups").text,
+      r.headers.get("location"))
 _t2 = _wt_event(_wt2_call)["payload"]["went_at"]
 r = client.post(f"/applications/{_wt2}/events/{_wt2_call}/edit",
                 data={"type": "engaged", "occurred_on": _ago(5), "note": "the hiring manager rang"})
@@ -3872,6 +3938,8 @@ r = client.post(f"/applications/{_wt}/events/{_wt_inv}/went", data={"went": ""})
 check("blank clears the rating and its time; nothing else moves",
       r.status_code == 303 and _wt_event(_wt_inv)["payload"] == _before["payload"],
       _wt_event(_wt_inv)["payload"])
+client.post(f"/applications/{_wt2}/events", data={"type": "engaged"})
+check("a round sat today is not asked about until its day has passed", _wt2 not in _rating_owed())
 # This section's records go, so the suites after count what they counted.
 for _id in (_wt, _wt2):
     client.post(f"/applications/{_id}/delete")
