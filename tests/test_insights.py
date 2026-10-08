@@ -238,6 +238,18 @@ check("the totals: six records with a round, five rated, one in hindsight, and t
       and sum(r["n"] for r in iv["rows"]) == 6 and sum(c["n"] for c in iv["cols"]) == 6,
       {k: iv[k] for k in ("n", "rated", "hindsight")})
 check("no record with a round sat: no panel", insights.interviews([fb[b0["id"]]]) is None)
+check("round_fate: the list's bucket over the two facts — every (word, outcome) pair lands in "
+      "the registry, and the registry is reached in full",
+      {analytics.round_fate(w, n) for w in (None, *analytics.WENT_LABELS) for n in insights.NEXT_LABELS}
+      == set(analytics.ROUND_FATES)
+      and analytics.round_fate("badly", "quiet") == analytics.round_fate("mixed", "quiet") == "lost_quiet"
+      and analytics.round_fate("well", "quiet") == "unexplained"
+      and analytics.round_fate(None, "quiet") == "quiet"
+      and analytics.round_fate("well", "rejected") == "rejected"
+      and analytics.round_fate(None, None) is None
+      and all(f["round_fate"] == analytics.round_fate(f["went"], f["went_next"]) for f in fb.values())
+      and set(analytics.LOST_FATES) < set(analytics.ROUND_FATES),
+      {(w, n): analytics.round_fate(w, n) for w in (None, "well") for n in insights.NEXT_LABELS})
 
 print("sponsorship: what an answer told the employer")
 import json                                                   # noqa: E402

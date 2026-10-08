@@ -3945,4 +3945,86 @@ for _id in (_wt, _wt2):
     client.post(f"/applications/{_id}/delete")
 check("this section's records are gone", client.get(f"/applications/{_wt}").status_code == 404)
 
+print("interviews lost: the list's count opens exactly its rows (8 Oct 2026)")
+# "I failed 2 interviews in total: one they rejected me after, one they went
+# quiet on after a mixed or bad one." analytics.round_fate_sql buckets every
+# application with a round you sat; the lede counts them and each count
+# opens its rows; insights._went is its Python twin, held equal here over
+# every application in this database.
+_lf = {}
+for _co, _went, _end in (("Lost Rejected Co", "well", "rejected"), ("Lost Quiet Co", "mixed", "quiet"),
+                         ("Unexplained Co", "well", "quiet"), ("Quiet Unrated Co", None, "quiet")):
+    _id = _new_app(_co, 40)
+    with db.connect() as conn:
+        conn.execute(
+            "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+            "VALUES (%s, %s, 'interview_invite', 'email', now() - interval '30 days', %s)",
+            (user_id, _id, Json({"went": _went, "went_at": "2026-09-09T00:00:00+00:00"} if _went else {})))
+    if _end == "rejected":
+        client.post(f"/applications/{_id}/events", data={"type": "rejected", "occurred_on": _ago(20)})
+    else:
+        client.post(f"/applications/{_id}/close", data={"action": "quiet", "occurred_on": _ago(20)})
+    _lf[_co] = _id
+with db.connect() as conn:
+    _rows = {str(r["id"]): (r["origin"], r["fate"]) for r in conn.execute(
+        f"SELECT a.id, a.origin, {analytics.round_fate_sql('a')} AS fate FROM applications a "
+        f"WHERE a.user_id = %s", (user_id,)).fetchall()}
+    _fa, _fe = analytics.facts(conn, user_id)
+    _summ = analytics.summary(conn, user_id, False)
+_py = {str(f["id"]): f["round_fate"] for f in insights.build_facts(_fa, _fe, datetime.now(timezone.utc), 10)}
+check("the SQL bucket is insights._went's, on every application in this database",
+      {k: v[1] for k, v in _rows.items()} == _py and len(_rows) > 20,
+      [(k, _rows[k][1], _py.get(k)) for k in _rows if _rows[k][1] != _py.get(k)][:5])
+check("the four fixtures land in their buckets",
+      _rows[_lf["Lost Rejected Co"]][1] == "rejected" and _rows[_lf["Lost Quiet Co"]][1] == "lost_quiet"
+      and _rows[_lf["Unexplained Co"]][1] == "unexplained"
+      and _rows[_lf["Quiet Unrated Co"]][1] == "quiet", {k: _rows[v][1] for k, v in _lf.items()})
+check("every bucket the SQL returned has a label", {v[1] for v in _rows.values()} - {None}
+      <= set(analytics.ROUND_FATES), {v[1] for v in _rows.values()})
+_lede = client.get("/").text.split('<p class="lede">')[1].split("</p>")[0]
+check("the lede counts the interviews and the lost, with its two parts and the unexplained, each "
+      "a link to its rows",
+      f"<b>{_summ['sat']}</b> interviews" in _lede
+      and f'href="/?interviews=lost"><b>{_summ["lost"]}</b> lost</a>' in _lede
+      and f'href="/?interviews=rejected">{_summ["lost_rejected"]} followed by a rejection</a>' in _lede
+      and f'href="/?interviews=lost_quiet">{_summ["lost_quiet"]} you rated mixed or badly, then silence</a>'
+      in _lede
+      and f'href="/?interviews=unexplained">{_summ["unexplained"]} you rated well, then silence</a>' in _lede
+      and _summ["lost"] == _summ["lost_rejected"] + _summ["lost_quiet"] >= 2 and _summ["unexplained"] >= 1,
+      _lede)
+
+
+def _fate_count(key, inbound):
+    return sum(1 for o, v in _rows.values() if (o == "inbound") == inbound
+               and (v == key or (key == "lost" and v in analytics.LOST_FATES)))
+
+
+check("the lede's numbers are the record page's rows",
+      _summ["sat"] == sum(_fate_count(k, False) for k in analytics.ROUND_FATES)
+      and _summ["lost"] == _fate_count("lost", False), (_summ["sat"], _summ["lost"]))
+# The registry, looped, on both pages: a bucket added later is covered the
+# day it is added.
+for _k in ["lost", *analytics.ROUND_FATES]:
+    for _pg, _inb in (("/", False), ("/inbound", True)):
+        _shown = client.get(f"{_pg}?interviews={_k}").text.count('<a class="tl" href="/applications/')
+        check(f"{_pg}?interviews={_k}: {_fate_count(_k, _inb)} counted, {_shown} shown",
+              _fate_count(_k, _inb) == _shown, (_fate_count(_k, _inb), _shown))
+r = client.get("/?interviews=lost")
+check("a filtered list names its filter in the lede's words, with a way out, and keeps it: the "
+      "search re-submits it, a status link carries it",
+      "Only interviews you lost: followed by a rejection or you rated mixed or badly, then silence."
+      in r.text and "Show every interview" in r.text
+      and 'name="interviews" value="lost"' in r.text
+      and re.search(r'href="/\?status=\w+&amp;interviews=lost"', r.text) is not None, r.status_code)
+r = client.get("/?interviews=telepathy")
+check("an unknown value is ignored, not an error",
+      r.status_code == 200 and 'class="filter-note"' not in r.text, r.status_code)
+r = client.get("/?interviews=lost&q=nothing-is-called-this")
+check("an empty filtered page says what it was looking for",
+      r.status_code == 200 and "Nothing matches" in r.text, r.status_code)
+for _id in _lf.values():
+    client.post(f"/applications/{_id}/delete")
+check("this section's records are gone",
+      all(client.get(f"/applications/{_id}").status_code == 404 for _id in _lf.values()))
+
 print("\nALL WEB PATHS PASS")

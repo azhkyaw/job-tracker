@@ -430,7 +430,8 @@ def _list_path(a: dict) -> str:
 @app.get("/")
 def applications(request: Request, deleted: str | None = None,
                  q: str = "", sort: str = _DEFAULT_SORT, status: str = "",
-                 reason: str = "", how: str = "", visa: str = "", form: str = ""):
+                 reason: str = "", how: str = "", visa: str = "", form: str = "",
+                 interviews: str = ""):
     """The record: what the user sent, newest submission first — every
     `applied` record and the odd `saved` capture, which is theirs too.
 
@@ -449,13 +450,15 @@ def applications(request: Request, deleted: str | None = None,
     own needs neither, and the list stops opening with someone else's to-do
     list above the first trace. UI rule 9 still holds — the queue is work and
     still gets real rows and a one-click action, just not on this page."""
-    return _list(request, "applications", deleted, q, sort, status, reason, how, visa, form)
+    return _list(request, "applications", deleted, q, sort, status, reason, how, visa, form,
+                 interviews)
 
 
 @app.get("/inbound")
 def inbound(request: Request, deleted: str | None = None,
             q: str = "", sort: str = _DEFAULT_SORT, status: str = "",
-            reason: str = "", how: str = "", visa: str = "", form: str = ""):
+            reason: str = "", how: str = "", visa: str = "", form: str = "",
+            interviews: str = ""):
     """What recruiters started: every `origin = 'inbound'` record in every
     status, newest approach first (24 Sep 2026). Same query, template, funnel
     and filters as `/`; only the membership differs, and it is decided by
@@ -468,7 +471,8 @@ def inbound(request: Request, deleted: str | None = None,
     The nav pill counts exactly those (`analytics.lead_count`), the way the
     triage pill counts what is waiting to be filed: things awaiting the user,
     not a wait on anyone else, so it is not amber."""
-    return _list(request, "inbound", deleted, q, sort, status, reason, how, visa, form)
+    return _list(request, "inbound", deleted, q, sort, status, reason, how, visa, form,
+                 interviews)
 
 
 def _month_landmarks(rows, tz) -> list[dict]:
@@ -506,7 +510,8 @@ def _month_landmarks(rows, tz) -> list[dict]:
 
 
 def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
-          status: str, reason: str, how: str, visa: str = "", form: str = ""):
+          status: str, reason: str, how: str, visa: str = "", form: str = "",
+          interviews: str = ""):
     """The one list builder behind `/` and `/inbound`. `page` decides which
     half of `applications` the query sees (by origin — `_list_path` is the
     same rule read the other way, for redirects) and which words the
@@ -542,7 +547,13 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
     formatted from the SAME SQL expressions the matrix is counted by
     (`_VISA_GROUP`, `_FORM_VISA`), so a cell's number is the number of rows it
     shows. Unlike `reason`/`how` they belong to no status, so every link on
-    the page carries them until they are cleared."""
+    the page carries them until they are cleared.
+
+    `interviews` (8 Oct 2026) is what came of the round you sat
+    (`analytics.ROUND_FATES`, `_INTERVIEW_FILTERS`): the lede's "N
+    interviews, M lost (…)" counts (`analytics.summary`) each open exactly
+    their rows through it, off the same `round_fate_sql`. Like `visa`/`form`
+    it belongs to no status and rides on every link."""
     user = _login_user(request)
     is_inbound = page == "inbound"
     sort = sort if sort in _SORTS else _DEFAULT_SORT
@@ -552,6 +563,7 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
     how = how if how in _HOW_FILTERS else ""
     visa = visa if visa in jd_extraction.VISA_GROUPS else ""
     form = form if form in answers.FORM_VISA else ""
+    interviews = interviews if interviews in _INTERVIEW_FILTERS else ""
     if reason or how:
         status = "rejected"
     with db.connect_scoped(user["id"]) as conn:
@@ -683,11 +695,15 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
               AND (%(how)s::text = '' OR (rr.id IS NOT NULL AND {_HOW_CASE} = %(how)s))
               AND (%(visa)s::text = '' OR {_VISA_GROUP} = %(visa)s)
               AND (%(formv)s::text = '' OR {_FORM_VISA} = %(formv)s)
+              -- What came of the round you sat: a bucket, or `lost`, the
+              -- two buckets the lede sums (analytics.LOST_FATES).
+              AND (%(fate)s::text = '' OR {_FATE} = %(fate)s
+                   OR (%(fate)s = 'lost' AND {_FATE} IN {_LOST_FATES}))
             ORDER BY {_SORTS[sort]}
             """, {"user_id": user_id, "inbound": is_inbound, "status": status,
                   "reason": reason if reason in _EVENT_REASONS else "",
                   "unrecorded": reason == _REASON_UNRECORDED,
-                  "how": how, "visa": visa, "formv": form,
+                  "how": how, "visa": visa, "formv": form, "fate": interviews,
                   "q": q, "like": f"%{q}%"}).fetchall()
         for r in rows:
             # Flagged before _display() rewrites the status into a human label:
@@ -786,6 +802,8 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
             "form_filter": form,
             "visa_groups": jd_extraction.VISA_GROUPS,
             "form_visa": answers.FORM_VISA,
+            "interviews_filter": interviews,
+            "interview_filters": _INTERVIEW_FILTERS,
         })
 
 
@@ -919,6 +937,17 @@ def _reason_rows(rows) -> list[dict]:
 # what makes the three numbers comparable between visits.
 _HOW_FILTERS = analytics.HOW_LABELS
 
+# The list's `interviews` filter (8 Oct 2026): analytics.ROUND_FATES, one
+# bucket per application with a round you sat, plus `lost` — NOT a bucket
+# but the two that mean you lost it, the number the author asked the list
+# for — the way `unrecorded` is a reason filter and not a reason. The words
+# follow "interviews": the lede's counts and the filter note read one
+# vocabulary.
+_INTERVIEW_FILTERS = {
+    "lost": "you lost: " + " or ".join(analytics.ROUND_FATES[k] for k in analytics.LOST_FATES),
+    **analytics.ROUND_FATES,
+}
+
 
 def _end_rows(rows) -> list[dict]:
     """analytics.rejection_ends() rows in _HOW_FILTERS order, labelled, with a
@@ -953,6 +982,10 @@ _SCREEN = analytics.screen_sql("a.id")
 # "Visa, at a glance" is counted by (analytics.facts).
 _VISA_GROUP = jd_extraction.visa_group_sql("x.visa_signal")
 _FORM_VISA = answers.form_visa_sql("a.id")
+# What came of the round you sat, over the list's `a` — the expression
+# analytics.summary counts the lede by, so a count is the rows it opens.
+_FATE = analytics.round_fate_sql("a")
+_LOST_FATES = analytics._LOST_FATES
 _HOW_CASE = analytics.rejected_how_sql(
     "rr.reason",
     f"EXISTS (SELECT 1 FROM events x WHERE x.application_id = a.id "

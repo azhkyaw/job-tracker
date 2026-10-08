@@ -280,7 +280,7 @@ def _went(evs) -> dict:
     the panel counts those apart, since they can only agree with it."""
     rounds = [i for i, e in enumerate(evs) if e["type"] in RATED]
     if not rounds:
-        return {"went": None, "went_next": None, "went_hindsight": False}
+        return {"went": None, "went_next": None, "went_hindsight": False, "round_fate": None}
     rated = [i for i in rounds if evs[i].get("went")]
     i = (rated or rounds)[-1]
     anchor = evs[i]
@@ -296,7 +296,10 @@ def _went(evs) -> dict:
         nxt = "quiet" if outcome.get("closed_as") == "went_quiet" else "ended"
     went_at = anchor.get("went_at")
     hindsight = bool(went_at and outcome is not None and went_at > outcome["occurred_at"])
-    return {"went": anchor.get("went"), "went_next": nxt, "went_hindsight": hindsight}
+    went = anchor.get("went")
+    # The list's bucket over the same two facts (analytics.round_fate_sql).
+    return {"went": went, "went_next": nxt, "went_hindsight": hindsight,
+            "round_fate": analytics.round_fate(went, nxt)}
 
 
 def _plural(n: int, one: str, many: str | None = None) -> str:

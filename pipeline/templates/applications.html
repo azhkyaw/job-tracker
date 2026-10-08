@@ -23,9 +23,10 @@
    `visa` and `form` (25 Sep 2026) belong to no status, so every link carries
    the page's own unless it passes '' — which only the links that clear them
    do. #}
-{% macro list_url(status='', q='', sort='', reason='', how='', visa=none, form=none) -%}
+{% macro list_url(status='', q='', sort='', reason='', how='', visa=none, form=none, interviews=none) -%}
 {%- set vf = visa_filter if visa is none else visa -%}
 {%- set ff = form_filter if form is none else form -%}
+{%- set itf = interviews_filter if interviews is none else interviews -%}
 {%- set parts = [] -%}
 {%- if q %}{% set _ = parts.append('q=' + (q | urlencode)) %}{% endif -%}
 {%- if sort and sort != DEFAULT_SORT %}{% set _ = parts.append('sort=' + sort) %}{% endif -%}
@@ -34,6 +35,7 @@
 {%- if how %}{% set _ = parts.append('how=' + how) %}{% endif -%}
 {%- if vf %}{% set _ = parts.append('visa=' + vf) %}{% endif -%}
 {%- if ff %}{% set _ = parts.append('form=' + ff) %}{% endif -%}
+{%- if itf %}{% set _ = parts.append('interviews=' + itf) %}{% endif -%}
 {{ '/inbound' if page == 'inbound' else '/' }}{{ '?' + (parts | join('&')) if parts else '' }}
 {%- endmacro %}
 
@@ -64,7 +66,20 @@
   <b>{{ week.interviews }}</b> interview invitation{{ '' if week.interviews == 1 else 's' }}{% endif %}{% if week.offers %},
   <b>{{ week.offers }}</b> offer{{ '' if week.offers == 1 else 's' }}{% endif %}.
   Since {{ summary.first_applied | day }}: <b>{{ summary.responded }}</b> of <b>{{ summary.applied }}</b>
-  heard back{% if summary.response_rate is not none %} (<b>{{ summary.response_rate }}%</b>){% endif %}.</p>
+  heard back{% if summary.response_rate is not none %} (<b>{{ summary.response_rate }}%</b>){% endif %}.
+  {#- Interviews, by what came of them (analytics.round_fate_sql, 8 Oct 2026):
+      the lost — a rejection after, or silence after one you rated mixed or
+      badly — with its two parts, and silence after a good one, which is a
+      different fact. Each count opens exactly its rows (?interviews=), in
+      the words the filter note then repeats (_INTERVIEW_FILTERS). #}
+  {%- if summary.sat %} <b>{{ summary.sat }}</b> interview{{ '' if summary.sat == 1 else 's' }}
+  {%- if summary.lost %}, <a href="{{ list_url(interviews='lost') }}"><b>{{ summary.lost }}</b> lost</a>
+  ({% if summary.lost_rejected %}<a href="{{ list_url(interviews='rejected') }}">{{ summary.lost_rejected }} {{ interview_filters['rejected'] }}</a>{% endif %}
+  {%- if summary.lost_rejected and summary.lost_quiet %}, {% endif %}
+  {%- if summary.lost_quiet %}<a href="{{ list_url(interviews='lost_quiet') }}">{{ summary.lost_quiet }} {{ interview_filters['lost_quiet'] }}</a>{% endif %})
+  {%- endif %}
+  {%- if summary.unexplained %}, <a href="{{ list_url(interviews='unexplained') }}">{{ summary.unexplained }} {{ interview_filters['unexplained'] }}</a>{% endif %}.
+  {%- endif %}</p>
 {% endif %}
 
 {% if funnel %}
@@ -138,6 +153,11 @@
   {%- if form_filter %} {{ (form_visa[form_filter][0][:1] | lower) ~ form_visa[form_filter][0][1:] }}{% endif %}.
   <a href="{{ list_url(status=status, q=q, sort=sort, reason=reason, how=how, visa='', form='') }}">Show every visa case</a></p>
 {% endif %}
+{# The interviews filter, when one is set (8 Oct 2026): the lede's words. #}
+{% if interviews_filter %}
+<p class="filter-note">Only interviews {{ interview_filters[interviews_filter] }}.
+  <a href="{{ list_url(status=status, q=q, sort=sort, reason=reason, how=how, interviews='') }}">Show every interview</a></p>
+{% endif %}
 
 {# One row for the controls and the page's nudges (7 Oct 2026): the search
    and sort, then the links that used to sit on a line of their own beneath
@@ -152,6 +172,7 @@
   {% if how %}<input type="hidden" name="how" value="{{ how }}">{% endif %}
   {% if visa_filter %}<input type="hidden" name="visa" value="{{ visa_filter }}">{% endif %}
   {% if form_filter %}<input type="hidden" name="form" value="{{ form_filter }}">{% endif %}
+  {% if interviews_filter %}<input type="hidden" name="interviews" value="{{ interviews_filter }}">{% endif %}
   <span class="grow"><input type="search" name="q" value="{{ q }}"
         placeholder="Search company, role or recruiter" aria-label="Search company, role or recruiter"
         style="width:100%"></span>
@@ -321,6 +342,9 @@
 {% elif q %}
 <p class="empty">Nothing matches “{{ q }}”.
   <a href="{{ list_url(visa='', form='') }}">Clear the search</a> to see every {{ noun }}.</p>
+{% elif interviews_filter %}
+<p class="empty">No interview {{ interview_filters[interviews_filter] }}.
+  <a href="{{ list_url(status=status, sort=sort, interviews='') }}">See every {{ noun }}</a>.</p>
 {% elif visa_filter or form_filter %}
 <p class="empty">No {{ noun }} in this visa case.
   <a href="{{ list_url(status=status, sort=sort, visa='', form='') }}">See every {{ noun }}</a>.</p>

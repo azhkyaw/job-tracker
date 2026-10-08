@@ -2193,7 +2193,28 @@ the key to each real case.
      page, which offers the select on each of its two invitations. This is
      the prompt that gets ratings made BEFORE the answer, the only kind the
      panel can learn from.
-   - **The author's clicks:** the two records above, rated in hindsight
-     (the panel will say so); the 3 rows on `/follow-ups`; and each of the
-     5 interviews ahead, the morning after.
+   - **Built, third commit — the list says it.** Asked next for the fact
+     on the Applications page: "I failed 2 interviews in total: 1 they
+     rejected me after, 1 they went quiet on after a mixed/bad one".
+     `analytics.round_fate_sql` buckets every application with a round you
+     sat — followed by a rejection / rated mixed or badly then silence /
+     rated well then silence / unrated then silence / closed yourself /
+     went on / waiting (`ROUND_FATES`); `round_fate` is its Python twin
+     over `insights._went`, and `tests/test_web.py` holds the two equal
+     over every application in the suite's database (they agreed on all
+     430 real ones). The lede's tail reads "13 interviews, 6 lost (5
+     followed by a rejection, 1 you rated mixed or badly, then silence)",
+     each count a link to `?interviews=<bucket>` (`lost` is the two
+     buckets summed, a filter value and not a bucket, as `unrecorded` is
+     for reasons); the filter rides on every link like `visa`/`form`, names
+     itself above the search in the same words, and the registry is looped
+     on both pages by the suite. Silence after an interview rated WELL is
+     its own count ("you rated well, then silence"), since that is the
+     author's other sentence.
+   - **The author's clicks, as of the third commit:** the 10 Sep record
+     was rated badly on both its invitations and re-closed as gone quiet
+     the same afternoon (its status read `rejected` that morning), so it is
+     the lede's one "rated mixed or badly, then silence"; the 3-4 Aug one
+     is still unrated; the 3 rows on `/follow-ups`; and each of the 5
+     interviews ahead, the morning after.
 

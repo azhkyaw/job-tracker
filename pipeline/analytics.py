@@ -83,7 +83,7 @@ def summary(conn, user_id, inbound: bool | None = None) -> dict:
     not — 2 real inbound leads the user later applied to carry an `applied`
     event, so they counted as applications on a page they are not on (258
     against 256 rows, 24 Sep 2026)."""
-    row = conn.execute(_APPS_CTE + """
+    row = conn.execute(_APPS_CTE + f"""
         SELECT count(*) FILTER (WHERE applied_at IS NOT NULL) AS applied,
                count(*) FILTER (WHERE applied_at IS NULL)     AS interested,
                count(*) FILTER (WHERE first_resp IS NOT NULL) AS responded,
@@ -94,8 +94,16 @@ def summary(conn, user_id, inbound: bool | None = None) -> dict:
                -- The lede's "since": from the same rows as its counts. It
                -- read the trace axis until 7 Oct 2026, which is the VISIBLE
                -- rows', so a search moved the date and not the numbers.
-               min(applied_at)                                AS first_applied
-        FROM apps
+               min(applied_at)                                AS first_applied,
+               -- Interviews, by what came of them (round_fate_sql, 8 Oct
+               -- 2026): the lede's "N interviews, M lost (…)", each count
+               -- the rows the list's `interviews` filter shows.
+               count(*) FILTER (WHERE fate IS NOT NULL)       AS sat,
+               count(*) FILTER (WHERE fate IN {_LOST_FATES})  AS lost,
+               count(*) FILTER (WHERE fate = 'rejected')      AS lost_rejected,
+               count(*) FILTER (WHERE fate = 'lost_quiet')    AS lost_quiet,
+               count(*) FILTER (WHERE fate = 'unexplained')   AS unexplained
+        FROM (SELECT apps.*, {round_fate_sql('apps')} AS fate FROM apps) apps
         WHERE %(inbound)s::bool IS NULL OR (origin = 'inbound') = %(inbound)s
     """, {"user_id": user_id, "inbound": inbound}).fetchone()
     row["response_rate"] = (round(100.0 * row["responded"] / row["applied"])
@@ -235,7 +243,81 @@ ROUND_TYPES = _sql_list(ROUND_EVENTS)
 # then, and read the same — "rejected after a round", "they went quiet".
 # insights.interviews reads the rating beside what came of the round.
 RATED_EVENTS = ("interview_invite", "engaged")
+_RATED_TYPES = _sql_list(RATED_EVENTS)
 WENT_LABELS = {"well": "went well", "mixed": "mixed", "badly": "went badly"}
+
+# What came of the round you rated: one bucket per application with a round
+# you sat, the SQL twin of insights._went (8 Oct 2026). The anchor is the
+# newest round carrying a rating, else the newest round; the outcome is the
+# first round or close after it, else the thread's close when that sits
+# before the round's own mail. Asked for as a number on the list — "I failed
+# 2 interviews in total: one they rejected me after, one they went quiet on
+# after a mixed or bad one" — so `lost` there is `rejected` + `lost_quiet`
+# (LOST_FATES). Silence after a GOOD one is a different fact (`unexplained`:
+# the author's "I know I did well and heard nothing"), and after an unrated
+# one no fact at all (`quiet`). The keys are the list's `?interviews=`
+# filter and the words follow "interviews" — the lede's and the filter
+# note's, one vocabulary. Held equal to the Python over every application in
+# the suite's database (tests/test_web.py).
+ROUND_FATES = {
+    "rejected":    "followed by a rejection",
+    "lost_quiet":  "you rated mixed or badly, then silence",
+    "unexplained": "you rated well, then silence",
+    "quiet":       "unrated, then silence",
+    "ended":       "you closed yourself",
+    "on":          "that went on to a further round",
+    "waiting":     "still waiting for an answer",
+}
+LOST_FATES = ("rejected", "lost_quiet")
+LOST_WORDS = ("mixed", "badly")
+_LOST_FATES = _sql_list(LOST_FATES)
+_LOST_WORDS = _sql_list(LOST_WORDS)
+# What ends a round's wait: a further round, or a close.
+_OUTCOME_TYPES = _sql_list(ROUND_EVENTS + tuple(sorted(trace.TERMINAL)))
+
+
+def round_fate(went: str | None, went_next: str | None) -> str | None:
+    """The bucket in Python, over insights._went's two facts; None with no
+    round sat. Written beside the SQL so the two are changed together."""
+    if went_next is None:
+        return None
+    if went_next == "quiet":
+        return ("lost_quiet" if went in LOST_WORDS else
+                "unexplained" if went == "well" else "quiet")
+    return {"rejected": "rejected", "progressed": "on", "ended": "ended",
+            "waiting": "waiting"}[went_next]
+
+
+def round_fate_sql(a: str) -> str:
+    """The same bucket as a SQL expression over application `a`: NULL with
+    no round sat. `r` is the anchor round, `n` the first round or close
+    after it, `c` the thread's latest close, `o` whichever of the two the
+    outcome is (`n`, else `c` — a close filed by hand at noon before the
+    round's own evening mail, the 10 Sep 2026 record)."""
+    return f"""(SELECT CASE
+            WHEN o.type IS NULL THEN 'waiting'
+            WHEN o.type = 'rejected' THEN 'rejected'
+            WHEN o.type = 'withdrawn' AND o.closed = 'went_quiet' THEN
+                 CASE WHEN r.went IN {_LOST_WORDS} THEN 'lost_quiet'
+                      WHEN r.went = 'well' THEN 'unexplained' ELSE 'quiet' END
+            WHEN o.type = 'withdrawn' THEN 'ended'
+            ELSE 'on' END
+          FROM (SELECT r.occurred_at, r.created_at, r.payload->>'went' AS went FROM events r
+                 WHERE r.application_id = {a}.id AND r.type IN {_RATED_TYPES}
+                 ORDER BY (r.payload ? 'went') DESC, r.occurred_at DESC, r.created_at DESC
+                 LIMIT 1) r
+          LEFT JOIN LATERAL (
+            SELECT n.type, n.payload->>'closed' AS closed FROM events n
+             WHERE n.application_id = {a}.id AND n.type IN {_OUTCOME_TYPES}
+               AND (n.occurred_at, n.created_at) > (r.occurred_at, r.created_at)
+             ORDER BY n.occurred_at, n.created_at LIMIT 1) n ON true
+          LEFT JOIN LATERAL (
+            SELECT c.type, c.payload->>'closed' AS closed FROM events c
+             WHERE c.application_id = {a}.id AND c.type IN {_CLOSES}
+             ORDER BY c.occurred_at DESC, c.created_at DESC LIMIT 1) c ON true
+          CROSS JOIN LATERAL (
+            SELECT COALESCE(n.type, c.type) AS type,
+                   CASE WHEN n.type IS NOT NULL THEN n.closed ELSE c.closed END AS closed) o)"""
 
 # What each bucket is called on a page — the list's `how` chips, the
 # /analytics table and the flow's branches. Fixed order, not by count (web.py
@@ -781,7 +863,6 @@ def email_owed_count(conn, user_id) -> int:
 # 08:00 the morning after, in Singapore. Measured on the day: 8 open threads
 # ended in an unrated invitation, all with a stated day, none in a bare
 # `engaged`. ONE rule, formatted into the rows and the pill.
-_RATED_TYPES = _sql_list(RATED_EVENTS)
 _ISO_DAY = r"^\d{4}-\d{2}-\d{2}$"
 
 

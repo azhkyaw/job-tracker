@@ -871,6 +871,28 @@ is a private artifact, linked from the memory file
     the day after, before anything comes back: `/follow-ups`' first
     section, "How did it go?" (rule 9's 8 Oct paragraph,
     `analytics.rating_owed_sql`).
+    **The list says what came of them** (the same day). Asked for "I
+    failed 2 interviews in total: 1 they rejected me after, 1 they went
+    quiet on after a mixed/bad one" on the Applications page.
+    `analytics.round_fate_sql` is `insights._went` in SQL — the same
+    anchor (newest rated round, else newest), the same outcome (first
+    round or close after it, else the thread's close) — folded with the
+    rating into ONE bucket per application, `ROUND_FATES`: followed by a
+    rejection, rated mixed or badly then silence, rated well then silence,
+    unrated then silence, closed yourself, went on, waiting; `round_fate`
+    is the Python twin and `tests/test_web.py` holds them equal over every
+    application in the suite's database. The lede's tail counts them off
+    `analytics.summary` ("13 interviews, 6 lost (5 followed by a
+    rejection, 1 you rated mixed or badly, then silence)"), each count a
+    link to `?interviews=<bucket>` — `lost` being `LOST_FATES` summed, a
+    filter value and not a bucket, as `unrecorded` is for reasons
+    (`web._INTERVIEW_FILTERS`). The filter belongs to no status, so it
+    rides on every link like `visa`/`form`, names itself above the search
+    in the lede's own words (one vocabulary: the labels follow
+    "interviews"), and the suite loops the registry on both pages so a
+    bucket's count is the rows it opens. Silence after an interview rated
+    WELL is deliberately its own count, not a loss and not nothing: it is
+    the author's other sentence, "I know I did well and heard nothing".
 
 ## Invariant #2 in detail (moved from CLAUDE.md, 25 Sep 2026)
 
