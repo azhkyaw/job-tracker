@@ -2122,3 +2122,36 @@ the key to each real case.
    branch, so moving the date check would have blanked a lead's URL and
    posting id on every save; it now runs whatever the date.
 
+74. **Taleo, the first two applies: both missed live, filed by re-opening
+   them** (built 8 Oct 2026 ~02:26 SGT, committed the same evening as
+   0.29.0). An insurer's two openings sharing one title, on Oracle Taleo's
+   classic career section (`<tenant>.taleo.net/careersection/…`), a vendor
+   the manifest did not cover. Read later from Chrome's History: the first
+   form was submitted at 18:21:18 UTC (its confirmation 3 s later), the
+   second at 18:33:02; each record was made AFTER, by re-opening the
+   submitted application from "My submissions" (18:31 and 18:36), so each
+   carried the re-capture's time, the first had no JD (made from the flow
+   page, whose address holds no id), and both confirmations, which name
+   neither title nor number, sat on the first. A session wrote Taleo
+   support between the two applies and never committed it; it was found
+   parked in the tree.
+   - **Built (0.29.0):** the manifest covers `*://*.taleo.net/careersection/*`;
+     a printed "(Job Number: X)", letters allowed but a digit required, is
+     the page's id and is stripped from its title (`LABELLED_REQ`,
+     `stripRequisition`); `LISTING_DOM.taleo` reads the title where Taleo
+     lays it out (the listing's `reqTitleLinkAction` span, every flow
+     step's "Applying for:" line), since its `<h1>` names the step; a
+     listing with no JobPosting but a laid-out description is stashed
+     (`_prov.laid_out`), so the flow, at an address with no id, finds it by
+     the job number every step prints. Five checks. Greenhouse listings
+     without a JobPosting are now stashed too.
+   - **Repaired:** the second confirmation re-filed onto its record; both
+     applied times set to the History's submits; the first given its
+     listing's URL (same posting id) and JD, decoded from the encoded field
+     the listing renders it from. The tree's comments had carried the real
+     job number; replaced before the commit.
+   - **Not verified:** a live submit captured AT the submit. The second
+     apply was missed though the code was written by then (the extension
+     was probably not yet reloaded; nothing recorded it); only the
+     re-opened captures have run.
+

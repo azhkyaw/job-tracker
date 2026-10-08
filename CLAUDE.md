@@ -82,7 +82,7 @@ and design records; the code and `migrations/` win where they disagree.
   this install. Read its §3 first: the author's right to earn in Singapore
   decides the rest. Confirms `docs/open-source.md` and says what would
   reopen the question.
-- `docs/worklog.md` — the dated task register (tasks 1-73 with their
+- `docs/worklog.md` — the dated task register (tasks 1-74 with their
   measurements); what is still open is summarised under "Open work" below.
 
 **Path-scoped rules.** Dated case history that only matters when touching
@@ -802,7 +802,7 @@ Detail lives with each family's rule file; this is the index.
   says per build what to read on first real contact): every adapter
   selector is best-effort; JobStreet's race fix wants one clean submit;
   Indeed never exercised; `getRecruiter()` has one card of evidence;
-  textareas never stored from Easy Apply. Builds 0.9.0-0.28.3 carry
+  textareas never stored from Easy Apply. Builds 0.9.0-0.29.0 carry
   pieces proven only in tests or by rules run in a live page, waiting on:
   the next Easy Apply (0.9.0's `<dialog>` sweep, `getJob()`'s
   self-document fallback and `doc_source`, 0.10.1's
@@ -820,7 +820,8 @@ Detail lives with each family's rule file; this is the index.
   its confirmation dialog, fields named beside their web components);
   the next blank type-ahead dropdown and the next field a page fills and
   empties (0.28.1, 0.28.3: no live-region text or icon glyph as an answer,
-  no answer kept for a field left blank).
+  no answer kept for a field left blank); the next Taleo apply (0.29.0:
+  seen only on re-opened applications, task 74).
 - **Mail** (`.claude/rules/mail-ingest.md`): IMAP verified on a real inbox
   28 Jul 2026; the web IMAP connect form, Gmail web OAuth and the full `-m 12`
   window are not.
@@ -853,7 +854,7 @@ Detail lives with each family's rule file; this is the index.
 
 ## Open work (as of 8 Oct 2026)
 
-The dated register behind each item, tasks 1-73 with their measurements, is
+The dated register behind each item, tasks 1-74 with their measurements, is
 `docs/worklog.md`; read the matching entry before acting on one.
 
 - **Follow-up drafting**, now on a page that has a place for it (task 61,
@@ -900,7 +901,7 @@ The dated register behind each item, tasks 1-73 with their measurements, is
   Oct) wait in the Approaches lane, one card each, for the author's "Track
   as lead" or "Ignore". A request names no role; one card's extraction
   missed its company, so only its own card's company box files it.
-- **Extension, next real Easy Apply:** verify the current build (0.28.3 on
+- **Extension, next real Easy Apply:** verify the current build (0.29.0 on
   8 Oct) is live on BOTH machines and the tab was opened after the
   reload; read `doc_source` and the sweep line, and check that the radio
   rows read Yes/No, not the question (task 42). From a search page, a

@@ -1983,7 +1983,7 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   SuccessFactors classic form, or any form with a type-ahead dropdown left
   blank: no answer reading "results available", "arrow keys" or a lone
   invisible glyph (`SELECT count(*) FROM application_answers WHERE answer ~
-  '[-]' OR answer ~* 'arrow keys'` stays 0). If one appears,
+  '[\uE000-\uF8FF]' OR answer ~* 'arrow keys'` stays 0). If one appears,
   the region is marked some other way: read its element live. On a form
   where a field is filled by the page and then emptied (a résumé parse, a
   section reset): the record carries no answer for it. If it does, the
@@ -1991,3 +1991,18 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   And on a Career Site Builder listing titled with its tenant, once its
   site is enabled: the receipt asks for the company instead of filing the
   code.
+
+- **0.29.0's Taleo support has captured only RE-OPENED applications**
+  (8 Oct 2026, worklog task 74). Both real applies on Oracle Taleo's
+  classic career section were missed at the submit (the first before the
+  support existed, the second probably before the extension was reloaded);
+  each was filed afterwards by re-opening the submitted application from
+  "My submissions" and pressing through its steps, which captured with the
+  listing's stash (JD, the listing's `<tenant>.taleo.net/<job number>` id)
+  when the listing had been visited first. What to read on the next
+  Taleo apply, opened from its listing: ONE record at the final submit,
+  the job number as its id, the title without "(Job Number: …)", the
+  listing's JD and the form's answers, and its confirmation (which names
+  neither title nor number) matched by company. A flow entered without
+  the listing (a direct link to `flow.jsf`) reads its title and number
+  from the "Applying for:" line and has no JD.
