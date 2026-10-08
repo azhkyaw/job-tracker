@@ -130,11 +130,19 @@ def rounds(evs, tz=None) -> list[dict]:
         pick = rated[-1] if rated else r["events"][-1]
         r["went"] = _went_of(pick)
         r["rate_event"] = pick.get("id")
+        # The kind (analytics.ROUND_KINDS): the event the round is rated
+        # through says it, else the newest event that names one.
+        kinds = [e for e in r["events"] if _kind_of(e)]
+        r["kind"] = _kind_of(pick) or (_kind_of(kinds[-1]) if kinds else None)
     return out
 
 
 def _went_of(e):
     return e.get("went") or (e.get("payload") or {}).get("went")
+
+
+def _kind_of(e):
+    return e.get("round_kind") or (e.get("payload") or {}).get("round_kind")
 
 
 # event type -> status colour token in base.html

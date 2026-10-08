@@ -64,8 +64,22 @@
             counted as a round is seen, not silent. #}
         {%- set rd = round_of.get(e.id) %}
         {%- set not_round = e.payload.get('round_is') == 'none' %}
-        {%- if rd %}<small>round {{ rd.n }}{% if rounds | length > 1 %} of {{ rounds | length }}{% endif %}</small>{% endif %}
+        {%- if rd %}<small>round {{ rd.n }}{% if rounds | length > 1 %} of {{ rounds | length }}{% endif %}{% if rd.kind %}, {{ round_kinds.get(rd.kind, rd.kind) }}{% endif %}</small>{% endif %}
         {%- if not_round %}<small>not a round</small>{% endif %}
+        {#- What kind of round (web.py:set_round_kind), once per round, on the
+            line the round is rated through; every line of the round then
+            wears it after its label. #}
+        {%- if rd and rd.rate %}
+        <form method="post" action="/applications/{{ a.id }}/events/{{ e.id }}/kind" class="why">
+          <select name="kind" aria-label="What kind of round">
+            <option value="">{% if rd.kind %}Clear the kind{% else %}What kind of round?{% endif %}</option>
+            {% for value, label in round_kinds.items() %}
+            <option value="{{ value }}" {% if rd.kind == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+          <button>Save</button>
+        </form>
+        {%- endif %}
         {#- Your correction of the grouping (web.py:set_round_is): leave a
             line out of the rounds — a reminder, a cancellation, a reply
             about the interview — or count it again. #}
@@ -242,6 +256,14 @@
   <select name="channel" aria-label="How you heard">
     <option value="">How you heard</option>
     {% for value, label in event_channels.items() %}
+    <option value="{{ value }}">{{ label }}</option>
+    {% endfor %}
+  </select>
+  {#- The kind of round, when filing an invitation by hand (a hand-filed
+      round is its own, trace.own_round); the route drops it otherwise. #}
+  <select name="round_kind" aria-label="Kind of round, if an interview">
+    <option value="">Kind of round, if an interview</option>
+    {% for value, label in round_kinds.items() %}
     <option value="{{ value }}">{{ label }}</option>
     {% endfor %}
   </select>

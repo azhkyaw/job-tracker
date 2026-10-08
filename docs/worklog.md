@@ -2314,6 +2314,20 @@ the key to each real case.
      same-round approximations (`rating_owed_sql`, `round_fate_sql`) and
      `insights._same_round` exclude manual events alike, held equal on
      all real records. That thread reads 3: test, screen, interview.
+   - **The kind of round** (9 Oct 2026, asked next: "add the type of round
+     after the label"). `analytics.ROUND_KINDS` — coding test or
+     take-home, recruiter screen, technical interview, hiring manager,
+     panel or onsite, final round, other — a closed vocabulary so "which
+     round do I lose at" can be counted later. `payload.round_kind`
+     through `web.set_round_kind` (the narrow door; a select on the line
+     the round is rated through) or the timeline form when filing an
+     invitation by hand; `trace.rounds` reads it per round (the rated
+     event's, else the newest that names one), the label reads "round 3
+     of 3, technical interview" on every line of the round, the list
+     tag's title names each round's day and kind, and the edit route
+     carries `round_kind` and `round_is` across a re-save (the latter
+     had not been, a hole from the night before). Not yet: `/analytics`
+     by kind — the vocabulary is there for it.
    - **Not built:** the two source faults for `email_classify_v3`: a
      "Canceled event" mail and a recruiter's InMail reply are not
      invitations.

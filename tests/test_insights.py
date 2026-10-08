@@ -285,6 +285,15 @@ check("a round you filed by hand is its own, even on a day a mail invitation nam
       == [(1, False, 2), (2, True, 1)]
       and insights._same_round(ev(r1, "interview_invite", ago(10), source="manual"),
                                ev(r1, "interview_invite", ago(10))) is False)
+check("a round's kind is the rated event's, else the newest event's that names one",
+      trace.rounds([ev(r1, "interview_invite", ago(9), stated_date=ago(5).date().isoformat(), round_kind="screen"),
+                    ev(r1, "interview_invite", ago(8), stated_date=ago(5).date().isoformat())])[0]["kind"] == "screen"
+      and trace.rounds([ev(r1, "interview_invite", ago(9), round_kind="screen"),
+                        ev(r1, "interview_invite", ago(8), round_kind="technical")])[0]["kind"] == "technical"
+      and trace.rounds([ev(r1, "interview_invite", ago(9), went="well", round_kind="screen"),
+                        ev(r1, "interview_invite", ago(8), round_kind="technical")])[0]["kind"] == "screen"
+      and trace.rounds([ev(r1, "interview_invite", ago(9), payload={"round_kind": "final"})])[0]["kind"] == "final"
+      and set(analytics.ROUND_KINDS) >= {"test", "screen", "technical"})
 check("a line you said is not a round leaves the rounds, flat column or payload, and leaves "
       "_went's anchor too",
       len(trace.rounds(r_evs[:2] + [dict(r_evs[2], round_is="none")] + r_evs[3:])) == 3

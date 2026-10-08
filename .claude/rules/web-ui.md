@@ -932,6 +932,14 @@ is a private artifact, linked from the memory file
     invitation had named the same day as its deadline. Nobody hand-files
     a reminder, so the rule is by source, not by click; the SQL
     same-round approximations exclude manual events the same way.
+    **A round has a kind** (the same morning): `analytics.ROUND_KINDS`, a
+    closed vocabulary (coding test or take-home, recruiter screen,
+    technical interview, hiring manager, panel or onsite, final round,
+    other) in `payload.round_kind` through `web.set_round_kind` or the
+    timeline form; `trace.rounds` reads it per round and the label says
+    "round 3 of 3, technical interview" on every line of the round, the
+    list tag's title too. Closed, like every vocabulary here, so a later
+    `/analytics` can count where the search stops.
 
 ## Invariant #2 in detail (moved from CLAUDE.md, 25 Sep 2026)
 

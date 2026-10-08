@@ -4129,6 +4129,42 @@ for _e in (_rr_two, _rr_note):
 check("the hand-filed round, newest, is owed its own word — the rating on the invitation of the same "
       "day is not its",
       str(_rating_owed()[_rr]["event_id"]) == str(_rr_hand), _rating_owed().get(_rr))
+
+# What kind of round (9 Oct 2026): said once per round, worn on every line
+# of it, in the list tag's title, and taken by the timeline form.
+r = client.post(f"/applications/{_rr}/events/{_rr_hand}/kind", data={"kind": "screen"})
+_pg = client.get(f"/applications/{_rr}").text
+check("a round's kind, said on its line, follows the label and is the select's choice",
+      r.status_code == 303 and "<small>round 2 of 2, recruiter screen</small>" in _pg
+      and "selected>recruiter screen" in _pg, re.findall(r"<small>round [^<]+</small>", _pg))
+client.post(f"/applications/{_rr}/events/{_rr_inv}/kind", data={"kind": "test"})
+_pg = client.get(f"/applications/{_rr}").text
+_row = client.get("/?q=Two+Rounds").text.split(f'href="/applications/{_rr}"')[1].split("</a>")[0]
+check("...and the list tag's title names each round's day and kind",
+      "<small>round 1 of 2, coding test or take-home</small>" in _pg
+      and "(coding test or take-home), " in _row and "(recruiter screen)" in _row, _row[-400:])
+check("a kind outside the vocabulary is refused; anything but an invitation is 404",
+      client.post(f"/applications/{_rr}/events/{_rr_hand}/kind", data={"kind": "vibes"}).status_code == 400
+      and client.post(f"/applications/{_rr}/events/{_rr_applied}/kind",
+                      data={"kind": "screen"}).status_code == 404)
+client.post(f"/applications/{_rr}/events", data={"type": "interview_invite", "occurred_on": _ago(2),
+                                                 "round_kind": "technical", "note": "panel"})
+_pg = client.get(f"/applications/{_rr}").text
+check("the timeline form files a hand-filed round with its kind",
+      "<small>round 3 of 3, technical interview</small>" in _pg,
+      re.findall(r"<small>round [^<]+</small>", _pg))
+with db.connect() as conn:
+    _rr_tech = conn.execute("SELECT id FROM events WHERE application_id = %s "
+                            "AND payload->>'round_kind' = 'technical'", (_rr,)).fetchone()["id"]
+client.post(f"/applications/{_rr}/events/{_rr_tech}/round", data={"round_is": "none"})
+client.post(f"/applications/{_rr}/events/{_rr_tech}/edit",
+            data={"type": "interview_invite", "occurred_on": _ago(3), "note": "panel, moved"})
+_p = _wt_event(_rr_tech)["payload"]
+check("re-saving a hand-filed round through the edit form keeps its kind and your 'not a round'",
+      _p.get("round_kind") == "technical" and _p.get("round_is") == "none"
+      and _p.get("note") == "panel, moved", _p)
+client.post(f"/applications/{_rr}/events/{_rr_hand}/kind", data={"kind": ""})
+check("blank clears the kind", "<small>round 2 of 2</small>" in client.get(f"/applications/{_rr}").text)
 client.post(f"/applications/{_rr}/delete")
 check("this section's record is gone", client.get(f"/applications/{_rr}").status_code == 404)
 

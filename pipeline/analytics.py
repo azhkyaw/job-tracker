@@ -246,6 +246,22 @@ RATED_EVENTS = ("interview_invite", "engaged")
 _RATED_TYPES = _sql_list(RATED_EVENTS)
 WENT_LABELS = {"well": "went well", "mixed": "mixed", "badly": "went badly"}
 
+# What kind of round it was (`payload.round_kind`, web.set_round_kind and the
+# timeline form, 9 Oct 2026): a closed vocabulary, so "which round do I lose
+# at" can be counted later. Shown after the round's label ("round 3 of 3,
+# technical interview") and in the list tag's title; trace.rounds carries it
+# per round. The author's own words for one thread were "coding test,
+# recruiter screen, technical".
+ROUND_KINDS = {
+    "test":      "coding test or take-home",
+    "screen":    "recruiter screen",
+    "technical": "technical interview",
+    "manager":   "hiring manager",
+    "panel":     "panel or onsite",
+    "final":     "final round",
+    "other":     "other",
+}
+
 
 def sat_sql(r: str) -> str:
     """Event `r` is a round you sat: a rated type, unless you said the line
@@ -1068,6 +1084,7 @@ def facts(conn, user_id) -> tuple[list[dict], list[dict]]:
                (e.payload->>'went_at')::timestamptz          AS went_at,
                e.payload->>'stated_date'                     AS stated_date,
                e.payload->>'round_is'                        AS round_is,
+               e.payload->>'round_kind'                      AS round_kind,
                em.extraction->>'platform'                    AS mail_platform
         FROM events e
         JOIN applications a ON a.id = e.application_id

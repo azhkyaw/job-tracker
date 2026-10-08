@@ -725,7 +725,8 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
                 """
                 SELECT application_id, type, source, occurred_at,
                        payload->>'stated_date' AS stated_date,
-                       payload->>'round_is' AS round_is FROM events
+                       payload->>'round_is' AS round_is,
+                       payload->>'round_kind' AS round_kind FROM events
                  WHERE application_id = ANY(%s) ORDER BY occurred_at
                 """, ([r["id"] for r in rows],)).fetchall():
                 events_by_app.setdefault(e["application_id"], []).append(e)
@@ -736,7 +737,10 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
         for r in rows:
             rds = trace.rounds(events_by_app.get(r["id"], []), request.state.tz)
             r["n_rounds"] = len(rds)
-            r["rounds_title"] = ", ".join(f"{x['day']:%d %b}".lstrip("0") for x in rds)
+            r["rounds_title"] = ", ".join(
+                f"{x['day']:%d %b}".lstrip("0")
+                + (f" ({analytics.ROUND_KINDS.get(x['kind'], x['kind'])})" if x["kind"] else "")
+                for x in rds)
 
         # The inbound page's lede is a different sentence from the record's:
         # not applications and replies, but approaches, how many still wait on
@@ -1414,7 +1418,7 @@ def application_detail(request: Request, app_id: str, saved: str | None = None,
         # line says which round it belongs to, and the round's one "How did
         # it go?" select sits on the event the round is rated through.
         rounds = trace.rounds(list(reversed(events)), request.state.tz)
-        round_of = {e["id"]: {"n": r["n"], "rate": e["id"] == r["rate_event"]}
+        round_of = {e["id"]: {"n": r["n"], "rate": e["id"] == r["rate_event"], "kind": r["kind"]}
                     for r in rounds for e in r["events"]}
         today_local = datetime.now(request.state.tz).date()
         rounds_ahead = sum(1 for r in rounds if r["day"] >= today_local)
@@ -1443,6 +1447,7 @@ def application_detail(request: Request, app_id: str, saved: str | None = None,
             "round_went": analytics.WENT_LABELS,
             "rated_events": analytics.RATED_EVENTS,
             "rounds": rounds, "round_of": round_of, "rounds_ahead": rounds_ahead,
+            "round_kinds": analytics.ROUND_KINDS,
             # The statuses the close panel asks about on your own application.
             "open_round": analytics.OPEN_ROUND,
             "today": datetime.now(request.state.tz).strftime("%Y-%m-%d"),
@@ -1769,7 +1774,8 @@ def _parse_occurred_on(occurred_on: str, tz):
     return ingest.local_date_to_utc(d, tz), None
 
 
-def _manual_event_payload(type: str, note: str, reason: str, channel: str) -> dict:
+def _manual_event_payload(type: str, note: str, reason: str, channel: str,
+                          round_kind: str = "") -> dict:
     payload = {}
     if note.strip():
         payload["note"] = note.strip()
@@ -1780,6 +1786,9 @@ def _manual_event_payload(type: str, note: str, reason: str, channel: str) -> di
         payload["reason"] = reason
     if channel in _EVENT_CHANNELS:
         payload["channel"] = channel
+    # And a kind of round only on an invitation (analytics.ROUND_KINDS).
+    if type == trace.ROUND_EVENT and round_kind in analytics.ROUND_KINDS:
+        payload["round_kind"] = round_kind
     return payload
 
 
@@ -1885,7 +1894,7 @@ def _event_ctx(conn, a, event, tz, *, form, error=None):
 
 @app.post("/applications/{app_id}/events")
 def add_event(request: Request, app_id: str, type: str = Form(...), note: str = Form(""),
-              reason: str = Form(""), channel: str = Form(""),
+              reason: str = Form(""), channel: str = Form(""), round_kind: str = Form(""),
               occurred_on: str = Form(""), redirect_to: str = Form("")):
     """File one thing that happened, by hand.
 
@@ -1918,7 +1927,7 @@ def add_event(request: Request, app_id: str, type: str = Form(...), note: str = 
     occurred_at, err = _parse_occurred_on(occurred_on, tz)
     if err:
         return _event_error(app_id, err)
-    payload = _manual_event_payload(type, note, reason, channel)
+    payload = _manual_event_payload(type, note, reason, channel, round_kind)
 
     with db.connect_scoped(user["id"]) as conn, conn.transaction():
         a = _get_application(conn, app_id)
@@ -2012,9 +2021,14 @@ def edit_event(
             if type == e["type"] == "note" and e["payload"].get("emailed"):
                 payload["emailed"] = e["payload"]["emailed"]
             # And a round you sat that stays one keeps how you said it went
-            # (set_round_went), and when you said so.
+            # (set_round_went), and when you said so; an invitation keeps
+            # its kind and your "not a round" (set_round_kind, set_round_is).
             if type in analytics.RATED_EVENTS and e["type"] in analytics.RATED_EVENTS:
                 for k in ("went", "went_at"):
+                    if k in e["payload"]:
+                        payload[k] = e["payload"][k]
+            if type == e["type"] == trace.ROUND_EVENT:
+                for k in ("round_kind", "round_is"):
                     if k in e["payload"]:
                         payload[k] = e["payload"][k]
             conn.execute(
@@ -2399,6 +2413,38 @@ def set_round_is(request: Request, app_id: str, event_id: str, round_is: str = F
                          (Json({"round_is": round_is}), row["id"]))
         else:
             conn.execute("UPDATE events SET payload = payload - 'round_is' WHERE id = %s",
+                         (row["id"],))
+    return RedirectResponse(f"/applications/{app_id}", status_code=303)
+
+
+@app.post("/applications/{app_id}/events/{event_id}/kind")
+def set_round_kind(request: Request, app_id: str, event_id: str, kind: str = Form("")):
+    """Say what kind of round an invitation was (`payload.round_kind`,
+    analytics.ROUND_KINDS) — on any `interview_invite` whatever its source,
+    the narrow door again; blank clears it. The select sits on the line the
+    round is rated through, and trace.rounds reads the kind per round, so
+    every line of the round wears it ("round 3 of 3, technical interview").
+    Asked for on 9 Oct 2026, the day after the rounds were counted: the
+    count says how far a thread got, the kind says what it got to."""
+    if kind and kind not in analytics.ROUND_KINDS:
+        raise HTTPException(400, "unknown kind")
+    from psycopg.types.json import Json
+    user = _login_user(request)
+    with db.connect_scoped(user["id"]) as conn, conn.transaction():
+        a = _get_application(conn, app_id)
+        try:
+            row = conn.execute(
+                "SELECT id, type FROM events WHERE id = %s::uuid AND application_id = %s",
+                (event_id, a["id"])).fetchone()
+        except psycopg.errors.InvalidTextRepresentation:
+            row = None
+        if row is None or row["type"] != trace.ROUND_EVENT:
+            raise HTTPException(404, "invitation not found")
+        if kind:
+            conn.execute("UPDATE events SET payload = payload || %s::jsonb WHERE id = %s",
+                         (Json({"round_kind": kind}), row["id"]))
+        else:
+            conn.execute("UPDATE events SET payload = payload - 'round_kind' WHERE id = %s",
                          (row["id"],))
     return RedirectResponse(f"/applications/{app_id}", status_code=303)
 
