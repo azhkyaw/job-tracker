@@ -33,10 +33,12 @@ migration invariant (#8) and the tenancy checklist (#6) are still in CLAUDE.md.
   first, then `pg_dump --data-only`. Full procedure in
   `docs/windows-dev.md` "Managed Postgres" (dev DB moved here 2 Aug 2026;
   local Docker still backs `scripts/test.ps1`'s throwaway DB).
-- **Migration filenames are hardcoded in FOUR places — there is no runner.**
+- **Migration filenames are hardcoded in THREE places — there is no runner.**
   Adding `migrations/NNN_x.sql` also means editing `scripts/dev-setup.ps1`,
-  `scripts/test.ps1`, `scripts/test.sh`, and the `psql -f` command block in
-  `README.md`. Miss one and `test.ps1` resets its DB without the new column,
+  `scripts/test.ps1` and `scripts/test.sh` (it was four until 8 Oct 2026:
+  `README.md`'s quick start now loops `migrations/*.sql`, which the
+  zero-padded names keep in order, so it no longer lists them). Miss one and
+  `test.ps1` resets its DB without the new column,
   so every page needing it 500s with no obvious cause. The dev DB is a fifth
   place, in a different sense: it is not reset between runs, so apply the file
   to it by hand (`MSYS_NO_PATHCONV=1 docker compose exec -T db psql -U postgres
