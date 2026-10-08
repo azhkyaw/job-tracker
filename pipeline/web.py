@@ -1458,6 +1458,9 @@ def _applied_event(conn, app_id) -> dict | None:
 def _edit_ctx(conn, a, user, tz, *, form, error=None):
     return {
         "a": a, "form": form, "error": error,
+        # A record with no "You applied" (a lead, a saved job) may leave the
+        # applied date blank; one that has it may not (edit_application).
+        "has_applied": _applied_event(conn, a["id"]) is not None,
         "tz_label": user.get("timezone") or "UTC",
         "today": datetime.now(tz).strftime("%Y-%m-%d"),
         "pending": _pending_count(conn),
@@ -1531,11 +1534,11 @@ def edit_application(
         error = "Unknown platform."
     elif external.strip() and external_val is None:
         error = "Unknown 'how you applied' value."
-    elif not applied_date:
-        error = "Enter the applied date."
-    else:
+    elif not applied_date.strip() and applied_time.strip():
+        error = "An applied time needs its date."
+    elif applied_date.strip():
         try:
-            applied_d = datetime.strptime(applied_date, "%Y-%m-%d").date()
+            applied_d = datetime.strptime(applied_date.strip(), "%Y-%m-%d").date()
         except ValueError:
             error = "Enter a valid applied date."
         if error is None and applied_time.strip():
@@ -1545,13 +1548,22 @@ def edit_application(
                 error = "Enter a valid applied time (HH:MM), or leave it blank."
         if error is None and applied_d > datetime.now(tz).date():
             error = "The applied date can't be in the future."
-        if error is None:
-            parsed_platform, platform_job_id, canonical_url = joburl.parse(url or None)
-            if parsed_platform and parsed_platform != platform:
-                error = _platform_mismatch(parsed_platform, platform)
+    # Whatever the date says: the URL is the posting's, and a blank date
+    # (a lead never applied to) must not blank it.
+    if error is None:
+        parsed_platform, platform_job_id, canonical_url = joburl.parse(url or None)
+        if parsed_platform and parsed_platform != platform:
+            error = _platform_mismatch(parsed_platform, platform)
 
     with db.connect_scoped(user["id"]) as conn:
         a = _get_application(conn, app_id)
+        # A blank date says "I haven't applied", which only a record with no
+        # "You applied" event can say: the form does not delete events, and
+        # the thread's own delete is how an application is un-filed.
+        if error is None and applied_d is None and _applied_event(conn, a["id"]) is not None:
+            error = ("This record has “You applied” on its thread. To say you "
+                     "haven't applied, delete that event on the application's page; "
+                     "here, enter the applied date.")
         if error:
             return templates.TemplateResponse(
                 request=request, name="application_edit.html",
@@ -1559,13 +1571,13 @@ def edit_application(
                 status_code=400)
 
         primary = _primary_posting(conn, a)
-        applied_at = ingest.local_date_to_utc(applied_d, tz, t=applied_t)
+        applied_at = ingest.local_date_to_utc(applied_d, tz, t=applied_t) if applied_d else None
 
         # Moving the application later than something it caused is incoherent.
         clash_ev = conn.execute(
             "SELECT type, occurred_at FROM events WHERE application_id = %s "
             "AND type = ANY(%s) AND occurred_at < %s ORDER BY occurred_at LIMIT 1",
-            (a["id"], list(_POST_APPLY_TYPES), applied_at)).fetchone()
+            (a["id"], list(_POST_APPLY_TYPES), applied_at)).fetchone() if applied_at else None
         if clash_ev:
             error = (f"The timeline already has a {clash_ev['type']} on "
                      f"{clash_ev['occurred_at'].astimezone(tz).strftime('%d %b %Y')} — "
@@ -1575,7 +1587,7 @@ def edit_application(
         # application can't be moved to a day before it either. Local dates,
         # same comparison as the approach's own check. Hand-filed only — an
         # email-borne approach is the email's fact, not a claim about order.
-        if error is None:
+        if error is None and applied_d is not None:
             approach = conn.execute(
                 "SELECT occurred_at FROM events WHERE application_id = %s AND type = %s "
                 "AND source = 'manual' LIMIT 1", (a["id"], _APPROACH)).fetchone()
@@ -1651,9 +1663,10 @@ def edit_application(
                 conn.execute(
                     "UPDATE events SET occurred_at = %s, payload = %s WHERE id = %s",
                     (applied_at, external_payload, ev["id"]))
-            else:
+            elif applied_at is not None:
                 # No applied event to correct (e.g. a record still at
-                # 'interested') — supplying a date here is how you log one.
+                # 'interested') — supplying a date here is how you log one;
+                # leaving it blank (a lead never applied to) files nothing.
                 conn.execute(
                     "INSERT INTO events (user_id, application_id, type, source, "
                     "occurred_at, payload) VALUES (%s, %s, 'applied', 'manual', %s, %s)",

@@ -1253,6 +1253,51 @@ with db.connect() as conn:
           unchanged["company_norm"] == "edit test co"
           and unchanged["title_canonical"] == "Senior Backend Engineer", unchanged)
 
+print("edit application: a lead you haven't applied to edits with no applied date")
+# 8 Oct 2026: the form refused any save without an applied date, so a lead
+# made from a recruiter's request could not have its role or company set.
+r = client.post("/applications/new", data={
+    "company": "Lead Edit Co", "title": "unknown role", "platform": "linkedin",
+    "started_by": "recruiter", "approach_date": "2026-08-03", "approach_channel": "phone",
+    "after": "view"})
+_lead = r.headers["location"].rsplit("/", 1)[1]
+_lead_applied = lambda: db.connect().execute(  # noqa: E731
+    "SELECT count(*) AS n FROM events WHERE application_id = %s::uuid AND type = 'applied'",
+    (_lead,)).fetchone()["n"]
+r = client.get(f"/applications/{_lead}/edit")
+_date_input = r.text.split('name="applied_date"', 1)[1].split(">", 1)[0]
+check("a lead's form asks for the applied date only if there is one",
+      r.status_code == 200 and "Applied on, if you have" in r.text and "required" not in _date_input,
+      _date_input)
+r = client.get(f"/applications/{edit_app}/edit")
+check("...while an application's form still requires it",
+      "required" in r.text.split('name="applied_date"', 1)[1].split(">", 1)[0])
+r = client.post(f"/applications/{_lead}/edit", data={
+    "company": "Lead Edit Co", "title": "Platform Engineer", "platform": "linkedin",
+    "url": "https://www.linkedin.com/jobs/view/5544332299/", "applied_date": "",
+    "external": "yes"})
+with db.connect() as conn:
+    _lj = conn.execute(
+        "SELECT j.title_canonical, p.platform_job_id FROM applications a JOIN jobs j ON j.id = a.job_id "
+        "JOIN postings p ON p.id = a.applied_via_posting_id WHERE a.id = %s::uuid", (_lead,)).fetchone()
+check("saving a lead with no applied date keeps it unapplied, and the rest of the form applies "
+      "(the URL too: its parse no longer sits behind the date)",
+      r.status_code == 303 and _lead_applied() == 0 and _lj["title_canonical"] == "Platform Engineer"
+      and _lj["platform_job_id"] == "5544332299", (r.status_code, _lj))
+r = client.post(f"/applications/{_lead}/edit", data={
+    "company": "Lead Edit Co", "title": "Platform Engineer", "platform": "linkedin",
+    "url": "https://www.linkedin.com/jobs/view/5544332299/", "applied_time": "09:30"})
+check("a time with no date is refused", r.status_code == 400 and "needs its date" in r.text, r.status_code)
+r = client.post(f"/applications/{_lead}/edit", data={
+    "company": "Lead Edit Co", "title": "Platform Engineer", "platform": "linkedin",
+    "url": "https://www.linkedin.com/jobs/view/5544332299/", "applied_date": "2026-08-05"})
+check("...and a date, given later, files the application as before",
+      r.status_code == 303 and _lead_applied() == 1, r.status_code)
+r = client.post(f"/applications/{_lead}/edit", data={
+    "company": "Lead Edit Co", "title": "Platform Engineer", "platform": "linkedin",
+    "url": "https://www.linkedin.com/jobs/view/5544332299/", "applied_date": ""})
+check("a record that has applied cannot blank its date here: the thread's delete un-files it",
+      r.status_code == 400 and "delete that event" in r.text and _lead_applied() == 1, r.status_code)
 
 print("edit application: URL already owned by another record is refused")
 r = client.post(f"/applications/{edit_app}/edit", data={

@@ -28,7 +28,8 @@
     placeholder="Singapore, Remote"></label>
 
   <div class="pair">
-    <label>Applied on <input type="date" name="applied_date" value="{{ form.applied_date }}" max="{{ today }}" required></label>
+    <label>{{ 'Applied on' if has_applied else 'Applied on, if you have' }}
+      <input type="date" name="applied_date" value="{{ form.applied_date }}" max="{{ today }}"{% if has_applied %} required{% endif %}></label>
     <label>Time, optional <input type="time" name="applied_time" value="{{ form.applied_time }}"></label>
   </div>
 
@@ -48,7 +49,9 @@
 
   <p class="hint">Dates and times are read in your timezone, <b>{{ tz_label }}</b>
     (<a href="/settings">change it in Settings</a>). Leave the time blank and the entry
-    is filed at midday, meaning “this date, time not recorded”. Company and title
+    is filed at midday, meaning “this date, time not recorded”.{% if not has_applied %}
+    Leave the date blank too while you haven't applied: nothing is filed as an
+    application, and “How you applied” waits for that date.{% endif %} Company and title
     apply to the whole job; platform, URL, location and the job description apply
     to the posting this application was filed through.</p>
 
