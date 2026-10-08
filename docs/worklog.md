@@ -2328,6 +2328,23 @@ the key to each real case.
      carries `round_kind` and `round_is` across a re-save (the latter
      had not been, a hole from the night before). Not yet: `/analytics`
      by kind — the vocabulary is there for it.
+   - **A questionnaire is a kind that is not a round** (9 Oct 2026, the
+     next question: two threads' first "rounds" were automated
+     behaviour questionnaires — "I feel like every applicant gets
+     those"). A mechanism, like LinkedIn's screening timer, not progress:
+     `trace.NON_ROUND_KINDS` = (`questionnaire`,). Said ONCE, on the
+     round, through the same kind select; `trace.rounds` keeps the
+     round's lines with the label "automated questionnaire" and drops it
+     from the numbering (`counts`, `counting_only`); the lines take no
+     rating; `analytics.sat_sql` excludes any event of such a round (by
+     `same_round_sql`, the ONE approximation of the grouping the SQL
+     shares, now also used by `rating_owed_sql` and `round_fate_sql`),
+     `insights._sat` is its twin, held equal on all real records. So a
+     questionnaire-only thread sat no interview: not in the lede's
+     count, not in "how far you got", never asked about on
+     `/follow-ups`. Applied to the two threads: one reads no round yet
+     (its questionnaire due 10 Oct), the other one round ahead (a
+     Codility test on 22 Oct) after its questionnaire.
    - **Not built:** the two source faults for `email_classify_v3`: a
      "Canceled event" mail and a recruiter's InMail reply are not
      invitations.

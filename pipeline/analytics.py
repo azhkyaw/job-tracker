@@ -253,21 +253,41 @@ WENT_LABELS = {"well": "went well", "mixed": "mixed", "badly": "went badly"}
 # per round. The author's own words for one thread were "coding test,
 # recruiter screen, technical".
 ROUND_KINDS = {
-    "test":      "coding test or take-home",
-    "screen":    "recruiter screen",
-    "technical": "technical interview",
-    "manager":   "hiring manager",
-    "panel":     "panel or onsite",
-    "final":     "final round",
-    "other":     "other",
+    "test":          "coding test or take-home",
+    "screen":        "recruiter screen",
+    "technical":     "technical interview",
+    "manager":       "hiring manager",
+    "panel":         "panel or onsite",
+    "final":         "final round",
+    "questionnaire": "automated questionnaire",   # not a round reached: trace.NON_ROUND_KINDS
+    "other":         "other",
 }
+_NON_ROUND_KINDS = _sql_list(trace.NON_ROUND_KINDS)
+
+
+def same_round_sql(x: str, r: str) -> str:
+    """Event `x` is the same interview as event `r`: the approximation of
+    trace.rounds' grouping the SQL can share (insights._same_round is the
+    Python twin) — both invitations, neither filed by hand (trace.own_round),
+    naming one day or arriving within trace.ROUND_SPAN_DAYS of each other."""
+    span = f"make_interval(days => {trace.ROUND_SPAN_DAYS})"
+    return f"""({x}.type = '{trace.ROUND_EVENT}' AND {r}.type = '{trace.ROUND_EVENT}'
+                AND {x}.source <> 'manual' AND {r}.source <> 'manual'
+                AND (COALESCE({x}.payload->>'stated_date', '') = COALESCE({r}.payload->>'stated_date', '?')
+                     OR {x}.occurred_at BETWEEN {r}.occurred_at - {span} AND {r}.occurred_at + {span}))"""
 
 
 def sat_sql(r: str) -> str:
-    """Event `r` is a round you sat: a rated type, unless you said the line
-    is not a round (trace.NOT_A_ROUND) — then nothing here anchors on it."""
-    return (f"({r}.type IN {_RATED_TYPES} "
-            f"AND COALESCE({r}.payload->>'round_is', '') <> '{trace.NOT_A_ROUND}')")
+    """Event `r` (an `events` alias) is a round you sat: a rated type, unless
+    you said the line is not a round (trace.NOT_A_ROUND), or the round it
+    belongs to is a kind that is not one (trace.NON_ROUND_KINDS, set on any
+    event of the same round) — then nothing here anchors on it."""
+    return f"""({r}.type IN {_RATED_TYPES}
+        AND COALESCE({r}.payload->>'round_is', '') <> '{trace.NOT_A_ROUND}'
+        AND NOT EXISTS (SELECT 1 FROM events k
+                         WHERE k.application_id = {r}.application_id
+                           AND k.payload->>'round_kind' IN {_NON_ROUND_KINDS}
+                           AND (k.id = {r}.id OR {same_round_sql('k', r)})))"""
 
 # What came of the round you rated: one bucket per application with a round
 # you sat, the SQL twin of insights._went (8 Oct 2026). The anchor is the
@@ -320,30 +340,26 @@ def round_fate_sql(a: str) -> str:
     close, `o` whichever of the two the outcome is (`n`, else `c` — a close
     filed by hand at noon before the round's own evening mail, the 10 Sep
     2026 record)."""
-    span = f"make_interval(days => {trace.ROUND_SPAN_DAYS})"
     return f"""(SELECT CASE
             WHEN o.type IS NULL THEN 'waiting'
             WHEN o.type = 'rejected' THEN 'rejected'
             WHEN o.type = 'withdrawn' AND o.closed = 'went_quiet' THEN
-                 CASE WHEN r.went IN {_LOST_WORDS} THEN 'lost_quiet'
-                      WHEN r.went = 'well' THEN 'unexplained' ELSE 'quiet' END
+                 CASE WHEN r.payload->>'went' IN {_LOST_WORDS} THEN 'lost_quiet'
+                      WHEN r.payload->>'went' = 'well' THEN 'unexplained' ELSE 'quiet' END
             WHEN o.type = 'withdrawn' THEN 'ended'
             ELSE 'on' END
-          FROM (SELECT r.type, r.source, r.occurred_at, r.created_at, r.payload->>'went' AS went,
-                       r.payload->>'stated_date' AS stated FROM events r
+          FROM (SELECT r.id, r.application_id, r.type, r.source, r.occurred_at, r.created_at,
+                       r.payload FROM events r
                  WHERE r.application_id = {a}.id AND {sat_sql('r')}
                  ORDER BY (r.payload ? 'went') DESC, r.occurred_at DESC, r.created_at DESC
                  LIMIT 1) r
           LEFT JOIN LATERAL (
             SELECT n.type, n.payload->>'closed' AS closed FROM events n
              WHERE n.application_id = {a}.id AND n.type IN {_OUTCOME_TYPES}
-               AND COALESCE(n.payload->>'round_is', '') <> '{trace.NOT_A_ROUND}'
-               -- a hand-filed round is its own (trace.own_round)
-               AND NOT (n.type = '{trace.ROUND_EVENT}' AND r.type = '{trace.ROUND_EVENT}'
-                        AND n.source <> 'manual' AND r.source <> 'manual'
-                        AND (COALESCE(n.payload->>'stated_date', '') = COALESCE(r.stated, '?')
-                             OR n.occurred_at BETWEEN r.occurred_at - {span}
-                                                  AND r.occurred_at + {span}))
+               -- a further round is one you sat (not a line you said is not a
+               -- round, nor a questionnaire), and not the anchor's own round
+               AND (n.type <> '{trace.ROUND_EVENT}' OR {sat_sql('n')})
+               AND NOT {same_round_sql('n', 'r')}
                AND (n.occurred_at, n.created_at) > (r.occurred_at, r.created_at)
              ORDER BY n.occurred_at, n.created_at LIMIT 1) n ON true
           LEFT JOIN LATERAL (
@@ -931,12 +947,7 @@ def rating_owed_sql(a: str) -> str:
                                           AND x.type IN {_RATED_TYPES} AND x.payload ? 'went'
                                           -- its own rating, or one on the same round — which
                                           -- a hand-filed round never shares (trace.own_round)
-                                          AND (x.id = r.id
-                                               OR (x.source <> 'manual' AND r.source <> 'manual'
-                                                   AND (x.payload->>'stated_date' = r.payload->>'stated_date'
-                                                        OR x.occurred_at BETWEEN
-                                                           r.occurred_at - make_interval(days => {trace.ROUND_SPAN_DAYS})
-                                                           AND r.occurred_at + make_interval(days => {trace.ROUND_SPAN_DAYS})))))
+                                          AND (x.id = r.id OR {same_round_sql('x', 'r')}))
                        AND {round_day_sql('r')} < to_char(now(), 'YYYY-MM-DD')
                        AND NOT EXISTS (SELECT 1 FROM events o
                                         WHERE o.application_id = {a}.id AND o.type = 'offer'

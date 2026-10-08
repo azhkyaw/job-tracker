@@ -4165,6 +4165,25 @@ check("re-saving a hand-filed round through the edit form keeps its kind and you
       and _p.get("note") == "panel, moved", _p)
 client.post(f"/applications/{_rr}/events/{_rr_hand}/kind", data={"kind": ""})
 check("blank clears the kind", "<small>round 2 of 2</small>" in client.get(f"/applications/{_rr}").text)
+# An automated questionnaire (9 Oct 2026): a kind that is not a round
+# reached. Said once, on the round; its lines keep the label and leave
+# every count, and the SQL twins agree.
+r = client.post(f"/applications/{_rr}/events/{_rr_inv}/kind", data={"kind": "questionnaire"})
+_pg = client.get(f"/applications/{_rr}").text
+with db.connect() as conn:
+    _sql_fate = conn.execute(f"SELECT {analytics.round_fate_sql('a')} AS f FROM applications a "
+                             f"WHERE a.id = %s::uuid", (_rr,)).fetchone()["f"]
+    _fa, _fe = analytics.facts(conn, user_id)
+_py = next(f for f in insights.build_facts(_fa, _fe, datetime.now(timezone.utc), 10) if str(f["id"]) == _rr)
+check("a questionnaire's line says so and takes no rating; the thread has one round, the hand-filed "
+      "one, and both twins anchor on it",
+      r.status_code == 303 and "<small>automated questionnaire</small>" in _pg
+      and "1 interview round<" in _pg and "<small>round 1</small>" in _pg
+      and f"/events/{_rr_inv}/went" not in _pg and f"/events/{_rr_inv}/kind" in _pg
+      and _py["n_rounds"] == 1 and _sql_fate == _py["round_fate"] == "waiting"
+      and ">1 round</span>" in client.get("/?q=Two+Rounds").text,
+      (_sql_fate, _py["round_fate"], _py["n_rounds"], re.findall(r"<small>[^<]+</small>", _pg)))
+client.post(f"/applications/{_rr}/events/{_rr_inv}/kind", data={"kind": "test"})
 client.post(f"/applications/{_rr}/delete")
 check("this section's record is gone", client.get(f"/applications/{_rr}").status_code == 404)
 

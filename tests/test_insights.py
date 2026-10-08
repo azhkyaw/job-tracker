@@ -294,6 +294,20 @@ check("a round's kind is the rated event's, else the newest event's that names o
                         ev(r1, "interview_invite", ago(8), round_kind="technical")])[0]["kind"] == "screen"
       and trace.rounds([ev(r1, "interview_invite", ago(9), payload={"round_kind": "final"})])[0]["kind"] == "final"
       and set(analytics.ROUND_KINDS) >= {"test", "screen", "technical"})
+q_evs = [ev(r1, "applied", ago(30)),
+         ev(r1, "interview_invite", ago(20), stated_date=ago(15).date().isoformat()),          # a questionnaire's invitation
+         ev(r1, "interview_invite", ago(16), stated_date=ago(15).date().isoformat(), round_kind="questionnaire"),  # its reminder, so labelled
+         ev(r1, "interview_invite", ago(8), round_kind="technical", went="well")]
+q_all = trace.rounds(q_evs, counting_only=False)
+check("a questionnaire is labelled but not counted: its round keeps its lines and loses its number, "
+      "the technical is round 1 of 1, and _went anchors past the questionnaire's lines",
+      [(r["counts"], r["n"], r["kind"], len(r["events"])) for r in q_all]
+      == [(False, None, "questionnaire", 2), (True, 1, "technical", 1)]
+      and [r["n"] for r in trace.rounds(q_evs)] == [1]
+      and insights._went(q_evs)["went"] == "well"
+      and insights._went(q_evs[:3])["went_next"] is None
+      and set(trace.NON_ROUND_KINDS) < set(analytics.ROUND_KINDS),
+      [(r["counts"], r["n"], r["kind"], len(r["events"])) for r in q_all])
 check("a line you said is not a round leaves the rounds, flat column or payload, and leaves "
       "_went's anchor too",
       len(trace.rounds(r_evs[:2] + [dict(r_evs[2], round_is="none")] + r_evs[3:])) == 3

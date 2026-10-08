@@ -282,16 +282,17 @@ def _went(evs) -> dict:
     the 10 Sep 2026 record), else waiting. `went_hindsight`: the rating was
     filed once that outcome was on record, so it could read the outcome back;
     the panel counts those apart, since they can only agree with it."""
-    rounds = [i for i, e in enumerate(evs) if e["type"] in RATED and not trace.excluded(e)]
+    rounds = [i for i, e in enumerate(evs) if _sat(e, evs)]
     if not rounds:
         return {"went": None, "went_next": None, "went_hindsight": False, "round_fate": None}
     rated = [i for i in rounds if evs[i].get("went")]
     i = (rated or rounds)[-1]
     anchor = evs[i]
-    # A line you said is not a round is no further round, and neither is the
-    # anchor's own notification or reminder (_same_round).
+    # A further round is one you sat, and not the anchor's own notification
+    # or reminder (_same_round).
     after = next((e for e in evs[i + 1:]
-                  if (e["type"] in ROUND and not trace.excluded(e) and not _same_round(e, anchor))
+                  if (e["type"] in ROUND and (e["type"] != trace.ROUND_EVENT or _sat(e, evs))
+                      and not _same_round(e, anchor))
                   or e["type"] in CLOSED), None)
     outcome = after or trace.closing(evs)
     if outcome is None:
@@ -312,6 +313,17 @@ def _went(evs) -> dict:
 
 def _stated(e):
     return e.get("stated_date") or (e.get("payload") or {}).get("stated_date")
+
+
+def _sat(e, evs) -> bool:
+    """Event `e` is a round you sat (analytics.sat_sql's twin): a rated
+    type, not a line you said is not a round, and not of a round whose kind
+    is not one (trace.NON_ROUND_KINDS, on it or on any event of the same
+    round by _same_round)."""
+    if e["type"] not in RATED or trace.excluded(e):
+        return False
+    return not any(trace.kind_of(x) in trace.NON_ROUND_KINDS and (x is e or _same_round(x, e))
+                   for x in evs)
 
 
 def _same_round(e, anchor) -> bool:

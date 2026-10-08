@@ -1417,9 +1417,11 @@ def application_detail(request: Request, app_id: str, saved: str | None = None,
         # The interview rounds (trace.rounds, 8 Oct 2026): each invitation
         # line says which round it belongs to, and the round's one "How did
         # it go?" select sits on the event the round is rated through.
-        rounds = trace.rounds(list(reversed(events)), request.state.tz)
-        round_of = {e["id"]: {"n": r["n"], "rate": e["id"] == r["rate_event"], "kind": r["kind"]}
-                    for r in rounds for e in r["events"]}
+        all_rounds = trace.rounds(list(reversed(events)), request.state.tz, counting_only=False)
+        rounds = [r for r in all_rounds if r["counts"]]
+        round_of = {e["id"]: {"n": r["n"], "rate": e["id"] == r["rate_event"], "kind": r["kind"],
+                              "counts": r["counts"]}
+                    for r in all_rounds for e in r["events"]}
         today_local = datetime.now(request.state.tz).date()
         rounds_ahead = sum(1 for r in rounds if r["day"] >= today_local)
         # The listing asked for the CV by email and nothing says it went

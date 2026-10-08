@@ -64,7 +64,8 @@
             counted as a round is seen, not silent. #}
         {%- set rd = round_of.get(e.id) %}
         {%- set not_round = e.payload.get('round_is') == 'none' %}
-        {%- if rd %}<small>round {{ rd.n }}{% if rounds | length > 1 %} of {{ rounds | length }}{% endif %}{% if rd.kind %}, {{ round_kinds.get(rd.kind, rd.kind) }}{% endif %}</small>{% endif %}
+        {%- if rd and rd.counts %}<small>round {{ rd.n }}{% if rounds | length > 1 %} of {{ rounds | length }}{% endif %}{% if rd.kind %}, {{ round_kinds.get(rd.kind, rd.kind) }}{% endif %}</small>
+        {%- elif rd %}<small>{{ round_kinds.get(rd.kind, rd.kind) }}</small>{% endif %}
         {%- if not_round %}<small>not a round</small>{% endif %}
         {#- What kind of round (web.py:set_round_kind), once per round, on the
             line the round is rated through; every line of the round then
@@ -129,7 +130,7 @@
             you hear back; /analytics counts the ratings filed after. ONE
             select per interview round, on the event the round is rated
             through (`rate_event`); a call is its own. #}
-        {%- if e.type in rated_events and not not_round and (not rd or rd.rate) %}
+        {%- if e.type in rated_events and not not_round and (not rd or (rd.rate and rd.counts)) %}
         <form method="post" action="/applications/{{ a.id }}/events/{{ e.id }}/went" class="why">
           <select name="went" aria-label="How it went, in your judgement">
             <option value="">{% if e.payload.get('went') %}Clear the rating{% else %}How did it go?{% endif %}</option>

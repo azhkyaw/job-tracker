@@ -61,6 +61,12 @@ ROUND_EVENT = "interview_invite"
 # mail tells that reply from an invitation. Excluded here and from every
 # round the SQL anchors on (analytics.sat_sql).
 NOT_A_ROUND = "none"
+# Kinds of round (analytics.ROUND_KINDS) that are not rounds you reached: an
+# automated behaviour questionnaire every applicant gets is a mechanism, like
+# LinkedIn's screening timer, not progress (9 Oct 2026, two real threads).
+# The whole ROUND wears the kind, so it is set once; its lines keep their
+# label ("automated questionnaire") and leave every count.
+NON_ROUND_KINDS = ("questionnaire",)
 
 
 def excluded(e) -> bool:
@@ -89,15 +95,19 @@ def _event_day(e, tz) -> tuple[date | None, date]:
     return named, (at.astimezone(tz) if tz else at).date()
 
 
-def rounds(evs, tz=None) -> list[dict]:
+def rounds(evs, tz=None, counting_only: bool = True) -> list[dict]:
     """The interview rounds of one thread, oldest first, numbered from 1:
-    ``{"n", "day", "named", "events", "went", "rate_event"}`` — the day,
-    whether an email named it, the events in it, the rating any of them
-    carries (`payload.went`, web.set_round_went) and the id of the event the
-    round's one "How did it go?" select posts to: the rated one, else the
-    newest. `evs` oldest-first; `tz` is the viewer's zone for an arrival
-    day, UTC when None. Events may carry `payload` (the detail page) or flat
-    `stated_date` / `went` columns (analytics.facts, the list's fetch)."""
+    ``{"n", "day", "named", "events", "went", "rate_event", "kind",
+    "counts"}`` — the day, whether an email named it, the events in it, the
+    rating any of them carries (`payload.went`, web.set_round_went), the id
+    of the event the round's one "How did it go?" select posts to (the rated
+    one, else the newest), its kind and whether it counts as a round you
+    reached (not a NON_ROUND_KINDS kind). `evs` oldest-first; `tz` is the
+    viewer's zone for an arrival day, UTC when None. Events may carry
+    `payload` (the detail page) or flat `stated_date` / `went` /
+    `round_kind` columns (analytics.facts, the list's fetch). Only the
+    counting rounds are numbered and returned, unless `counting_only` is
+    False (the detail page labels the others)."""
     out: list[dict] = []
     dateless = []
     for e in evs:
@@ -123,8 +133,8 @@ def rounds(evs, tz=None) -> list[dict]:
     # By day, then by the first event's time: a hand-filed round on the same
     # day as a mail-derived one is numbered by when each was first heard of.
     out.sort(key=lambda r: (r["day"], min(e["occurred_at"] for e in r["events"])))
-    for n, r in enumerate(out, 1):
-        r["n"] = n
+    n = 0
+    for r in out:
         r["events"].sort(key=lambda e: e["occurred_at"])
         rated = [e for e in r["events"] if _went_of(e)]
         pick = rated[-1] if rated else r["events"][-1]
@@ -132,16 +142,21 @@ def rounds(evs, tz=None) -> list[dict]:
         r["rate_event"] = pick.get("id")
         # The kind (analytics.ROUND_KINDS): the event the round is rated
         # through says it, else the newest event that names one.
-        kinds = [e for e in r["events"] if _kind_of(e)]
-        r["kind"] = _kind_of(pick) or (_kind_of(kinds[-1]) if kinds else None)
-    return out
+        kinds = [e for e in r["events"] if kind_of(e)]
+        r["kind"] = kind_of(pick) or (kind_of(kinds[-1]) if kinds else None)
+        r["counts"] = r["kind"] not in NON_ROUND_KINDS
+        if r["counts"]:
+            n += 1
+        r["n"] = n if r["counts"] else None
+    return [r for r in out if r["counts"]] if counting_only else out
 
 
 def _went_of(e):
     return e.get("went") or (e.get("payload") or {}).get("went")
 
 
-def _kind_of(e):
+def kind_of(e):
+    """The kind an event names (`payload.round_kind`), flat column or payload."""
     return e.get("round_kind") or (e.get("payload") or {}).get("round_kind")
 
 

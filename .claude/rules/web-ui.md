@@ -939,7 +939,15 @@ is a private artifact, linked from the memory file
     timeline form; `trace.rounds` reads it per round and the label says
     "round 3 of 3, technical interview" on every line of the round, the
     list tag's title too. Closed, like every vocabulary here, so a later
-    `/analytics` can count where the search stops.
+    `/analytics` can count where the search stops. **One kind is not a
+    round**: `questionnaire` (`trace.NON_ROUND_KINDS`), the automated
+    behaviour questionnaire every applicant gets — a mechanism, like
+    rule 13's screens, not progress. Set once on the round, its lines
+    keep the label and leave every count and every SQL anchor
+    (`analytics.sat_sql`, through `same_round_sql`, the one approximation
+    of `trace.rounds` the SQL shares; `insights._sat` its twin). Unlike
+    "not a round", which is per LINE (a stray mail), a kind is per ROUND:
+    different granularity, different control.
 
 ## Invariant #2 in detail (moved from CLAUDE.md, 25 Sep 2026)
 
