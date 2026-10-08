@@ -82,7 +82,7 @@ and design records; the code and `migrations/` win where they disagree.
   this install. Read its §3 first: the author's right to earn in Singapore
   decides the rest. Confirms `docs/open-source.md` and says what would
   reopen the question.
-- `docs/worklog.md` — the dated task register (tasks 1-59 with their
+- `docs/worklog.md` — the dated task register (tasks 1-73 with their
   measurements); what is still open is summarised under "Open work" below.
 
 **Path-scoped rules.** Dated case history that only matters when touching
@@ -331,6 +331,12 @@ An invariant keeps its RULE here and its case history in the rule file.
   the database stores two, is only a weak hit among ~1,600 lines): before
   committing, grep the diff's ADDED lines for the short names of the records
   the session touched: `git diff -U0 | grep '^+' | grep -iE 'name1|name2'`.
+  **The fourth is NUMBERS**: a real requisition, a Workday legal entity's
+  company code (the "1234" of "1234 … SG Svc Pte Ltd Company") or a tenant id identifies
+  the employer as surely as its name, and the audit greps names only. Use
+  made-up ones (`R00123456`, `1234`, `431`) and add the session's real ids
+  to that diff grep (8 Oct 2026: one code and two requisitions were caught
+  there, in a comment, a test and a rule file).
   Lessons for the next history rewrite (verify by the tip's tree hash, names
   that wrap across lines, the scrub tooling's own text, `filter-repo`
   dropping `origin`): `docs/open-source.md` §11.
@@ -695,6 +701,16 @@ web/UI, LLM, database) moved VERBATIM into `.claude/rules/` — see Docs map →
   its own Python process that imports `pipeline/` as it starts, and Jinja
   re-reads a changed template, so an edit mid-run tests a mix of trees. Run
   it with `run_in_background` and touch only `docs/` and CLAUDE.md meanwhile.
+- **The suites share ONE user in ONE database, so a record one suite leaves
+  moves another suite's numbers** (8 Oct 2026). A new `test_integration`
+  fixture (one unanswered application) failed `test_web`'s "worth a
+  nudge" check: `/follow-ups` reads the Kaplan-Meier reply curve over every
+  application the user has, and over ~38 of them one more moved
+  `quiet_after` to 10 days, so a 12-day row went "gone quiet". HEAD passed
+  the same check, which is how the cause was told from the clock. A fixture
+  that is not the subject of a later suite deletes its records after its
+  checks (path 3k's do); when a suite fails on numbers it never touched,
+  look at what the suites before it added.
 - **`%-d` / `%-m` strftime directives are glibc-only and raise `ValueError` on
   Windows.** Format with `%d` and `.lstrip("0")` instead (`trace.py:_ticks`,
   `insights._day_label`). Sibling of the cp1252 gotcha below — both are ways a
@@ -810,6 +826,16 @@ Detail lives with each family's rule file; this is the index.
   window are not.
 - **LLM** (`.claude/rules/llm.md`): `pipeline/llm.py`'s OpenAI-compatible
   backend has never met a real vLLM; the Voyage embeddings call has never run.
+  `email_classify_v2` (8 Oct, task 71) was replayed on every recruiter
+  request and 102 job emails, never on non-job mail, whose bodies are
+  purged: a stray `recruiter_outreach` in triage is how a false positive
+  would show.
+- **Matching** (`.claude/rules/matching.md`): `stated_abbreviation` and
+  `workday_tenant` (8 Oct, tasks 69-70) and the three-character id rule
+  (task 68) were replayed over stored mail; none has filed a NEW email
+  yet. The next confirmation signed "Long Name (ABBR)", or from a Workday
+  tenant printing a record's id, should file itself, `match_score` 1.0
+  for the id.
 - **UI** (`.claude/rules/web-ui.md`): the 23 Sep palette's DARK theme was
   seen natively on 7 Oct (no Dark Reader) on the two lists and
   `/follow-ups`, and holds; its LIGHT theme is still verified numerically
@@ -821,11 +847,13 @@ Detail lives with each family's rule file; this is the index.
   `/triage`'s redraw (7 Oct, task 64) was seen in the dark theme on real
   data: the inbound run, its confirmation page (opened, not sent) and the
   review strip. No twin was pending on the day, so the "Filed twice?" band
-  and its merge have run only in the suite.
+  and its merge have run only in the suite. Its runs keyed by sender NAME
+  (8 Oct, task 72) and a lead's edit form with no applied date (task 73)
+  were rendered through TestClient against real data, not looked at.
 
-## Open work (as of 7 Oct 2026)
+## Open work (as of 8 Oct 2026)
 
-The dated register behind each item, tasks 1-66 with their measurements, is
+The dated register behind each item, tasks 1-73 with their measurements, is
 `docs/worklog.md`; read the matching entry before acting on one.
 
 - **Follow-up drafting**, now on a page that has a place for it (task 61,
@@ -866,7 +894,13 @@ The dated register behind each item, tasks 1-66 with their measurements, is
   `matcher.stated_abbreviation`; its reverse is not. And Workday mail that
   prints its record's id now matches it from the record's own tenant,
   whatever the names (task 70, `matcher.workday_tenant`).
-- **Extension, next real Easy Apply:** verify the current build (0.28.0 on
+- **Recruiter approaches waiting in triage** (tasks 71-72, 8 Oct): every
+  LinkedIn connection request since the search began was re-fetched and
+  re-classified under `email_classify_v2`; 7 recruiters' requests (Aug to
+  Oct) wait in the Approaches lane, one card each, for the author's "Track
+  as lead" or "Ignore". A request names no role; one card's extraction
+  missed its company, so only its own card's company box files it.
+- **Extension, next real Easy Apply:** verify the current build (0.28.3 on
   8 Oct) is live on BOTH machines and the tab was opened after the
   reload; read `doc_source` and the sweep line, and check that the radio
   rows read Yes/No, not the question (task 42). From a search page, a
@@ -881,7 +915,11 @@ The dated register behind each item, tasks 1-66 with their measurements, is
   Oracle, SuccessFactors (classic and candidate experience, `sapsf.com`
   too), Greenhouse, SmartRecruiters, Phenom, Workday, Ashby and iCIMS;
   the first Darwinbox apply (8 Oct) was missed and filed by hand, its
-  fixes in 0.28.0 (worklog task 67);
+  fixes in 0.28.0 (worklog task 67); an apply from a Career Site Builder
+  site that was not enabled filed nameless and JD-less the same day (task
+  68), and that site's listing names no employer even when enabled: only
+  its footer does, and its tab title ends in the tenant code, which 0.28.2
+  now refuses as a name;
   each fix's "what to read on the next apply" is in extension.md's
   Known-untested. Still NOT run live: the popup's injection on a page
   with no adapter, enabling an employer's site and then applying there

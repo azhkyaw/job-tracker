@@ -26,6 +26,30 @@ directions and everything downstream branches on it (migration 016); `id` is
 `X-GM-MSGID` (decimal) and the API's message id (hex) are the same 64-bit
 value.
 
+## Re-reading what the purge deleted (8 Oct 2026)
+
+Under `INGEST_ALL` the worker empties `body_text` on every
+`not_job_related` row, so a wrong "not job-related" leaves nothing to audit
+in the database. Gmail still has the message. Done once, for every
+LinkedIn connection request since the search began (worklog task 71):
+
+- `mailbox.provider_for_user(conn, user)` (the stored IMAP credential),
+  `provider.search("from:<sender> after:YYYY/MM/DD")` (X-GM-RAW), then
+  `provider.fetch(uid)` per hit: read-only (EXAMINE + `BODY.PEEK[]`), and
+  the body is `body_from_parts`'s, exactly what sync stores.
+- Match on `gmail_message_id`. A stored row with an empty body gets it back
+  (UPDATE guarded on the body still being empty); a message never stored
+  goes in through `mailbox.store_message`, which queues `classify_email`
+  itself. Gmail held all 16; none had been missed at ingest.
+- Re-run by queueing `classify_email` for each row and draining
+  (`cli work --once`): the handler has no "already classified" guard, a
+  job-related answer goes on to extraction and the matcher, and a
+  `not_job_related` one is purged again. Leave rows a person filed
+  (`resolved`); re-running those would send their mail back to triage
+  beside the record it already made.
+- Snapshot the rows first; the run's script is in
+  `job-tracker-snapshots/2026-10-08-replays/`.
+
 ## Gotchas learned the hard way
 
 - **Gmail's `messages.list` returns newest-first, but ingest is order-sensitive.**
