@@ -298,7 +298,12 @@
             only when it asked: the question and what was answered are the
             title, the same evidence-in-the-tooltip rule as the JD's tag. #}
         {%- if form_visa[r.form_visa][1] %}<span class="tag"
-              title="The form asked “{{ r.form_question }}” and you answered “{{ r.form_answer }}”">{{ form_visa[r.form_visa][1] }}</span>{% endif %}</span>
+              title="The form asked “{{ r.form_question }}” and you answered “{{ r.form_answer }}”">{{ form_visa[r.form_visa][1] }}</span>{% endif %}
+        {#- How many interview rounds the thread reached (trace.rounds, 8 Oct
+            2026), their days in the title. Grey: a fact about the thread,
+            not about the wait, and the trace already draws the rounds. #}
+        {%- if r.n_rounds %}<span class="tag"
+              title="Interview round{{ 's' if r.n_rounds != 1 }} on {{ r.rounds_title }}: the day each invitation named, else the day it arrived">{{ r.n_rounds }} round{{ '' if r.n_rounds == 1 else 's' }}</span>{% endif %}</span>
     </span>
     <span class="trace" style="--week:{{ axis.week }}">
       {%- if r.tail %}<span class="tail{% if live %} live{% endif %}"

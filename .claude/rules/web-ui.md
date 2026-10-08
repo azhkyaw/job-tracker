@@ -893,6 +893,23 @@ is a private artifact, linked from the memory file
     bucket's count is the rows it opens. Silence after an interview rated
     WELL is deliberately its own count, not a loss and not nothing: it is
     the author's other sentence, "I know I did well and heard nothing".
+    **Rounds are derived and shown, never counted from events** (the same
+    day, worklog task 76). One interview is several `interview_invite`
+    events, so `trace.rounds` groups them by the interview day the email
+    named (`payload.stated_date`); a dateless one joins the round within
+    `ROUND_SPAN_DAYS` of its arrival, else starts one; a call (`engaged`)
+    is not a round. Measured on 19 real threads: 13 right, 4 over by one,
+    2 ambiguous in the mail. So the number is placed beside its evidence —
+    "round 2 of 4" on each invitation line of the detail page, the days in
+    the list tag's title — and a wrong grouping is a visible line, not a
+    silent statistic (invariant #3's preference). ONE "How did it go?"
+    select per round, on the round's `rate_event` (the rated one, else the
+    newest), after the author rated every line of one interview; a call
+    keeps its own. `/analytics`' "How far you got" is the interviews grid
+    by rounds reached. The follow-ups rule approximates the round in SQL
+    (same stated day, or within the span of the newest event) so a
+    reminder after a rated invitation does not ask again. No override
+    per line yet: deferred until a real grouping misleads.
 
 ## Invariant #2 in detail (moved from CLAUDE.md, 25 Sep 2026)
 

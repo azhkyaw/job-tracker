@@ -4027,4 +4027,54 @@ for _id in _lf.values():
 check("this section's records are gone",
       all(client.get(f"/applications/{_id}").status_code == 404 for _id in _lf.values()))
 
+print("interview rounds: one interview is several events (8 Oct 2026)")
+# An invitation and its calendar notification name one day: one round, one
+# select, and a rating on the invitation keeps /follow-ups from asking again
+# on the notification. A second invitation two weeks on is round 2.
+_rr = _new_app("Two Rounds Co", 40)
+with db.connect() as conn:
+    _rr_inv = conn.execute(
+        "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+        "VALUES (%s, %s, 'interview_invite', 'email', now() - interval '21 days', %s) RETURNING id",
+        (user_id, _rr, Json({"stated_date": _ago(20)}))).fetchone()["id"]
+    _rr_note = conn.execute(
+        "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+        "VALUES (%s, %s, 'interview_invite', 'email', now() - interval '20 days', %s) RETURNING id",
+        (user_id, _rr, Json({"stated_date": _ago(20)}))).fetchone()["id"]
+r = client.get(f"/applications/{_rr}")
+check("the page says one round; both lines say round 1; one select, on the newest line",
+      "1 interview round<" in r.text and r.text.count("<small>round 1</small>") == 2
+      and r.text.count('/went"') == 1 and f"/events/{_rr_note}/went" in r.text, r.status_code)
+check("/follow-ups asks about the round through that same event",
+      str(_rating_owed()[_rr]["event_id"]) == str(_rr_note), _rating_owed().get(_rr))
+client.post(f"/applications/{_rr}/events/{_rr_inv}/went", data={"went": "well"})
+r = client.get(f"/applications/{_rr}")
+check("a rating on the invitation is the round's: the select moves to it, and /follow-ups "
+      "stops asking though the notification carries none",
+      "selected>went well" in r.text and r.text.count('/went"') == 1
+      and f"/events/{_rr_inv}/went" in r.text and _rr not in _rating_owed(), r.status_code)
+_row = client.get("/?q=Two+Rounds").text.split(f'href="/applications/{_rr}"')[1].split("</a>")[0]
+check("the list row wears the count in grey, the day in its title",
+      ">1 round</span>" in _row and "Interview round on " in _row
+      and "the day each invitation named" in _row, _row[-500:])
+with db.connect() as conn:
+    _rr_two = conn.execute(
+        "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+        "VALUES (%s, %s, 'interview_invite', 'email', now() - interval '6 days', %s) RETURNING id",
+        (user_id, _rr, Json({"stated_date": _ago(5)}))).fetchone()["id"]
+r = client.get(f"/applications/{_rr}")
+check("a second invitation two weeks on is round 2 of 2, with its own select; the first keeps its rating",
+      "2 interview rounds<" in r.text and "<small>round 2 of 2</small>" in r.text
+      and r.text.count("<small>round 1 of 2</small>") == 2 and r.text.count('/went"') == 2
+      and f"/events/{_rr_two}/went" in r.text, r.status_code)
+check("...and it is owed a word, through its own event; the row says 2 rounds",
+      str(_rating_owed()[_rr]["event_id"]) == str(_rr_two)
+      and ">2 rounds</span>" in client.get("/?q=Two+Rounds").text, _rating_owed().get(_rr))
+r = client.get("/analytics")
+_dp = r.text.split("How far you got")[1].split("<h2")[0] if "How far you got" in r.text else ""
+check("/analytics draws how far you got, rows by rounds reached, this thread in the 2-rounds row",
+      r.status_code == 200 and '2 rounds <b>' in _dp and f'href="/applications/{_rr}"' in _dp, _dp[:600])
+client.post(f"/applications/{_rr}/delete")
+check("this section's record is gone", client.get(f"/applications/{_rr}").status_code == 404)
+
 print("\nALL WEB PATHS PASS")

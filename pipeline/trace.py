@@ -13,7 +13,7 @@ close, amber for the tail of an unanswered thread once it crosses
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 # Events that end a thread: the trace stops with a cap rather than running a
 # waiting tail to today. Nothing is pending after these. An offer is NOT one
@@ -37,6 +37,79 @@ def closing(evs):
     status word now say the same thing. `evs` oldest-first, as build() takes
     them."""
     return next((e for e in reversed(evs) if e["type"] in TERMINAL), None)
+
+
+# One interview is several `interview_invite` events — the invitation, the
+# calendar notification, a reminder, the reply arranging it — so counting
+# events overcounts rounds (8 Oct 2026, worklog task 76). A ROUND is the
+# interview day: events whose email names the same day (`payload.stated_date`)
+# are one round, and an event naming no day joins the round within this many
+# days of its arrival, else starts one on its arrival day. Measured over the
+# author's 19 interview threads on the day: right on 13, over by one on 4
+# (a "Canceled event" mail filed as an invitation, a reply or availability
+# mail far from its interview, and a CALL counted as a round — which is why
+# `engaged` is left out below), the other 2 ambiguous in the mail itself.
+# The number is shown beside the lines that produced it, so a wrong grouping
+# is visible on the timeline, not silent in a statistic.
+ROUND_SPAN_DAYS = 3
+ROUND_EVENT = "interview_invite"
+
+
+def _event_day(e, tz) -> tuple[date | None, date]:
+    """(the day the email named, if date-shaped; the day it arrived)."""
+    stated = e.get("stated_date") or (e.get("payload") or {}).get("stated_date")
+    named = None
+    if stated:
+        try:
+            named = date.fromisoformat(stated)
+        except ValueError:
+            named = None
+    at = e["occurred_at"]
+    return named, (at.astimezone(tz) if tz else at).date()
+
+
+def rounds(evs, tz=None) -> list[dict]:
+    """The interview rounds of one thread, oldest first, numbered from 1:
+    ``{"n", "day", "named", "events", "went", "rate_event"}`` — the day,
+    whether an email named it, the events in it, the rating any of them
+    carries (`payload.went`, web.set_round_went) and the id of the event the
+    round's one "How did it go?" select posts to: the rated one, else the
+    newest. `evs` oldest-first; `tz` is the viewer's zone for an arrival
+    day, UTC when None. Events may carry `payload` (the detail page) or flat
+    `stated_date` / `went` columns (analytics.facts, the list's fetch)."""
+    out: list[dict] = []
+    dateless = []
+    for e in evs:
+        if e["type"] != ROUND_EVENT:
+            continue
+        named, arrived = _event_day(e, tz)
+        if named is None:
+            dateless.append((e, arrived))
+            continue
+        r = next((r for r in out if r["day"] == named), None)
+        if r is None:
+            out.append(r := {"day": named, "named": True, "events": []})
+        r["events"].append(e)
+    for e, arrived in dateless:
+        near = [r for r in out if abs((r["day"] - arrived).days) <= ROUND_SPAN_DAYS]
+        if near:
+            min(near, key=lambda r: abs((r["day"] - arrived).days))["events"].append(e)
+        else:
+            out.append({"day": arrived, "named": False, "events": [e]})
+    out.sort(key=lambda r: r["day"])
+    for n, r in enumerate(out, 1):
+        r["n"] = n
+        r["events"].sort(key=lambda e: e["occurred_at"])
+        rated = [e for e in r["events"] if _went_of(e)]
+        pick = rated[-1] if rated else r["events"][-1]
+        r["went"] = _went_of(pick)
+        r["rate_event"] = pick.get("id")
+    return out
+
+
+def _went_of(e):
+    return e.get("went") or (e.get("payload") or {}).get("went")
+
 
 # event type -> status colour token in base.html
 _ROLE = {

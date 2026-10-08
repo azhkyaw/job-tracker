@@ -882,12 +882,22 @@ def round_day_sql(r: str) -> str:
 
 
 def rating_owed_sql(a: str) -> str:
-    """Application `a` owes a word on the newest round you sat."""
+    """Application `a` owes a word on the newest round you sat. Rated means
+    a rating on any event of the same ROUND (trace.rounds: one interview is
+    several events), approximated here as one naming the same day or
+    arriving within ROUND_SPAN_DAYS — a reminder after a rated invitation
+    must not ask again."""
     return f"""(NOT EXISTS (SELECT 1 FROM events c WHERE c.application_id = {a}.id
                             AND c.type IN {_CLOSES})
         AND EXISTS (SELECT 1 FROM events r
                      WHERE r.id = {last_sat_sql(a)}
-                       AND NOT (r.payload ? 'went')
+                       AND NOT EXISTS (SELECT 1 FROM events x
+                                        WHERE x.application_id = {a}.id
+                                          AND x.type IN {_RATED_TYPES} AND x.payload ? 'went'
+                                          AND (x.payload->>'stated_date' = r.payload->>'stated_date'
+                                               OR x.occurred_at BETWEEN
+                                                  r.occurred_at - make_interval(days => {trace.ROUND_SPAN_DAYS})
+                                                  AND r.occurred_at + make_interval(days => {trace.ROUND_SPAN_DAYS})))
                        AND {round_day_sql('r')} < to_char(now(), 'YYYY-MM-DD')
                        AND NOT EXISTS (SELECT 1 FROM events o
                                         WHERE o.application_id = {a}.id AND o.type = 'offer'
@@ -1033,6 +1043,7 @@ def facts(conn, user_id) -> tuple[list[dict], list[dict]]:
                e.payload->>'closed'                          AS closed_as,
                e.payload->>'went'                            AS went,
                (e.payload->>'went_at')::timestamptz          AS went_at,
+               e.payload->>'stated_date'                     AS stated_date,
                em.extraction->>'platform'                    AS mail_platform
         FROM events e
         JOIN applications a ON a.id = e.application_id

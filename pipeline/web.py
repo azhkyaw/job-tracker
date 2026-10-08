@@ -719,14 +719,23 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
         # one screen is exactly the N+1 this view would die of.
         events_by_app: dict = {}
         if rows:
+            # stated_date: the day an invitation named, which is what groups
+            # invitations into rounds (trace.rounds) for the row's tag.
             for e in conn.execute(
                 """
-                SELECT application_id, type, occurred_at FROM events
+                SELECT application_id, type, occurred_at,
+                       payload->>'stated_date' AS stated_date FROM events
                  WHERE application_id = ANY(%s) ORDER BY occurred_at
                 """, ([r["id"] for r in rows],)).fetchall():
                 events_by_app.setdefault(e["application_id"], []).append(e)
         axis = trace.build(rows, events_by_app, datetime.now(timezone.utc),
                            config.REMINDER_DAYS)
+        # How many interview rounds the thread reached, for the row's grey
+        # tag (8 Oct 2026): a fact about the thread, not about the wait.
+        for r in rows:
+            rds = trace.rounds(events_by_app.get(r["id"], []), request.state.tz)
+            r["n_rounds"] = len(rds)
+            r["rounds_title"] = ", ".join(f"{x['day']:%d %b}".lstrip("0") for x in rds)
 
         # The inbound page's lede is a different sentence from the record's:
         # not applications and replies, but approaches, how many still wait on
@@ -1400,6 +1409,14 @@ def application_detail(request: Request, app_id: str, saved: str | None = None,
         # newest-first for the log below; trace.build wants chronological.
         axis = trace.build([a], {a["id"]: list(reversed(events))},
                            datetime.now(timezone.utc), config.REMINDER_DAYS)
+        # The interview rounds (trace.rounds, 8 Oct 2026): each invitation
+        # line says which round it belongs to, and the round's one "How did
+        # it go?" select sits on the event the round is rated through.
+        rounds = trace.rounds(list(reversed(events)), request.state.tz)
+        round_of = {e["id"]: {"n": r["n"], "rate": e["id"] == r["rate_event"]}
+                    for r in rounds for e in r["events"]}
+        today_local = datetime.now(request.state.tz).date()
+        rounds_ahead = sum(1 for r in rounds if r["day"] >= today_local)
         # The listing asked for the CV by email and nothing says it went
         # (analytics.email_owed_sql): the sentence, a mailto, and the answer.
         email_ask = (_email_ask([p["jd_text"] for p in postings], a["title_canonical"])
@@ -1424,6 +1441,7 @@ def application_detail(request: Request, app_id: str, saved: str | None = None,
             # event types the select appears on.
             "round_went": analytics.WENT_LABELS,
             "rated_events": analytics.RATED_EVENTS,
+            "rounds": rounds, "round_of": round_of, "rounds_ahead": rounds_ahead,
             # The statuses the close panel asks about on your own application.
             "open_round": analytics.OPEN_ROUND,
             "today": datetime.now(request.state.tz).strftime("%Y-%m-%d"),

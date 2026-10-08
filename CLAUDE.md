@@ -137,7 +137,10 @@ An invariant keeps its RULE here and its case history in the rule file.
   (the HTML alternative, since 23 Sep 2026 — `.claude/rules/mail-ingest.md`
   has the four senders whose `text/plain` part is not the mail)
 - `pipeline/dedup.py` — the only place two jobs are merged (`merge_jobs`)
-- `pipeline/trace.py` — pure timeline/axis geometry for list + detail pages
+- `pipeline/trace.py` — pure timeline/axis geometry for list + detail pages,
+  and `rounds()` (8 Oct 2026): the interview ROUNDS of a thread, grouped
+  from its invitation events by the day each named — one interview is
+  several events — read by the detail page, the list's tag and `/analytics`
 - `pipeline/analytics.py` — the counts the LIST pages show (summary,
   rejection reasons and endings, reminders), `reapplications` (the follow-up
   queue's "you applied again" suggestion; `web.mark_reapplied` files it),
@@ -871,7 +874,9 @@ Detail lives with each family's rule file; this is the index.
   of the same name, `/analytics`' "Your interviews, as you rated them"
   (a five-column grid on the visa matrix's CSS, phone width untested), and
   the list lede's "N interviews, M lost (…)" with its `?interviews=`
-  filter and note.
+  filter and note. And the rounds' (task 76): the "round 2 of 4" line
+  labels and the detail badge, the list's "N rounds" tag, and "How far you
+  got" on `/analytics`.
 
 ## Open work (as of 8 Oct 2026)
 

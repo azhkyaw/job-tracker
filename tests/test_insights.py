@@ -238,6 +238,58 @@ check("the totals: six records with a round, five rated, one in hindsight, and t
       and sum(r["n"] for r in iv["rows"]) == 6 and sum(c["n"] for c in iv["cols"]) == 6,
       {k: iv[k] for k in ("n", "rated", "hindsight")})
 check("no record with a round sat: no panel", insights.interviews([fb[b0["id"]]]) is None)
+print("rounds: one interview is several events (8 Oct 2026)")
+# The real shapes: an invitation and its calendar notification naming one
+# day; a test then an interview on two days; a reply arranging an interview,
+# dateless, days before it; an assessment with no day at all, weeks apart; a
+# call, which is not a round.
+r1 = app(status="interview_invite")
+r_evs = [
+    ev(r1, "applied", ago(60)),
+    ev(r1, "interview_invite", ago(50)),                                   # an assessment, no day named
+    ev(r1, "interview_invite", ago(31), stated_date=ago(30).date().isoformat()),
+    ev(r1, "interview_invite", ago(30), stated_date=ago(30).date().isoformat(), went="well"),
+    ev(r1, "interview_invite", ago(22)),                                   # the reply arranging the next
+    ev(r1, "interview_invite", ago(21), stated_date=ago(20).date().isoformat()),
+    ev(r1, "engaged", ago(10)),                                            # a call
+    ev(r1, "offer", ago(5)),
+]
+rds = trace.rounds(r_evs)
+check("three rounds: the assessment, the interview with its notification, the next interview",
+      [r["n"] for r in rds] == [1, 2, 3] and [len(r["events"]) for r in rds] == [1, 2, 2]
+      and [r["named"] for r in rds] == [False, True, True]
+      and [r["day"] for r in rds] == [ago(50).date(), ago(30).date(), ago(20).date()],
+      [(r["n"], r["day"], len(r["events"]), r["named"]) for r in rds])
+check("a round's rating is the one on any of its events, and the select goes there; an unrated "
+      "round's goes to its newest event",
+      rds[1]["went"] == "well" and rds[1]["rate_event"] is None
+      and rds[0]["went"] is None and rds[2]["went"] is None)
+check("a call and an offer are not rounds; a thread without an invitation has none",
+      all(e["type"] == "interview_invite" for r in rds for e in r["events"])
+      and trace.rounds([ev(r1, "applied", ago(3)), ev(r1, "engaged", ago(1))]) == [])
+check("a dateless event joins the nearest round within ROUND_SPAN_DAYS, on either side",
+      len(trace.rounds([ev(r1, "interview_invite", ago(9), stated_date=ago(5).date().isoformat()),
+                        ev(r1, "interview_invite", ago(8)),                # 3 days before: joins
+                        ev(r1, "interview_invite", ago(1))])) == 2)         # 4 days after: its own
+check("a date-shaped string that is no date is dateless, not an error",
+      len(trace.rounds([ev(r1, "interview_invite", ago(9), stated_date="2026-02-31"),
+                        ev(r1, "interview_invite", ago(8))])) == 1)
+check("a round's events are ordered oldest first whatever order they came in",
+      [e["occurred_at"] for e in trace.rounds(list(reversed(r_evs)))[1]["events"]] == [ago(31), ago(30)])
+fr = {f["id"]: f for f in facts_of([r1, b0], r_evs + [ev(b0, "applied", ago(20))])}
+check("facts carry the rounds and their count; none without an invitation",
+      fr[r1["id"]]["n_rounds"] == 3 and len(fr[r1["id"]]["rounds"]) == 3 and fr[b0["id"]]["n_rounds"] == 0)
+dp = insights.depth(list(fr.values()) + list(fb.values()))
+check("how far you got: rows by rounds reached (3+ capped), the interviews panel's columns, "
+      "each thread once",
+      dp is not None and [r["key"] for r in dp["rows"]] == ["1", "2", "3"]
+      and [c["key"] for c in dp["cols"]] == list(insights.NEXT_LABELS)
+      and next(r for r in dp["rows"] if r["key"] == "3")["n"] == 1
+      and sum(r["n"] for r in dp["rows"]) == dp["n"] == 1 + sum(1 for f in fb.values() if f["n_rounds"])
+      and dp["rounds"] == 3 + sum(f["n_rounds"] for f in fb.values()),
+      [(r["key"], r["n"]) for r in dp["rows"]])
+check("no thread with a round: no grid", insights.depth([fr[b0["id"]]]) is None)
+
 check("round_fate: the list's bucket over the two facts — every (word, outcome) pair lands in "
       "the registry, and the registry is reached in full",
       {analytics.round_fate(w, n) for w in (None, *analytics.WENT_LABELS) for n in insights.NEXT_LABELS}

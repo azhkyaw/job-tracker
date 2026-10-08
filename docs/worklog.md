@@ -2218,3 +2218,37 @@ the key to each real case.
      is still unrated; the 3 rows on `/follow-ups`; and each of the 5
      interviews ahead, the morning after.
 
+76. **How many interview rounds a thread reached** (8 Oct 2026). Asked
+   "is it possible to track how many rounds of interviews has been done
+   for each application". One interview is several `interview_invite`
+   events — the invitation, the calendar notification, a reminder, the
+   reply arranging it (a 10 Sep interview had 2, a 4 Aug one 3, one
+   employer's three rounds 15) — so events overcount. Measured first: the
+   rule "one round per interview day the mail names; a dateless event
+   joins the nearest round within 3 days, else starts one; a call is not
+   a round" against the author's reading of 19 threads' subjects — right
+   on 13, over by one on 4 (a "Canceled event" mail filed as an
+   invitation; a reply or availability mail far from its interview; a
+   call) and 2 ambiguous in the mail itself. Built as derive-and-show,
+   with no override yet: the number sits beside the lines that produced
+   it, so a wrong grouping is visible, not silent in a statistic.
+   - **Built:** `trace.rounds(evs, tz)` (pure; `ROUND_SPAN_DAYS` = 3,
+     `interview_invite` only), reading `payload.stated_date` or the flat
+     column; the detail page's badge ("4 interview rounds, 1 still
+     ahead"), "round 2 of 4" on each invitation line, and ONE "How did it
+     go?" select per round on the event the round is rated through (the
+     rated one, else the newest) — before this the author rated all five
+     lines of one interview; the list row's grey "N rounds" tag with the
+     days in its title; `/analytics`' "How far you got", the interviews
+     panel's grid by rounds reached (1 / 2 / 3+); `rating_owed_sql` reads
+     a rating on any event of the same round (same stated day, or within
+     the span), so a reminder after a rated invitation does not ask again.
+     On the day: 18 threads, 11 at one round, 5 at two, 2 at three or
+     more; 24 real-data rounds. Rendered against the dev DB; the suites
+     pin the shapes.
+   - **Not built:** a per-line "this is round N / not a round" override —
+     the right fix for the over-by-one cases, deferred until a real
+     grouping misleads; and the two source faults for `email_classify_v3`:
+     a "Canceled event" mail and a recruiter's InMail reply are not
+     invitations.
+

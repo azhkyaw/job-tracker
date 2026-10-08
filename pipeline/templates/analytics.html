@@ -405,6 +405,35 @@
     {% endfor %}
   </div>
 </div>
+{# How far you got (trace.rounds, 8 Oct 2026): the same grid by the number of
+   interview rounds a thread reached. One interview is several invitation
+   events, so this counts rounds — the day each invitation named. #}
+{% set dp = r.depth %}
+{% if dp %}
+<p class="ptitle">How far you got</p>
+<p class="hint"><b>{{ dp.rounds }}</b> interview round{{ '' if dp.rounds == 1 else 's' }} across <b>{{ dp.n }}</b>
+  thread{{ '' if dp.n == 1 else 's' }}, by how many rounds each reached and what came of the last one.
+  A round is the interview day an invitation named; the record's page shows which line is which round.</p>
+<div class="card pad vm-card">
+  <div class="vm iv" role="table" aria-label="Threads by interview rounds reached and what came of them">
+    <div class="vm-row vm-head" role="row">
+      <span role="columnheader"></span>
+      {% for c in dp.cols %}<span class="vm-col" role="columnheader">{{ c.label }} <b>{{ c.n }}</b></span>{% endfor %}
+    </div>
+    {% for row in dp.rows %}
+    <div class="vm-row" role="row">
+      <span class="vm-rh" role="rowheader">{{ row.label }} <b>{{ row.n }}</b></span>
+      {% for cell in row.cells %}
+      <span class="vm-cell" role="cell" data-col="{{ dp.cols[loop.index0].label }}">
+        {% if cell.n %}<span class="vm-n">{{ cell.n }}</span><span class="units">{{ squares(cell.units) }}</span>
+        {% else %}<span class="quiet">—</span>{% endif %}
+      </span>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
 {% endif %}
 
 {# ---------------------------------------------------------------- rhythm #}

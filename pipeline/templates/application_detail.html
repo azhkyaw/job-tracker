@@ -13,6 +13,9 @@
         Then the wait, in words — the trace beneath draws it. #}
     <span class="badge" style="font-size:.86rem{% if status not in ('applied', 'interested', 'withdrawn') %};--c:var(--{{ tok }}){% endif %}">{{ status }}</span>
     {%- if a.silent_days is not none %}<span class="badge">{% if a.silent_days == 0 %}, something moved today{% else %}, quiet for {{ a.silent_days }} day{{ "s" if a.silent_days != 1 }}{% endif %}</span>{% endif %}
+    {#- The interview rounds (trace.rounds): how many, and how many are still
+        ahead. The timeline below says which line is which round. #}
+    {%- if rounds %}<span class="badge">, {{ rounds | length }} interview round{{ "s" if rounds | length != 1 }}{% if rounds_ahead %}, {{ rounds_ahead }} still ahead{% endif %}</span>{% endif %}
   </span>
   <span class="aside"><a href="/applications/{{ a.id }}/edit">Edit details</a></span>
 </div>
@@ -56,6 +59,11 @@
             stays on the arrival day (matcher._event_time). #}
         {%- set ahead = e | stated_ahead %}
         {%- if ahead %}<small>for {{ ahead }}</small>{% endif %}
+        {#- Which round this invitation belongs to (trace.rounds): the
+            grouping shown beside the lines that produced it, so a reminder
+            counted as a round is seen, not silent. #}
+        {%- set rd = round_of.get(e.id) %}
+        {%- if rd %}<small>round {{ rd.n }}{% if rounds | length > 1 %} of {{ rounds | length }}{% endif %}</small>{% endif %}
         {%- if 'external' in e.payload %}
         <small>{% if e.payload['external'] %}on the employer's website{% else %}on-platform (Easy Apply){% endif %}</small>
         {%- endif %}
@@ -93,8 +101,10 @@
         {#- How it went, on every round you sat — an interview, a call —
             whatever the event's source (web.py:set_round_went): your reading
             of it, which the employer's answer later tests. Rate it before
-            you hear back; /analytics counts the ratings filed after. #}
-        {%- if e.type in rated_events %}
+            you hear back; /analytics counts the ratings filed after. ONE
+            select per interview round, on the event the round is rated
+            through (`rate_event`); a call is its own. #}
+        {%- if e.type in rated_events and (not rd or rd.rate) %}
         <form method="post" action="/applications/{{ a.id }}/events/{{ e.id }}/went" class="why">
           <select name="went" aria-label="How it went, in your judgement">
             <option value="">{% if e.payload.get('went') %}Clear the rating{% else %}How did it go?{% endif %}</option>

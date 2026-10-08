@@ -184,9 +184,10 @@ def quiet_after(curve, reminder_days: int, chance: float = QUIET_CHANCE) -> int 
 
 # ------------------------------------------------------------------- facts
 
-def build_facts(apps, events, now: datetime, reminder_days: int) -> list[dict]:
+def build_facts(apps, events, now: datetime, reminder_days: int, tz=None) -> list[dict]:
     """One dict per application: its fetched columns plus every derived fact
-    the panels read. Times are UTC-aware; `days` are floats."""
+    the panels read. Times are UTC-aware; `days` are floats. `tz` is the
+    viewer's zone, for the day an interview round falls on (trace.rounds)."""
     by_app = defaultdict(list)
     for e in events:
         by_app[e["application_id"]].append(e)
@@ -236,6 +237,9 @@ def build_facts(apps, events, now: datetime, reminder_days: int) -> list[dict]:
         f["closed_as"] = next((e.get("closed_as") for e in reversed(evs)
                                if e["type"] == "withdrawn" and e.get("closed_as")), None)
         f.update(_went(evs))
+        # The interview rounds (trace.rounds): how far the thread got.
+        f["rounds"] = trace.rounds(evs, tz)
+        f["n_rounds"] = len(f["rounds"])
 
         start = f["start"]
         f["age"] = days(now - start) if start else None
@@ -848,6 +852,36 @@ def interviews(facts) -> dict | None:
             "hindsight": sum(1 for f in mine if f["went_hindsight"])}
 
 
+# How far you got: rows of DEPTH_LABELS, the interviews panel's columns.
+DEPTH_LABELS = {"1": "1 round", "2": "2 rounds", "3": "3 rounds or more"}
+
+
+def depth(facts) -> dict | None:
+    """Every record with an interview round (trace.rounds), placed by how
+    many rounds it reached (rows) and what came of the last one you sat
+    (columns: NEXT_LABELS, off _went) — the interviews panel's shape, so
+    "how far did I get before the answer" reads off the same grid. One
+    interview is several events, so this counts rounds, never events."""
+    mine = [f for f in facts if f.get("n_rounds")]
+    if not mine:
+        return None
+    cells = defaultdict(list)
+    for f in mine:
+        cells[(str(min(f["n_rounds"], 3)), f["went_next"] or "waiting")].append(f)
+    cols = [{"key": k, "label": v} for k, v in NEXT_LABELS.items()]
+    rows = []
+    for key, label in DEPTH_LABELS.items():
+        row_cells = []
+        for c in cols:
+            fs = sorted(cells[(key, c["key"])], key=_unit_key)
+            row_cells.append({"next": c["key"], "n": len(fs), "units": [unit(f) for f in fs]})
+        rows.append({"key": key, "label": label, "cells": row_cells,
+                     "n": sum(c["n"] for c in row_cells)})
+    return {"rows": rows, "cols": [{**c, "n": sum(r["cells"][i]["n"] for r in rows)}
+                                   for i, c in enumerate(cols)],
+            "n": len(mine), "rounds": sum(f["n_rounds"] for f in mine)}
+
+
 # ---------------------------------------------------------------------- flow
 
 FLOW_ORDER = ("applied", "viewed", "engaged", "interview_invite", "offer",
@@ -1075,7 +1109,7 @@ def report(apps, events, now: datetime, tz, reminder_days: int,
     """The whole page. `status_word` and `how_words` are the list's own
     vocabulary (web._display, analytics.HOW_LABELS), passed in so this module
     never imports the web layer and the words cannot differ between pages."""
-    facts = build_facts(apps, events, now, reminder_days)
+    facts = build_facts(apps, events, now, reminder_days, tz)
     if not any(f["start"] for f in facts):
         return {"empty": True}
     window = reply_window(facts)
@@ -1085,6 +1119,7 @@ def report(apps, events, now: datetime, tz, reminder_days: int,
         "cohorts": cohorts(facts, now, tz),
         "visa": visa_matrix(facts),
         "interviews": interviews(facts),
+        "depth": depth(facts),
         "flow": flow(facts, window, status_word, how_words or analytics.HOW_LABELS),
         "timing": timing(facts),
         "compare": compare(facts, now, tz),
