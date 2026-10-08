@@ -67,6 +67,18 @@ REASON_PROMPT_VERSION = "rejection_reason_v1"
 # given" is the user's answer to record, not the absence of a sentence.
 # web.py asserts this is a subset of its vocabulary at import.
 STATED_REASONS = ("visa", "seniority", "salary", "skills", "location", "role_closed")
+# What an invitation mail actually DOES, the kind of round and the day it
+# names — stage 4 (9 Oct 2026), its own prompt on `interview_invite` mail
+# only, for the reason above. One interview is several invitation mails,
+# and the four over-counts of the rounds built the day before were mails
+# that were not invitations at all: a scheduling reply, an availability
+# reply, a cancellation, and a "tomorrow" the extractor dated to its own
+# day. The roles say which; the matcher files them (matcher._append_event),
+# trace.rounds reads them (NON_ROUND_ROLES there), and the kinds are
+# analytics.ROUND_KINDS' (web.py asserts the subset at import).
+INVITE_PROMPT_VERSION = "invite_detail_v1"
+INVITE_ROLES = ("invitation", "reschedule", "cancellation", "reminder", "scheduling")
+INVITE_KINDS = ("test", "questionnaire", "screen", "technical", "manager", "panel", "final")
 
 # Classification moved to Sonnet 5 on 4 Aug 2026, and to Sonnet 5.5 on
 # 3 Oct 2026 (the last paragraph of this block); extraction stays on Haiku.
@@ -134,6 +146,12 @@ EXTRACT_MODEL = (os.environ.get("TRACKER_EXTRACT_MODEL") or config.LLM_MODEL
 # runs of 3, where Sonnet 5 says `skills` every time.
 REASON_MODEL = (os.environ.get("TRACKER_REASON_MODEL") or config.LLM_MODEL
                 or "claude-sonnet-5")
+# Stage 4 starts on Sonnet 5 like stage 3: the same closed-vocabulary reading
+# of one mail, measured by scripts/replay_invites.py against the author's
+# own labels (the kinds and "not a round" marks on real threads, 8-9 Oct
+# 2026) before it filed anything.
+INVITE_MODEL = (os.environ.get("TRACKER_INVITE_MODEL") or config.LLM_MODEL
+                or "claude-sonnet-5")
 
 STAGE1_BODY_CHARS = 4_000
 STAGE2_BODY_CHARS = 12_000
@@ -189,6 +207,9 @@ class Extraction:
     # same key so the triage and refile paths (matcher.extraction_from_raw)
     # carry it too.
     rejection_reason: dict | None = None
+    # invite_detail()'s answer for an `interview_invite`, else None; the
+    # worker adds it, under the same key in raw, the way rejection_reason is.
+    invite_detail: dict | None = None
 
 
 # --------------------------------------------------------------------------- helpers
@@ -464,6 +485,48 @@ def rejection_reason(
     except ValueError as err:
         return {"reason": None, "quote": None, **answer, "error": str(err)[:200]}
     return {"reason": data.get("reason"), "quote": data.get("quote"), **answer}
+
+
+def _validate_invite(d: dict) -> None:
+    if d.get("role") not in INVITE_ROLES:
+        raise ValueError(f"role must be one of {list(INVITE_ROLES)}")
+    if d.get("kind") is not None and d["kind"] not in INVITE_KINDS:
+        raise ValueError(f"kind must be one of {list(INVITE_KINDS)} or null")
+    if d.get("day") is not None and not (isinstance(d["day"], str) and _DATE_RE.match(d["day"])):
+        raise ValueError("day must be YYYY-MM-DD or null")
+
+
+def invite_detail(
+    client: llm.Client,
+    sender: str,
+    subject: str,
+    received_at: datetime,
+    body: str,
+    model: str = INVITE_MODEL,
+) -> dict:
+    """Stage 4, `interview_invite` mail only: what the mail does on the thread
+    (`role`, INVITE_ROLES), the kind of round it concerns (`kind`,
+    INVITE_KINDS or None) and the day it names, resolved against its own
+    date (`day`, YYYY-MM-DD or None) — plus `model` and `prompt_version`.
+
+    A reply that stays invalid after the repair retry returns the safe
+    answer — an invitation, no kind, no day — with `error`, so the mail
+    still files as it did before the stage existed. Only a ValueError is
+    caught; an outage propagates and the worker pauses. `model` is for the
+    replay (scripts/replay_invites.py); the worker never passes it."""
+    answer = {"model": model, "prompt_version": INVITE_PROMPT_VERSION}
+    try:
+        data = _call_json(
+            client,
+            model=model,
+            system=_load_prompt(INVITE_PROMPT_VERSION),
+            user_content=_email_block(sender, subject, received_at, body, STAGE2_BODY_CHARS),
+            validate=_validate_invite,
+            max_tokens=1500,
+        )
+    except ValueError as err:
+        return {"role": "invitation", "kind": None, "day": None, **answer, "error": str(err)[:200]}
+    return {"role": data["role"], "kind": data.get("kind"), "day": data.get("day"), **answer}
 
 
 # --------------------------------------------------------------------------- normalization

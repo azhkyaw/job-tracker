@@ -263,6 +263,7 @@ ROUND_KINDS = {
     "other":         "other",
 }
 _NON_ROUND_KINDS = _sql_list(trace.NON_ROUND_KINDS)
+_NON_ROUND_ROLES = _sql_list(trace.NON_ROUND_ROLES)
 
 
 def same_round_sql(x: str, r: str) -> str:
@@ -279,11 +280,13 @@ def same_round_sql(x: str, r: str) -> str:
 
 def sat_sql(r: str) -> str:
     """Event `r` (an `events` alias) is a round you sat: a rated type, unless
-    you said the line is not a round (trace.NOT_A_ROUND), or the round it
-    belongs to is a kind that is not one (trace.NON_ROUND_KINDS, set on any
-    event of the same round) — then nothing here anchors on it."""
+    you said the line is not a round (trace.NOT_A_ROUND), the mail said so
+    itself (trace.NON_ROUND_ROLES), or the round it belongs to is a kind
+    that is not one (trace.NON_ROUND_KINDS, set on any event of the same
+    round) — then nothing here anchors on it."""
     return f"""({r}.type IN {_RATED_TYPES}
         AND COALESCE({r}.payload->>'round_is', '') <> '{trace.NOT_A_ROUND}'
+        AND COALESCE({r}.payload->>'invite_role', '') NOT IN {_NON_ROUND_ROLES}
         AND NOT EXISTS (SELECT 1 FROM events k
                          WHERE k.application_id = {r}.application_id
                            AND k.payload->>'round_kind' IN {_NON_ROUND_KINDS}
@@ -1096,6 +1099,7 @@ def facts(conn, user_id) -> tuple[list[dict], list[dict]]:
                e.payload->>'stated_date'                     AS stated_date,
                e.payload->>'round_is'                        AS round_is,
                e.payload->>'round_kind'                      AS round_kind,
+               e.payload->>'invite_role'                     AS invite_role,
                em.extraction->>'platform'                    AS mail_platform
         FROM events e
         JOIN applications a ON a.id = e.application_id

@@ -308,6 +308,36 @@ check("a questionnaire is labelled but not counted: its round keeps its lines an
       and insights._went(q_evs[:3])["went_next"] is None
       and set(trace.NON_ROUND_KINDS) < set(analytics.ROUND_KINDS),
       [(r["counts"], r["n"], r["kind"], len(r["events"])) for r in q_all])
+# What the mail did (stage 4's role, 9 Oct 2026): a reschedule moves the
+# round last arranged, a reminder confirms the one naming its day (or the
+# last one, which takes the day), and scheduling chatter or a cancellation
+# is no round at all — the four mails that made every over-count.
+role_evs = [
+    ev(r1, "applied", ago(40)),
+    ev(r1, "interview_invite", ago(30), invite_role="scheduling"),                        # "share your availability"
+    ev(r1, "interview_invite", ago(29), invite_role="invitation"),                        # sets it up, names no day
+    ev(r1, "interview_invite", ago(21), invite_role="reminder", stated_date=ago(20).date().isoformat()),
+    ev(r1, "interview_invite", ago(19), invite_role="cancellation", stated_date=ago(20).date().isoformat()),
+    ev(r1, "interview_invite", ago(18), invite_role="reschedule", stated_date=ago(10).date().isoformat()),
+    ev(r1, "interview_invite", ago(11), invite_role="reminder", stated_date=ago(10).date().isoformat()),
+    ev(r1, "interview_invite", ago(5), invite_role="invitation", stated_date=ago(2).date().isoformat()),
+]
+rr_ = trace.rounds(role_evs)
+check("roles: one round moved once, then a second — the chatter and the cancellation never counted",
+      [(r["n"], r["day"], len(r["events"])) for r in rr_]
+      == [(1, ago(10).date(), 4), (2, ago(2).date(), 1)]
+      and trace.excluded(role_evs[1]) and trace.excluded(role_evs[4])
+      and not trace.excluded(role_evs[2]) and trace.role_of(role_evs[5]) == "reschedule",
+      [(r["n"], r["day"], len(r["events"])) for r in rr_])
+check("a reminder with no round before it is the round; a legacy line with no role groups as before",
+      [r["day"] for r in trace.rounds([ev(r1, "interview_invite", ago(9), invite_role="reminder",
+                                           stated_date=ago(5).date().isoformat())])] == [ago(5).date()]
+      and len(trace.rounds([ev(r1, "interview_invite", ago(9), stated_date=ago(5).date().isoformat()),
+                            ev(r1, "interview_invite", ago(8))])) == 1)
+check("_went anchors past the chatter and the cancellation, and a scheduling line is no further round",
+      insights._went(role_evs)["went_next"] == "waiting"
+      and insights._went(role_evs[:3] + [ev(r1, "interview_invite", ago(5), invite_role="scheduling")])
+      ["went_next"] == "waiting")
 check("a line you said is not a round leaves the rounds, flat column or payload, and leaves "
       "_went's anchor too",
       len(trace.rounds(r_evs[:2] + [dict(r_evs[2], round_is="none")] + r_evs[3:])) == 3

@@ -118,6 +118,17 @@ Sonnet 5.5, US$1.75 in all:
 Rows classified under v1 stay v1. `tests/test_llm.py` holds v2 to v1 except
 its rule 2 lines.
 
+`INVITE_MODEL` (stage 4, `invite_detail_v1`, 9 Oct 2026, worklog task 77)
+started on `claude-sonnet-5` like stage 3: the same closed-vocabulary
+reading of one mail. It runs on `interview_invite` mail only, so
+`email_extract_v1` stays byte-identical, and answers what the mail DOES
+(invitation / reschedule / cancellation / reminder / scheduling), the kind
+of round (`INVITE_KINDS`, a subset of `analytics.ROUND_KINDS`) and the day
+it names resolved against its own date. Its gold set is the author's own
+corrections on real threads (21 kinds, 7 "not a round" marks);
+`scripts/replay_invites.py` grades a model against them and backfills.
+The result of the first replay is recorded in the worklog entry.
+
 ## Why the resume profile is a column (moved from CLAUDE.md, 25 Sep 2026)
 
 `covers.load_profile()` reads `users.resume_profile` only; the `profile.md`

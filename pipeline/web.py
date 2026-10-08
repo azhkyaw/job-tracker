@@ -726,7 +726,8 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
                 SELECT application_id, type, source, occurred_at,
                        payload->>'stated_date' AS stated_date,
                        payload->>'round_is' AS round_is,
-                       payload->>'round_kind' AS round_kind FROM events
+                       payload->>'round_kind' AS round_kind,
+                       payload->>'invite_role' AS invite_role FROM events
                  WHERE application_id = ANY(%s) ORDER BY occurred_at
                 """, ([r["id"] for r in rows],)).fetchall():
                 events_by_app.setdefault(e["application_id"], []).append(e)
@@ -927,6 +928,11 @@ _REASON_FILTERS = {**_EVENT_REASONS, _REASON_UNRECORDED: "not recorded"}
 # this vocabulary can show, filter and count — the same guard as the one on
 # _MANUAL_EVENTS above.
 assert set(email_classifier.STATED_REASONS) <= set(_EVENT_REASONS)
+# And what stage 4 may say a round is must be a kind the page can show.
+assert set(email_classifier.INVITE_KINDS) <= set(analytics.ROUND_KINDS)
+# What an invitation mail did, in the timeline's words, when it was no round
+# (trace.NON_ROUND_ROLES): the line says why it has no round number.
+_INVITE_ROLE_WORDS = {"scheduling": "arranging it, not a round", "cancellation": "cancelled"}
 
 
 def _reason_rows(rows) -> list[dict]:
@@ -1449,7 +1455,7 @@ def application_detail(request: Request, app_id: str, saved: str | None = None,
             "round_went": analytics.WENT_LABELS,
             "rated_events": analytics.RATED_EVENTS,
             "rounds": rounds, "round_of": round_of, "rounds_ahead": rounds_ahead,
-            "round_kinds": analytics.ROUND_KINDS,
+            "round_kinds": analytics.ROUND_KINDS, "invite_role_words": _INVITE_ROLE_WORDS,
             # The statuses the close panel asks about on your own application.
             "open_round": analytics.OPEN_ROUND,
             "today": datetime.now(request.state.tz).strftime("%Y-%m-%d"),
@@ -2442,12 +2448,18 @@ def set_round_kind(request: Request, app_id: str, event_id: str, kind: str = For
             row = None
         if row is None or row["type"] != trace.ROUND_EVENT:
             raise HTTPException(404, "invitation not found")
+        # Your word replaces the email's reading (kind_source, stage 4): the
+        # same word keeps it the email's, as set_rejection_reason does.
         if kind:
-            conn.execute("UPDATE events SET payload = payload || %s::jsonb WHERE id = %s",
-                         (Json({"round_kind": kind}), row["id"]))
+            conn.execute(
+                """UPDATE events SET payload = CASE
+                       WHEN payload->>'round_kind' = %(k)s::text THEN payload
+                       ELSE (payload - 'kind_source') || %(j)s::jsonb END
+                   WHERE id = %(id)s""",
+                {"k": kind, "j": Json({"round_kind": kind}), "id": row["id"]})
         else:
-            conn.execute("UPDATE events SET payload = payload - 'round_kind' WHERE id = %s",
-                         (row["id"],))
+            conn.execute("UPDATE events SET payload = payload - 'round_kind' - 'kind_source' "
+                         "WHERE id = %s", (row["id"],))
     return RedirectResponse(f"/applications/{app_id}", status_code=303)
 
 

@@ -216,6 +216,25 @@ def _fake_reason(client, sender, subject, received, body):
 
 email_classifier.rejection_reason = _fake_reason
 
+# Stage 4, what an invitation mail does (9 Oct 2026). Stubbed like stage 3:
+# the worker calls it for every interview_invite. The safe answer for all
+# but one, which reads as a recruiter screen — the shape of the first real
+# mail the stage was built for.
+FAKE_INVITE = {
+    "alpine-invite": {"role": "invitation", "kind": "screen", "day": None,
+                      "model": "stub", "prompt_version": "invite_detail_v1"},
+}
+INVITE_CALLS: list[str] = []
+
+
+def _fake_invite(client, sender, subject, received, body):
+    INVITE_CALLS.append(subject)
+    return FAKE_INVITE.get(subject) or {"role": "invitation", "kind": None, "day": None,
+                                        "model": "stub", "prompt_version": "invite_detail_v1"}
+
+
+email_classifier.invite_detail = _fake_invite
+
 
 # ---------------------------------------------------------------- helpers
 
@@ -610,6 +629,10 @@ with db.connect() as conn:
     check("...dated when it arrived, not the interview day it names", ev16["occurred_at"] == NOW, ev16)
     check("...which it keeps as the stated date",
           ev16["payload"].get("stated_date") == "2026-08-04", ev16)
+    check("...and stage 4's reading rides on it: the role, and the kind as the email's",
+          "alpine-invite" in INVITE_CALLS and ev16["payload"].get("invite_role") == "invitation"
+          and ev16["payload"].get("round_kind") == "screen"
+          and ev16["payload"].get("kind_source") == "email", ev16["payload"])
     check("...so nothing on the timeline sits after the latest mail", conn.execute(
         "SELECT max(occurred_at) AS m FROM events WHERE application_id = %s",
         (as_app["id"],)).fetchone()["m"] == NOW)

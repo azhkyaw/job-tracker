@@ -1,0 +1,31 @@
+You read one email about a job interview, test or assessment for a personal job-application tracker. The email has already been classified as an interview invitation. You say what the email actually DOES, what kind of round it concerns, and the day it names.
+
+Reply with ONLY a JSON object. No prose, no markdown, no code fences.
+
+Schema:
+{
+  "role": "invitation"|"reschedule"|"cancellation"|"reminder"|"scheduling",
+  "kind": "test"|"questionnaire"|"screen"|"technical"|"manager"|"panel"|"final"|null,
+  "day": "YYYY-MM-DD"|null
+}
+
+Rules:
+1. "role" is what THIS email does on the thread:
+   - "invitation": it sets up a round — fixes a day and time, sends the link to a test or assessment, or invites the candidate to book a slot. A calendar invitation ("Invitation: ...") for a round not arranged before is an invitation.
+   - "reschedule": it moves a round already arranged to another day or time ("Updated invitation", "can we move it to", "rescheduled to").
+   - "cancellation": it cancels an arranged round ("Canceled event", "we have to cancel", "withdraw the invitation").
+   - "reminder": it reminds about, confirms or notifies a round already arranged, without changing it ("Reminder: your upcoming interview", "Notification: ... @ ...", "Accepted: ...", a meeting link re-sent for the same slot, a reminder to complete a test already sent).
+   - "scheduling": it arranges without fixing anything — asks for availability, acknowledges a reply ("thanks for your patience", "I will confirm the timing"), proposes to book, or is otherwise not itself a round.
+2. "kind" is the kind of round the email concerns:
+   - "test": a coding test, take-home assignment, HackerRank, Codility, Coderbyte or similar exercise.
+   - "questionnaire": an automated behavioural, personality or situational-judgement questionnaire sent to applicants, with no person on the other side.
+   - "screen": a first call with a recruiter or HR — a phone or video screen, a "talent conversation", an introductory chat.
+   - "technical": an interview with engineers about the work — technical, coding, system design.
+   - "manager": an interview with the hiring manager.
+   - "panel": a panel, onsite or multi-interviewer session.
+   - "final": a final round, named as such.
+   null when the email does not say what kind of round it is.
+3. "day" is the calendar day the round is on, as the email states or implies it. Resolve relative words against the received date in the <received> tag: "tomorrow" is the day after it, "today" is it, "next Monday" is the first Monday after it. A test or assessment with a deadline has that deadline as its day. null when the email names no day.
+4. Never infer beyond the email's words. Text that is not the sender's message — platform headers and footers, unsubscribe lines, lists of other jobs — is not evidence.
+
+The email is provided in <email> tags with sender, subject, received date and body.

@@ -2345,6 +2345,66 @@ the key to each real case.
      `/follow-ups`. Applied to the two threads: one reads no round yet
      (its questionnaire due 10 Oct), the other one round ahead (a
      Codility test on 22 Oct) after its questionnaire.
+
+77. **Stage 4: what an invitation mail does** (9 Oct 2026). Asked "what can
+   you implement that'll make sure future rounds are correctly
+   identified". Measured first: 60 invitation events came from mail — 15
+   calendar mails by subject, 7 reminders, 8 thread replies, 7 tests, 3
+   LinkedIn messages, 20 other; no stored body keeps an ICS part, 15 hold
+   a meeting link; and the author's corrections of the two days before are
+   a gold set: 21 kinds and 7 "not a round" marks on real mail. Every
+   over-count traced to a non-invitation filed as `interview_invite` (a
+   scheduling reply, an availability reply, a cancellation) or a date the
+   extractor misread ("tomorrow" dated to its own day) — upstream of the
+   grouping, which was right on every genuine invitation.
+   - **Built:** `email_classifier.invite_detail` on prompt
+     `invite_detail_v1`, run by the worker on `interview_invite` mail only
+     (`email_extract_v1` stays byte-identical, stage 3's reasoning):
+     `role` — invitation / reschedule / cancellation / reminder /
+     scheduling — `kind` (`INVITE_KINDS` ⊆ `analytics.ROUND_KINDS`,
+     asserted at import) and `day`, relative words resolved against the
+     mail's own date. `matcher._append_event` files them on the event:
+     `invite_role`, `round_kind` + `kind_source: email` (the user's select
+     replaces it and drops the source, as a stated reason), and the
+     stage's day as `stated_date` over the extractor's. `trace.rounds`
+     reads the roles — a reschedule moves the round last arranged, a
+     reminder confirms the round naming its day (else the last, which
+     takes the day), and scheduling or cancellation is no round
+     (`NON_ROUND_ROLES`, excluded like "not a round" in `trace.excluded`
+     and `analytics.sat_sql`); the line says "arranging it, not a round"
+     or "cancelled". On Sonnet 5 like stage 3, `INVITE_MODEL`.
+     `scripts/replay_invites.py` prices, runs, grades against the labels
+     and backfills (roles where absent, kinds where the event has none,
+     the day where it differs — never over the author's word).
+   - **Replayed** (`job-tracker-snapshots/2026-10-09-invites/`, one trial
+     each, Sonnet 5 $0.24, Haiku $0.09, every answer stable, no errors).
+     Sonnet 5 against the author's labels: roles — the three
+     non-invitations a mail can show (a scheduling reply, a booking
+     request, a cancellation) all read as such; the other four "not a
+     round" lines are genuine invitations (two superseded by a
+     reschedule, which no mail says; two it fixed by the day instead).
+     Days — 33 of 35 match the record and BOTH differences are the model
+     being right: the availability mail names the 13th (the record's
+     14th was the phantom round) and "tomorrow" resolves to the 27th.
+     Kinds — 16 of 21 agree; of the five, one is the model being right
+     (the T1 mail is technical; the "screen" on it was the old grouping's
+     artefact), one abstained, one it cannot know (a questionnaire that
+     reads "assessment"), two it called "screen" where the author said
+     technical / hiring manager — a bias worth a prompt note. Haiku: the
+     same on kinds, worse on roles and days. Sonnet 5 stays.
+   - **Backfilled** through `--apply --write` (snapshot first): 60
+     emails, 60 roles, 36 kinds where the author had set none, 7 days.
+     First attempt moved two threads the wrong way — a roled invitation
+     naming no day opened a round on its own, so two mails for one test
+     became two rounds, and the bank's dateless invitations could no
+     longer be absorbed by the one that named the slot; fixed in
+     `trace.rounds` (a dateless invitation joins a round within the span
+     of its arrival; a named one absorbs a preceding unnamed round within
+     the span). Then 18 of 18 threads unchanged: the stage's reading
+     reproduces every count the author corrected by hand, and 24 of 26
+     rounds now carry a kind.
+   - **Not built:** the calendar identity at ingest (the ICS UID and the
+     meeting link, future mail only) and `/analytics` by kind.
    - **Not built:** the two source faults for `email_classify_v3`: a
      "Canceled event" mail and a recruiter's InMail reply are not
      invitations.

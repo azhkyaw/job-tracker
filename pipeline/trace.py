@@ -67,11 +67,23 @@ NOT_A_ROUND = "none"
 # The whole ROUND wears the kind, so it is set once; its lines keep their
 # label ("automated questionnaire") and leave every count.
 NON_ROUND_KINDS = ("questionnaire",)
+# What an invitation mail DOES (`payload.invite_role`, stage 4 —
+# email_classifier.invite_detail, 9 Oct 2026): an invitation sets a round up,
+# a reschedule moves one, a reminder confirms one, and these two are no round
+# at all — the mails that made every over-count the day before.
+NON_ROUND_ROLES = ("scheduling", "cancellation")
+
+
+def role_of(e):
+    """What the mail did (`payload.invite_role`), flat column or payload;
+    None for a hand-filed line or one filed before the stage existed."""
+    return e.get("invite_role") or (e.get("payload") or {}).get("invite_role")
 
 
 def excluded(e) -> bool:
-    """You said this line is not a round."""
-    return (e.get("round_is") or (e.get("payload") or {}).get("round_is")) == NOT_A_ROUND
+    """You said this line is not a round, or the mail said so itself."""
+    return ((e.get("round_is") or (e.get("payload") or {}).get("round_is")) == NOT_A_ROUND
+            or role_of(e) in NON_ROUND_ROLES)
 
 
 def own_round(e) -> bool:
@@ -110,6 +122,10 @@ def rounds(evs, tz=None, counting_only: bool = True) -> list[dict]:
     False (the detail page labels the others)."""
     out: list[dict] = []
     dateless = []
+
+    def last_mail_round():
+        return next((r for r in reversed(out) if not r.get("own")), None)
+
     for e in evs:
         if e["type"] != ROUND_EVENT or excluded(e):
             continue
@@ -117,10 +133,48 @@ def rounds(evs, tz=None, counting_only: bool = True) -> list[dict]:
         if own_round(e):
             out.append({"day": named or arrived, "named": named is not None, "events": [e], "own": True})
             continue
+        role = role_of(e)
+        last = last_mail_round()
+        if role == "reschedule" and last is not None:
+            # Moves the round last arranged: the round's day follows the mail.
+            last["events"].append(e)
+            if named is not None:
+                last["day"], last["named"] = named, True
+            continue
+        if role == "reminder" and (named is not None or last is not None):
+            # Confirms a round already arranged: the one naming its day, else
+            # the last one — which takes the day if it had none.
+            r = next((r for r in out if named is not None and r["day"] == named
+                      and not r.get("own")), None) or last
+            if r is None:
+                out.append(r := {"day": named, "named": True, "events": []})
+            elif named is not None and not r["named"]:
+                r["day"], r["named"] = named, True
+            r["events"].append(e)
+            continue
         if named is None:
-            dateless.append((e, arrived))
+            if role is None:
+                dateless.append((e, arrived))        # filed before the stage: nearest day, below
+                continue
+            # The stage read an invitation naming no day: a second mail for
+            # the same test joins the round within the span of its arrival;
+            # else its own round, from its arrival, which a later mail may
+            # date — in order, so that mail finds it.
+            near = [r for r in out if not r.get("own")
+                    and abs((r["day"] - arrived).days) <= ROUND_SPAN_DAYS]
+            if near:
+                min(near, key=lambda r: abs((r["day"] - arrived).days))["events"].append(e)
+            else:
+                out.append({"day": arrived, "named": False, "events": [e]})
             continue
         r = next((r for r in out if r["day"] == named and not r.get("own")), None)
+        if (r is None and last is not None and not last["named"]
+                and abs((last["day"] - named).days) <= ROUND_SPAN_DAYS):
+            # The mails arranging it came first and named no day: this one
+            # names it (the bank thread's two invitations before the one
+            # that locked the slot in, 9 Oct 2026).
+            r = last
+            r["day"], r["named"] = named, True
         if r is None:
             out.append(r := {"day": named, "named": True, "events": []})
         r["events"].append(e)

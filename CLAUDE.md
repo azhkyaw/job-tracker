@@ -214,7 +214,15 @@ An invariant keeps its RULE here and its case history in the rule file.
   runs on `rejection` mail only: the reason the email STATES, with the
   sentence that states it (`pipeline/quotes.py`, the JD stage's check), or
   none. Its own prompt, so the extraction stays byte-identical;
-  `scripts/replay_reasons.py` grades and backfills it
+  `scripts/replay_reasons.py` grades and backfills it. Stage 4,
+  `invite_detail()` (9 Oct 2026, `INVITE_MODEL`), runs on `interview_invite`
+  mail only, the same way: what the mail DOES (invitation / reschedule /
+  cancellation / reminder / scheduling), the kind of round
+  (`INVITE_KINDS`, a subset of `analytics.ROUND_KINDS`) and the day it
+  names resolved against its own date; `matcher._append_event` files them
+  on the event (`invite_role`, `round_kind` + `kind_source`,
+  `stated_date`), `trace.rounds` reads the roles, and
+  `scripts/replay_invites.py` grades it against the author's own labels
 - `pipeline/jd_extraction.py` — the JD extractor (`extract` / `store`), on
   prompt `jd_extract_v2` since 25 Sep 2026 (`docs/jd-extraction-models.md`).
   `VISA_SIGNALS_BY_VERSION` keeps each version's vocabulary, since v1 rows

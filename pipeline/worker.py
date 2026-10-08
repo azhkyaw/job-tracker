@@ -115,6 +115,15 @@ def handle_extract_email(conn, job: dict) -> None:
             email["received_at"], email["body_text"] or "",
         )
         x = dataclasses.replace(x, raw={**x.raw, "rejection_reason": rr}, rejection_reason=rr)
+    elif email["classification"] == "interview_invite":
+        # Stage 4 (9 Oct 2026): what the invitation mail does on the thread,
+        # the kind of round and the day it names, stored inside the
+        # extraction like the reason so a triage resolve carries it too.
+        idt = email_classifier.invite_detail(
+            _client(), email["sender"], email["subject"] or "",
+            email["received_at"], email["body_text"] or "",
+        )
+        x = dataclasses.replace(x, raw={**x.raw, "invite_detail": idt}, invite_detail=idt)
     conn.execute(
         "UPDATE emails SET extraction = %s WHERE id = %s",
         (Json(x.raw), email["id"]),

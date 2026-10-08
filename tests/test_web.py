@@ -4184,6 +4184,29 @@ check("a questionnaire's line says so and takes no rating; the thread has one ro
       and ">1 round</span>" in client.get("/?q=Two+Rounds").text,
       (_sql_fate, _py["round_fate"], _py["n_rounds"], re.findall(r"<small>[^<]+</small>", _pg)))
 client.post(f"/applications/{_rr}/events/{_rr_inv}/kind", data={"kind": "test"})
+# What the mail did (stage 4, 9 Oct 2026): a scheduling reply filed as an
+# invitation is no round, in both twins, and the line says why.
+with db.connect() as conn:
+    _rr_sched = conn.execute(
+        "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+        "VALUES (%s, %s, 'interview_invite', 'email', now() - interval '1 day', %s) RETURNING id",
+        (user_id, _rr, Json({"invite_role": "scheduling"}))).fetchone()["id"]
+    _sql_fate = conn.execute(f"SELECT {analytics.round_fate_sql('a')} AS f FROM applications a "
+                             f"WHERE a.id = %s::uuid", (_rr,)).fetchone()["f"]
+    _fa, _fe = analytics.facts(conn, user_id)
+_py = next(f for f in insights.build_facts(_fa, _fe, datetime.now(timezone.utc), 10) if str(f["id"]) == _rr)
+_pg = client.get(f"/applications/{_rr}").text
+check("a mail the stage read as scheduling chatter is no round: the page says so, the count stays at "
+      "the two real rounds, both twins skip it, and /follow-ups does not ask about it",
+      "<small>arranging it, not a round</small>" in _pg and "2 interview rounds<" in _pg
+      and _py["n_rounds"] == 2 and _sql_fate == _py["round_fate"]
+      and ">2 rounds</span>" in client.get("/?q=Two+Rounds").text
+      and str(_rating_owed().get(_rr, {}).get("event_id")) != str(_rr_sched),
+      (_sql_fate, _py["round_fate"], _py["n_rounds"]))
+client.post(f"/applications/{_rr}/events/{_rr_inv}/kind", data={"kind": "screen"})
+check("your word on the kind replaces the email's reading (kind_source goes), the same word keeps it",
+      "kind_source" not in _wt_event(_rr_inv)["payload"]
+      and _wt_event(_rr_inv)["payload"]["round_kind"] == "screen")
 client.post(f"/applications/{_rr}/delete")
 check("this section's record is gone", client.get(f"/applications/{_rr}").status_code == 404)
 

@@ -344,6 +344,7 @@ def extraction_from_raw(raw: dict | None) -> Extraction:
         event_date=raw.get("event_date"), status_detail=raw.get("status_detail"),
         recruiter=raw.get("recruiter"), notes=raw.get("notes"), raw=raw,
         rejection_reason=raw.get("rejection_reason"),
+        invite_detail=raw.get("invite_detail"),
     )
 
 
@@ -467,6 +468,21 @@ def _append_event(conn, user_id, application_id, email_row, classification,
         # and set_rejection_reason drops both when the user picks otherwise.
         payload.update(reason=rr["reason"], reason_source="email",
                        reason_quote=rr["quote"])
+    idt = extraction.invite_detail
+    if etype == "interview_invite" and idt:
+        # Stage 4's reading of the mail (invite_detail_v1, 9 Oct 2026): what
+        # it does on the thread, the kind of round, and the day it names
+        # resolved against its own date — which wins over the extractor's
+        # `event_date` ("tomorrow" had been dated to the mail's own day). A
+        # scheduling reply or a cancellation keeps the classifier's event
+        # type, and so the status, but is no round (trace.NON_ROUND_ROLES).
+        # The kind is the email's reading until the user picks another
+        # (web.set_round_kind drops `kind_source`), as a stated reason is.
+        payload["invite_role"] = idt.get("role") or "invitation"
+        if idt.get("kind"):
+            payload.update(round_kind=idt["kind"], kind_source="email")
+        if idt.get("day"):
+            payload["stated_date"] = idt["day"]
     if etype == "applied" and conn.execute(
             "SELECT 1 FROM events WHERE application_id = %s AND type = 'applied'",
             (application_id,)).fetchone():

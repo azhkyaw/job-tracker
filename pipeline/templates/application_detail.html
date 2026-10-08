@@ -67,6 +67,9 @@
         {%- if rd and rd.counts %}<small>round {{ rd.n }}{% if rounds | length > 1 %} of {{ rounds | length }}{% endif %}{% if rd.kind %}, {{ round_kinds.get(rd.kind, rd.kind) }}{% endif %}</small>
         {%- elif rd %}<small>{{ round_kinds.get(rd.kind, rd.kind) }}</small>{% endif %}
         {%- if not_round %}<small>not a round</small>{% endif %}
+        {#- What the mail itself did, when that is why it has no round
+            (stage 4's role, trace.NON_ROUND_ROLES). #}
+        {%- if not not_round and e.payload.get('invite_role') in invite_role_words %}<small>{{ invite_role_words[e.payload['invite_role']] }}</small>{% endif %}
         {#- What kind of round (web.py:set_round_kind), once per round, on the
             line the round is rated through; every line of the round then
             wears it after its label. #}

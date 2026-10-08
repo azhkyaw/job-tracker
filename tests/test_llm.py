@@ -471,4 +471,48 @@ check("every stated reason is a manual-event reason key (web asserts the same at
       set(email_classifier.STATED_REASONS)
       == {"visa", "seniority", "salary", "skills", "location", "role_closed"})
 
+# ---------------------------------------------------------------- invitation detail
+# Stage 4 (9 Oct 2026): what an invitation mail DOES, the kind of round and
+# the day it names resolved — the shape of a recruiter's "let's chat
+# tomorrow at 3pm", which the extractor had dated to the mail's own day.
+print("invitation detail: role, kind and the day, resolved")
+INV_SUBJECT = "Re: AI Technical Developer, at Northwind Media"
+INV_BODY = "Hi, thanks for your response, let's chat tomorrow at 3pm. Will reach out via a WhatsApp call."
+
+
+def invite_reply(role, kind, day):
+    return json.dumps({"role": role, "kind": kind, "day": day})
+
+
+def stage4(cl):
+    return email_classifier.invite_detail(cl, "jane@northwind.example", INV_SUBJECT, _WHEN, INV_BODY)
+
+
+cl = ScriptedClient(invite_reply("invitation", "screen", "2026-09-24"))
+r = stage4(cl)
+check("role, kind and day come back in one call, on the stage's model and prompt",
+      r == {"role": "invitation", "kind": "screen", "day": "2026-09-24",
+            "model": email_classifier.INVITE_MODEL, "prompt_version": "invite_detail_v1"}
+      and len(cl.calls) == 1 and cl.calls[0]["max_tokens"] == 1500
+      and cl.calls[0]["system"] == _prompt("invite_detail_v1")
+      and "<received>2026-09-23</received>" in cl.calls[0]["messages"][0]["content"], (r, len(cl.calls)))
+check("the prompt resolves relative days against the received date, and names every role and kind",
+      "tomorrow" in _prompt("invite_detail_v1")
+      and all(k in _prompt("invite_detail_v1") for k in email_classifier.INVITE_KINDS)
+      and all(k in _prompt("invite_detail_v1") for k in email_classifier.INVITE_ROLES))
+cl = ScriptedClient(invite_reply("chat", None, None), invite_reply("scheduling", None, None))
+r = stage4(cl)
+check("a role outside the vocabulary goes back once; the repair is kept",
+      len(cl.calls) == 2 and r["role"] == "scheduling" and "error" not in r, (len(cl.calls), r))
+bad = invite_reply("invitation", "vibes", "tomorrow")
+cl = ScriptedClient(bad, bad)
+r = stage4(cl)
+check("twice invalid is the safe answer — an invitation, no kind, no day — with the error, not an "
+      "exception: the mail still files as before the stage existed",
+      r["role"] == "invitation" and r["kind"] is None and r["day"] is None and r.get("error")
+      and len(cl.calls) == 2, r)
+check("the stage's kinds are kinds the page can show, and none of its roles is a kind",
+      set(email_classifier.INVITE_KINDS) <= set(__import__("pipeline.analytics", fromlist=["x"]).ROUND_KINDS)
+      and not set(email_classifier.INVITE_ROLES) & set(email_classifier.INVITE_KINDS))
+
 print("\nALL LLM PATHS PASS")

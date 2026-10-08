@@ -948,6 +948,15 @@ is a private artifact, linked from the memory file
     of `trace.rounds` the SQL shares; `insights._sat` its twin). Unlike
     "not a round", which is per LINE (a stray mail), a kind is per ROUND:
     different granularity, different control.
+    **The mail says what it did, since stage 4** (`payload.invite_role`,
+    the same day; `.claude/rules/llm.md`): a reschedule moves the round
+    last arranged, a reminder confirms one, and scheduling chatter or a
+    cancellation is no round (`trace.NON_ROUND_ROLES`, read by
+    `trace.excluded` and `analytics.sat_sql` beside "not a round") — the
+    line says "arranging it, not a round" or "cancelled"
+    (`web._INVITE_ROLE_WORDS`). The stage's kind is the email's reading
+    (`kind_source: email`) until the select says otherwise, which drops
+    the source, as a stated rejection reason does.
 
 ## Invariant #2 in detail (moved from CLAUDE.md, 25 Sep 2026)
 
