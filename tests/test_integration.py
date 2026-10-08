@@ -59,6 +59,8 @@ FAKE_CLASSIFY = {
     "short-req-confirmation": Classification(True, "confirmation", 0.93, "stub"),
     "short-req-bare": Classification(True, "interview_invite", 0.93, "stub"),
     "stated-abbrev-confirmation": Classification(True, "confirmation", 0.93, "stub"),
+    "wd-tenant-confirmation": Classification(True, "confirmation", 0.93, "stub"),
+    "wd-stranger-invite": Classification(True, "interview_invite", 0.93, "stub"),
 }
 def _fake_extraction(**kw):
     """Mirror the real extract_email(): raw always carries the full payload."""
@@ -175,6 +177,12 @@ FAKE_EXTRACT["short-req-bare"] = _fake_extraction(
 # brackets, against a record captured under the short one (8 Oct 2026).
 FAKE_EXTRACT["stated-abbrev-confirmation"] = _fake_extraction(
     company="Northwind Transport Authority (N*TA)", role_title="Transit Data Engineer", platform="ats")
+# Workday mail signed with the brand, against a record Workday named by a
+# legal entity that shares no word with it (8 Oct 2026); and the same mail
+# from another tenant.
+FAKE_EXTRACT["wd-tenant-confirmation"] = _fake_extraction(
+    company="Northwind", role_title="Payroll Platform Engineer", platform="ats")
+FAKE_EXTRACT["wd-stranger-invite"] = FAKE_EXTRACT["wd-tenant-confirmation"]
 
 CLASSIFY_CALLS: list[tuple[str, bool]] = []   # (subject, sent) — what the worker asked
 
@@ -773,6 +781,41 @@ with db.connect() as conn:
     conn.execute("DELETE FROM applications WHERE id = %s", (abbrev,))
     conn.execute("DELETE FROM postings WHERE job_id = %s", (job25,))
     conn.execute("DELETE FROM jobs WHERE id = %s", (job25,))
+    conn.commit()
+
+    # A record Workday named by its legal entity, and mail from that tenant.
+    entity = _ats_app("1234 nwd sg svc pte ltd company", "Payroll Platform Engineer",
+                      "northwind.wd3.myworkdayjobs.com/r00123456")
+    conn.commit()
+    body = "Thanks for applying for the role of Payroll Platform Engineer. R00123456"
+    e26 = _seed_body("wd-tenant-confirmation", body, "Northwind Careers <northwind@myworkday.com>")
+    e27 = _seed_body("wd-stranger-invite", body, "Fabrikam Careers <fabrikam@myworkday.com>")
+    conn.commit()
+    drain(conn)
+    s26, s27 = email_state(conn, e26), email_state(conn, e27)
+    check("mail from the record's own Workday tenant is matched by the id it prints, "
+          "whatever name it signs with",
+          s26["triage_state"] == "auto_matched" and str(s26["matched_application_id"]) == entity
+          and s26["match_score"] == 1.0, s26)
+    check("...but the same id from another tenant is not",
+          str(s27["matched_application_id"]) != entity, s27)
+    check("matcher: the Workday tenant is the sender's local part at myworkday.com, else nothing",
+          [matcher.workday_tenant(x) for x in (
+              "Northwind Careers <northwind@myworkday.com>", "northwind-hr@myworkday.com",
+              "noreply@myworkday.com.example", "system@successfactors.com", None)]
+          == ["northwind", "northwind-hr", "", "", ""])
+    # Gone again, for the reason above (and the stranger's mail, wherever it went).
+    apps = {entity} | {str(r["matched_application_id"]) for r in conn.execute(
+        "SELECT matched_application_id FROM emails WHERE id IN (%s, %s) "
+        "AND matched_application_id IS NOT NULL", (e26, e27)).fetchall()}
+    conn.execute("DELETE FROM events WHERE source_email_id IN (%s, %s)", (e26, e27))
+    conn.execute("DELETE FROM emails WHERE id IN (%s, %s)", (e26, e27))
+    for a_id in apps:
+        job_ = conn.execute("SELECT job_id FROM applications WHERE id = %s", (a_id,)).fetchone()["job_id"]
+        conn.execute("DELETE FROM events WHERE application_id = %s", (a_id,))
+        conn.execute("DELETE FROM applications WHERE id = %s", (a_id,))
+        conn.execute("DELETE FROM postings WHERE job_id = %s", (job_,))
+        conn.execute("DELETE FROM jobs WHERE id = %s", (job_,))
     conn.commit()
 
     print("path 4: failure backoff")

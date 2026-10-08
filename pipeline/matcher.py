@@ -248,19 +248,42 @@ _CANDIDATES_RESCUE_SQL = (_CANDIDATES_BASE + """(
 # of 19 Workday emails carry one; no other vendor's do. It is what separates
 # two records of one employer and one title (a sibling role), where names
 # fail the margin by construction.
-# Two guards keep a coincidence out. The record's company must pass the same
-# gate find_match uses, so a stranger's "reference number 51234" is not
-# another employer's requisition, unless the record has no company to compare
-# (a capture that could not name its employer: the email-side rescue). And
-# exactly ONE record may be named, or the id decides nothing.
+# Two guards keep a coincidence out. The record must be the mail's sender's:
+# its company passes the same gate find_match uses, so a stranger's
+# "reference number 51234" is not another employer's requisition; or it has
+# no company to compare (a capture that could not name its employer: the
+# email-side rescue); or the mail comes from the very hiring-system tenant
+# the record's id lives on (workday_tenant, below). And exactly ONE record
+# may be named, or the id decides nothing.
 _ATS_ID_SQL = """
 SELECT a.id AS application_id, j.ats_job_id
 FROM applications a
 JOIN jobs j ON j.id = a.job_id
 WHERE a.user_id = %(user_id)s
   AND j.ats_job_id IS NOT NULL
-  AND (j.company_norm = %(unknown)s OR (%(company)s <> '' AND """ + _COMPANY_GATE + """))
+  AND (j.company_norm = %(unknown)s
+       OR (%(company)s <> '' AND """ + _COMPANY_GATE + """)
+       OR (%(wd_tenant)s <> ''
+           AND split_part(split_part(j.ats_job_id, '/', 1), '.', 1) = %(wd_tenant)s
+           AND split_part(j.ats_job_id, '/', 1) LIKE '%%.myworkdayjobs.com'))
 """
+
+
+def workday_tenant(sender: str | None) -> str:
+    """The Workday tenant a mail was sent from, or "". Workday sends each
+    employer's mail as <tenant>@myworkday.com, and serves its jobs at
+    <tenant>.wdN.myworkdayjobs.com, where a record's ATS id lives: a mail
+    from that address is that employer's own hiring system writing, whatever
+    name it signs with. The company gate alone refused records Workday names
+    by a legal entity ("1234 Contoso SG Svc Pte Ltd Company") against mail
+    signed "Contoso", though the mail printed the record's own id: a bank's 3
+    mails on 2 Oct and another employer's 3 confirmations on 8 Oct 2026, all
+    filed by hand. Replayed
+    over the 633 stored emails: those 6 decisions changed, each onto the
+    record a human had filed it on, and none other. No other vendor's sender
+    names its tenant (SuccessFactors writes from system@successfactors.com)."""
+    m = re.search(r"<?([a-z0-9-]+)@myworkday\.com>?\s*$", (sender or "").strip().lower())
+    return m.group(1) if m else ""
 
 
 def _ats_pattern(ats_job_id: str) -> re.Pattern | None:
@@ -291,6 +314,7 @@ def match_by_ats_id(conn, user_id, email_row, extraction: Extraction) -> str | N
         "user_id": user_id, "unknown": UNKNOWN_COMPANY,
         "company": norm_company(extraction.company or ""),
         "aliases": company_aliases(extraction.company),
+        "wd_tenant": workday_tenant(email_row.get("sender")),
         "cmin": config.COMPANY_TRGM_MIN}).fetchall()
     hits = set()
     for r in rows:
