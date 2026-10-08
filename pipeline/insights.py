@@ -282,13 +282,17 @@ def _went(evs) -> dict:
     the 10 Sep 2026 record), else waiting. `went_hindsight`: the rating was
     filed once that outcome was on record, so it could read the outcome back;
     the panel counts those apart, since they can only agree with it."""
-    rounds = [i for i, e in enumerate(evs) if e["type"] in RATED]
+    rounds = [i for i, e in enumerate(evs) if e["type"] in RATED and not trace.excluded(e)]
     if not rounds:
         return {"went": None, "went_next": None, "went_hindsight": False, "round_fate": None}
     rated = [i for i in rounds if evs[i].get("went")]
     i = (rated or rounds)[-1]
     anchor = evs[i]
-    after = next((e for e in evs[i + 1:] if e["type"] in ROUND or e["type"] in CLOSED), None)
+    # A line you said is not a round is no further round, and neither is the
+    # anchor's own notification or reminder (_same_round).
+    after = next((e for e in evs[i + 1:]
+                  if (e["type"] in ROUND and not trace.excluded(e) and not _same_round(e, anchor))
+                  or e["type"] in CLOSED), None)
     outcome = after or trace.closing(evs)
     if outcome is None:
         nxt = "waiting"
@@ -304,6 +308,25 @@ def _went(evs) -> dict:
     # The list's bucket over the same two facts (analytics.round_fate_sql).
     return {"went": went, "went_next": nxt, "went_hindsight": hindsight,
             "round_fate": analytics.round_fate(went, nxt)}
+
+
+def _stated(e):
+    return e.get("stated_date") or (e.get("payload") or {}).get("stated_date")
+
+
+def _same_round(e, anchor) -> bool:
+    """A further invitation naming the anchor's day, or arriving within
+    trace.ROUND_SPAN_DAYS of it, is the same interview's notification or
+    reminder, not a further round. The approximation of trace.rounds that
+    analytics.round_fate_sql (and rating_owed_sql) can share, so the two
+    twins of the outcome read the same event."""
+    if e["type"] != trace.ROUND_EVENT or anchor["type"] != trace.ROUND_EVENT:
+        return False
+    if trace.own_round(e) or trace.own_round(anchor):
+        return False
+    s1, s2 = _stated(e), _stated(anchor)
+    return ((s1 is not None and s1 == s2)
+            or abs(e["occurred_at"] - anchor["occurred_at"]) <= timedelta(days=trace.ROUND_SPAN_DAYS))
 
 
 def _plural(n: int, one: str, many: str | None = None) -> str:

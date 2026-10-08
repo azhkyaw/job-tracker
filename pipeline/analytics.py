@@ -246,6 +246,13 @@ RATED_EVENTS = ("interview_invite", "engaged")
 _RATED_TYPES = _sql_list(RATED_EVENTS)
 WENT_LABELS = {"well": "went well", "mixed": "mixed", "badly": "went badly"}
 
+
+def sat_sql(r: str) -> str:
+    """Event `r` is a round you sat: a rated type, unless you said the line
+    is not a round (trace.NOT_A_ROUND) — then nothing here anchors on it."""
+    return (f"({r}.type IN {_RATED_TYPES} "
+            f"AND COALESCE({r}.payload->>'round_is', '') <> '{trace.NOT_A_ROUND}')")
+
 # What came of the round you rated: one bucket per application with a round
 # you sat, the SQL twin of insights._went (8 Oct 2026). The anchor is the
 # newest round carrying a rating, else the newest round; the outcome is the
@@ -291,9 +298,13 @@ def round_fate(went: str | None, went_next: str | None) -> str | None:
 def round_fate_sql(a: str) -> str:
     """The same bucket as a SQL expression over application `a`: NULL with
     no round sat. `r` is the anchor round, `n` the first round or close
-    after it, `c` the thread's latest close, `o` whichever of the two the
-    outcome is (`n`, else `c` — a close filed by hand at noon before the
-    round's own evening mail, the 10 Sep 2026 record)."""
+    after it — not a line you said is not a round, and not the anchor's own
+    notification or reminder (an invitation naming its day or within
+    trace.ROUND_SPAN_DAYS, insights._same_round) — `c` the thread's latest
+    close, `o` whichever of the two the outcome is (`n`, else `c` — a close
+    filed by hand at noon before the round's own evening mail, the 10 Sep
+    2026 record)."""
+    span = f"make_interval(days => {trace.ROUND_SPAN_DAYS})"
     return f"""(SELECT CASE
             WHEN o.type IS NULL THEN 'waiting'
             WHEN o.type = 'rejected' THEN 'rejected'
@@ -302,13 +313,21 @@ def round_fate_sql(a: str) -> str:
                       WHEN r.went = 'well' THEN 'unexplained' ELSE 'quiet' END
             WHEN o.type = 'withdrawn' THEN 'ended'
             ELSE 'on' END
-          FROM (SELECT r.occurred_at, r.created_at, r.payload->>'went' AS went FROM events r
-                 WHERE r.application_id = {a}.id AND r.type IN {_RATED_TYPES}
+          FROM (SELECT r.type, r.source, r.occurred_at, r.created_at, r.payload->>'went' AS went,
+                       r.payload->>'stated_date' AS stated FROM events r
+                 WHERE r.application_id = {a}.id AND {sat_sql('r')}
                  ORDER BY (r.payload ? 'went') DESC, r.occurred_at DESC, r.created_at DESC
                  LIMIT 1) r
           LEFT JOIN LATERAL (
             SELECT n.type, n.payload->>'closed' AS closed FROM events n
              WHERE n.application_id = {a}.id AND n.type IN {_OUTCOME_TYPES}
+               AND COALESCE(n.payload->>'round_is', '') <> '{trace.NOT_A_ROUND}'
+               -- a hand-filed round is its own (trace.own_round)
+               AND NOT (n.type = '{trace.ROUND_EVENT}' AND r.type = '{trace.ROUND_EVENT}'
+                        AND n.source <> 'manual' AND r.source <> 'manual'
+                        AND (COALESCE(n.payload->>'stated_date', '') = COALESCE(r.stated, '?')
+                             OR n.occurred_at BETWEEN r.occurred_at - {span}
+                                                  AND r.occurred_at + {span}))
                AND (n.occurred_at, n.created_at) > (r.occurred_at, r.created_at)
              ORDER BY n.occurred_at, n.created_at LIMIT 1) n ON true
           LEFT JOIN LATERAL (
@@ -869,7 +888,7 @@ _ISO_DAY = r"^\d{4}-\d{2}-\d{2}$"
 def last_sat_sql(a: str) -> str:
     """The id of application `a`'s newest round you sat, as a subselect."""
     return f"""(SELECT r.id FROM events r
-                 WHERE r.application_id = {a}.id AND r.type IN {_RATED_TYPES}
+                 WHERE r.application_id = {a}.id AND {sat_sql('r')}
                  ORDER BY r.occurred_at DESC, r.created_at DESC LIMIT 1)"""
 
 
@@ -894,10 +913,14 @@ def rating_owed_sql(a: str) -> str:
                        AND NOT EXISTS (SELECT 1 FROM events x
                                         WHERE x.application_id = {a}.id
                                           AND x.type IN {_RATED_TYPES} AND x.payload ? 'went'
-                                          AND (x.payload->>'stated_date' = r.payload->>'stated_date'
-                                               OR x.occurred_at BETWEEN
-                                                  r.occurred_at - make_interval(days => {trace.ROUND_SPAN_DAYS})
-                                                  AND r.occurred_at + make_interval(days => {trace.ROUND_SPAN_DAYS})))
+                                          -- its own rating, or one on the same round — which
+                                          -- a hand-filed round never shares (trace.own_round)
+                                          AND (x.id = r.id
+                                               OR (x.source <> 'manual' AND r.source <> 'manual'
+                                                   AND (x.payload->>'stated_date' = r.payload->>'stated_date'
+                                                        OR x.occurred_at BETWEEN
+                                                           r.occurred_at - make_interval(days => {trace.ROUND_SPAN_DAYS})
+                                                           AND r.occurred_at + make_interval(days => {trace.ROUND_SPAN_DAYS})))))
                        AND {round_day_sql('r')} < to_char(now(), 'YYYY-MM-DD')
                        AND NOT EXISTS (SELECT 1 FROM events o
                                         WHERE o.application_id = {a}.id AND o.type = 'offer'
@@ -1044,6 +1067,7 @@ def facts(conn, user_id) -> tuple[list[dict], list[dict]]:
                e.payload->>'went'                            AS went,
                (e.payload->>'went_at')::timestamptz          AS went_at,
                e.payload->>'stated_date'                     AS stated_date,
+               e.payload->>'round_is'                        AS round_is,
                em.extraction->>'platform'                    AS mail_platform
         FROM events e
         JOIN applications a ON a.id = e.application_id

@@ -4074,6 +4074,61 @@ r = client.get("/analytics")
 _dp = r.text.split("How far you got")[1].split("<h2")[0] if "How far you got" in r.text else ""
 check("/analytics draws how far you got, rows by rounds reached, this thread in the 2-rounds row",
       r.status_code == 200 and '2 rounds <b>' in _dp and f'href="/applications/{_rr}"' in _dp, _dp[:600])
+
+# Your correction of the grouping (set_round_is): the first real thread
+# derived 4 rounds and had sat 2.
+r = client.post(f"/applications/{_rr}/events/{_rr_two}/round", data={"round_is": "none"})
+_pg = client.get(f"/applications/{_rr}").text
+check("“not a round” on the second invitation: one round again, the line says so, offers to count "
+      "it again, and takes no rating",
+      r.status_code == 303 and "1 interview round<" in _pg and "<small>not a round</small>" in _pg
+      and ">counts as a round</button>" in _pg and f"/events/{_rr_two}/went" not in _pg
+      and _pg.count("<small>round 1</small>") == 2,
+      (r.status_code, "1 interview round<" in _pg, "<small>not a round</small>" in _pg,
+       ">counts as a round</button>" in _pg, f"/events/{_rr_two}/went" not in _pg))
+with db.connect() as conn:
+    _sql_fate = conn.execute(f"SELECT {analytics.round_fate_sql('a')} AS f FROM applications a "
+                             f"WHERE a.id = %s::uuid", (_rr,)).fetchone()["f"]
+    _fa, _fe = analytics.facts(conn, user_id)
+_py_fate = next(f for f in insights.build_facts(_fa, _fe, datetime.now(timezone.utc), 10)
+                if str(f["id"]) == _rr)
+check("every count leaves it out: the list tag, /follow-ups, and both twins of the fate anchor",
+      ">1 round</span>" in client.get("/?q=Two+Rounds").text and _rr not in _rating_owed()
+      and _py_fate["n_rounds"] == 1 and _sql_fate == _py_fate["round_fate"] == "waiting",
+      (_sql_fate, _py_fate["round_fate"], _py_fate["n_rounds"]))
+r = client.post(f"/applications/{_rr}/events/{_rr_inv}/round", data={"round_is": "sometimes"})
+check("a value outside the two is refused", r.status_code == 400, r.status_code)
+with db.connect() as conn:
+    _rr_applied = conn.execute("SELECT id FROM events WHERE application_id = %s AND type = 'applied'",
+                               (_rr,)).fetchone()["id"]
+r = client.post(f"/applications/{_rr}/events/{_rr_applied}/round", data={"round_is": "none"})
+check("and anything but an invitation is 404", r.status_code == 404, r.status_code)
+r = client.post(f"/applications/{_rr}/events/{_rr_two}/round", data={"round_is": ""})
+check("blank counts it again: round 2 of 2 is back, owed its word",
+      r.status_code == 303 and "<small>round 2 of 2</small>" in client.get(f"/applications/{_rr}").text
+      and str(_rating_owed()[_rr]["event_id"]) == str(_rr_two), _rating_owed().get(_rr))
+# A round filed by hand on the day the first invitation named (9 Oct 2026):
+# its own round, not the invitation's — a recruiter screen beside a test.
+client.post(f"/applications/{_rr}/events", data={"type": "interview_invite", "occurred_on": _ago(20),
+                                                 "note": "recruiter screen"})
+_pg = client.get(f"/applications/{_rr}").text
+check("a hand-filed round on an invitation's day is a round of its own: three rounds, the hand-filed "
+      "one second by the clock",
+      "3 interview rounds<" in _pg and _pg.count("<small>round 1 of 3</small>") == 2
+      and _pg.count("<small>round 2 of 3</small>") == 1 and "<small>round 3 of 3</small>" in _pg
+      and ">3 rounds</span>" in client.get("/?q=Two+Rounds").text,
+      sorted(set(re.findall(r"<small>round (\d of \d)</small>", _pg))))
+with db.connect() as conn:
+    _rr_hand = conn.execute("SELECT id FROM events WHERE application_id = %s AND type = 'interview_invite' "
+                            "AND source = 'manual'", (_rr,)).fetchone()["id"]
+# The notification carries the suite's own time of day, later than the
+# hand-filed round's local noon, so it goes too: the hand-filed round is
+# then the newest sat event, on the rated invitation's own day.
+for _e in (_rr_two, _rr_note):
+    client.post(f"/applications/{_rr}/events/{_e}/round", data={"round_is": "none"})
+check("the hand-filed round, newest, is owed its own word — the rating on the invitation of the same "
+      "day is not its",
+      str(_rating_owed()[_rr]["event_id"]) == str(_rr_hand), _rating_owed().get(_rr))
 client.post(f"/applications/{_rr}/delete")
 check("this section's record is gone", client.get(f"/applications/{_rr}").status_code == 404)
 

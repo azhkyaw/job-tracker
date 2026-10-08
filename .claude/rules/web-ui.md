@@ -908,8 +908,30 @@ is a private artifact, linked from the memory file
     keeps its own. `/analytics`' "How far you got" is the interviews grid
     by rounds reached. The follow-ups rule approximates the round in SQL
     (same stated day, or within the span of the newest event) so a
-    reminder after a rated invitation does not ask again. No override
-    per line yet: deferred until a real grouping misleads.
+    reminder after a rated invitation does not ask again. **The override
+    is one word per line, "not a round"** (`payload.round_is`,
+    `web.set_round_is`, the same evening): the first real thread derived 4
+    and had sat 3 — a coding test, a recruiter screen, a technical — the
+    fourth an availability reply naming the day after the technical,
+    which nothing in the mail tells from an invitation (the author's
+    first answer was 2, corrected to 3 within the hour: the human is the
+    source and may revise, so the word is undoable in place). An
+    excluded line leaves `trace.rounds` AND every SQL anchor
+    (`analytics.sat_sql` inside `last_sat_sql` and `round_fate_sql`), so
+    the page, the list tag, `/analytics`, `/follow-ups` and the lede read
+    one count, and it takes no rating. Not a select of round numbers: a
+    derived numbering and typed numbers would fight; excluding the
+    spurious line is enough for every miss measured (a cancellation, a
+    reminder, a reply, and — the second real correction — a "tomorrow"
+    the extractor dated to the mail's own day, so a rescheduled call read
+    as two rounds; 1 of the 15 invitations naming their own day, the
+    other 14 calendar notices sent on the day). No "its own round" split
+    for a mail line until a thread needs one — but **a round filed by
+    hand IS its own** (`trace.own_round`, 9 Oct 2026): the morning after,
+    a hand-filed recruiter screen landed in the round of a test whose
+    invitation had named the same day as its deadline. Nobody hand-files
+    a reminder, so the rule is by source, not by click; the SQL
+    same-round approximations exclude manual events the same way.
 
 ## Invariant #2 in detail (moved from CLAUDE.md, 25 Sep 2026)
 

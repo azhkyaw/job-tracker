@@ -723,8 +723,9 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
             # invitations into rounds (trace.rounds) for the row's tag.
             for e in conn.execute(
                 """
-                SELECT application_id, type, occurred_at,
-                       payload->>'stated_date' AS stated_date FROM events
+                SELECT application_id, type, source, occurred_at,
+                       payload->>'stated_date' AS stated_date,
+                       payload->>'round_is' AS round_is FROM events
                  WHERE application_id = ANY(%s) ORDER BY occurred_at
                 """, ([r["id"] for r in rows],)).fetchall():
                 events_by_app.setdefault(e["application_id"], []).append(e)
@@ -2361,6 +2362,45 @@ def set_round_went(request: Request, app_id: str, event_id: str, went: str = For
                          (row["id"],))
     dest = redirect_to if redirect_to in ("/follow-ups",) else f"/applications/{app_id}"
     return RedirectResponse(dest, status_code=303)
+
+
+@app.post("/applications/{app_id}/events/{event_id}/round")
+def set_round_is(request: Request, app_id: str, event_id: str, round_is: str = Form("")):
+    """Say that an invitation line is NOT a round (`payload.round_is`,
+    trace.NOT_A_ROUND), or blank to count it again — on any
+    `interview_invite` whatever its source, the narrow door
+    set_rejection_reason and set_round_went are.
+
+    trace.rounds derives the rounds from the invitations' days, and the
+    detail page shows the grouping beside each line so a wrong one is seen.
+    The first real correction (8 Oct 2026, worklog task 76): a thread that
+    derived 4 and had sat 3 — a coding test, a recruiter screen, a
+    technical — the fourth an availability reply naming the day after the
+    technical, which nothing in the mail tells from an invitation.
+    Excluded lines leave every count: the page's, the list tag's,
+    /analytics', and the SQL anchors (analytics.sat_sql), so /follow-ups
+    never asks about one."""
+    if round_is not in ("", trace.NOT_A_ROUND):
+        raise HTTPException(400, "unknown value")
+    from psycopg.types.json import Json
+    user = _login_user(request)
+    with db.connect_scoped(user["id"]) as conn, conn.transaction():
+        a = _get_application(conn, app_id)
+        try:
+            row = conn.execute(
+                "SELECT id, type FROM events WHERE id = %s::uuid AND application_id = %s",
+                (event_id, a["id"])).fetchone()
+        except psycopg.errors.InvalidTextRepresentation:
+            row = None
+        if row is None or row["type"] != trace.ROUND_EVENT:
+            raise HTTPException(404, "invitation not found")
+        if round_is:
+            conn.execute("UPDATE events SET payload = payload || %s::jsonb WHERE id = %s",
+                         (Json({"round_is": round_is}), row["id"]))
+        else:
+            conn.execute("UPDATE events SET payload = payload - 'round_is' WHERE id = %s",
+                         (row["id"],))
+    return RedirectResponse(f"/applications/{app_id}", status_code=303)
 
 
 # --------------------------------------------------------------------------- contacts

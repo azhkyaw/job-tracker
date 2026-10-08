@@ -2246,9 +2246,75 @@ the key to each real case.
      On the day: 18 threads, 11 at one round, 5 at two, 2 at three or
      more; 24 real-data rounds. Rendered against the dev DB; the suites
      pin the shapes.
-   - **Not built:** a per-line "this is round N / not a round" override —
-     the right fix for the over-by-one cases, deferred until a real
-     grouping misleads; and the two source faults for `email_classify_v3`:
-     a "Canceled event" mail and a recruiter's InMail reply are not
+   - **The override, the same evening.** Deferred until a real grouping
+     misled, and one did within the hour: the three-round employer above
+     derived 4 — the author first said 2, then "actually 3: a coding
+     test, a recruiter screen, a technical" — so the derived count was
+     over by exactly the availability reply naming 14 Aug, which had made
+     a phantom round beside the 13 Aug technical; nothing in the mail
+     tells that reply from an invitation. Built as ONE word per
+     invitation line, "not a round" (`payload.round_is = none`,
+     `web.set_round_is`, the narrow door again; "counts as a round" undoes
+     it). `trace.rounds` skips the line and so does every SQL anchor
+     (`analytics.sat_sql`, in `last_sat_sql` and `round_fate_sql`), so the
+     page, the list tag, `/analytics`, `/follow-ups` and the lede all read
+     one count; an excluded line takes no rating. On the way, a bug in
+     the day's outcome logic: a rated invitation's own calendar
+     notification read as "a further round" in both twins;
+     `insights._same_round` and `round_fate_sql` now look past the
+     anchor's round. No "its own round" split yet: no real thread has
+     needed one. Applied to that record through the route: the reply
+     out, 3 rounds — and the two coding-test lines, excluded on the first
+     reading, counted again on the second.
+   - **A second correction the same night, a different shape.** A thread
+     derived 2 rounds and had sat 1: the recruiter wrote "let's chat
+     tomorrow at 3pm" on the 26th, and `email_extract_v1` dated the event
+     to the day the mail was WRITTEN, not the day it meant; the next
+     day's mails (the call moved from WhatsApp to Teams) named the 27th
+     correctly, so two named days read as two rounds. Measured: 15
+     invitations name the mail's own day, and 14 are right — calendar
+     notifications sent on the interview day, one "today" — so a
+     relative "tomorrow" resolved to the send date is 1 of 15, noted for
+     `email_extract_v2` and not worth a prompt change alone. The
+     mis-dated line is "not a round"; the record reads 1.
+   - **A third, the measured shape itself:** a recruiter's dateless reply
+     eight days before the talk it arranged, outside the 3-day span, so
+     its own round (derived 2, sat 1); "not a round", 1. Measured before
+     changing the rule for it: "a dateless mail joins the next dated
+     round within 14 days" would fix this one and turn the three-round
+     employer's coding test (dateless, six days before its screen) into
+     the screen's — the author's 3 back to 2. The data refutes the
+     tuning; the word per line stays the mechanism. A fourth the same
+     night was the author's slip, not the rule's: a take-home assignment
+     twelve days before the interview, dateless, its own round by the
+     rule, was called "not a round" and then, within minutes, a round
+     after all ("1 for assignment, 2 for the technical") — two clicks
+     back, and the derived 2 had been right. With that, every test or
+     assignment on record counts as a round to the author (a coding test,
+     a HackerRank, a Codility, this take-home), and every over-count the
+     rule made was a mail that was not an invitation — a scheduling
+     reply, an availability reply, a cancellation, a "tomorrow" misdated
+     — which is the extractor's side, not the grouping's. The last of the
+     measured four closed the night: "just one round — I've rescheduled
+     twice". Three invitations naming three days, a booking request and
+     a cancellation, for one interview still ahead; the rule has no way
+     to know a later invitation replaces an earlier one, and the word on
+     the line does — four lines out, the 29 Oct invitation the round. A
+     reschedule is the one shape worth a rule later: an invitation
+     naming a later day, after a cancellation, on one thread.
+   - **A round filed by hand is its own** (9 Oct 2026, the morning
+     after). The author filed "Invited for a recruiter screening round"
+     on 26 Aug on a thread whose HackerRank invitation named 26 Aug as
+     its deadline; the two shared a day, so the screen merged into the
+     test's round and the count stayed 2 for 3 sat. A rule, not a click,
+     because it is general: nobody hand-files a reminder.
+     `trace.own_round` (source `manual`) keeps such an event its own
+     round, mail-derived dateless events never join it, and two rounds on
+     one day are numbered by when each was first heard of; the SQL
+     same-round approximations (`rating_owed_sql`, `round_fate_sql`) and
+     `insights._same_round` exclude manual events alike, held equal on
+     all real records. That thread reads 3: test, screen, interview.
+   - **Not built:** the two source faults for `email_classify_v3`: a
+     "Canceled event" mail and a recruiter's InMail reply are not
      invitations.
 

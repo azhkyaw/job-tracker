@@ -53,6 +53,27 @@ def closing(evs):
 # is visible on the timeline, not silent in a statistic.
 ROUND_SPAN_DAYS = 3
 ROUND_EVENT = "interview_invite"
+# Your word that an invitation line is NOT a round (`payload.round_is`,
+# web.set_round_is): a reminder, a cancellation, a reply about the
+# interview. The first real thread it was asked for derived 4 rounds and had
+# sat 3 — a coding test, a recruiter screen, a technical — the fourth an
+# availability reply naming the day after the technical; nothing in the
+# mail tells that reply from an invitation. Excluded here and from every
+# round the SQL anchors on (analytics.sat_sql).
+NOT_A_ROUND = "none"
+
+
+def excluded(e) -> bool:
+    """You said this line is not a round."""
+    return (e.get("round_is") or (e.get("payload") or {}).get("round_is")) == NOT_A_ROUND
+
+
+def own_round(e) -> bool:
+    """A round you filed by hand is a round of its own (9 Oct 2026): nobody
+    hand-files a reminder, and the one real case was a recruiter screen
+    filed on the day a test's invitation had named as its deadline — it
+    merged into the test's round and the count stayed 2 for 3 sat."""
+    return e.get("source") == "manual"
 
 
 def _event_day(e, tz) -> tuple[date | None, date]:
@@ -80,23 +101,28 @@ def rounds(evs, tz=None) -> list[dict]:
     out: list[dict] = []
     dateless = []
     for e in evs:
-        if e["type"] != ROUND_EVENT:
+        if e["type"] != ROUND_EVENT or excluded(e):
             continue
         named, arrived = _event_day(e, tz)
+        if own_round(e):
+            out.append({"day": named or arrived, "named": named is not None, "events": [e], "own": True})
+            continue
         if named is None:
             dateless.append((e, arrived))
             continue
-        r = next((r for r in out if r["day"] == named), None)
+        r = next((r for r in out if r["day"] == named and not r.get("own")), None)
         if r is None:
             out.append(r := {"day": named, "named": True, "events": []})
         r["events"].append(e)
     for e, arrived in dateless:
-        near = [r for r in out if abs((r["day"] - arrived).days) <= ROUND_SPAN_DAYS]
+        near = [r for r in out if not r.get("own") and abs((r["day"] - arrived).days) <= ROUND_SPAN_DAYS]
         if near:
             min(near, key=lambda r: abs((r["day"] - arrived).days))["events"].append(e)
         else:
             out.append({"day": arrived, "named": False, "events": [e]})
-    out.sort(key=lambda r: r["day"])
+    # By day, then by the first event's time: a hand-filed round on the same
+    # day as a mail-derived one is numbered by when each was first heard of.
+    out.sort(key=lambda r: (r["day"], min(e["occurred_at"] for e in r["events"])))
     for n, r in enumerate(out, 1):
         r["n"] = n
         r["events"].sort(key=lambda e: e["occurred_at"])

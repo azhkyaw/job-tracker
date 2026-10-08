@@ -63,7 +63,18 @@
             grouping shown beside the lines that produced it, so a reminder
             counted as a round is seen, not silent. #}
         {%- set rd = round_of.get(e.id) %}
+        {%- set not_round = e.payload.get('round_is') == 'none' %}
         {%- if rd %}<small>round {{ rd.n }}{% if rounds | length > 1 %} of {{ rounds | length }}{% endif %}</small>{% endif %}
+        {%- if not_round %}<small>not a round</small>{% endif %}
+        {#- Your correction of the grouping (web.py:set_round_is): leave a
+            line out of the rounds — a reminder, a cancellation, a reply
+            about the interview — or count it again. #}
+        {%- if e.type == 'interview_invite' %}
+        <form method="post" action="/applications/{{ a.id }}/events/{{ e.id }}/round" class="why">
+          {% if not_round %}<button name="round_is" value="" title="Count this line as a round again">counts as a round</button>
+          {% else %}<button name="round_is" value="none" title="Leave this line out of the rounds: a reminder, a cancellation, a reply about the interview">not a round</button>{% endif %}
+        </form>
+        {%- endif %}
         {%- if 'external' in e.payload %}
         <small>{% if e.payload['external'] %}on the employer's website{% else %}on-platform (Easy Apply){% endif %}</small>
         {%- endif %}
@@ -104,7 +115,7 @@
             you hear back; /analytics counts the ratings filed after. ONE
             select per interview round, on the event the round is rated
             through (`rate_event`); a call is its own. #}
-        {%- if e.type in rated_events and (not rd or rd.rate) %}
+        {%- if e.type in rated_events and not not_round and (not rd or rd.rate) %}
         <form method="post" action="/applications/{{ a.id }}/events/{{ e.id }}/went" class="why">
           <select name="went" aria-label="How it went, in your judgement">
             <option value="">{% if e.payload.get('went') %}Clear the rating{% else %}How did it go?{% endif %}</option>

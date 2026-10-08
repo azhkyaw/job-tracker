@@ -276,6 +276,25 @@ check("a date-shaped string that is no date is dateless, not an error",
                         ev(r1, "interview_invite", ago(8))])) == 1)
 check("a round's events are ordered oldest first whatever order they came in",
       [e["occurred_at"] for e in trace.rounds(list(reversed(r_evs)))[1]["events"]] == [ago(31), ago(30)])
+check("a round you filed by hand is its own, even on a day a mail invitation named, and a dateless "
+      "mail never joins it; same day, numbered by when each was first heard of",
+      [(r["n"], r.get("own", False), len(r["events"])) for r in trace.rounds([
+          ev(r1, "interview_invite", ago(20), stated_date=ago(10).date().isoformat()),   # a test due ago(10)
+          ev(r1, "interview_invite", ago(10), source="manual"),                           # a screen that day
+          ev(r1, "interview_invite", ago(9))])]                                           # a reminder: joins the test
+      == [(1, False, 2), (2, True, 1)]
+      and insights._same_round(ev(r1, "interview_invite", ago(10), source="manual"),
+                               ev(r1, "interview_invite", ago(10))) is False)
+check("a line you said is not a round leaves the rounds, flat column or payload, and leaves "
+      "_went's anchor too",
+      len(trace.rounds(r_evs[:2] + [dict(r_evs[2], round_is="none")] + r_evs[3:])) == 3
+      and len(trace.rounds([ev(r1, "interview_invite", ago(9), payload={"round_is": "none"}),
+                            ev(r1, "interview_invite", ago(1))])) == 1
+      and insights._went([ev(r1, "applied", ago(9)),
+                          ev(r1, "interview_invite", ago(5), went="well"),
+                          ev(r1, "interview_invite", ago(2), round_is="none")])["went"] == "well"
+      and insights._went([ev(r1, "applied", ago(9)),
+                          ev(r1, "interview_invite", ago(2), round_is="none")])["went_next"] is None)
 fr = {f["id"]: f for f in facts_of([r1, b0], r_evs + [ev(b0, "applied", ago(20))])}
 check("facts carry the rounds and their count; none without an invitation",
       fr[r1["id"]]["n_rounds"] == 3 and len(fr[r1["id"]]["rounds"]) == 3 and fr[b0["id"]]["n_rounds"] == 0)
