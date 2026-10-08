@@ -396,8 +396,15 @@ route deletes events and may delete an application.
     contains (`@>`), so an empty name would pass the gate for every record;
   - exactly one record may be named; two decide nothing and name matching
     runs as before;
-  - a token is what follows the host, four characters or more, with a digit
-    and no query, so a crumb id and a bare "12" never qualify.
+  - a token is what follows the host, with a digit and no query, so a
+    crumb id never qualifies. Four characters or more count anywhere as a
+    whole token; THREE count only inside parentheses, as SuccessFactors'
+    confirmations print a requisition ("… (431)"), and fewer never
+    (`_ats_pattern`, 8 Oct 2026). The floor was four until then, which kept
+    two real three-digit requisitions from ever deciding: one of them on a
+    record the capture could not name, which only its id could find.
+    Replayed over 618 stored emails before the change: one decision moved,
+    onto the record it was already filed on.
 
   What it fixes is the case name matching fails by construction: two records
   of one employer and ONE title (a sibling role, 28 Sep 2026), where the

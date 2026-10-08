@@ -1981,3 +1981,57 @@ the key to each real case.
      rule reads as an apply flow, so nothing would root steps 1-6 before
      the Submit.
 
+68. **A career site's apply that named no one, and two readings of a
+   blank** (8 Oct 2026, extension 0.28.1-0.28.3). A research agency's job,
+   applied to from its own Career Site Builder site, which the extension
+   was not enabled on: "Apply" took the SAME tab to SuccessFactors
+   (`career44.sapsf.com`), a sign-in and the classic form. Filed as
+   "unknown company" with no JD. The buffers and Chrome's History said
+   why: no listing, handoff or stash ever named the job (`linked: null`,
+   `candidates: 0`). Two captures 15 s apart merged correctly; the second
+   alone held the form's last two fields, so the first click was most
+   likely refused by the form.
+   - **The name.** The form names no employer; the receipt had nothing to
+     offer (a tenant never named before, and the sign-in erased the
+     referrer). Enabling the site would not have named it either: its
+     JobPosting holds only the title and description, and the last
+     fallback, the tab title's owner, is the page's own tenant CODE
+     (`… Job Details | <TENANT>PRD`, its inline config's `ssoCompanyId`).
+     **Built, 0.28.2:** a site owner equal to the page's tenant is no
+     company (`jobposting.js:read`), so the receipt asks.
+   - **Combobox chrome.** Five answers were SuccessFactors' screen-reader
+     announcement ("One or more results available…") or the dropdown's
+     arrow, an icon font's U+E1EF. Over every stored answer: 22 rows on 7
+     applications since 3 Oct (the first `sapsf.com` capture), each a
+     blank combobox whose empty input sent `shownChoice` up its
+     ancestors; one was an iCIMS select2's. **Built, 0.28.1:**
+     `shownChoice` skips live regions (`aria-live`, `role=status` and its
+     kin) and Private Use Area characters, and a dash-wrapped placeholder
+     is a placeholder; `answers.clean` drops Private Use Area characters as
+     the second line. The 22 deleted, snapshot first.
+   - **A blank kept its old answer.** Four "Brief Job Responsibilities",
+     one per previous employer, held one 547-character paragraph each, in
+     form order; the author had left them blank on purpose. Neither
+     capture's last sweep read them (the first kept 62 answers of a store
+     of 73), so the text was an earlier sweep's: a sweep skipped an empty
+     field and never removed what it had read there. **Built, 0.28.3:** a
+     field a sweep read an answer from, found empty by the same element,
+     gives its key back (`answers.js:giveBack`), and the edit backstop does
+     the same; blank fields are numbered too, so the next repeat keeps its
+     key. The four deleted with the 22. **Not verified:** how the
+     paragraph got into the fields, and that they were still on the page
+     at the submit (if the page removed them, no sweep sees it): the
+     portal's session had expired, and a sign-in is the author's.
+   - **A three-digit requisition decided nothing.** `match_by_ats_id`
+     ignored ids under four characters, so this record's confirmation,
+     still to arrive, could never have found it by id. **Built:** three
+     characters count inside parentheses only (`matcher._ats_pattern`).
+     Replayed over 618 stored emails first: one decision changed, a 3 Oct
+     confirmation, onto the record it was already filed on.
+   - **Repaired:** the employer's name, the listing's URL and JD through
+     `/edit`, and the applied instant restored from the snapshot. The
+     listing URL's id is its whole path (`joburl.generic_id` reads no
+     three-digit number as an id either); left as it is.
+   - **Seen on the way:** sync and the worker had both stopped (the newest
+     email 02:45 UTC, 9 jobs pending since 04:00 UTC), as on 7 Oct.
+

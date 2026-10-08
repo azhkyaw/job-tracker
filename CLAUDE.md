@@ -786,7 +786,7 @@ Detail lives with each family's rule file; this is the index.
   says per build what to read on first real contact): every adapter
   selector is best-effort; JobStreet's race fix wants one clean submit;
   Indeed never exercised; `getRecruiter()` has one card of evidence;
-  textareas never stored from Easy Apply. Builds 0.9.0-0.28.0 carry
+  textareas never stored from Easy Apply. Builds 0.9.0-0.28.3 carry
   pieces proven only in tests or by rules run in a live page, waiting on:
   the next Easy Apply (0.9.0's `<dialog>` sweep, `getJob()`'s
   self-document fallback and `doc_source`, 0.10.1's
@@ -801,7 +801,10 @@ Detail lives with each family's rule file; this is the index.
   email (0.27.0's receipt); the next form with a multiple-choice
   checkbox question or a legendless captioned fieldset, Ashby's (0.27.3);
   the next Darwinbox apply (0.28.0: a Submit that shows its word once,
-  its confirmation dialog, fields named beside their web components).
+  its confirmation dialog, fields named beside their web components);
+  the next blank type-ahead dropdown and the next field a page fills and
+  empties (0.28.1, 0.28.3: no live-region text or icon glyph as an answer,
+  no answer kept for a field left blank).
 - **Mail** (`.claude/rules/mail-ingest.md`): IMAP verified on a real inbox
   28 Jul 2026; the web IMAP connect form, Gmail web OAuth and the full `-m 12`
   window are not.
@@ -849,7 +852,8 @@ The dated register behind each item, tasks 1-66 with their measurements, is
   Workday answers stored as the platform's internal ids (a 30-character
   hex value as the answer), and a cookie banner's checkboxes stored as
   answers on an Eightfold form. Sync and the worker had stopped at 07:28
-  UTC that day: check the cron.
+  UTC that day, and again on 8 Oct (newest mail 02:45 UTC, the queue idle
+  from 04:00): check the cron.
 - **The legal-entity duplicates** (task 64, 7 Oct): the review strip's two
   rows on its first day were two applications filed twice on 2 Oct (a
   confirmation started a record beside the extension's Workday capture

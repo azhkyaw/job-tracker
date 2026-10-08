@@ -1488,6 +1488,39 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
     `javascript_tool` works synchronously, and top-level function
     declarations persist between calls (a `const` does not).
 
+- **A blank combobox answered with what a screen reader hears, and a blank
+  field with what an earlier sweep read** (8 Oct 2026, 0.28.1-0.28.3;
+  worklog task 68). Found on one SuccessFactors classic apply, then sized
+  over every stored answer.
+  - **The combobox:** an empty `input[role=combobox]` sends `shownChoice`
+    up to three ancestors for the choice it shows (react-select's rule).
+    On SuccessFactors those hold a live region ("One or more results
+    available. Press Up or Down Arrow Keys…") and the dropdown's arrow, an
+    icon font's Private Use Area glyph (U+E1EF); on an iCIMS select2, its
+    status region beside "— Make a Selection —". 22 stored answers on 7
+    applications, 3-8 Oct, every one a blank field. A live region
+    (`aria-live` not `off`, `role=status|alert|log|marquee|timer`) is never
+    a value, and neither is a Private Use Area character
+    (`answers.js:announces`, `\p{Co}`; `answers.clean` strips the glyphs
+    too). Modelled on ARIA: SuccessFactors' region was not seen in the DOM
+    (the portal wanted a sign-in), only its text in the stored rows.
+  - **The blank:** four repeated "Brief Job Responsibilities" were sent
+    with one paragraph each, though the candidate left them blank; neither
+    capture's last sweep had read them. A sweep skipped an empty field, and
+    the store kept what an earlier sweep had read there, for good. Now a
+    field found empty gives back the key the SAME element recorded
+    (`giveBack`, a `WeakMap` reset with the form key), and blank fields are
+    numbered among same-labelled ones, so the next repeat keeps its own key
+    (numbering only the filled ones would have moved the second repeat
+    onto the first's key and left a stale copy under its own). The
+    element test is what keeps a later wizard step's blank "Phone" from
+    removing an earlier step's answer.
+  - **A tab title's owner can be a tenant code.** A Career Site Builder
+    listing with no `hiringOrganization` and no `og:site_name`, titled
+    "… Job Details | <TENANT>PRD", where `<TENANT>PRD` is its own
+    `ssoCompanyId`: `siteOwner` would have filed the code as the employer,
+    had the site been enabled. Such an owner is now no company.
+
 ## Known-untested surfaces (verify on first real contact)
 
 - **Extension DOM selectors** (`extension/adapters/*.js`) — best-effort against
@@ -1945,3 +1978,16 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   the title of a Darwinbox apply NOT reached from a job board, whose
   listing publishes no JobPosting and whose tab reads "Job Details Page"
   (unmeasured).
+
+- **0.28.1-0.28.3 have run only as tests** (8 Oct 2026). On the next
+  SuccessFactors classic form, or any form with a type-ahead dropdown left
+  blank: no answer reading "results available", "arrow keys" or a lone
+  invisible glyph (`SELECT count(*) FROM application_answers WHERE answer ~
+  '[-]' OR answer ~* 'arrow keys'` stays 0). If one appears,
+  the region is marked some other way: read its element live. On a form
+  where a field is filled by the page and then emptied (a résumé parse, a
+  section reset): the record carries no answer for it. If it does, the
+  page REMOVED the field rather than emptying it, which no sweep can see.
+  And on a Career Site Builder listing titled with its tenant, once its
+  site is enabled: the receipt asks for the company instead of filing the
+  code.
