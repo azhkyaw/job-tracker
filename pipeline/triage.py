@@ -371,7 +371,8 @@ def review(conn, user_id, now: datetime) -> list[dict]:
             why.append("it started this record")
         elif r["match_score"] < config.REVIEW_SCORE_BELOW:
             why.append("a weak fit")
-        if _names_differ(norm, r["company_norm"], sim):
+        if (_names_differ(norm, r["company_norm"], sim)
+                and r["company_norm"] not in matcher.company_aliases(r["email_company"])):
             why.append(f"the email reads “{r['email_company']}”")
         if not why:
             continue

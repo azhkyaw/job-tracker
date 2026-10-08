@@ -82,8 +82,48 @@ WHERE a.user_id = %(user_id)s
 _COMPANY_GATE = """(j.company_norm = %(company)s
        OR similarity(j.company_norm, %(company)s) >= %(cmin)s
        OR string_to_array(j.company_norm, ' ') @> string_to_array(%(company)s, ' ')
-       OR string_to_array(j.company_norm, ' ') <@ string_to_array(%(company)s, ' '))
+       OR string_to_array(j.company_norm, ' ') <@ string_to_array(%(company)s, ' ')
+       OR j.company_norm = ANY(%(aliases)s::text[]))
 """
+
+
+def stated_abbreviation(raw: str | None) -> str | None:
+    """The short name a company states for itself in its last parenthetical,
+    normalised, when that parenthetical abbreviates the name before it: its
+    letters, in order, are initials of that name's words, the first one the
+    first word's. "Northwind Agency for Research (N*AR)" goes by "n ar" too.
+
+    norm_company drops every parenthetical, rightly for "(Singapore)" or
+    "(Thailand)", and with this one it dropped the employer's own short name:
+    on 8 Oct 2026 a research agency's mail, signed with its long name and
+    its abbreviation in brackets, reached none of three records named by the
+    abbreviation, so one confirmation minted a duplicate and the next was
+    filed onto it (`.claude/rules/matching.md`). A place is no abbreviation
+    of the name before it, so "(Singapore)" and "(SG)" go by nothing."""
+    s = raw or ""
+    parens = list(re.finditer(r"\(([^()]*)\)", s))
+    if not parens:
+        return None
+    inner = parens[-1].group(1).strip()
+    letters = re.sub(r"[^a-z]", "", inner.lower())
+    if not inner or re.search(r"\s", inner) or len(letters) < 2:
+        return None
+    initials = [w[0] for w in norm_company(s[:parens[-1].start()]).split() if w[0].isalpha()]
+    if not initials or letters[0] != initials[0]:
+        return None
+    rest = iter(initials[1:])
+    if not all(c in rest for c in letters[1:]):      # a subsequence, in order
+        return None
+    return norm_company(inner) or None
+
+
+def company_aliases(raw: str | None) -> list[str]:
+    """The other names an email's company goes by, for the company gate's
+    last term. Matched by EQUALITY only: the gate's containment terms would
+    let a two-letter abbreviation admit every record with that word in its
+    name ("sg" is a word of many)."""
+    alias = stated_abbreviation(raw)
+    return [alias] if alias and alias != norm_company(raw or "") else []
 _CANDIDATES_SQL = _CANDIDATES_BASE + _COMPANY_GATE
 
 # Last resort when the company gate above admits NOBODY. Two independent rules,
@@ -250,6 +290,7 @@ def match_by_ats_id(conn, user_id, email_row, extraction: Extraction) -> str | N
     rows = conn.execute(_ATS_ID_SQL, {
         "user_id": user_id, "unknown": UNKNOWN_COMPANY,
         "company": norm_company(extraction.company or ""),
+        "aliases": company_aliases(extraction.company),
         "cmin": config.COMPANY_TRGM_MIN}).fetchall()
     hits = set()
     for r in rows:
@@ -315,6 +356,7 @@ def scored_candidates(conn, user_id, extraction: Extraction,
     params = {
         "user_id": user_id,
         "company": company,
+        "aliases": company_aliases(extraction.company),
         "title": extraction.role_title,
         "platform": extraction.platform,
         "cmin": config.COMPANY_TRGM_MIN,

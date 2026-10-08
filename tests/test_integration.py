@@ -58,6 +58,7 @@ FAKE_CLASSIFY = {
     "stranger-number": Classification(True, "interview_invite", 0.93, "stub"),
     "short-req-confirmation": Classification(True, "confirmation", 0.93, "stub"),
     "short-req-bare": Classification(True, "interview_invite", 0.93, "stub"),
+    "stated-abbrev-confirmation": Classification(True, "confirmation", 0.93, "stub"),
 }
 def _fake_extraction(**kw):
     """Mirror the real extract_email(): raw always carries the full payload."""
@@ -170,6 +171,10 @@ FAKE_EXTRACT["short-req-confirmation"] = _fake_extraction(
     company="Wingtip Research", role_title="Research Engineer", platform="ats")
 FAKE_EXTRACT["short-req-bare"] = _fake_extraction(
     company="Wingtip Research", role_title="Research Engineer", platform="ats")
+# An employer that signs with its long name and states its short one in
+# brackets, against a record captured under the short one (8 Oct 2026).
+FAKE_EXTRACT["stated-abbrev-confirmation"] = _fake_extraction(
+    company="Northwind Transport Authority (N*TA)", role_title="Transit Data Engineer", platform="ats")
 
 CLASSIFY_CALLS: list[tuple[str, bool]] = []   # (subject, sent) — what the worker asked
 
@@ -738,6 +743,37 @@ with db.connect() as conn:
           and matcher._ats_pattern("h/tenant/431").search("room 431") is None
           and matcher._ats_pattern("h/tenant/43") is None
           and matcher._ats_pattern("h/tenant/4310").search("ref 4310.") is not None)
+
+    # The abbreviation an employer states in brackets is its other name.
+    abbrev = _ats_app("n ta", "Transit Data Engineer", None)
+    conn.commit()
+    e25 = _seed_body("stated-abbrev-confirmation", "Thank you for applying for Transit Data Engineer.",
+                     "careers@northwind-transport.example")
+    conn.commit()
+    drain(conn)
+    s25 = email_state(conn, e25)
+    check("mail signed 'Long Name (ABBR)' finds the record named by the abbreviation",
+          s25["triage_state"] == "auto_matched" and str(s25["matched_application_id"]) == abbrev, s25)
+    check("...and mints no second record",
+          conn.execute("SELECT count(*) AS n FROM jobs WHERE user_id = %s AND title_canonical "
+                       "= 'Transit Data Engineer'", (user_id,)).fetchone()["n"] == 1)
+    check("matcher: a bracket is an alias only when it abbreviates the name before it",
+          [matcher.stated_abbreviation(x) for x in (
+              "Northwind Transport Authority (N*TA)", "Housing & Contoso Board (HCB)",
+              "Litware International (Singapore) Pte Ltd", "Northwind Bank (SG)",
+              "Fabrikam (FBK)", "Contoso Technology Agency (ConTech)", "Northwind Bank ( )", None)]
+          == ["n ta", "hcb", None, None, None, None, None, None])
+    # Gone again: every suite shares this user, and test_web's follow-up
+    # queue reads the reply curve over ALL its applications, which a few
+    # dozen records make sensitive to one more (a 12-day row went from
+    # "worth a nudge" to "gone quiet" while this record stood).
+    job25 = conn.execute("SELECT job_id FROM applications WHERE id = %s", (abbrev,)).fetchone()["job_id"]
+    conn.execute("DELETE FROM events WHERE application_id = %s", (abbrev,))
+    conn.execute("DELETE FROM emails WHERE id = %s", (e25,))
+    conn.execute("DELETE FROM applications WHERE id = %s", (abbrev,))
+    conn.execute("DELETE FROM postings WHERE job_id = %s", (job25,))
+    conn.execute("DELETE FROM jobs WHERE id = %s", (job25,))
+    conn.commit()
 
     print("path 4: failure backoff")
     db.enqueue(conn, user_id, "classify_email",
