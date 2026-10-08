@@ -275,6 +275,15 @@
   const PRINTED_REQ = /\((\d{3,9})\)\s*$/;
   const REQ_FIELD = /^(?:career_)?(?:job_?)?req(?:uisition)?_?id$/i;
   const REQ_VALUE = /^(?=[^\d]*\d)[a-z0-9_-]{3,40}$/i;
+  // A requisition the page NAMES as one may hold letters: Taleo's apply flow
+  // heads every step "Applying for: <title> (Job Number: 2400123AB)" at an
+  // address that carries no id (8 Oct 2026). Named, it still needs a digit.
+  const LABELLED_REQ = /\((?:req\w*|job\s*(?:number|no\.?|id))\s*[:#]?\s*([a-z0-9_-]{3,40})\)\s*$/i;
+  function printedReq(text) {
+    const s = str(text) || "";
+    const m = PRINTED_REQ.exec(s) || LABELLED_REQ.exec(s);
+    return m && REQ_VALUE.test(m[1]) ? m[1].toLowerCase() : null;
+  }
 
   function namedReq(doc) {
     const seen = new Set();
@@ -290,9 +299,11 @@
     const id = idFrom(loc.href);
     if (!id || id.by !== "path" || !atsOfUrl(loc.href)) return id;
     const h1 = doc.querySelector("h1");
-    const printed = [h1 && h1.textContent, doc.title]
-      .map((t) => PRINTED_REQ.exec(str(t) || "")).find(Boolean);
-    const req = namedReq(doc) || (printed && printed[1]);
+    // And where the vendor lays out the job's title (LISTING_DOM): Taleo's
+    // flow heads each step with it while its <h1> names the step.
+    const laid = listingDom(doc, atsOfUrl(loc.href)).title;
+    const printed = [h1 && h1.textContent, doc.title, laid].map(printedReq).find(Boolean);
+    const req = namedReq(doc) || printed;
     if (!req) return id;
     const u = new URL(loc.href);
     const hinted = hints && hints.tenant && TENANT_SHAPE.test(hints.tenant) ? hints.tenant.toLowerCase() : null;
@@ -582,21 +593,24 @@
     // 24 Sep 2026) yields its tab title, "Contoso - Senior Engineer", while
     // the listing it came from published the clean title a minute earlier.
     job._prov.weak = [];
+    // A hiring system's page with no JobPosting still lays the job out: its
+    // title, description and location, where the vendor table knows where.
+    const dom = listingDom(doc, job.ats);
     if (!job.title) {
-      // <h1> first: on a job page it is the job's title, where og:title and
-      // the tab title tend to wrap it ("Job Application for X at Y").
+      // Else <h1>: on a job page it is usually the job's title, where og:title
+      // and the tab title tend to wrap it ("Job Application for X at Y").
       const h1 = doc.querySelector("h1");
       const h1t = h1 ? str(h1.textContent) : null;
       const og = meta(doc, 'meta[property="og:title"]');
-      job.title = h1t || og || str(doc.title);
-      job._prov.title_source = h1t ? "h1" : og ? "og" : job.title ? "doctitle" : null;
+      job.title = dom.title || h1t || og || str(doc.title);
+      job._prov.title_source = dom.title ? "dom" : h1t ? "h1" : og ? "og" : job.title ? "doctitle" : null;
       if (job.title) job._prov.weak.push("title");
     }
-    // A hiring system's page with no JobPosting still lays the job out: its
-    // own description and location, where the vendor table knows where.
-    const dom = listingDom(doc, job.ats);
     if (!job.jd_text && dom.jd_text) job.jd_text = dom.jd_text;
     if (!job.location && dom.location) job.location = dom.location;
+    // A LISTING too, though it publishes no JobPosting: the vendor's own
+    // layout held the job's description (generic.js:stashListing reads this).
+    job._prov.laid_out = !!dom.jd_text;
     if (!job.company) {
       job.company = meta(doc, 'meta[property="og:site_name"]');
       if (job.company) job._prov.weak.push("company");
@@ -643,7 +657,8 @@
     const token = id.platform_job_id.slice(id.platform_job_id.lastIndexOf("/") + 1);
     if (!token) return title;
     const esc = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const m = new RegExp(`^(.*?)\\s*[([]\\s*(?:req\\w*\\s*)?#?\\s*${esc}\\s*[)\\]]\\s*$`, "i").exec(title);
+    // "(51234)", "(Req 51234)", "(#51234)", and Taleo's "(Job Number: 2400123AB)".
+    const m = new RegExp(`^(.*?)\\s*[([]\\s*(?:(?:req\\w*|job\\s*(?:number|no\\.?|id))\\s*)?[:#]?\\s*${esc}\\s*[)\\]]\\s*$`, "i").exec(title);
     return m && m[1].trim() ? m[1].trim() : title;
   }
 
@@ -678,14 +693,21 @@
    * is the same kind of entry). Measured, not guessed: Greenhouse's
    * job-boards page, 29 Sep 2026 (`.job__description`, 4.5k chars;
    * `.job__location`). A selector that finds nothing reads nothing. */
+  // And the job's TITLE, where a page's <h1> names something else: Taleo's
+  // classic career section (8 Oct 2026) heads its listing "Job Description"
+  // and each apply step with the step's name, while the title sits in the
+  // listing's reqTitleLinkAction span and in every step's "Applying for:"
+  // line ("<title> (Job Number: 2400123AB)"; read() strips the number).
   const LISTING_DOM = {
     greenhouse: { jd_text: ".job__description", location: ".job__location" },
+    taleo: { title: "[id*='reqTitleLinkAction'], .infopanel .metalink2", jd_text: ".editablesection" },
   };
 
   function listingDom(doc, vendor) {
     const sel = LISTING_DOM[vendor];
     if (!sel) return {};
     const grab = (s, asText) => {
+      if (!s) return null;
       const el = doc.querySelector(s);
       if (!el) return null;
       // innerHTML keeps the paragraphs htmlToText turns into lines; a fake
@@ -693,7 +715,8 @@
       const raw = el.innerHTML != null ? el.innerHTML : el.textContent;
       return asText ? (htmlToText(raw || "") || null) : str(raw);
     };
-    return { jd_text: grab(sel.jd_text, true), location: grab(sel.location, false) };
+    return { title: grab(sel.title, true), jd_text: grab(sel.jd_text, true),
+             location: grab(sel.location, false) };
   }
 
   function siteOwner(tabTitle, jobTitle) {

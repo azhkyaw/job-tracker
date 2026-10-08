@@ -2119,6 +2119,53 @@ console.log("\njobposting.js read: a Greenhouse job-board page with no JobPostin
          J.read(page("Careers at Contoso"), makeLoc(GH)).company], [null, null]);
 }
 
+console.log("\njobposting.js read: Taleo's listing and its apply flow (read live 8 Oct 2026)");
+{
+  // Taleo's classic career section, placeholder tenant and job number. The
+  // listing publishes no JSON-LD; its first <h1> is the label "Job
+  // Description", the title sits in a reqTitleLinkAction span and the
+  // description in .editablesection. The apply flow's every step lives at
+  // one address with no id, …/candidateacquisition/flow.jsf; its <h1> names
+  // the step, and the job is in the "Applying for:" line. On the old code the
+  // listing read as "Job Description" with no description, and the flow as
+  // "Review and Submit" under the address's path, an id every application on
+  // the tenant shares.
+  const LISTING = "https://contoso.taleo.net/careersection/ex_global/jobdetail.ftl?job=2400123AB&lang=en";
+  const FLOW = "https://contoso.taleo.net/careersection/careersection/candidateacquisition/flow.jsf";
+  const listing = pageDoc([
+    node("meta", { property: "og:title", content: "Senior Data Engineer" }),
+    node("h1", { class: "no-change-header" }, ["Job Description"]),
+    node("span", { id: "requisitionDescriptionInterface.reqTitleLinkAction.row1" }, ["Senior Data Engineer"]),
+    node("h1", { class: "no-change-header-inline" }, ["Job Number:"]),
+    node("div", { class: "editablesection" }, [
+      node("div", { class: "contentlinepanel" }, ["About the Job"]),
+      node("div", { class: "contentlinepanel" }, ["Build the data platform for the region's claims."])]),
+  ], "Job Description - Senior Data Engineer (2400123AB)");
+  const step = (h1, applyingFor) => pageDoc([
+    node("span", { class: "infopanel" }, [node("span", { class: "infojob" }, ["Applying for:"]),
+                                          node("span", { class: "metalink2" }, [applyingFor])]),
+    node("h1", {}, [h1]),
+  ], h1);
+  const l = J.read(listing, makeLoc(LISTING));
+  check("the listing: the title from its layout, not its first <h1>; the description; a listing to stash",
+        [l.title, /claims/.test(l.jd_text || ""), l.platform_job_id, l.ats, l._prov.laid_out],
+        ["Senior Data Engineer", true, "contoso.taleo.net/2400123ab", "taleo", true]);
+  const f = J.read(step("Review and Submit", "Senior Data Engineer (Job Number: 2400123AB)"), makeLoc(FLOW));
+  check("a flow step: the job's title and number from 'Applying for:', the listing's own id",
+        [f.title, f.platform_job_id, f._prov.laid_out], ["Senior Data Engineer", "contoso.taleo.net/2400123ab", false]);
+  check("…so the listing's stash and the flow's answers meet under one key",
+        J.pageId(step("Questionnaire", "Senior Data Engineer (Job Number: 2400123AB)"), makeLoc(FLOW)).platform_job_id,
+        J.pageId(listing, makeLoc(LISTING)).platform_job_id);
+  check("a parenthesis with no digit is no job number; the id stays the address's",
+        J.pageId(step("Questionnaire", "Senior Data Engineer (Singapore)"), makeLoc(FLOW)).by, "path");
+  const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, "extension/manifest.json"), "utf8"));
+  const injected = manifest.content_scripts.flatMap((cs) => cs.matches);
+  const covers = (url) => injected.some((p) => new RegExp(J.matchPatternRegex(p)).test(url));
+  check("the manifest injects on the listing and the flow, nowhere else on taleo.net",
+        [covers(LISTING), covers(FLOW), covers("https://tbe.taleo.net/MANAGER/dispatcher/servlet/x")],
+        [true, true, false]);
+}
+
 /* ------------------------------ adapters/generic.js on an ATS's own pages
  *
  * The application form and its submit, as read LIVE on 24 Sep 2026 from four

@@ -515,14 +515,17 @@
    * nothing is submitted. Only a page that PUBLISHES a JobPosting is a
    * listing worth remembering, whatever its title was read from: until
    * 28 Sep 2026 this asked for a structured TITLE, and a Career Site Builder
-   * page that writes its title outside its JobPosting was never stashed. A
-   * client-rendered one may not exist yet at load, hence the retries. The
-   * listing also says where it hands its applicant over, when it says
-   * (jobposting.js:atsHandoff), for the handoff to check against. */
+   * page that writes its title outside its JobPosting was never stashed. Or
+   * one whose vendor lays the job out where LISTING_DOM knows (`laid_out`):
+   * Taleo's listing publishes nothing (8 Oct 2026), and its apply flow, at
+   * an address with no id, finds this stash by the job number every step
+   * prints. A client-rendered one may not exist yet at load, hence the
+   * retries. The listing also says where it hands its applicant over, when
+   * it says (jobposting.js:atsHandoff), for the handoff to check against. */
   function stashListing() {
     let job = null;
     try { job = J.read(document, location); } catch (e) { return true; }
-    if (!(job && job._prov && job._prov.structured)) return false;
+    if (!(job && job._prov && (job._prov.structured || job._prov.laid_out))) return false;
     const handoff = J.atsHandoff(document);
     if (handoff) job.handoff = handoff;
     try {
