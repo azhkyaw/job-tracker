@@ -197,7 +197,10 @@ An invariant keeps its RULE here and its case history in the rule file.
   after the outcome is counted as hindsight) and `depth` (the same grid by
   rounds reached, `trace.rounds`). Two words kept apart everywhere: HEARD BACK (any response,
   the list's "reply") and ANSWERED (a rejection or a round — LinkedIn's
-  "viewed" notice is not one, and counting it reversed a comparison)
+  "viewed" notice is not one, and counting it reversed a comparison); the
+  comparisons rate ANSWERED BY A PERSON (`person_at`: not LinkedIn's
+  automatic 72-hour screen, which made a knockout-prone row read better,
+  10 Oct 2026)
 - `pipeline/charts.py` — the analytics page's flow and curve geometry (marks
   in a stretched SVG, words in HTML over it)
 - `pipeline/triage.py` — what `/triage` shows beside the box to file mail

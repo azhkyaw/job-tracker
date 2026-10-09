@@ -774,6 +774,16 @@ is a private artifact, linked from the memory file
       one, and counting it reversed the on-platform vs employer-site
       comparison (33%/29% one way, 19%/29% the other). Comparisons use
       answered.
+      **And since 10 Oct 2026 answered BY A PERSON** (`insights`
+      `person_at`, worklog task 96): LinkedIn's automatic rejection three
+      days after a form's must-have question is a mechanism, not a reply,
+      and it was 42% of all answers. Counted as one, a row that draws more
+      knockouts read as answered more: the forms that recorded a
+      sponsorship need read 35%, and a person had answered 4%. A screened
+      application stays in the count as a no (it is what applying that way
+      came to); the hint says how many were left out, and each dot's title
+      its row's. The headline, the week rows and the employer rows keep
+      answered as it was: only a comparison is misled by it.
     - **Nothing young is scored.** The reply curve is Kaplan-Meier, so a
       waiting application counts as "not yet" for as long as it has existed.
       A comparison counts only applications `SETTLED_DAYS` (14) old.

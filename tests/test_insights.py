@@ -774,6 +774,27 @@ check("a row stands out only when its whole interval clears the base",
           for r in ats_rows.values()))
 check("the chance count is a twentieth of the rated rows", ct["chance"] == round(0.05 * ct["rated"]))
 
+# A comparison rates an answer FROM A PERSON: LinkedIn's automatic 72-hour
+# screen stays in the count as a no (10 Oct 2026: screens were 42% of all
+# answers, and the forms that recorded a sponsorship need read 35% answered,
+# 4% by a person). Six ashby applications: two screened, one rejected by a
+# person, one invited; four lever ones never answered.
+sp = [app(ats="ashby", screen="sponsorship") for _ in range(2)] + [app(ats="ashby") for _ in range(4)] \
+    + [app(ats="lever") for _ in range(4)]
+sp_ev = [ev(a, "applied", ago(30), source="extension") for a in sp]
+sp_ev += [ev(a, "rejected", ago(27), mail_platform="linkedin") for a in sp[:2]]
+sp_ev += [ev(sp[2], "rejected", ago(25)), ev(sp[3], "interview_invite", ago(24))]
+fsp = facts_of(sp, sp_ev)
+csp = insights.compare(fsp, NOW, SGT)
+check("a screened application has an answer, and none from a person",
+      fsp[0]["answer_at"] is not None and fsp[0]["person_at"] is None
+      and fsp[2]["person_at"] is not None and fsp[3]["person_at"] is not None,
+      [(f["how"], f["answer_at"], f["person_at"]) for f in fsp[:4]])
+ash = {r["label"]: r for g in csp["groups"] if g["key"] == "ats" for r in g["rows"]}["ashby"]
+check("compare() counts the screens in n, not in k, and says how many it left out",
+      (csp["n"], csp["k"], csp["screened"], ash["n"], ash["k"], ash["screened"]) == (10, 2, 2, 6, 2, 2),
+      (csp["n"], csp["k"], csp["screened"], ash["n"], ash["k"], ash["screened"]))
+
 print("findings: every row that clears, one line per comparison, the biggest sample first")
 
 

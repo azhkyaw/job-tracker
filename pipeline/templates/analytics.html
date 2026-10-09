@@ -65,7 +65,7 @@
   {% if r.visa %}<a href="#visa">Visa</a>{% endif %}
   <a href="#stand">Where they stand</a>
   {% if t %}<a href="#timing">How long answers take</a>{% endif %}
-  <a href="#answered">What gets answered</a>
+  <a href="#answered">What a person answers</a>
   {% if r.employers.rows %}<a href="#employers">Employers</a>{% endif %}
   {% if r.lags or by_end or by_reason %}<a href="#ended">Endings</a>{% endif %}
   {% if r.interviews %}<a href="#interviews">Interviews</a>{% endif %}
@@ -232,14 +232,16 @@
 {% endif %}
 
 {# ----------------------------------------------------- what gets answered #}
-<h2 id="answered">What gets answered</h2>
+<h2 id="answered">What a person answers</h2>
 {% if c.n %}
-<p class="hint">Each row is the share of applications that got an answer — a rejection or a
+<p class="hint">Each row is the share of applications a person answered — a rejection or a
   round — with its 95% interval as a line; the upright rule is all <b>{{ c.n }}</b> together
   (<b>{{ (c.base * 100) | round | int }}%</b>). Only applications at least <b>{{ c.settled_days }}</b>
   days old count: younger ones have not had their chance. LinkedIn's “viewed” notice is not an
-  answer here, because no other channel can send one. Below <b>{{ min_rate_n }}</b> applications
-  a row shows counts only.</p>
+  answer here, because no other channel can send one, and neither is its automatic rejection three
+  days after a form's must-have question (<b>{{ c.screened }}</b> of these applications): that is
+  the form deciding, and counted as an answer it made a knockout-prone row look answered more.
+  Below <b>{{ min_rate_n }}</b> applications a row shows counts only.</p>
 
 {% if c.findings %}
 <div class="findings">
@@ -252,7 +254,7 @@
     <li><span class="quiet">{{ line.group }}:</span>
       {%- for x in line.rows %}{{ ' ' if loop.first else (' and ' if loop.last else ', ') }}{{ x.label }}
       {% if x.stands_out %}<b class="num">{{ (x.rate * 100) | round | int }}%</b>{% else %}<span class="num">{{ (x.rate * 100) | round | int }}%</span>{% endif %}
-      (<span class="num">{{ x.k }} of {{ x.n }}</span>){% endfor %} answered,
+      (<span class="num">{{ x.k }} of {{ x.n }}</span>){% endfor %} answered by a person,
       against&nbsp;<span class="num">{{ (c.base * 100) | round | int }}%</span>.</li>
     {% endfor %}
   </ul>
@@ -272,7 +274,7 @@
     <div class="fr{{ ' out' if row.stands_out }}{{ ' thin' if row.thin }}">
       <span class="fl" title="{{ row.full }}">{{ row.label }}</span>
       <span class="fp">{% if not row.thin %}<i class="ci" style="--a:{{ row.x_lo }};--b:{{ row.x_hi }}"></i><i class="dot" style="--x:{{ row.x }}"
-        title="{{ (row.rate * 100) | round | int }}% answered; 95% interval {{ (row.lo * 100) | round | int }}–{{ (row.hi * 100) | round | int }}%"></i>{% endif %}</span>
+        title="{{ (row.rate * 100) | round | int }}% answered by a person; 95% interval {{ (row.lo * 100) | round | int }}–{{ (row.hi * 100) | round | int }}%{% if row.screened %}; {{ row.screened }} more screened out automatically{% endif %}"></i>{% endif %}</span>
       <span class="fn">{{ row.k }}<span class="quiet">/{{ row.n }}</span></span>
       <span class="fv">{% if row.rate is not none %}{{ (row.rate * 100) | round | int }}%{% else %}<span class="quiet" title="fewer than {{ min_rate_n }} applications, too few to rate">—</span>{% endif %}</span>
     </div>

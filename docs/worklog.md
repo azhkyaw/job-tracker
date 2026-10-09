@@ -2923,3 +2923,23 @@ the key to each real case.
      `cli prune-answers --apply`.
    - Five checks in `tests/test_captures.py`: the rule, `clean()`, a lone
      value kept, and the prune keeping the phone under "Mobile".
+
+96. **`/analytics` compares on an answer from a person** (10 Oct 2026). The
+   wider audit recomputed the page independently (it was right, to the
+   application) and then measured what its comparisons rate: ANSWERED, a
+   rejection or a round, counted LinkedIn's automatic rejection three days
+   after a form's must-have question as an answer. Those screens were 42%
+   of the settled applications' answers, so a dimension that draws more
+   knockouts read as answered more: forms that recorded a sponsorship need
+   read 35% answered, while a person had answered 4% of them (2 of 46,
+   against 23 of 117 with no form; Fisher p = 0.015).
+   - **The rule** (`insights.build_facts`): `person_at` is the answer,
+     unless it is a screen (`how` in `analytics.SCREEN_HOWS`) with no
+     round before it. `compare()` rates `person_at`; a screened
+     application stays in the count as a no, and each row and the whole
+     carry `screened`, which the hint and each dot's title say.
+   - **The page:** "What a person answers"; the hint says why the screens
+     are not answers. The headline, the week rows and the employer rows
+     keep answered as it was, since only a comparison is misled by it.
+   - Two checks in `tests/test_insights.py` (n counts the screens, k does
+     not; a screen has an answer and no answer from a person).

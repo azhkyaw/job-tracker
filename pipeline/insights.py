@@ -238,6 +238,14 @@ def build_facts(apps, events, now: datetime, reminder_days: int, tz=None) -> lis
         f["reason"] = close["reason"] if close else None
         f["how"] = (analytics.rejected_how(f["reason"], rnd is not None, a.get("screen"))
                     if close else None)
+        # An answer from a PERSON: every answer but LinkedIn's automatic
+        # 72-hour screen with no round before it. The comparisons rate on
+        # this (compare()): the screens were 42% of all answers on 10 Oct
+        # 2026, so a dimension that draws more knockouts read as "answered"
+        # more, the forms that recorded a sponsorship need most of all (35%
+        # answered, 4% by a person).
+        f["person_at"] = (None if f["how"] in analytics.SCREEN_HOWS and rnd is None
+                          else f["answer_at"])
         ended = first(CLOSED)
         f["ended_at"] = ended["occurred_at"] if ended else None
         f["superseded"] = any(e["type"] == "withdrawn" and e["superseded"] for e in evs)
@@ -745,14 +753,18 @@ def findings(groups) -> list[dict]:
 
 
 def compare(facts, now: datetime, tz) -> dict:
-    """Answered rate per value of each dimension, over SETTLED applications,
-    with a 95% Wilson interval, against the overall rate. Below MIN_RATE_N a
-    row shows counts and no rate (UI rule 7). A row `stands_out` when its
-    whole interval clears the overall rate — and with sixty-odd rows, a
-    couple will by chance, which the page says beside them."""
+    """Rate of an answer FROM A PERSON (`person_at`: a rejection or a round,
+    not LinkedIn's automatic screen) per value of each dimension, over
+    SETTLED applications, with a 95% Wilson interval, against the overall
+    rate. A screened application stays in the count, as a no: it is what
+    applying that way came to. Below MIN_RATE_N a row shows counts and no
+    rate (UI rule 7). A row `stands_out` when its whole interval clears the
+    overall rate — and with sixty-odd rows, a couple will by chance, which
+    the page says beside them. `screened` counts each row's knockouts, so
+    the page can say what the rate left out."""
     pool = [f for f in facts if f["sent"] and f["age"] >= SETTLED_DAYS]
     n = len(pool)
-    k = sum(1 for f in pool if f["answer_at"])
+    k = sum(1 for f in pool if f["person_at"])
     base = k / n if n else None
     groups, top = [], base or 0.0
     for dim in DIMENSIONS:
@@ -761,11 +773,12 @@ def compare(facts, now: datetime, tz) -> dict:
         shown = dim.get("shorten", lambda ls: ls)([str(label) for label, _ in found])
         for (label, members), short in zip(found, shown):
             m = len(members)
-            got = sum(1 for f in members if f["answer_at"])
+            got = sum(1 for f in members if f["person_at"])
             thin = m < analytics.MIN_RATE_N
             lo, hi = wilson(got, m)
             row = {"label": short, "full": str(label), "n": m, "k": got,
                    "rounds": sum(1 for f in members if f["round_at"]),
+                   "screened": sum(1 for f in members if f["answer_at"] and not f["person_at"]),
                    "rate": None if thin else got / m,
                    "lo": lo, "hi": hi, "thin": thin,
                    "stands_out": (not thin and base is not None
@@ -786,6 +799,7 @@ def compare(facts, now: datetime, tz) -> dict:
     rated = sum(1 for g in groups for r in g["rows"] if not r["thin"])
     step = 10 if scale <= .5 else 20
     return {"n": n, "k": k, "base": base, "x_base": x(base) if base is not None else None,
+            "screened": sum(1 for f in pool if f["answer_at"] and not f["person_at"]),
             "scale": scale, "tick": f"{step / scale:.3f}%",
             "ticks": [{"x": x(t / 100), "label": f"{t}%"}
                       for t in range(0, round(scale * 100) + 1, step)],
