@@ -13,6 +13,7 @@ close, amber for the tail of an unanswered thread once it crosses
 
 from __future__ import annotations
 
+import math
 from datetime import date, datetime, timedelta
 
 # Events that end a thread: the trace stops with a cap rather than running a
@@ -228,9 +229,14 @@ _ROLE = {
     "note": "applied",
 }
 
+def _flag(e, key):
+    """A payload key, flat (the list's fetch) or in `payload` (the detail page)."""
+    return e.get(key) if key in e else (e.get("payload") or {}).get(key)
+
+
 def own(e) -> bool:
     """Drawn hollow, so the solid marks read as "someone else moved" — the
-    calendar trace asks this, on the list and on the detail page.
+    detail page's trace and the list's story both ask this.
     You did this, rather than received it: a follow-up, or a note you wrote
     — by hand, or in mail you sent. A note that came in mail THEY sent is
     theirs: the classifier files an employer's status update ("your
@@ -325,6 +331,269 @@ def bands(threads) -> list[dict]:
         else:
             out.append({"tone": t, "heat": h, "n": 1})
     return out
+
+
+# ------------------------------------------------------------------ the story
+# The list's middle column since 9 Oct 2026 (worklog task 86): each thread as
+# the things that happened to it, in order, one named STATION each, the days
+# between written on the line. It replaced a calendar trace on which 79% of
+# rows were a dot and a tail restating the applied date and the days-quiet
+# numeral, and where the answers, which come in the first days (the median
+# rejection on day 3, 84% of first answers within a week), got 3.6px a day.
+# The detail page keeps its calendar trace (build(), below): one thread, its
+# own dates. Words are the caller's (web.py's, rule 15): story() groups and
+# measures, `words(station)` names each station.
+#
+# Merged into the station before them: the receipt of an application, a
+# round's further mails, and a run of one kind (three status mails are
+# "update ×3"). The thread ends at its close (closing()), like the trace.
+
+# The widest a story is drawn before its middle folds into "+N more": the
+# list's story column at its 23rem cap, and about a phone's width.
+STORY_BUDGET_PX = 340
+# Every station a story can hold: the caller's words name each (web.py's, held
+# to this registry by the web suite).
+STATION_KEYS = ("applied", "approached", "saved", "viewed", "update", "touch", "reached",
+                "round", "questionnaire", "own", "offer", "rejected", "withdrawn", "other", "more")
+_MERGE_RUNS = {"viewed", "update", "touch", "reached", "own"}
+# The stations a crowded story names last: what a round, an offer, the start
+# and the close say matters more than a status mail or your own note.
+_MINOR = {"viewed", "update", "touch", "reached", "own", "other"}
+
+
+def _text_px(text: str) -> float:
+    """IBM Plex Sans Condensed at the station label's .71rem, near enough to
+    decide a fold; the CSS clips with a fade if a guess runs over."""
+    return len(text) * 4.9 + 4
+
+
+def _gap_px(days, compact: bool = False) -> int:
+    """A connector a little longer for a longer gap, with room for its number;
+    `compact`, only the room for its number (a crowded story's first give)."""
+    if days is None:
+        return 10
+    return round(_text_px(f"{days}d") + (8 if compact else 2 * (4 + 3 * math.log2(1 + days))))
+
+
+def tail_px(quiet) -> int:
+    """The wait at the end of an open story, a little longer as it grows."""
+    return round(12 + 7 * math.log2(1 + max(quiet, 0)))
+
+
+_STARTS = ("applied", "confirmation", "recruiter_outreach", "interested")
+
+
+def _story_order(evs, tz) -> list:
+    """The events in the order the story tells them: a thread starts at its
+    start and ends at its close. Two same-day orderings say otherwise on real
+    records (9 Oct 2026): a status mail or a questionnaire minutes BEFORE the
+    extension's capture of the application it answers (6 on the record), and
+    a close filed by hand for a day, which anchors at local noon, before that
+    afternoon's approach (3 on /inbound; the same trap closing() handles for
+    the trace). So what sorts before the start on its own local day is told
+    after it, and what sorts after the close on ITS day before it. Events on
+    other days keep their order; anything a day after the close is dropped,
+    since the thread had ended."""
+    def day(e):
+        return (e["occurred_at"].astimezone(tz) if tz else e["occurred_at"]).date()
+    seq = list(evs)
+    start = next((e for e in seq if e["type"] in _STARTS), None)
+    if start is not None:
+        i = next(k for k, e in enumerate(seq) if e is start)
+        early = [e for e in seq[:i] if day(e) == day(start)]
+        if early:
+            rest = [e for e in seq if not any(e is x for x in early)]
+            j = next(k for k, e in enumerate(rest) if e is start)
+            seq = rest[: j + 1] + early + rest[j + 1:]
+    end = closing(seq)
+    if end is not None:
+        i = next(k for k, e in enumerate(seq) if e is end)
+        seq = seq[:i] + [e for e in seq[i + 1:] if day(e) == day(end)] + [end]
+    return seq
+
+
+def stations(evs, *, today: date, tz=None) -> list[dict]:
+    """A thread's stations, oldest first: ``{"key", "events", "at", "end",
+    "count", ...}``. `key` is one of applied / approached / saved (the
+    thread's start, `start` True) / applied / viewed / update (their status
+    mail) / touch / reached / round / questionnaire / own (your replies,
+    follow-ups and notes, `own_words` in arrival order) / offer / rejected /
+    withdrawn (the close) / other. A round carries `n`, `kind`, `day` and
+    `upcoming` (its day is still to come). `evs` oldest-first, flat fetch or
+    payload alike; `today` is the viewer's day."""
+    seq = _story_order(evs, tz)
+    end = closing(seq)
+    all_rounds = rounds(evs, tz, counting_only=False)
+    round_of = {id(e): r for r in all_rounds for e in r["events"]}
+    out: list[dict] = []
+    seen_rounds: set[int] = set()
+
+    def add(key, e, **kw):
+        last = out[-1] if out else None
+        if last and key in _MERGE_RUNS and last["key"] == key:
+            last["events"].append(e)
+            last["end"], last["count"] = e["occurred_at"], last["count"] + 1
+            if key == "own" and kw.get("own_word") not in last["own_words"]:
+                last["own_words"].append(kw["own_word"])
+            return
+        s = {"key": key, "events": [e], "at": e["occurred_at"], "end": e["occurred_at"],
+             "count": 1, "start": not out}
+        if key == "own":
+            s["own_words"] = [kw.pop("own_word")]
+        s.update(kw)
+        out.append(s)
+
+    for e in seq:
+        t = e["type"]
+        if t in TERMINAL:
+            if e is end:
+                add(t, e)
+            continue                                   # an earlier one is a recording artefact
+        if not out:
+            # The thread's start: the submission (or its receipt, on a record
+            # an email started), the approach, or a capture you kept.
+            if t in ("applied", "confirmation"):
+                add("applied", e)
+                continue
+            if t == "recruiter_outreach":
+                add("approached", e)
+                continue
+            if t == "interested":
+                add("saved", e)
+                continue
+        if t in ("applied", "confirmation", "interested"):
+            # You applied to what they started; any other is the receipt, a
+            # re-capture or a save, which the start already says.
+            if t == "applied" and not any(s["key"] == "applied" for s in out):
+                add("applied", e)
+            continue
+        if t == ROUND_EVENT:
+            r = round_of.get(id(e))
+            if r is None:                              # excluded: no round, an engagement
+                if not all_rounds:
+                    add("touch", e)
+                continue
+            if id(r) in seen_rounds:
+                continue
+            seen_rounds.add(id(r))
+            if r["counts"]:
+                add("round", e, n=r["n"], kind=r["kind"], day=r["day"], upcoming=r["day"] > today)
+            else:
+                add("questionnaire", e, kind=r["kind"], day=r["day"])
+            continue
+        if t == "note" or t == "follow_up_sent":
+            if not own(e):
+                add("update", e)
+            elif _flag(e, "emailed") != "not_needed":  # "no email needed" is no event of the thread's
+                add("own", e, own_word=("followed_up" if t == "follow_up_sent"
+                                        else "replied" if (_flag(e, "reply") or e.get("sent"))
+                                        else "emailed" if _flag(e, "emailed") == "sent"
+                                        else "note"))
+            continue
+        if t == "viewed":
+            add("viewed", e)
+        elif t == "engaged":
+            add("touch", e)
+        elif t == "recruiter_outreach":
+            add("reached", e)
+        elif t == "offer":
+            add("offer", e)
+        else:
+            add("other", e)
+    return out
+
+
+def story(evs, *, today: date, tz=None, quiet=None, words, budget: int = STORY_BUDGET_PX) -> dict:
+    """The list's story for one thread: ``{"stations": [...], "tail": px or
+    None}``. Each station has stations()' keys plus `word`, `on` and `title`
+    from `words(station)` — the caller's vocabulary — and, after the first,
+    `link`: the connector before it, ``{"w": px, "days": whole days or None,
+    "fold": bool}``. An open thread (not closed, `quiet` known) ends in a
+    tail. Too wide for `budget`, it gives way in four steps, each only as
+    far as it must: the lines lose their extra length; minor stations lose
+    their words (_MINOR, oldest first); runs of them fold in place into one
+    "+N" station (`key` "more", `folded` the stations in it); then the
+    oldest of the middle folds. The start and the last station always stay,
+    and no two folds sit side by side."""
+    sts = stations(evs, today=today, tz=tz)
+    for s in sts:
+        s.update(words(s))
+    open_ = closing(evs) is None and quiet is not None and bool(sts)
+    tail = tail_px(quiet) if open_ else None
+
+    def gap(a, b):
+        days = (b["at"] - a["end"]).total_seconds() / 86400
+        return round(days) if days >= 1 else None
+
+    compact = False
+
+    def width(seq):
+        w = sum(max(16, _text_px(" ".join(x for x in (s["word"], s["on"]) if x))) for s in seq)
+        for a, b in zip(seq, seq[1:]):
+            w += 18 if a["key"] == "more" or b["key"] == "more" else _gap_px(gap(a, b), compact)
+        return w + (tail or 0)
+
+    # Too wide, a story gives up the least first. The lines' extra length
+    # goes (their days are written on them); then the minor stations' names,
+    # oldest first, keeping their mark, place and title. Folding first hid
+    # all three rounds of a real thread inside "+5 more" while its status
+    # mails kept their words (9 Oct 2026).
+    compact = width(sts) > budget
+    for s in sts[1:-1]:
+        if width(sts) <= budget:
+            break
+        if s["key"] in _MINOR:
+            s["word"], s["on"] = "", None
+
+    def fold_in(i, j):
+        """sts[i:j] become one "+N" station, in their place, taking in a fold
+        on either side: two "+N" side by side say less than one."""
+        while i > 1 and sts[i - 1]["key"] == "more":
+            i -= 1
+        while j < len(sts) - 1 and sts[j]["key"] == "more":
+            j += 1
+        inner = [x for s in sts[i:j] for x in (s["folded"] if s["key"] == "more" else [s])]
+        more = {"key": "more", "folded": inner, "events": [e for s in inner for e in s["events"]],
+                "at": inner[0]["at"], "end": inner[-1]["end"], "count": len(inner), "start": False}
+        more.update(words(more))
+        sts[i:j] = [more]
+
+    # Still too wide: a run of minor stations folds where it stands, oldest
+    # first, so the rounds on either side keep their place and their names.
+    i = 1
+    while width(sts) > budget and i < len(sts) - 1:
+        j = i
+        while j < len(sts) - 1 and sts[j]["key"] in _MINOR:
+            j += 1
+        if j - i >= 2:
+            fold_in(i, j)
+        i += 1
+    # And then the oldest of the middle, whatever it is, two at a time; the
+    # start and the close always stay, and a fold takes in any beside it.
+    while width(sts) > budget and len(sts) > 3:
+        fold_in(1, min(3, len(sts) - 1))
+    for i, s in enumerate(sts):
+        if i:
+            prev = sts[i - 1]
+            folds = "more" in (prev["key"], s["key"])
+            days = None if folds else gap(prev, s)
+            s["link"] = {"w": 18 if folds else _gap_px(days, compact), "days": days, "fold": folds}
+        else:
+            s["link"] = None
+    return {"stations": sts, "tail": tail}
+
+
+def build_stories(rows, events_by_app, now: datetime, reminder_days: int, tz, words_for) -> None:
+    """The list's annotation, beside build()'s for the detail page: each row's
+    wait (`silent_days`, `heat`, `live`, wait()'s one reading), its tooltip,
+    and its `story`, named by `words_for(row)`. `events_by_app` oldest-first."""
+    today = (now.astimezone(tz) if tz else now).date()
+    for r in rows:
+        evs = events_by_app.get(r["id"], [])
+        w = wait(evs, now, reminder_days)
+        r["silent_days"], r["heat"], r["live"] = w["silent_days"], w["heat"], w["live"]
+        r["trace_label"] = _describe(r, w["silent_days"])
+        r["story"] = story(evs, today=today, tz=tz, quiet=w["silent_days"], words=words_for(r))
 
 
 def _pct(value: float) -> str:

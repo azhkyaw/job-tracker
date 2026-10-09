@@ -400,19 +400,117 @@ fv = facts_of([v1], [ev(v1, "applied", ago(30)),
 check("a rejection after a round whose closing reason is the role closing is 'stopped', not lost",
       fv["round_fate"] == "stopped" and fv["went_next"] == "rejected" and fv["reason"] == "role_closed")
 
-print("whose a mark is: their status mail is theirs (9 Oct 2026)")
-w1 = app()
-w_evs = [ev(w1, "applied", ago(9), source="extension"),
-         ev(w1, "note", ago(8)),                                       # their status update
-         ev(w1, "note", ago(6), sent=True),                            # your reply
-         ev(w1, "note", ago(5), source="manual"),                      # your note
-         ev(w1, "follow_up_sent", ago(3), source="manual")]
+print("the list's story: a thread as its stations (9 Oct 2026)")
+TODAY = NOW.astimezone(SGT).date()
+
+
+def plain(s):
+    """words(station) for the pure suite: the key as its word."""
+    return {"word": s["key"], "on": "d" if s["start"] else None, "title": s["key"]}
+
+
+st1 = app(status="rejected")
+day0 = datetime(2026, 9, 1, 2, 0, tzinfo=timezone.utc)                  # 10:00 in Singapore
+s_evs = [
+    ev(st1, "note", day0 - timedelta(minutes=10)),                      # their mail, before the capture
+    ev(st1, "applied", day0, source="extension"),
+    ev(st1, "confirmation", day0 + timedelta(minutes=1)),
+    ev(st1, "viewed", day0 + timedelta(days=1)),
+    ev(st1, "note", day0 + timedelta(days=2)),                          # a status update
+    ev(st1, "note", day0 + timedelta(days=2, hours=3)),                 # and another: one station
+    ev(st1, "interview_invite", day0 + timedelta(days=4), stated_date="2026-09-08", round_kind="screen"),
+    ev(st1, "interview_invite", day0 + timedelta(days=5), stated_date="2026-09-08"),  # its notification
+    ev(st1, "note", day0 + timedelta(days=5, hours=1), sent=True),      # your reply
+    ev(st1, "note", day0 + timedelta(days=6), source="manual", emailed="not_needed"),
+    ev(st1, "interview_invite", day0 + timedelta(days=9), stated_date="2026-09-12", round_kind="technical"),
+    ev(st1, "rejected", day0 + timedelta(days=15)),
+    ev(st1, "note", day0 + timedelta(days=18)),                         # after the close: not the story's
+]
+sts = trace.stations(s_evs, today=TODAY, tz=SGT)
+check("stations: the start, then each thing once — the receipt folded into the application, "
+      "a run of status mails one station, a round one station however many mails, your reply "
+      "yours, \"no email needed\" nothing, the close last, and nothing after it",
+      [s["key"] for s in sts] == ["applied", "update", "viewed", "update", "round", "own", "round", "rejected"]
+      and [s["count"] for s in sts] == [1, 1, 1, 2, 1, 1, 1, 1]
+      and [s.get("n") for s in sts if s["key"] == "round"] == [1, 2]
+      and [s.get("kind") for s in sts if s["key"] == "round"] == ["screen", "technical"]
+      and sts[0]["start"] and not any(s["start"] for s in sts[1:])
+      and sts[5]["own_words"] == ["replied"],
+      [(s["key"], s["count"]) for s in sts])
 check("whose a note is: theirs by mail they sent, yours by hand or by mail you sent",
-      [trace.own(e) for e in w_evs] == [False, False, True, True, True])
-_row = dict(w1)
-trace.build([_row], {w1["id"]: w_evs}, NOW, 10)
-check("...and the trace draws theirs solid, yours hollow",
-      [p["hollow"] for p in _row["pts"]] == [False, False, True, True, True], _row["pts"])
+      not trace.own(ev(st1, "note", day0)) and trace.own(ev(st1, "note", day0, sent=True))
+      and trace.own(ev(st1, "note", day0, source="manual")) and trace.own(ev(st1, "follow_up_sent", day0))
+      and not trace.own(ev(st1, "applied", day0)))
+_row = dict(st1)
+trace.build([_row], {st1["id"]: s_evs}, NOW, 10)
+_notes = [p["hollow"] for p, e in zip(_row["pts"], s_evs) if e["type"] == "note"]
+check("...and the detail page's trace draws theirs solid, yours hollow",
+      _notes == [False, False, False, True, True, False], _notes)
+
+ib = app(status="rejected", origin="inbound")
+noon = datetime(2026, 8, 17, 4, 0, tzinfo=timezone.utc)                 # 12:00 in Singapore
+check("a close filed by hand at noon, before that afternoon's approach, is told after it",
+      [s["key"] for s in trace.stations([ev(ib, "rejected", noon, source="manual"),
+                                         ev(ib, "recruiter_outreach", noon + timedelta(hours=1, minutes=37))],
+                                        today=TODAY, tz=SGT)] == ["approached", "rejected"])
+check("...but the start's day is the bound: a mail the day before it stays before it",
+      [s["key"] for s in trace.stations([ev(ib, "note", noon - timedelta(days=1)),
+                                         ev(ib, "applied", noon, source="manual")],
+                                        today=TODAY, tz=SGT)] == ["update", "applied"])
+q1 = app(status="applied")
+q_sts = trace.stations([ev(q1, "applied", ago(9)),
+                        ev(q1, "interview_invite", ago(8), round_kind="questionnaire"),
+                        ev(q1, "interview_invite", ago(3), invite_role="scheduling"),
+                        ev(q1, "interview_invite", ago(2), stated_date=(TODAY + timedelta(days=4)).isoformat())],
+                       today=TODAY, tz=SGT)
+check("a questionnaire is its own unnumbered station, a mail arranging a round none, and a round "
+      "whose day is to come is marked so",
+      [s["key"] for s in q_sts] == ["applied", "questionnaire", "round"]
+      and q_sts[2]["n"] == 1 and q_sts[2]["upcoming"] and "n" not in q_sts[1])
+check("an invitation that is no round, on a thread with none, is a person in touch",
+      [s["key"] for s in trace.stations([ev(q1, "applied", ago(9)),
+                                         ev(q1, "interview_invite", ago(3), round_is="none")],
+                                        today=TODAY, tz=SGT)] == ["applied", "touch"])
+
+story = trace.story(s_evs, today=TODAY, tz=SGT, quiet=None, words=plain, budget=10_000)
+check("story: each station named, the line before it carrying its whole days (none under one), "
+      "a closed thread with no tail",
+      story["tail"] is None and story["stations"][0]["link"] is None
+      and [s["link"]["days"] for s in story["stations"][1:]] == [None, 1, 1, 2, 1, 4, 6]
+      and all(s["word"] == s["key"] for s in story["stations"]),
+      [(s["key"], s["link"]) for s in story["stations"]])
+op = trace.story(s_evs[:9], today=TODAY, tz=SGT, quiet=12, words=plain)
+check("an open thread ends in its wait, longer as it grows",
+      op["tail"] == trace.tail_px(12) and trace.tail_px(40) > trace.tail_px(12) > trace.tail_px(0))
+# Three rounds, each followed by three minor stations of different kinds (so
+# none merge): their update, your reply, a view.
+_long = [ev(st1, "applied", ago(60))]
+for k in range(12):
+    when = ago(58 - 4 * k)
+    _long.append([ev(st1, "interview_invite", when, stated_date=when.date().isoformat()),
+                  ev(st1, "note", when),
+                  ev(st1, "note", when, sent=True),
+                  ev(st1, "viewed", when)][k % 4])
+_long.append(ev(st1, "rejected", ago(5)))
+full = trace.story(_long, today=TODAY, tz=SGT, words=plain, budget=10_000)
+tight = trace.story(_long, today=TODAY, tz=SGT, words=plain, budget=420)
+check("a crowded story gives way: its minor stations fold in place, every round keeps its place "
+      "and its word, and the start and the close stay",
+      [s["n"] for s in full["stations"] if s["key"] == "round"] == [1, 2, 3]
+      and [s["n"] for s in tight["stations"] if s["key"] == "round"] == [1, 2, 3]
+      and all(s["word"] for s in tight["stations"] if s["key"] == "round")
+      and tight["stations"][0]["key"] == "applied" and tight["stations"][-1]["key"] == "rejected"
+      and len(tight["stations"]) < len(full["stations"])
+      and sum(s["count"] for s in tight["stations"] if s["key"] == "more")
+          + sum(1 for s in tight["stations"] if s["key"] != "more") == len(full["stations"]),
+      [(s["key"], s["word"]) for s in tight["stations"]])
+check("...and no two folds ever sit side by side, at any width",
+      all(not any(a["key"] == b["key"] == "more" for a, b in zip(x["stations"], x["stations"][1:]))
+          for x in (trace.story(_long, today=TODAY, tz=SGT, words=plain, budget=w) for w in range(60, 900, 20))))
+tiny = trace.story(_long, today=TODAY, tz=SGT, words=plain, budget=60)
+check("and squeezed to nothing, it still keeps the start and the close, with one fold between",
+      [s["key"] for s in tiny["stations"]] == ["applied", "more", "rejected"]
+      and tiny["stations"][1]["count"] == len(full["stations"]) - 2, [s["key"] for s in tiny["stations"]])
 
 print("sponsorship: what an answer told the employer")
 import json                                                   # noqa: E402

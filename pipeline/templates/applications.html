@@ -296,10 +296,7 @@
         {%- for m in months %}<a href="#{{ m.id }}" title="{{ m.n }} in {{ m.label }}">{{ m.short }} {{ m.n }}</a>{% endfor -%}
       </span>{% endif -%}
     </span>
-    <span class="axis">
-      {% for t in axis.ticks %}<span class="t{% if loop.first %} first{% endif %}" style="--x:{{ t.x }}">{{ t.label }}</span>{% endfor %}
-      <span class="t last">today</span>
-    </span>
+    <span class="lab mid">What happened, in order</span>
     <span class="lab right">Days quiet</span>
   </div>
   {# Two groups, one list — on the inbound page only, since 24 Sep 2026 (no
@@ -367,47 +364,33 @@
             stored as an option id says so instead of quoting the id. #}
         {%- if form_visa[r.form_visa][1] %}<span class="tag"
               title="{% if r.form_visa == 'unread' %}The form asked “{{ r.form_question }}”, and your answer was stored as the hiring system's option id, which the tracker cannot read{% else %}The form asked “{{ r.form_question }}” and you answered “{{ r.form_answer }}”{% endif %}">{{ form_visa[r.form_visa][1] }}</span>{% endif %}
-        {#- How many interview rounds the thread reached (trace.rounds, 8 Oct
-            2026), their days in the title. Grey: a fact about the thread,
-            not about the wait, and the trace already draws the rounds. #}
-        {%- if r.n_rounds %}<span class="tag"
-              title="Interview round{{ 's' if r.n_rounds != 1 }} on {{ r.rounds_title }}: the day each invitation named, else the day it arrived">{{ r.n_rounds }} round{{ '' if r.n_rounds == 1 else 's' }}</span>{% endif %}</span>
+        {#- The rounds' count left the role line with the story (9 Oct 2026):
+            each round is a numbered station of its own. #}</span>
     </span>
-    <span class="trace" style="--week:{{ axis.week }}">
-      {%- if r.tail %}<span class="tail{% if live %} live{% endif %}"
-        style="--a:{{ r.tail.a }};--b:{{ r.tail.b }}"></span>{% endif -%}
-      {%- for p in r.pts %}<span class="pt{% if p.hollow %} hollow{% endif %}"
-        style="--x:{{ p.x }};--c:var(--{{ p.role }})"></span>{% endfor -%}
-      {%- if r.cap %}<span class="cap" style="--x:{{ r.cap }};--c:var(--{{ tok }})"></span>{% endif -%}
+    {#- The story (trace.story, 9 Oct 2026, UI rule 4): the thread's stations
+        in order, each named underneath (web._station_words), the days
+        between written on the line, an open thread ending in its wait. The
+        close says how it ended — the screen, the stated reason, your kind of
+        close — beside each other, never one instead of another (rules 12,
+        13, 17); they were the rail's grey tags until then. Every mark is a
+        role colour the trace used: ink yours, blue theirs, rust the close,
+        the tail amber by --heat (rule 14). #}
+    <span class="story{% if live %} live{% endif %}">
+      {%- for s in r.story.stations %}
+      {%- if s.link %}<span class="ln{% if s.link.fold %} fold{% endif %}" style="--w:{{ s.link.w }}px">{% if s.link.days %}<b>{{ s.link.days }}d</b>{% endif %}</span>{% endif -%}
+      <span class="st k-{{ s.key }}{% if loop.first %} first{% endif %}{% if loop.last %} last now{% if r.story.tail %} open{% endif %}{% endif %}{% if s.upcoming %} upcoming{% endif %}"
+            title="{{ s.title }}"><span class="g"><i>{% if s.key == 'round' %}{{ s.n }}{% endif %}</i></span><em>{{ s.word }}{% if s.on %}{% if s.word %} {% endif %}<span class="on">{{ s.on }}</span>{% endif %}</em></span>
+      {%- endfor -%}
+      {%- if r.story.tail %}<span class="tail" style="--w:{{ r.story.tail }}px"></span>{% endif -%}
     </span>
     <span class="rail">
+      {#- An open thread's wait as a numeral, graded by --heat, and its status
+          word only where it says more than "applied", the default (rule 9b's
+          precedent: only the exception wears a word). A closed thread has no
+          wait: its status word takes the numeral's line, in its colour. #}
       {%- if r.silent_days is not none %}<b class="d{% if live %} live{% endif %}">{{ r.silent_days }}</b>
-      {%- else %}<b class="d dash">—</b>{% endif %}
-      <span class="s">
-        {#- The status word: coloured only when it IS a state of the wait
-            (someone engaged, closed, an offer); applied and interested stay
-            grey, whatever their token does on the funnel. #}
-        <span class="badge"{% if r.status not in ('applied', 'interested', 'withdrawn') %} style="--c:var(--{{ tok }})"{% endif %}>{{ r.status }}</span>
-        {#- Why, in grey: a property of the close, not of the wait (UI rule 1),
-            the same call as the on-platform tag. The KEY, not the label, so it
-            stays a word on a row; the title carries the full wording, and when
-            the email stated the reason, the email's own sentence (9d's rule for
-            the JD's tag: say where a claim comes from). #}
-        {%- if r.status == 'rejected' and r.reject_reason %}<span class="tag"
-              title="rejected, {{ event_reasons.get(r.reject_reason, r.reject_reason) }}{% if r.reject_quote %}. The email: {{ r.reject_quote }}{% endif %}">{{ r.reject_reason | replace('_', ' ') }}</span>{% endif %}
-        {#- How an approach you closed ended (close_approach): the status word
-            stays `withdrawn`, the legend's and the filter's word (rule 15),
-            and the tag says which kind of close, in grey like the reason. #}
-        {%- if r.status == 'withdrawn' and r.closed_as in ('declined', 'went_quiet') %}<span class="tag"
-              title="{{ 'You declined' if r.closed_as == 'declined' else 'They went quiet' }}{% if r.close_why %}: {{ decline_why.get(r.close_why, r.close_why) }}{% endif %}">{{ 'declined' if r.closed_as == 'declined' else 'went quiet' }}</span>{% endif %}
-        {#- How it closed, when the record itself says: LinkedIn's automatic
-            rejection of a failed must-have question (analytics.screen_sql).
-            Beside the reason, never instead of it — one is what the timeline
-            proves, the other what you recorded, and the author asked for a
-            screen and a person's "visa" to stay apart. Grey, like the reason. #}
-        {%- if r.screen %}<span class="tag"
-              title="LinkedIn rejected this automatically, 72 hours after you applied: it failed a must-have screening question{% if r.screen == 'sponsorship' %}, and the form recorded that you need sponsorship{% endif %}">{{ r.screen }} screen</span>{% endif %}
-      </span>
+      {%- if r.status != 'applied' %}<span class="s"><span class="badge"{% if r.status != 'interested' %} style="--c:var(--{{ tok }})"{% endif %}>{{ r.status }}</span></span>{% endif %}
+      {%- else %}<span class="closed"{% if r.status != 'withdrawn' %} style="--c:var(--{{ tok }})"{% endif %}>{{ r.status }}</span>{% endif %}
     </span>
   </a>
   {% endfor %}

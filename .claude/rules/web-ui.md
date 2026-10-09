@@ -54,13 +54,14 @@ is a private artifact, linked from the memory file
    something more presence, change its face before changing its size — and
    never put a number in the serif or a sentence in the sans.
 4. **`pipeline/trace.py` owns ALL trace geometry** and is pure — no DB, no
-   template knowledge. Both the list and the detail page call
+   template knowledge. The detail page calls
    `trace.build(rows, events_by_app, now, reminder_days)`, which annotates
    rows with `pts` / `tail` / `cap` / `silent_days` and returns the shared
-   axis. Every trace on a page shares ONE axis (first event on record → now);
-   that is what makes rows comparable, so never scale a row to its own span.
-   The list fetches every event in one `= ANY(...)` query — one query per row
-   to draw one screen is the N+1 this view would die of.
+   axis; since 9 Oct 2026 the list calls `trace.build_stories` instead
+   (rule 21), the same wait fields and a `story` per row. A calendar trace
+   shares ONE axis (first event on record → now); never scale a row to its
+   own span. The list fetches every event in one `= ANY(...)` query — one
+   query per row to draw one screen is the N+1 this view would die of.
 5. **A row's only horizontal mark is data.** There is deliberately no baseline
    rule per trace — an earlier draft had one and it competed with the tails,
    making the amber unreadable. Week gridlines and the "today" rule are the
@@ -352,12 +353,13 @@ is a private artifact, linked from the memory file
    stated", readable answers only), and `declares_sponsorship` allows three
    words between the verb and "sponsorship" with a negation guard. On the
    day: needs 75, unread 14, asked 4.
-10. **The name column takes the free space; the trace is capped** (`.tl`
+10. **The name column takes the free space; the middle column is capped** (`.tl`
    grid). Verified against 47 real applications: applied in one burst, so
    every trace is the same line at the same length while agency company/role
    names were being ellipsed. The trace still shares one axis (rule 4) and
    still earns its place on the detail page — it just doesn't get 40% of a
-   list row to repeat "still nothing" 47 times.
+   list row to repeat "still nothing" 47 times. Since 9 Oct 2026 the list's
+   middle column is the story (rule 21), capped at 23rem.
 10b. **A long log needs landmarks, and the first screen is for rows**
    (7 Oct 2026, worklog task 62). Measured on the day, the first real look
    at the app's own CSS (no Dark Reader): 351 rows, 20,417px — 29 screens —
@@ -383,7 +385,9 @@ is a private artifact, linked from the memory file
      card a scroll container and the head would stick to a box that never
      scrolls. So the axis that makes a trace readable no longer leaves with
      the sixth row. Under 720px `.card` scrolls sideways and the head scrolls
-     away with the list; the axis is hidden there anyway.
+     away with the list; the axis is hidden there anyway. (Since 9 Oct 2026
+     the head names the story's column instead of drawing an axis, and under
+     820px the story moves to a line of its own: rule 21.)
    - **One toolbar row**: search, sort and the page's links ("19 moves to
      make", "Add one by hand") share `.listbar`; the links sit inside the
      GET form for layout only. `.rowline` left this page (the detail page
@@ -568,7 +572,9 @@ is a private artifact, linked from the memory file
     screen is not on the trace, which draws only a rejection at day three.
     The rail's status line wraps to hold it (`.tl .rail .s`), because
     "sponsorship screen" beside "rejected" is wider than the 7rem rail, the
-    clipping rule 9b measured. It cannot see other hiring systems'
+    clipping rule 9b measured. (Since 9 Oct 2026 the screen is no tag: the
+    story's close station says it, beside the reason — "sponsorship screen,
+    visa" — with the timer's sentence in its title; rule 21.) It cannot see other hiring systems'
     knockouts (no fixed timer), nor an employer who chose "notify promptly".
     **On the legend the two screens are one entry** (9 Oct 2026): "27
     screened (16 sponsorship · 11 form)", one mechanism split only by what
@@ -624,7 +630,9 @@ is a private artifact, linked from the memory file
     against "16 Jul", "10 Sep" against "today"). Eight weeks and up the axis
     shows the start date, then "Aug", "Sep"; under that it keeps its weeks.
     The list and the detail page share the function, so a long thread on the
-    (full-width) detail page also gets months — sparse, and fine.
+    (full-width) detail page also gets months — sparse, and fine. Since
+    9 Oct 2026 only the detail page draws an axis: the list's story has
+    none (rule 21), which also ended the "Oct" printed under "today".
 17. **What recruiters started is its own page** (24 Sep 2026): `/inbound`
     holds every `origin = 'inbound'` record in every status, `/` everything
     the user started (`applied`, and the odd `saved` capture, which now wears
@@ -699,7 +707,8 @@ is a private artifact, linked from the memory file
       `why`): rule 12's costing and rule 9c's precedent, a qualifier on an
       existing type. `_event_label` words them "You declined" / "They went
       quiet"; the row keeps the status word `withdrawn` (rule 15) and adds a
-      grey `declined` / `went quiet` tag, the why in its title; /analytics'
+      grey `declined` / `went quiet` tag, the why in its title (the story's
+      close station since 9 Oct 2026, rule 21); /analytics'
       squares say the same (`insights._phrase`, off `facts`' `closed_as`).
       Inbound only, refused on a closed thread, and dated through
       `_on_the_thread`: never before the approach, and just after a same-day
@@ -994,7 +1003,8 @@ is a private artifact, linked from the memory file
     is not a round. Measured on 19 real threads: 13 right, 4 over by one,
     2 ambiguous in the mail. So the number is placed beside its evidence —
     "round 2 of 4" on each invitation line of the detail page, the days in
-    the list tag's title — and a wrong grouping is a visible line, not a
+    the list tag's title (a numbered station of the story since 9 Oct
+    2026, its day in the station's title; rule 21) — and a wrong grouping is a visible line, not a
     silent statistic (invariant #3's preference). ONE "How did it go?"
     select per round, on the round's `rate_event` (the rated one, else the
     newest), after the author rated every line of one interview; a call
@@ -1064,7 +1074,8 @@ is a private artifact, linked from the memory file
     other) in `payload.round_kind` through `web.set_round_kind` or the
     timeline form; `trace.rounds` reads it per round and the label says
     "round 3 of 3, technical interview" on every line of the round, the
-    list tag's title too. Closed, like every vocabulary here, so a later
+    list tag's title too (since 9 Oct 2026 one word under the story's
+    numbered station, `web._ROUND_WORDS`, the long form its title). Closed, like every vocabulary here, so a later
     `/analytics` can count where the search stops. **One kind is not a
     round**: `questionnaire` (`trace.NON_ROUND_KINDS`), the automated
     behaviour questionnaire every applicant gets — a mechanism, like
@@ -1083,6 +1094,61 @@ is a private artifact, linked from the memory file
     (`web._INVITE_ROLE_WORDS`). The stage's kind is the email's reading
     (`kind_source: email`) until the select says otherwise, which drops
     the source, as a stated rejection reason does.
+
+21. **The list tells each thread as its story** (9 Oct 2026, worklog task
+    86). The calendar trace stays on the detail page; on the two lists the
+    middle column is the thread's STATIONS in order (`trace.stations`,
+    `trace.story`, `trace.build_stories`), each named underneath, the days
+    between written on the line. Measured first: 79% of 402 rows were a dot
+    and a tail restating the applied date and the numeral, and the answers,
+    in the first days, got 3.6px a day. The author chose this over a
+    thread-time axis (elapsed days from each thread's start, one shared
+    scale), which kept rows comparable on time; what the story gives up is
+    exactly that, and the day counts carry it instead.
+    - **Words are web.py's, stations are trace.py's.** `_station_words`
+      names each station beside `EVENT_LABELS` (rule 15): one short word
+      under the mark, the full sentence and date in its title. A round is
+      its kind (`_ROUND_WORDS`, asserted equal to `analytics.ROUND_KINDS`
+      less the non-round kinds) under its number, and its day while it is
+      still to come; the close says how it ended — the screen, then the
+      stated reason ("sponsorship screen, visa"), or your kind of close —
+      which the rail's grey tags carried until then, so the rail is the
+      numeral (open) or the status word (closed), no dash, and no word
+      beside an `applied` numeral (rule 9b's precedent). A start of the
+      page's own kind is its date alone (`_PAGE_START`), the author's call
+      for each page: every row on `/` is an application and every row on
+      /inbound an approach, so the word said nothing and the mark's colour
+      says who started it; a start of another kind keeps its word (a
+      recruiter who wrote first on `/`, a capture you saved).
+      `trace.STATION_KEYS` is the registry the web suite loops.
+    - **Their status mail is theirs.** `trace.own(e)` is the one rule for a
+      hollow mark: a follow-up, or a note by hand or in mail you sent. The
+      classifier files an employer's status update as a note, and the old
+      trace drew all of them as the user's (36 of 57 on the day). The
+      detail page's trace reads the same rule.
+    - **A story starts at its start and ends at its close**
+      (`_story_order`): what sorts before the start on its own local day is
+      told after it (a mail minutes before the extension's capture), what
+      sorts after the close on its day before it (a close filed for a day
+      anchors at noon), and nothing after the close's day is told.
+    - **A crowded story gives the least first**: the lines' extra length,
+      then the minor stations' words (`_MINOR`: viewed, update, in touch,
+      your notes), then runs of minor stations fold in place into "+N",
+      and only then the oldest of the middle; the start and the last
+      station always stay, and a fold takes in any fold beside it (two
+      "+N" side by side were seen on /inbound before it did). The budget is
+      `STORY_BUDGET_PX` against a width estimated from the words, measured
+      against the browser at a median ratio of 1.01; the column fades its
+      last 1.2rem in case a guess runs over. Folding the oldest first hid a
+      real thread's three rounds while its status mails kept their words.
+    - **Every mark is a role colour the trace already used** (rule 1):
+      ink for what you sent, blue for them (a round's number in a blue
+      disc), rust for the close, the tail amber by `--heat` (rule 14). The
+      last station's word is where the thread stands, in ink or its
+      state's colour; the rest are grey. No JS: the layout is flex, and
+      the fold is decided on the server.
+    - **The story survives a phone**: under 820px it takes a line of its
+      own under the name, where the calendar trace was hidden.
 
 ## Invariant #2 in detail (moved from CLAUDE.md, 25 Sep 2026)
 

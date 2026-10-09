@@ -2022,11 +2022,11 @@ check("the timeline shows it as the selected reason",
 
 r = client.get("/")
 nw_row = r.text.split(f'href="/applications/{northwind_app}"')[1].split("</a>")[0]
-check("the list row wears the reason in grey next to the status",
-      ">rejected</span>" in nw_row and ">visa</span>" in nw_row, nw_row[-400:])
+check("the list row's story closes on the reason, beside the rail's status word",
+      ">rejected</span>" in nw_row and "<em>rejected, visa</em>" in nw_row, nw_row[-400:])
 ut_row = r.text.split(f'href="/applications/{ut_app}"')[1].split("</a>")[0]
 check("an untagged rejection wears nothing extra",
-      ">rejected</span>" in ut_row and ">visa</span>" not in ut_row
+      ">rejected</span>" in ut_row and "<em>rejected</em>" in ut_row and "rejected, " not in ut_row
       and "not recorded" not in ut_row, ut_row[-400:])
 
 r = client.get("/?reason=visa")
@@ -2122,8 +2122,8 @@ check("the timeline selects the email's reason and says it is the email's, in it
       "selected>visa / sponsorship" in r.text
       and "the email says <q>the team can not sponsor your EP</q>" in r.text, r.status_code)
 st_row = client.get("/").text.split(f'href="/applications/{st_app}"')[1].split("</a>")[0]
-check("the row's reason tag carries the email's sentence in its title",
-      ">visa</span>" in st_row and "The email: the team can not sponsor your EP" in st_row, st_row[-400:])
+check("the row's close carries the email's sentence in its title",
+      "<em>rejected, visa</em>" in st_row and "The email: the team can not sponsor your EP" in st_row, st_row[-400:])
 client.post(f"/applications/{st_app}/events/{st_rej}/reason", data={"reason": "visa"})
 check("saving the same reason leaves it the email's, quote and all",
       st_payload() == {"reason": "visa", "reason_source": "email",
@@ -2225,9 +2225,9 @@ r = client.get("/?how=no_round")
 check("a letter a day off the timer is an ordinary rejection",
       "late letter co" in r.text and "screened form co" not in r.text, r.status_code)
 r = client.get("/?status=rejected&q=screened")
-check("each screened row wears its screen, beside (not instead of) the reason",
-      ">sponsorship screen</span>" in r.text and ">form screen</span>" in r.text
-      and ">visa</span>" in r.text, r.status_code)
+check("each screened row's story closes on its screen, beside (not instead of) the reason",
+      "<em>sponsorship screen, visa</em>" in r.text and "<em>form screen</em>" in r.text
+      and "failed a must-have screening question" in r.text, r.status_code)
 
 print("how it ended: the sponsorship rule is one rule in Python and SQL")
 import json as _json                                                   # noqa: E402
@@ -2319,8 +2319,12 @@ print("the status bar: each segment painted with its own rows (9 Oct 2026)")
 # colour: the rail's live numeral, each wait's heat, the closes by status.
 from collections import Counter as _Counter                             # noqa: E402
 _BAND = re.compile(r'class="t-(\w+)" style="--n:(\d+)(?:;--heat:(\d+)%)?"')
+# A row's rail: an open thread's numeral (live or not) with its status word
+# unless it is `applied`, the default; a closed thread's status word alone.
 _ROW = re.compile(r'<a class="tl" href="/applications/[^"]+" title="[^"]*" style="--heat:(\d+)%">'
-                  r'.*?<b class="d( live)?( dash)?">.*?<span class="badge"[^>]*>([^<]+)</span>', re.S)
+                  r'.*?<span class="rail">\s*(?:<b class="d( live)?">\d+</b>'
+                  r'(?:<span class="s"><span class="badge"[^>]*>([^<]+)</span>)?'
+                  r'|<span class="closed"[^>]*>([^<]+)</span>)', re.S)
 for _path in ("/", "/inbound"):
     r = client.get(_path)
     if _path != "/" and '<div class="funnel' not in r.text:
@@ -2334,7 +2338,8 @@ for _path in ("/", "/inbound"):
         for _t, _h, _n in _seq:
             _drawn[_label][(_t, _h)] += _n
     _rows_by = {}
-    for _heat, _live, _dash, _st in _ROW.findall(r.text):
+    for _heat, _live, _badge, _closed in _ROW.findall(r.text):
+        _st = _closed or _badge or "applied"
         _tone = _st if _st in ("rejected", "withdrawn", "offer") else "live" if _live else "wait"
         _rows_by.setdefault(_st, _Counter())[(_tone, int(_heat) if _tone == "wait" else 0)] += 1
     check(f"{_path}: every segment is its rows, colour for colour — the live, each wait's heat, "
@@ -2342,6 +2347,69 @@ for _path in ("/", "/inbound"):
           _drawn and _drawn == _rows_by, (_drawn, _rows_by))
     check(f"{_path}: shortest silence first in every segment — the live, then the waits as "
           f"their heat rises", _order_ok, _drawn)
+
+print("the story: each row's thread as named stations (9 Oct 2026)")
+# Every station a story can hold has words on both pages: a word or a date
+# under its mark, and a title. Loops trace.STATION_KEYS, so a new kind of
+# station without words fails here, not as a blank mark on the page.
+from zoneinfo import ZoneInfo as _Zone                                  # noqa: E402
+_sgt = _Zone("Asia/Singapore")
+_t0 = datetime(2026, 9, 1, 4, 0, tzinfo=timezone.utc)
+_ev0 = {"type": "note", "occurred_at": _t0}
+
+
+def _station(key, **kw):
+    s = {"key": key, "start": key in ("applied", "approached", "saved"), "at": _t0, "end": _t0,
+         "count": 1, "events": [_ev0], "n": 1, "kind": "technical", "day": _t0.date(),
+         "upcoming": False, "own_words": ["replied"], "folded": []}
+    s.update(kw)
+    return s
+
+
+_row_words = {"reject_reason": "visa", "reject_quote": None, "screen": None,
+              "closed_as": "went_quiet", "close_why": None}
+for _page in ("applications", "inbound"):
+    _w = web._station_words(_row_words, _page, _sgt)
+    _named = {k: _w(_station(k, folded=[{"title": "Viewed, 1 Sep"}] if k == "more" else [])) for k in web.trace.STATION_KEYS}
+    check(f"{_page}: every kind of station has words — a word or a date under it, and a title",
+          all((w["word"] or w["on"]) and w["title"] for w in _named.values()),
+          {k: w for k, w in _named.items() if not ((w["word"] or w["on"]) and w["title"])})
+    # The page's own kind of start says only its date; any other start keeps its word.
+    _own_start, _other = ("applied", "approached") if _page == "applications" else ("approached", "applied")
+    check(f"{_page}: a {_own_start} start says only its date, a {_other} or saved one its word",
+          _named[_own_start]["word"] == "" and _named[_own_start]["on"] == "1 Sep"
+          and _named[_other]["word"] == _other and _named["saved"]["word"] == "saved", _named)
+check("a close says how it ended: the stated reason, a screen ahead of it, your kind of close",
+      _named["rejected"]["word"] == "rejected, visa"
+      and web._station_words(dict(_row_words, screen="sponsorship"), "applications", _sgt)(
+          _station("rejected"))["word"] == "sponsorship screen, visa"
+      and _named["withdrawn"]["word"] == "went quiet"
+      and web._station_words(dict(_row_words, reject_reason="unstated"), "applications", _sgt)(
+          _station("rejected"))["word"] == "rejected")
+check("a round is its kind under its number, with its day when it is still to come",
+      _named["round"]["word"] == "technical" and _named["round"]["on"] is None
+      and _w(_station("round", upcoming=True))["on"] == "1 Sep"
+      and "Interview round 1, technical interview" in _named["round"]["title"])
+
+r = client.get("/")
+# A record with no events at all (a capture never sent) has no story to check.
+_rows_html = [h for h in r.text.split('<a class="tl"')[1:] if 'class="st ' in h.split("</a>")[0]]
+_starts = [re.search(r'<span class="st k-(\w+) first[^"]*"[^>]*><span class="g"><i>[^<]*</i></span><em>(.*?)</em>', h)
+           for h in _rows_html]
+check("/: every story starts at its start, and an application's names only its date",
+      _rows_html and all(_starts)
+      and all(m.group(2).startswith('<span class="on">') for m in _starts if m.group(1) == "applied"),
+      [m.group(0)[-120:] if m else h[:300] for m, h in zip(_starts, _rows_html) if not m][:3])
+check("/: no rail draws a dash, and no row wears a rounds tag; a closed row's rail is its status word",
+      'class="d dash"' not in r.text and " round</span>" not in r.text
+      and all(('class="closed"' in h) == bool(re.search(r'class="st k-(rejected|withdrawn)[^"]* last', h))
+              for h in _rows_html))
+r = client.get("/inbound")
+_in_rows = r.text.split('<a class="tl"')[1:]
+check("/inbound: an approach's story starts at its date alone, the blue mark saying who started it",
+      not _in_rows or all(re.search(r'k-approached first[^>]*><span class="g"><i></i></span><em><span class="on">', h)
+                          for h in _in_rows if 'k-approached first' in h)
+      and any('k-approached first' in h for h in _in_rows), [h[:300] for h in _in_rows[:2]])
 
 print("the applied entry: how long it has waited, each span a filter (9 Oct 2026)")
 r = client.get("/")
@@ -2878,8 +2946,8 @@ check("its timeline says “You declined” and why, and the close form is gone"
       r.status_code)
 r = client.get("/inbound")
 _row = r.text.split("Close Decline Co", 1)[1].split("</a>")[0]
-check("/inbound wears it as a grey tag beside the status word, with why as its title",
-      ">withdrawn</span>" in _row and ">declined</span>" in _row
+check("/inbound closes its story on “declined”, the why in its title, the rail’s word withdrawn",
+      ">withdrawn</span>" in _row and "<em>declined</em>" in _row
       and "You declined: not my experience or skills" in _row, _row[-400:])
 
 r = client.post(f"/applications/{_dec}/events/{_c[0]['id']}/edit", data={
@@ -2907,7 +2975,7 @@ check("“They went quiet” files the other kind, and a stray why is not kept",
       and len(_c) == 1 and _c[0]["payload"] == {"closed": "went_quiet"}, _c)
 check("...worded so on its page and tagged so on /inbound",
       "They went quiet" in client.get(f"/applications/{_qui}").text
-      and ">went quiet</span>" in client.get("/inbound").text.split("Close Quiet Co", 1)[1].split("</a>")[0])
+      and "<em>went quiet</em>" in client.get("/inbound").text.split("Close Quiet Co", 1)[1].split("</a>")[0])
 
 _bad = _new_lead("Close Guard Co", "2026-08-21")
 r = client.post(f"/applications/{_bad}/close", data={"action": "decline", "occurred_on": "2026-08-01"})
@@ -3123,8 +3191,8 @@ check("its timeline says “They went quiet” with your note, never “You with
       "They went quiet" in r.text and "the system design round went badly" in r.text
       and "Heard nothing since?" not in r.text and "You withdrew" not in r.text, r.status_code)
 _row = client.get("/").text.split("Round Close Co", 1)[1].split("</a>")[0]
-check("the list wears it as a grey “went quiet” tag beside the status word",
-      ">withdrawn</span>" in _row and ">went quiet</span>" in _row, _row[-400:])
+check("the list closes its story on “went quiet”, the rail’s word withdrawn",
+      ">withdrawn</span>" in _row and "<em>went quiet</em>" in _row, _row[-400:])
 r = client.post(f"/applications/{_rq}/close", data={"action": "quiet"})
 check("a closed thread refuses a second close",
       "event_error=" in r.headers.get("location", "") and len(_closes(_rq)) == 1)
@@ -3211,8 +3279,8 @@ check("its timeline says “You declined” with your note, and the panel is gon
       "You declined" in r.text and "would not relocate" in r.text and "Offer in hand:" not in r.text
       and "You withdrew" not in r.text, r.status_code)
 _row = client.get("/").text.split("Offer Open Co", 1)[1].split("</a>")[0]
-check("the list wears it as withdrawn with a grey “declined” tag naming the why",
-      ">withdrawn</span>" in _row and ">declined</span>" in _row and "location or work mode" in _row,
+check("the list closes its story on “declined”, the why in its title, the rail’s word withdrawn",
+      ">withdrawn</span>" in _row and "<em>declined</em>" in _row and "location or work mode" in _row,
       _row[-500:])
 
 _rs = _new_app("Offer Pulled Co", 30)
@@ -3362,7 +3430,7 @@ check("...its “since” is the page's first application, so a search moves nei
 # Months: a divider at each month's first row, and the head's index jumping to it.
 _rows_n = r.text.count('<a class="tl"')
 _seps = re.findall(r'<div class="tl-sep" id="(m-[^"]+)">([^<]+)<span class="n">(\d+)</span>', r.text)
-_head = r.text.split('class="tl tl-head"')[1].split('class="axis"')[0]
+_head = r.text.split('class="tl tl-head"')[1].split('class="lab mid"')[0]
 _idx = re.findall(r'<a href="#(m-[^"]+)" title="(\d+) in [^"]+">', _head)
 _chunks = r.text.split('<div class="tl-sep" id="m-')
 check("the record divides by month: the head's index names every month newest first, a divider "
@@ -4210,8 +4278,9 @@ _ecs = {k: _state(v)[0] for k, v in _ec.items()}
 check("a questionnaire, kind on its line or on its round's other line, is part of applying: the "
       "status is the confirmation's, and the row reads applied",
       _ecs["questionnaire"] == "confirmation"
-      and re.search(r"Questionnaire Only Co.*?<span class=\"badge\"[^>]*>applied</span>",
-                    client.get("/").text, re.S) is not None, _ecs)
+      # `applied`, the default, wears no word on the rail since 9 Oct 2026
+      and re.search(r'<span class="rail"><b class="d( live)?">\d+</b>\s*</span>',
+                    client.get("/").text.split("Questionnaire Only Co", 1)[1].split("</a>")[0]) is not None, _ecs)
 check("a mail arranging an interview, or a line you said is not a round, is a person writing: "
       "engaged; an interview is still one",
       _ecs["scheduling"] == "engaged" and _ecs["not_a_round"] == "engaged"
@@ -4301,9 +4370,17 @@ check("a rating on the invitation is the round's: the select moves to it, and /f
       "selected>went well" in r.text and r.text.count('/went"') == 1
       and f"/events/{_rr_inv}/went" in r.text and _rr not in _rating_owed(), r.status_code)
 _row = client.get("/?q=Two+Rounds").text.split(f'href="/applications/{_rr}"')[1].split("</a>")[0]
-check("the list row wears the count in grey, the day in its title",
-      ">1 round</span>" in _row and "Interview round on " in _row
-      and "the day each invitation named" in _row, _row[-500:])
+
+
+def _rounds_drawn():
+    """The round stations the list's story draws on the search's one row (9 Oct
+    2026: each round a numbered station; the grey "N rounds" tag left with it)."""
+    return client.get("/?q=Two+Rounds").text.count('class="st k-round')
+
+
+check("the list's story draws the round as a station numbered 1, its day in the title",
+      _row.count('class="st k-round') == 1 and "Interview round 1" in _row
+      and '<i>1</i>' in _row, _row[-500:])
 with db.connect() as conn:
     _rr_two = conn.execute(
         "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
@@ -4316,7 +4393,7 @@ check("a second invitation two weeks on is round 2 of 2, with its own select; th
       and f"/events/{_rr_two}/went" in r.text, r.status_code)
 check("...and it is owed a word, through its own event; the row says 2 rounds",
       str(_rating_owed()[_rr]["event_id"]) == str(_rr_two)
-      and ">2 rounds</span>" in client.get("/?q=Two+Rounds").text, _rating_owed().get(_rr))
+      and _rounds_drawn() == 2, _rating_owed().get(_rr))
 r = client.get("/analytics")
 _dp = r.text.split("How far you got")[1].split("<h2")[0] if "How far you got" in r.text else ""
 check("/analytics draws how far you got, rows by rounds reached, this thread in the 2-rounds row",
@@ -4339,8 +4416,8 @@ with db.connect() as conn:
     _fa, _fe = analytics.facts(conn, user_id)
 _py_fate = next(f for f in insights.build_facts(_fa, _fe, datetime.now(timezone.utc), 10)
                 if str(f["id"]) == _rr)
-check("every count leaves it out: the list tag, /follow-ups, and both twins of the fate anchor",
-      ">1 round</span>" in client.get("/?q=Two+Rounds").text and _rr not in _rating_owed()
+check("every count leaves it out: the list's story, /follow-ups, and both twins of the fate anchor",
+      _rounds_drawn() == 1 and _rr not in _rating_owed()
       and _py_fate["n_rounds"] == 1 and _sql_fate == _py_fate["round_fate"] == "waiting",
       (_sql_fate, _py_fate["round_fate"], _py_fate["n_rounds"]))
 r = client.post(f"/applications/{_rr}/events/{_rr_inv}/round", data={"round_is": "sometimes"})
@@ -4363,7 +4440,7 @@ check("a hand-filed round on an invitation's day is a round of its own: three ro
       "one second by the clock",
       "3 interview rounds<" in _pg and _pg.count("<small>round 1 of 3</small>") == 2
       and _pg.count("<small>round 2 of 3</small>") == 1 and "<small>round 3 of 3</small>" in _pg
-      and ">3 rounds</span>" in client.get("/?q=Two+Rounds").text,
+      and _rounds_drawn() == 3,
       sorted(set(re.findall(r"<small>round (\d of \d)</small>", _pg))))
 with db.connect() as conn:
     _rr_hand = conn.execute("SELECT id FROM events WHERE application_id = %s AND type = 'interview_invite' "
@@ -4378,7 +4455,7 @@ check("the hand-filed round, newest, is owed its own word — the rating on the 
       str(_rating_owed()[_rr]["event_id"]) == str(_rr_hand), _rating_owed().get(_rr))
 
 # What kind of round (9 Oct 2026): said once per round, worn on every line
-# of it, in the list tag's title, and taken by the timeline form.
+# of it, under the list story's numbered station, and taken by the timeline form.
 r = client.post(f"/applications/{_rr}/events/{_rr_hand}/kind", data={"kind": "screen"})
 _pg = client.get(f"/applications/{_rr}").text
 check("a round's kind, said on its line, follows the label and is the select's choice",
@@ -4387,9 +4464,11 @@ check("a round's kind, said on its line, follows the label and is the select's c
 client.post(f"/applications/{_rr}/events/{_rr_inv}/kind", data={"kind": "test"})
 _pg = client.get(f"/applications/{_rr}").text
 _row = client.get("/?q=Two+Rounds").text.split(f'href="/applications/{_rr}"')[1].split("</a>")[0]
-check("...and the list tag's title names each round's day and kind",
+check("...and the list's story names each round by its kind, the long form and day in its title",
       "<small>round 1 of 2, coding test or take-home</small>" in _pg
-      and "(coding test or take-home), " in _row and "(recruiter screen)" in _row, _row[-400:])
+      and "Interview round 1, coding test or take-home: " in _row
+      and "Interview round 2, recruiter screen: " in _row and "<em>coding test" in _row
+      and "<em>screen" in _row, _row[-600:])
 check("a kind outside the vocabulary is refused; anything but an invitation is 404",
       client.post(f"/applications/{_rr}/events/{_rr_hand}/kind", data={"kind": "vibes"}).status_code == 400
       and client.post(f"/applications/{_rr}/events/{_rr_applied}/kind",
@@ -4428,7 +4507,7 @@ check("a questionnaire's line says so and takes no rating; the thread has one ro
       and "1 interview round<" in _pg and "<small>round 1</small>" in _pg
       and f"/events/{_rr_inv}/went" not in _pg and f"/events/{_rr_inv}/kind" in _pg
       and _py["n_rounds"] == 1 and _sql_fate == _py["round_fate"] == "waiting"
-      and ">1 round</span>" in client.get("/?q=Two+Rounds").text,
+      and _rounds_drawn() == 1,
       (_sql_fate, _py["round_fate"], _py["n_rounds"], re.findall(r"<small>[^<]+</small>", _pg)))
 client.post(f"/applications/{_rr}/events/{_rr_inv}/kind", data={"kind": "test"})
 # What the mail did (stage 4, 9 Oct 2026): a scheduling reply filed as an
@@ -4447,7 +4526,7 @@ check("a mail the stage read as scheduling chatter is no round: the page says so
       "the two real rounds, both twins skip it, and /follow-ups does not ask about it",
       "<small>arranging it, not a round</small>" in _pg and "2 interview rounds<" in _pg
       and _py["n_rounds"] == 2 and _sql_fate == _py["round_fate"]
-      and ">2 rounds</span>" in client.get("/?q=Two+Rounds").text
+      and _rounds_drawn() == 2
       and str(_rating_owed().get(_rr, {}).get("event_id")) != str(_rr_sched),
       (_sql_fate, _py["round_fate"], _py["n_rounds"]))
 client.post(f"/applications/{_rr}/events/{_rr_inv}/kind", data={"kind": "screen"})

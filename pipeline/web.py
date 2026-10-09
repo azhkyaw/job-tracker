@@ -210,6 +210,115 @@ def _event_label(e) -> str:
 _EMAILED = {"sent": "You emailed your CV", "not_needed": "No email needed"}
 
 
+# The list's story (9 Oct 2026, worklog task 86): one short word under each
+# station, the timeline's vocabulary cut to fit a mark — EVENT_LABELS' sentence
+# is the station's title. Keyed by trace.stations' keys. A run of one kind
+# counts itself ("update ×3"). A start that is the page's own kind says only
+# its date: every row on `/` is something you applied to and every row on
+# /inbound something they approached you with, so "applied" under 400 first
+# marks, and "approached" under all 44, said nothing (the author's call, for
+# each page in turn). A start of another kind keeps its word: a recruiter
+# who wrote first on `/`, a capture you saved.
+_STATION_WORDS = {
+    "applied": "applied", "approached": "approached", "saved": "saved",
+    "viewed": "viewed", "update": "update", "touch": "in touch", "reached": "reached out",
+    "questionnaire": "questionnaire", "offer": "offer",
+}
+_PAGE_START = {"applications": "applied", "inbound": "approached"}
+_STATION_TITLES = {
+    "applied": "You applied", "approached": "They approached you", "saved": "You saved it",
+    "viewed": "They viewed your application", "update": "Their update (a status email)",
+    "touch": "They got in touch", "reached": "They reached out again",
+    "offer": "Offer", "questionnaire": "Automated questionnaire",
+}
+# Your own moves folded into one station, named by the first of these present.
+_OWN_WORDS = {"replied": ("you replied", "You replied"),
+              "followed_up": ("followed up", "You followed up"),
+              "emailed": ("emailed your CV", "You emailed your CV"),
+              "note": ("note", "Your note")}
+# A round's kind as one word under its number; analytics.ROUND_KINDS has the
+# long form, which the title carries.
+_ROUND_WORDS = {"test": "coding test", "screen": "screen", "technical": "technical",
+                "manager": "manager", "panel": "panel", "final": "final round", "other": "interview"}
+assert set(_ROUND_WORDS) == set(analytics.ROUND_KINDS) - set(trace.NON_ROUND_KINDS)
+_SCREEN_WORDS = {"sponsorship": "sponsorship screen", "form": "form screen"}
+# Reasons too general to say on a mark: the title still names them.
+_QUIET_REASONS = ("other", "unstated")
+
+
+def _station_words(row, page: str, tz):
+    """`words(station)` for trace.story over one list row: each station's
+    word, its date (`on`, the start's and a round still to come's) and its
+    title. The close says how it ended, from the row's own fields — the
+    screen (rule 13), the stated reason (rule 12), your kind of close
+    (rule 17) — which the rail carried as tags until the story did."""
+    def day(v):
+        return f"{(v.astimezone(tz) if isinstance(v, datetime) else v):%d %b}".lstrip("0")
+
+    def full(v):
+        return f"{(v.astimezone(tz) if isinstance(v, datetime) else v):%d %b %Y}".lstrip("0")
+
+    def when(s):
+        if s["count"] > 1 and day(s["at"]) != day(s["end"]):
+            return f"{day(s['at'])} to {day(s['end'])}"
+        return full(s["at"])
+
+    def times(s):
+        return f" ×{s['count']}" if s["count"] > 1 else ""
+
+    def words(s):
+        k = s["key"]
+        if k == "more":
+            return {"word": f"+{s['count']}", "on": None,
+                    "title": "; ".join(x["title"] for x in s["folded"])}
+        if s["start"] and k in ("applied", "approached", "saved"):
+            return {"word": "" if k == _PAGE_START.get(page) else _STATION_WORDS[k],
+                    "on": day(s["at"]), "title": f"{_STATION_TITLES[k]} on {full(s['at'])}"}
+        if k == "round":
+            long = analytics.ROUND_KINDS.get(s["kind"]) if s["kind"] else None
+            return {"word": _ROUND_WORDS.get(s["kind"], "interview"),
+                    "on": day(s["day"]) if s["upcoming"] else None,
+                    "title": f"Interview round {s['n']}{', ' + long if long else ''}: {full(s['day'])}"
+                             f"{', still to come' if s['upcoming'] else ''}"}
+        if k == "own":
+            first = next(w for w in _OWN_WORDS if w in s["own_words"])
+            return {"word": _OWN_WORDS[first][0] + times(s),
+                    "on": None, "title": ", ".join(_OWN_WORDS[w][1] for w in _OWN_WORDS
+                                                   if w in s["own_words"]) + f", {when(s)}"}
+        if k == "rejected":
+            reason = row.get("reject_reason")
+            word = _SCREEN_WORDS.get(row.get("screen"), "rejected")
+            if reason and reason not in _QUIET_REASONS:
+                word += ", " + reason.replace("_", " ")
+            title = f"Rejected on {full(s['at'])}"
+            if reason:
+                title += f", {_EVENT_REASONS.get(reason, reason)}"
+            if row.get("reject_quote"):
+                title += f". The email: {row['reject_quote']}"
+            if row.get("screen"):
+                title += (". LinkedIn rejected this automatically, 72 hours after you applied: it "
+                          "failed a must-have screening question")
+                if row["screen"] == "sponsorship":
+                    title += ", and the form recorded that you need sponsorship"
+            return {"word": word, "on": None, "title": title}
+        if k == "withdrawn":
+            if s["events"][0].get("superseded"):
+                return {"word": "applied again", "on": None, "title": f"You applied again, {full(s['at'])}"}
+            closed = row.get("closed_as")
+            if closed in _CLOSE_KINDS:
+                why = _DECLINE_WHY.get(row.get("close_why"), row.get("close_why"))
+                return {"word": "declined" if closed == "declined" else "went quiet", "on": None,
+                        "title": f"{_CLOSE_KINDS[closed]}{': ' + why if why else ''}, {full(s['at'])}"}
+            return {"word": "withdrew", "on": None, "title": f"You withdrew, {full(s['at'])}"}
+        if k in _STATION_WORDS:
+            return {"word": _STATION_WORDS[k] + times(s), "on": None,
+                    "title": f"{_STATION_TITLES[k]}{times(s)}, {when(s)}"}
+        t = s["events"][0]["type"]                     # a type nobody named yet reads as itself
+        label = EVENT_LABELS.get(t, t)
+        return {"word": label.lower(), "on": None, "title": f"{label}, {when(s)}"}
+    return words
+
+
 def _email_owed(conn, app_id) -> bool:
     """analytics.email_owed_sql for one application: the page, the answer
     route and the capture's receipt all ask it, and must agree."""
@@ -772,14 +881,15 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
         months = _month_landmarks(rows, request.state.tz) \
             if not is_inbound and sort == _DEFAULT_SORT else []
 
-        # One query for every event on the page, grouped in Python — the trace
+        # One query for every event on the page, grouped in Python — the story
         # needs each application's full history, and 45 per-row queries to draw
         # one screen is exactly the N+1 this view would die of.
         events_by_app: dict = {}
         if rows:
-            # stated_date: the day an invitation named, which is what groups
-            # invitations into rounds (trace.rounds) for the row's tag. sent:
-            # whose a note is (trace.own) — mail you sent, or theirs.
+            # stated_date / round_is / round_kind / invite_role: what groups
+            # invitations into rounds (trace.rounds), each round one station.
+            # sent, reply, emailed: whose a note is, and what it says
+            # (trace.own). closed, superseded: how a withdrawal ended.
             for e in conn.execute(
                 """
                 SELECT e.application_id, e.type, e.source, e.occurred_at,
@@ -787,22 +897,18 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
                        e.payload->>'round_is' AS round_is,
                        e.payload->>'round_kind' AS round_kind,
                        e.payload->>'invite_role' AS invite_role,
-                       COALESCE(m.sent_by_user, false) AS sent
+                       COALESCE(m.sent_by_user, false) AS sent,
+                       (e.payload->>'reply') = 'true' AS reply,
+                       e.payload->>'emailed' AS emailed,
+                       e.payload->>'closed' AS closed,
+                       e.payload ? 'superseded_by' AS superseded
                   FROM events e LEFT JOIN emails m ON m.id = e.source_email_id
                  WHERE e.application_id = ANY(%s) ORDER BY e.occurred_at, e.created_at
                 """, ([r["id"] for r in rows],)).fetchall():
                 events_by_app.setdefault(e["application_id"], []).append(e)
-        axis = trace.build(rows, events_by_app, now, config.REMINDER_DAYS)
+        trace.build_stories(rows, events_by_app, now, config.REMINDER_DAYS, request.state.tz,
+                            lambda r: _station_words(r, page, request.state.tz))
         funnel = _funnel(conn, user_id, is_inbound, now, odds.quiet_after)
-        # How many interview rounds the thread reached, for the row's grey
-        # tag (8 Oct 2026): a fact about the thread, not about the wait.
-        for r in rows:
-            rds = trace.rounds(events_by_app.get(r["id"], []), request.state.tz)
-            r["n_rounds"] = len(rds)
-            r["rounds_title"] = ", ".join(
-                f"{x['day']:%d %b}".lstrip("0")
-                + (f" ({analytics.ROUND_KINDS.get(x['kind'], x['kind'])})" if x["kind"] else "")
-                for x in rds)
 
         # The inbound page's lede: the same sentence in the same shape as the
         # record's (9 Oct 2026), with approaches and how many still wait on
@@ -832,7 +938,6 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
         return templates.TemplateResponse(request=request, name="applications.html", context={
             "page": page,
             "rows": rows,
-            "axis": axis,
             "funnel": funnel,
             "pending": _pending_count(conn),
             "follow_ups": analytics.queue_count(conn, user_id, odds),

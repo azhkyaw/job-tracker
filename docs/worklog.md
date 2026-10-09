@@ -2629,3 +2629,69 @@ the key to each real case.
      recorded). `cli redact-answers` dry run: 3 stored rows (their values
      are option ids); `--apply`, which has no undo, is the author's click.
 
+86. **The list's middle column becomes each thread's story** (9 Oct 2026).
+   "Let's rethink this view", over a screenshot of the calendar traces and
+   the "Days quiet" rail. Measured on `/` first (402 rows): 79% of rows had
+   nothing after their first day, so their trace was a dot and a tail
+   restating the applied date (the sort and month dividers say it) and the
+   numeral; the answers come early (the median rejection on day 3, a view
+   the same day, 84% of first answers within a week) and got 3.6px a day on
+   a 304px axis over 85 days, a day-3 rejection 11px from its dot; the axis
+   printed "Oct" under "today"; a closed row's rail spent its largest type
+   on a grey dash. A private mockup drew the real row shapes three ways
+   (calendar, thread time, story); thread time was recommended, the author
+   chose the story and asked for it "more visually appealing, with an
+   easily identifiable label for each segment", then "implement", with one
+   change: no "applied" word on `/`'s first station, since every row there
+   is an application; then the same for "approached" on /inbound, where all
+   44 rows started that way (`web._PAGE_START`: a start of the page's own
+   kind is its date alone, any other keeps its word).
+   - **`trace.stations` / `trace.story`** (pure; `build_stories` beside
+     `build`): a thread's stations in order — the start (a date alone when
+     it is the page's own kind, else "approached" or "saved"), viewed, update (their status mail),
+     in touch, reached out, each interview round once with its number and
+     kind off `trace.rounds` (outlined while its day is to come), a
+     questionnaire unnumbered, your replies and notes folded into one, an
+     offer, and the close saying how it ended. A run of one kind is one
+     station ("update ×2"). Each station's words come from
+     `web._station_words` beside `EVENT_LABELS` (rule 15), its title the
+     full sentence and date; `trace.STATION_KEYS` is the registry the web
+     suite loops. The days between two stations are written on the line,
+     which grows with log(days); an open thread ends in its wait, the
+     tail's `--heat` (rule 14).
+   - **The close carries what the rail's tags carried** (the screen, the
+     stated reason, your kind of close: "sponsorship screen, visa",
+     "rejected, role closed", "went quiet"), so a closed row's rail is its
+     status word alone, with no dash; `applied`, the default, wears no
+     word beside its numeral (rule 9b's precedent). The "N rounds" tag
+     left the role line: the rounds are drawn. Every row is 54-56px (the
+     tags' third line had made some 72).
+   - **Found on the way, a misdrawing in the old trace too:** 36 of the 57
+     notes on the author's applications were the EMPLOYER's status mail
+     (classification `status_update` / `other`) that the classifier files
+     as a note, and `trace._OWN` drew every note hollow, as if the user had
+     written it. `trace.own(e)` is now the one rule (yours by hand or by
+     mail you sent), read by the story and the detail page's trace.
+   - **Same-day order** (`trace._story_order`): a status mail or a
+     questionnaire minutes BEFORE the extension's capture of the
+     application (6 records), and a close filed by hand for a day, which
+     anchors at noon, before that afternoon's approach (3 on /inbound,
+     `closing()`'s trap again), made stories start with an update or a
+     rejection. What sorts before the start on its day is told after it,
+     and what sorts after the close on its day before it.
+   - **A crowded story gives way in four steps** (budget 340px, the
+     column's 23rem less its fade; the width estimate measured against the
+     browser at a median ratio of 1.01): the lines lose their extra length,
+     minor stations lose their words, runs of minor stations fold in place
+     into "+N", and only then the oldest of the middle folds. Folding first
+     had hidden all three rounds of a real thread inside "+5 more" while its
+     status mails kept their names. On the day 3 rows on `/` folded, and 2
+     of its 14 rounds sat inside the last resort's "+N", each on a thread
+     whose rounds were split by single notes (a lone station folds to no
+     saving); the rounds still drawn are numbered ② and ③, so the fold
+     says what it holds, and its title lists it.
+   - Seen through TestClient-rendered copies of the real pages: dark and
+     light at desktop width (the light theme's first real look), and at
+     400px, where the story keeps its own line under the name (the trace
+     was hidden there); 2 of 402 stories meet the fade at that width.
+

@@ -83,7 +83,7 @@ and design records; the code and `migrations/` win where they disagree.
   this install. Read its §3 first: the author's right to earn in Singapore
   decides the rest. Confirms `docs/open-source.md` and says what would
   reopen the question.
-- `docs/worklog.md` — the dated task register (tasks 1-85 with their
+- `docs/worklog.md` — the dated task register (tasks 1-86 with their
   measurements); what is still open is summarised under "Open work" below.
 
 **Path-scoped rules.** Dated case history that only matters when touching
@@ -138,10 +138,14 @@ An invariant keeps its RULE here and its case history in the rule file.
   (the HTML alternative, since 23 Sep 2026 — `.claude/rules/mail-ingest.md`
   has the four senders whose `text/plain` part is not the mail)
 - `pipeline/dedup.py` — the only place two jobs are merged (`merge_jobs`)
-- `pipeline/trace.py` — pure timeline/axis geometry for list + detail pages,
-  and `rounds()` (8 Oct 2026): the interview ROUNDS of a thread, grouped
+- `pipeline/trace.py` — pure geometry: the detail page's calendar trace
+  (`build`), and since 9 Oct 2026 the lists' STORY (`stations`, `story`,
+  `build_stories`): each thread as named stations in order, the days
+  between on the line, words from `web._station_words`; `own()` is the one
+  "you did this" rule (an employer's status mail filed as a note is
+  theirs). And `rounds()` (8 Oct 2026): the interview ROUNDS of a thread, grouped
   from its invitation events by the day each named — one interview is
-  several events — read by the detail page, the list's tag and `/analytics`.
+  several events — read by the detail page, the story's numbered stations and `/analytics`.
   `wait()` and `tone()` (9 Oct 2026) are the ONE reading of a thread's wait
   and colour, shared by the rows, `/analytics`' squares and the list's
   status bar, whose segments `bands()` paints with their own rows
@@ -592,8 +596,9 @@ waiting, rust closed, green offer) — and since 23 Sep 2026 amber is GRADED by
 `trace.heat()` through one `--heat` variable per row, never a second amber;
 every surface that colours a thread (the rows, the status bar, `/analytics`'
 squares) reads it through `trace.wait()` / `trace.tone()`, never its own rule;
-the dark palette is written TWICE and both copies change together; every
-trace on a page shares ONE axis; charts are single-series, never dual-axis;
+the dark palette is written TWICE and both copies change together; a
+calendar trace shares ONE axis per page (the detail page; the lists tell
+each thread as its story, rule 21); charts are single-series, never dual-axis;
 never print a rate below `analytics.MIN_RATE_N`; words on a page come from
 `web.EVENT_LABELS` / `SOURCE_LABELS`, never an event type or a `source` value;
 Newsreader carries words and IBM Plex Sans Condensed carries numbers, labels
@@ -914,15 +919,19 @@ Detail lives with each family's rule file; this is the index.
   the lists' head — a row of figures since 9 Oct (`.figures`), each a
   link into its `?interviews=` filter, with its note. And the rounds' (task 76): the "round 2 of 4" line
   labels with their "not a round" buttons, the detail badge, the list's
-  "N rounds" tag, and "How far you got" on `/analytics`. The status bar
+  "N rounds" tag (gone since task 86: the story draws the rounds), and "How far you got" on `/analytics`. The status bar
   painted with its own rows and its two-group legend (task 79) were seen
   in both themes at desktop width, never at phone width. The speaker-named
   visa tags and the "you: answer unread" bucket (task 83) were rendered
   through TestClient against real data only, not looked at.
+  The lists' story (9 Oct, task 86) was seen on TestClient-rendered copies
+  of the real pages, dark and light at desktop and at 400px; never in the
+  running app with its hover titles, never on a phone, and its "+N" fold
+  on 6 real rows only (3 per list).
 
 ## Open work (as of 9 Oct 2026)
 
-The dated register behind each item, tasks 1-85 with their measurements, is
+The dated register behind each item, tasks 1-86 with their measurements, is
 `docs/worklog.md`; read the matching entry before acting on one.
 
 - **Interview rounds, their kinds, and what came of them** (tasks 75-78,
