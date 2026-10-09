@@ -2943,3 +2943,24 @@ the key to each real case.
      keep answered as it was, since only a comparison is misled by it.
    - Two checks in `tests/test_insights.py` (n counts the screens, k does
      not; a screen has an answer and no answer from a person).
+
+97. **The JD's seniority on a closed scale** (10 Oct 2026). `jd_extract_v2`
+   asks for seniority "as the JD states it", so `extractions.seniority` is
+   the JD's own words: the wider audit counted 19 spellings over 128 stated
+   values on settled applications ("Senior", "Lead or Senior", "Sr.",
+   "Mid-Senior", "AVP"), which no comparison can group.
+   - **Folded on read** (`jd_extraction.SENIORITY_TIERS` /
+     `seniority_tier`): manager or above, lead/staff/principal, senior,
+     mid-level, junior or entry, the HIGHEST level the words name ("Senior/
+     Lead" is lead). Over the 388 newest extractions: 146 senior, 35 lead,
+     15 manager or above, 3 mid-level, 3 junior; one ambiguous "SA" maps to
+     nothing. The stored words, which the detail page shows, are untouched.
+   - **Not a prompt change**, on purpose: a closed vocabulary in the prompt
+     would need the JD eval re-run (`docs/jd-extraction-models.md`) and a
+     paid re-extraction of every JD for one field. The scale reads v2's
+     text now and would read a future prompt's words the same way.
+   - **On `/analytics`:** a comparison, "The level the job description
+     asks for" (`insights.DIMENSIONS`, read through `analytics.facts`'
+     `jd_seniority`); the registry loop covers it.
+   - 25 mapping checks in `tests/test_insights.py`, the stored spellings
+     among them.

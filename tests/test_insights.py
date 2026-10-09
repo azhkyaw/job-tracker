@@ -720,6 +720,18 @@ check("the curve's marks are the median and the window",
 
 # ------------------------------------------------------------- comparisons
 
+print("comparisons: a JD's seniority words on a closed scale (jd_extraction.seniority_tier)")
+# The spellings stored by 10 Oct 2026, each to the highest level it names.
+for _words, _tier in [("Senior", "senior"), ("Sr.", "senior"), ("Mid-Senior", "senior"),
+                      ("mid-to-senior", "senior"), ("Lead or Senior", "lead"), ("Senior/Lead", "lead"),
+                      ("Principal / Senior", "lead"), ("Senior/Staff", "lead"), ("Staff / Lead", "lead"),
+                      ("Tech Lead", "lead"), ("Founding", "lead"), ("Manager", "manager"),
+                      ("AVP", "manager"), ("Vice President", "manager"), ("Mid-level", "mid"),
+                      ("Junior", "junior"), ("Assoc/Snr Assoc", "senior"), ("Engineer II", "mid"),
+                      ("Engineer III", None), (None, None), ("", None), ("Experienced", None)]:
+    check(f"seniority {_words!r} is {_tier}", jd_extraction.seniority_tier(_words) == _tier,
+          jd_extraction.seniority_tier(_words))
+
 print("comparisons: every dimension in the registry produces rows")
 rich, rich_ev = [], []
 labels = ["1 day ago", "3 days ago", "2 weeks ago", "3 weeks ago", "2 months ago"]
@@ -733,7 +745,8 @@ for i in range(60):
             work_mode=["hybrid", "onsite", "remote"][i % 3],
             ats=["workday", "greenhouse"][i % 2], platform="linkedin",
             tech=["Python", "LangChain" if i % 3 else "langchain"], extracted=True,
-            n_answers=[2, 7, 12][i % 3])
+            n_answers=[2, 7, 12][i % 3],
+            jd_seniority=["Senior", "Lead or Senior", "Sr.", None][i % 4])
     rich.append(a)
     t0 = ago(20 + i % 10, hours=i % 24)
     rich_ev.append(ev(a, "applied", t0, source="extension", external=bool(i % 2)))

@@ -711,6 +711,12 @@ DIMENSIONS = [
     {"key": "work_mode", "title": "Where the work is",
      "rows": _single(lambda f, tz: MODE_WORDS.get(f.get("work_mode")),
                      order=list(MODE_WORDS.values()))},
+    {"key": "seniority", "title": "The level the job description asks for",
+     "note": "The highest level its words name, where it names one "
+             "(jd_extraction.SENIORITY_TIERS).",
+     "rows": _single(lambda f, tz: (lambda k: jd_extraction.SENIORITY_TIERS[k][0] if k else None)(
+                         jd_extraction.seniority_tier(f.get("jd_seniority"))),
+                     order=[label for label, _ in jd_extraction.SENIORITY_TIERS.values()][::-1])},
     {"key": "title_words", "title": "Words in the job title", "rows": _title_words},
     {"key": "technology", "title": "Technology the job description names", "rows": _technology},
     {"key": "ats", "title": "The employer's hiring system",

@@ -4,6 +4,7 @@ prompt version recorded on every row."""
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from . import config, llm
@@ -54,6 +55,30 @@ VISA_GROUPS = {
     "nothing":   ("JD says nothing", "The JD says nothing"),
 }
 _RESTRICTS = ("citizens_pr_only", "no_sponsorship", "in_country", "locals_preferred", "local_only")
+
+
+# The level a JD's `seniority` names, on a closed scale (10 Oct 2026).
+# `jd_extract_v2` asks for seniority "as the JD states it", so the field is
+# the JD's own words: 19 spellings over 128 stated values that day ("Senior",
+# "Lead or Senior", "Sr.", "Mid-Senior", "AVP"), which no comparison can
+# group. Folded ON READ, the highest level the text names, so /analytics
+# compares on it while the stored words, which the detail page shows, stay as
+# the JD wrote them. Not a prompt change: that would need the JD eval re-run
+# (docs/jd-extraction-models.md) and a paid re-extraction of every JD for one
+# field. Highest first, so "Senior/Lead" is lead and "Mid-Senior" senior.
+SENIORITY_TIERS = {
+    "manager": ("manager or above", r"\b(manager|director|head|vp|avp|vice president|chief|executive)\b"),
+    "lead":    ("lead, staff or principal", r"\b(lead|staff|principal|architect|founding|distinguished)\b"),
+    "senior":  ("senior", r"\b(senior|sr|snr)\b"),
+    "mid":     ("mid-level", r"\b(mid|middle|intermediate|ii)\b"),
+    "junior":  ("junior or entry", r"\b(junior|jr|entry|graduate|associate|intern)\b"),
+}
+
+
+def seniority_tier(text: str | None) -> str | None:
+    """The SENIORITY_TIERS key the JD's seniority words name, or None."""
+    t = (text or "").lower()
+    return next((k for k, (_, rx) in SENIORITY_TIERS.items() if re.search(rx, t)), None)
 
 
 def visa_group_sql(col: str) -> str:

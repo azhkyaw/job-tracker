@@ -255,7 +255,9 @@ An invariant keeps its RULE here and its case history in the rule file.
   remain. v2 records only what the JD states, and `quoted_in` holds each
   signal to a verbatim quote of the JD ("no quote, no signal": one repair
   turn, then `unclear`). `VISA_GROUPS` / `visa_group_sql` fold the signals
-  into restricts / sponsors / nothing for the list filter and `/analytics`
+  into restricts / sponsors / nothing for the list filter and `/analytics`;
+  `SENIORITY_TIERS` / `seniority_tier` fold the free-text seniority onto a
+  closed scale on read (task 97), for `/analytics`' comparison
 - `pipeline/answers.py` — screening-answer normalisation and the ONLY write to
   `application_answers` (invariant #11); `prune_stored()` removes stored rows
   a newer `_control_kind` rule calls chrome, or `mislabelled_contacts`

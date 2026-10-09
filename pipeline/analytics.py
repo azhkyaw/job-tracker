@@ -1110,7 +1110,7 @@ def lead_count(conn, user_id) -> int:
 # facts() below and the list query (web._list), so the row's visa tag and the
 # /analytics comparison read the same extraction. Joins as `x` over `a`.
 LATEST_EXTRACTION = """LEFT JOIN LATERAL (
-            SELECT x.posting_id, x.visa_signal, x.visa_notes, x.work_mode,
+            SELECT x.posting_id, x.visa_signal, x.visa_notes, x.work_mode, x.seniority,
                    x.languages || x.technologies AS tech
             FROM extractions x JOIN postings p3 ON p3.id = x.posting_id
             WHERE p3.job_id = a.job_id
@@ -1152,7 +1152,8 @@ def facts(conn, user_id) -> tuple[list[dict], list[dict]]:
                         AND COALESCE(pj.jd_text, '') <> '')                  AS has_jd,
                EXISTS (SELECT 1 FROM postings pj WHERE pj.job_id = a.job_id
                         AND (pj.salary_min IS NOT NULL OR pj.salary_raw IS NOT NULL)) AS has_salary,
-               x.visa_signal, x.work_mode, COALESCE(x.tech, '{}')           AS tech,
+               x.visa_signal, x.work_mode, x.seniority AS jd_seniority,
+               COALESCE(x.tech, '{}')                                       AS tech,
                CASE WHEN s.status = 'rejected' THEN @SCREEN@ END            AS screen,
                @FORM_VISA@                                                  AS form_visa,
                @VISA_GROUP@                                                 AS visa_group,
