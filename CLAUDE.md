@@ -916,7 +916,8 @@ Detail lives with each family's rule file; this is the index.
   (0.29.8: its submit is a link, missed silently on 7 Oct).
 - **Mail** (`.claude/rules/mail-ingest.md`): IMAP verified on a real inbox
   28 Jul 2026; the web IMAP connect form, Gmail web OAuth and the full `-m 12`
-  window are not.
+  window are not. The identity-number redaction at ingest (task 94) has run
+  over stored mail and in the suite, never on a message arriving by sync.
 - **LLM** (`.claude/rules/llm.md`): `pipeline/llm.py`'s OpenAI-compatible
   backend has never met a real vLLM; the Voyage embeddings call has never run.
   `email_classify_v2` (8 Oct, task 71) was replayed on every recruiter
@@ -960,7 +961,9 @@ Detail lives with each family's rule file; this is the index.
   The lists' story (9 Oct, task 86) was seen on TestClient-rendered copies
   of the real pages, dark and light at desktop and at 400px; never in the
   running app with its hover titles, never on a phone, and its "+N" fold
-  on 6 real rows only (3 per list).
+  on 6 real rows only (3 per list). The "Mail last synced" band (task 98)
+  and `/analytics`' "What a person answers" with its seniority comparison
+  (tasks 96-97) were rendered through TestClient only, not looked at.
 
 ## Open work (as of 10 Oct 2026)
 
@@ -1015,8 +1018,9 @@ The dated register behind each item, tasks 1-93 with their measurements, is
   self-identification question (no undo). Code, not built: a cookie banner's
   checkboxes stored as answers on an Eightfold form. Sync and the worker had stopped at 07:28
   UTC that day, and again on 8 Oct (newest mail 02:45 UTC, the queue idle
-  from 04:00): check the cron. (Running on 10 Oct: the last sync 17:39 UTC
-  on 9 Oct, the queue empty.)
+  from 04:00). Since 10 Oct the author runs sync by hand, by choice: leave
+  the scheduling alone unless asked. The header band says once no sync has
+  finished for a day (task 98).
 - **The 10 Oct audit's leftovers** (tasks 87-93; every class it found is
   fixed in code and repaired in the data). The author's: re-capture the JD
   from the popup on three job pages, all still live (two verified LinkedIn
@@ -1092,9 +1096,9 @@ The dated register behind each item, tasks 1-93 with their measurements, is
   activity since 9 Sep. Its replay corpus changed under it on 23 Sep: 68
   stub bodies were rewritten after they were classified, so a candidate that
   disagrees on one may be right (`.claude/rules/llm.md`). (tasks 8, 10)
-- **Email body retention** for job-related mail is undecided; 225
-  `not_job_related` bodies (2.5 MB) could be cleared by one UPDATE, the author's
-  call. (task 7)
+- **Email body retention** for job-related mail is undecided; 220
+  `not_job_related` bodies (2.46 MB, all from before 7 Aug; measured 10 Oct)
+  could be cleared by one UPDATE, the author's call. (task 7)
 - **Catch-up sweep** `backfill -d 21` under `INGEST_ALL`, deferred 7 Aug 2026
   (~200-400 classify calls, ~$2-3). (task 1)
 - **Dedup and extraction verification have never run on real data** (0
