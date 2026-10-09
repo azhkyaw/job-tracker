@@ -2839,3 +2839,39 @@ the key to each real case.
    - Not recoverable: the form's answers (its store went with the tab).
      The JD is the author's re-capture from the popup on the job page,
      which is still live.
+
+93. **The 10 Oct audit's record repairs** (10 Oct 2026, the data behind
+   tasks 87-92; snapshot `job-tracker-snapshots/2026-10-10-audit-repairs.json`,
+   script and outputs in `job-tracker-snapshots/audit-2026-10-10/`).
+   - **Through the edit route** (TestClient, a minted session deleted
+     after; each form read back from GET and one field changed; the
+     applied instant restored from the snapshot): the two titles the false
+     stale-pane catch doubled (task 87); the slug-URL record, resubmitted
+     as rendered so the route read its id (task 88); and nine Workday
+     records renamed to `workdayEntity`'s output (task 91). After: no
+     `company_norm` begins with a number, no title carries "with
+     verification", no extension posting lacks a job id; the 29 events of
+     the 12 records are unchanged to the microsecond and nothing was
+     queued (no JD changed).
+   - **Answer rows removed** (26 by id, 8 by `cli prune-answers --apply`):
+     the 17 open-list rows of task 89; a career site's footer read as a
+     question, answered "x"; five older type-ahead fragments ("l",
+     "linked", a degree's "ba" and "dip"); the "— Type to Search —" rows
+     of task 90; and, found on the way, the author's phone number stored
+     as the answer to "How did you hear about us?" on three Workday forms
+     (28 Sep - 2 Oct). Each removed group was removed whole, so no
+     occurrence moved. The phone rows' mechanism is not established: the
+     forms sit behind a sign-in, and the question is a multi-select
+     prompt, so a sweep naming the phone field by the block before it is
+     one guess among several.
+   - **Re-measured:** the audit's counts for every class above read 0.
+   - **Left for the author:** the JDs of the two verified-job records and
+     of the JazzHR apply (re-capture from the popup on each job page, all
+     three still live); and two inbound records of one 12-month contract
+     role (6-7 Oct), from two different recruiters, one replied to, kept
+     as two threads.
+   - **Seen working on the way** (the provenance buffer): the kept opener
+     LINKED for the first time, on two Workday applies of 9 Oct
+     (`opener-kept+handoff`), and the 9 Oct Oracle Recruiting Cloud apply
+     bound through the handoff with its answers and its id, its
+     confirmation matched by that id at 1.0.

@@ -1325,8 +1325,11 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
     opener (still there 34 s after the click); for the second it was gone,
     the kept opener's `dest` was the career site, not the ATS, and the
     submit filed beside the popover's record (`candidates: 2, linked:
-    null`). /triage's "Filed twice?" band now offers that merge. A kept
-    opener has not yet been seen LINKING.
+    null`). /triage's "Filed twice?" band now offers that merge.
+    **First seen LINKING 9 Oct 2026** (read from the provenance buffer on
+    10 Oct): two LinkedIn → Workday applies, each `opener-kept+handoff`
+    with one candidate, one record each with the board's identity and the
+    form's answers.
   - **Fix 2, the form's id:** that alone would not have linked this apply.
     The Phenom form's id was the whole-query fallback, which the handoff
     reads as "no id", and on an enabled site a binding with no id needs

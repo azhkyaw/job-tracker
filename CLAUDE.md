@@ -381,6 +381,13 @@ An invariant keeps its RULE here and its case history in the rule file.
   made-up ones (`R00123456`, `1234`, `431`) and add the session's real ids
   to that diff grep (8 Oct 2026: one code and two requisitions were caught
   there, in a comment, a test and a rule file).
+  **The fifth is the author's own ANSWERS**: a school, a phone number, a
+  past employer, read off a stored row to model a fixture (10 Oct 2026: the
+  author's school went into a test and two comments, and an investment
+  bank's entity name into another; both caught after a commit, amended
+  before any push). The audit's name set holds companies and people, not
+  what the author typed into forms. Make fixtures from placeholders, and
+  read the diff grep's output BEFORE `git commit`, never chained to it.
   Lessons for the next history rewrite (verify by the tip's tree hash, names
   that wrap across lines, the scrub tooling's own text, `filter-repo`
   dropping `origin`): `docs/open-source.md` §11.
@@ -869,8 +876,7 @@ Detail lives with each family's rule file; this is the index.
   the next Easy Apply (0.9.0's `<dialog>` sweep, `getJob()`'s
   self-document fallback and `doc_source`, 0.10.1's
   `normKey`, 0.23.1's radio rows, 0.25.1's stale-pane checks from a search
-  page, 0.29.4's read of a verified job's results card); the next external apply (0.26.0's kept opener, seen only
-  refusing a career site's hop to its ATS, 7 Oct); a Greenhouse job
+  page, 0.29.4's read of a verified job's results card); a Greenhouse job
   board with a picked country (0.23.0); LinkedIn → SmartRecruiters
   (0.24.1); an ATS form with drawn checkboxes or switches (0.24.0); a
   Phenom apply (0.25.2); an enabled Eightfold site (0.25.0); a
@@ -938,9 +944,9 @@ Detail lives with each family's rule file; this is the index.
   running app with its hover titles, never on a phone, and its "+N" fold
   on 6 real rows only (3 per list).
 
-## Open work (as of 9 Oct 2026)
+## Open work (as of 10 Oct 2026)
 
-The dated register behind each item, tasks 1-86 with their measurements, is
+The dated register behind each item, tasks 1-93 with their measurements, is
 `docs/worklog.md`; read the matching entry before acting on one.
 
 - **Interview rounds, their kinds, and what came of them** (tasks 75-78,
@@ -991,7 +997,18 @@ The dated register behind each item, tasks 1-86 with their measurements, is
   self-identification question (no undo). Code, not built: a cookie banner's
   checkboxes stored as answers on an Eightfold form. Sync and the worker had stopped at 07:28
   UTC that day, and again on 8 Oct (newest mail 02:45 UTC, the queue idle
-  from 04:00): check the cron.
+  from 04:00): check the cron. (Running on 10 Oct: the last sync 17:39 UTC
+  on 9 Oct, the queue empty.)
+- **The 10 Oct audit's leftovers** (tasks 87-93; every class it found is
+  fixed in code and repaired in the data). The author's: re-capture the JD
+  from the popup on three job pages, all still live (two verified LinkedIn
+  jobs applied to on 9 Oct, and the 7 Oct JazzHR apply); and two inbound
+  records of one 12-month contract role (6-7 Oct), from two different
+  recruiters, one replied to, kept as two threads. Not built: Workday's
+  "How did you hear about us?", a multi-select prompt, stored the
+  author's phone number on three forms (28 Sep - 2 Oct, removed) and
+  typed search text on others ("l", "linked"; removed), and never its
+  pick; reading it needs a signed-in Workday form.
 - **The legal-entity duplicates** (task 64, 7 Oct): the review strip's two
   rows on its first day were two applications filed twice on 2 Oct (a
   confirmation started a record beside the extension's Workday capture
@@ -1003,7 +1020,10 @@ The dated register behind each item, tasks 1-86 with their measurements, is
   (ABBR)" against records named ABBR, is handled since by
   `matcher.stated_abbreviation`; its reverse is not. And Workday mail that
   prints its record's id now matches it from the record's own tenant,
-  whatever the names (task 70, `matcher.workday_tenant`).
+  whatever the names (task 70, `matcher.workday_tenant`). Since 0.29.7 a
+  Workday capture drops the entity's company code (task 91), so a brand
+  that is the entity's first word now shares its key; an entity that
+  abbreviates its brand still does not.
 - **Recruiter approaches waiting in triage** (tasks 71-72, 8 Oct): every
   LinkedIn connection request since the search began was re-fetched and
   re-classified under `email_classify_v2`; 7 recruiters' requests (Aug to
