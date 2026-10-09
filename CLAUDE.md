@@ -321,7 +321,9 @@ An invariant keeps its RULE here and its case history in the rule file.
   a continuous worker pauses `OUTAGE_PAUSE_SECONDS` instead of retrying the
   queue into dead letters. `status` prints the same queue health the UI's
   header band reads (`db.queue_health`): emails waiting, since when, dead
-  jobs, the last failure's sentence.
+  jobs, the last failure's sentence, and when mail last synced. The band
+  also shows once no sync has finished for `config.SYNC_STALE_HOURS` (24):
+  a stopped sync leaves no queue work, so nothing else could see it.
 - Gmail: `uv run python -m pipeline.cli auth` (IMAP app password, the default —
   prompts for address + hidden password, verifies before storing) or
   `auth --oauth` (legacy single-user desktop OAuth flow), then

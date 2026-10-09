@@ -199,6 +199,9 @@ def cmd_status(_args) -> None:
               + f", {q['dead']} dead")
         if q["reason"]:
             print(f"  last failure: {q['reason']}")
+        print(f"  mail last synced: "
+              + (f"{q['last_synced']:%Y-%m-%d %H:%M %Z}" if q["last_synced"] else "never")
+              + (" (STALE)" if q["sync_stale"] else ""))
 
 
 def cmd_renorm_answers(args) -> None:

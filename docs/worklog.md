@@ -2964,3 +2964,22 @@ the key to each real case.
      `jd_seniority`); the registry loop covers it.
    - 25 mapping checks in `tests/test_insights.py`, the stored spellings
      among them.
+
+98. **The header band says when mail last synced, once that is a day ago**
+   (10 Oct 2026). The wider audit measured the pipeline's timeliness: mail
+   waited a median of 2 to 42 hours a day before it was processed, and it
+   sat idle for up to 51 hours at a stretch, with nothing on any page. The
+   band (`db.queue_health`, the 8 Sep billing-outage fix in `.claude/rules/llm.md`) acts on queue work that is
+   old or dead, and a stopped sync leaves no queue work at all. The author
+   runs sync by hand for now and asked that the scheduling be left alone;
+   this is only the signal.
+   - **The rule:** `queue_health` also returns `last_synced` (the newest
+     `gmail_sync_state.last_synced_at`, on the database clock like the stall
+     test) and `sync_stale`, older than `config.SYNC_STALE_HOURS` (24, in
+     config.py rather than `.env` so both machines agree). The band shows
+     for `stalled` OR `sync_stale`, and says "Mail last synced <when>"; the
+     queue's failure line shows only when the queue itself is stalled.
+     No mailbox connected (no row) says nothing.
+   - `cli status` prints the same time, marked STALE past the threshold.
+   - Two checks in `tests/test_web.py` (a sync 30 hours old raises the band
+     without the queue's words; 2 hours old says nothing).

@@ -109,7 +109,7 @@ def _queue_alert(context):
         with db.connect_scoped(user_id) as conn:
             request.state.queue = db.queue_health(conn)
     q = request.state.queue
-    return q if q["stalled"] else None
+    return q if q["stalled"] or q["sync_stale"] else None
 
 
 @pass_context

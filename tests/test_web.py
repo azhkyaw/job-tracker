@@ -2669,6 +2669,32 @@ with db.connect() as conn, conn.transaction():      # leave the queue as we foun
     conn.execute("DELETE FROM job_queue WHERE id IN (%s, %s)", (fresh, dead))
     conn.execute("DELETE FROM emails WHERE id = %s", (stalled_email,))
 check("band gone once the queue is clean", 'class="stall"' not in client.get("/").text)
+# A stopped sync leaves no queue work, so the stall test cannot see it: the
+# 10 Oct 2026 audit found the pipeline idle up to 51 hours with no page
+# saying so. A sync older than SYNC_STALE_HOURS raises the band on its own.
+from pipeline import config                                          # noqa: E402
+with db.connect() as conn, conn.transaction():
+    _sync_was = conn.execute("SELECT history_id, last_synced_at FROM gmail_sync_state "
+                             "WHERE user_id = %s", (uid,)).fetchone()
+    conn.execute(
+        "INSERT INTO gmail_sync_state (user_id, history_id, last_synced_at) "
+        "VALUES (%s, '1:1', now() - make_interval(hours => %s)) "
+        "ON CONFLICT (user_id) DO UPDATE SET last_synced_at = EXCLUDED.last_synced_at",
+        (uid, config.SYNC_STALE_HOURS + 6))
+r = client.get("/")
+check("a sync older than SYNC_STALE_HOURS raises the band, saying when",
+      'class="stall"' in r.text and "Mail last synced" in r.text
+      and "waiting" not in r.text.split('class="stall"')[1].split("</div>")[0], r.text[:300])
+with db.connect() as conn, conn.transaction():
+    conn.execute("UPDATE gmail_sync_state SET last_synced_at = now() - interval '2 hours' "
+                 "WHERE user_id = %s", (uid,))
+check("a sync two hours old says nothing", 'class="stall"' not in client.get("/").text)
+with db.connect() as conn, conn.transaction():      # as we found it
+    if _sync_was:
+        conn.execute("UPDATE gmail_sync_state SET history_id = %s, last_synced_at = %s WHERE user_id = %s",
+                     (_sync_was["history_id"], _sync_was["last_synced_at"], uid))
+    else:
+        conn.execute("DELETE FROM gmail_sync_state WHERE user_id = %s", (uid,))
 
 print("inbound: a recruiter's approach filed by hand moves the record (24 Sep 2026)")
 # The shape of the real case: the tracker heard of the thread only when the user

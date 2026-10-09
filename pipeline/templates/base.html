@@ -849,8 +849,9 @@ pre.text{white-space:pre-wrap;font:inherit;margin:.5rem 0 0;max-width:70ch}
 {% set stall = queue_alert() %}
 {% if stall %}
 <div class="stall" role="status"><div class="wrap">
-  <strong>{% if stall.waiting %}{{ stall.waiting }} email{{ '' if stall.waiting == 1 else 's' }} waiting{% if stall.waiting_since %} since {{ stall.waiting_since|dtt }}{% endif %}{% endif %}{% if stall.waiting and stall.dead %}, {% endif %}{% if stall.dead %}{{ stall.dead }} job{{ '' if stall.dead == 1 else 's' }} gave up{% endif %}</strong>
-  {% if stall.reason %}<code>{{ stall.reason }}</code>{% endif %}
+  {% if stall.sync_stale %}<strong>Mail last synced {{ stall.last_synced|dtt }}</strong>{% endif %}
+  {% if stall.stalled %}<strong>{% if stall.waiting %}{{ stall.waiting }} email{{ '' if stall.waiting == 1 else 's' }} waiting{% if stall.waiting_since %} since {{ stall.waiting_since|dtt }}{% endif %}{% endif %}{% if stall.waiting and stall.dead %}, {% endif %}{% if stall.dead %}{{ stall.dead }} job{{ '' if stall.dead == 1 else 's' }} gave up{% endif %}</strong>
+  {% if stall.reason %}<code>{{ stall.reason }}</code>{% endif %}{% endif %}
   <a href="/settings#pipeline">Pipeline</a>
 </div></div>
 {% endif %}

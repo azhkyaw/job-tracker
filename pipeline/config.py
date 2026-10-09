@@ -151,6 +151,12 @@ OUTAGE_PAUSE_SECONDS = 300
 # the worker, whatever the reason. Short enough to catch a stall the same
 # session, long enough that a job in ordinary retry backoff never trips it.
 QUEUE_STALL_SECONDS = 1800
+# ...and when no sync has finished for this long. A stopped sync leaves no
+# queue work behind, so the stall test above could never see one: the 10 Oct
+# 2026 audit found the pipeline idle for up to 51 hours at a stretch with
+# nothing on any page. Generous on purpose, since sync is run by hand at
+# times: a day without one is worth a line, an evening is not.
+SYNC_STALE_HOURS = 24
 
 BACKFILL_MONTHS_DEFAULT = 12
 

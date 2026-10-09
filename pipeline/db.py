@@ -8,7 +8,7 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Json
 
-from .config import DATABASE_URL, QUEUE_STALL_SECONDS
+from .config import DATABASE_URL, QUEUE_STALL_SECONDS, SYNC_STALE_HOURS
 
 
 def connect() -> psycopg.Connection:
@@ -69,7 +69,11 @@ SELECT (SELECT count(*) FROM emails WHERE processed_at IS NULL)     AS waiting,
        (SELECT count(*) FROM job_queue WHERE state = 'dead')         AS dead,
        (SELECT last_error FROM job_queue
          WHERE state <> 'done' AND last_error IS NOT NULL
-         ORDER BY run_after DESC, id DESC LIMIT 1)                    AS last_error
+         ORDER BY run_after DESC, id DESC LIMIT 1)                    AS last_error,
+       -- The newest finished sync, on the same database clock. A stopped
+       -- sync leaves no queue work, so nothing above can see it.
+       (SELECT max(last_synced_at) FROM gmail_sync_state)            AS last_synced,
+       EXTRACT(EPOCH FROM now() - (SELECT max(last_synced_at) FROM gmail_sync_state)) AS synced_seconds
 FROM oldest
 """
 
@@ -94,15 +98,21 @@ def queue_health(conn: psycopg.Connection) -> dict:
     """`waiting` is emails not yet fully processed (processed_at is set only
     once classify + extract + match have all run), `waiting_since` when the
     oldest of their jobs was queued, `dead` the dead-letter count and
-    `reason` the newest recorded failure. `stalled` is the one bit the header
-    acts on: work older than QUEUE_STALL_SECONDS, or anything dead. A job in
+    `reason` the newest recorded failure. `sync_stale` is the other bit the
+    header acts on: no sync finished for SYNC_STALE_HOURS (`last_synced`), the
+    stop that leaves no queue work behind. `stalled`: work older than
+    QUEUE_STALL_SECONDS, or anything dead. A job in
     ordinary retry backoff is neither, so a single transient failure that
     heals itself never shows."""
     row = conn.execute(_QUEUE_HEALTH_SQL).fetchone()
     age = row["waiting_seconds"]
     stalled = row["dead"] > 0 or (age is not None and age > QUEUE_STALL_SECONDS)
+    synced = row["synced_seconds"]
     return {"waiting": row["waiting"], "waiting_since": row["waiting_since"],
-            "dead": row["dead"], "reason": _last_line(row["last_error"]), "stalled": stalled}
+            "dead": row["dead"], "reason": _last_line(row["last_error"]), "stalled": stalled,
+            # No mailbox connected (no row) says nothing: nothing to sync.
+            "last_synced": row["last_synced"],
+            "sync_stale": synced is not None and synced > SYNC_STALE_HOURS * 3600}
 
 
 def dead_jobs(conn: psycopg.Connection) -> list[dict]:
