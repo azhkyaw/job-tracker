@@ -22,11 +22,19 @@ async function setLocal(obj) {
   return new Promise((res) => chrome.storage.local.set(obj, res));
 }
 
+/* How much each ring buffer keeps. They were 10, 10 and 25, sized when a
+ * day held a few applies; on 7-9 Oct 2026 a day held 20 to 40, so the
+ * provenance of a whole afternoon was gone by the next morning and a
+ * data audit (10 Oct) could read only what LevelDB had not yet compacted
+ * away. An entry is a few hundred bytes, and chrome.storage.local holds
+ * megabytes: depth is the cheap part of a diagnosis. */
+const KEEP = { failures: 50, sweeps: 50, provenance: 100 };
+
 async function recordFailure(detail) {
   const { failures = [] } = await new Promise((res) =>
     chrome.storage.local.get({ failures: [] }, res));
   failures.unshift(detail);
-  await setLocal({ failures: failures.slice(0, 10) });
+  await setLocal({ failures: failures.slice(0, KEEP.failures) });
 }
 
 /* Form-sweep diagnostics, one entry per capture. Separate buffer from
@@ -37,14 +45,14 @@ async function recordSweep(detail) {
   const { sweeps = [] } = await new Promise((res) =>
     chrome.storage.local.get({ sweeps: [] }, res));
   sweeps.unshift(detail);
-  await setLocal({ sweeps: sweeps.slice(0, 10) });
+  await setLocal({ sweeps: sweeps.slice(0, KEEP.sweeps) });
 }
 
 /* Where a capture's title and company came from, one entry per capture.
  *
  * Third buffer, again separate: like `sweeps` these are not failures — the
  * capture saved — but unlike sweeps they answer "is the value RIGHT" rather
- * than "did we see the whole form". Kept deeper than the other two (25) for a
+ * than "did we see the whole form". Kept deeper than the other two (KEEP) for a
  * specific reason: the two bad titles this exists to catch were noticed over a
  * day after the fact, and the Lamna loss of 4 Aug 2026 was never
  * root-caused precisely because the ring buffers had rolled over before anyone
@@ -54,7 +62,7 @@ async function recordProvenance(detail) {
   const { provenance = [] } = await new Promise((res) =>
     chrome.storage.local.get({ provenance: [] }, res));
   provenance.unshift(detail);
-  await setLocal({ provenance: provenance.slice(0, 25) });
+  await setLocal({ provenance: provenance.slice(0, KEEP.provenance) });
 }
 
 /* A receipt whose page never got to show it.

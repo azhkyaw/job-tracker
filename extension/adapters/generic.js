@@ -305,12 +305,21 @@
 
   // A control that says it sends an application — whether or not it is inside
   // one. isSubmitControl() adds the "inside the application" half.
+  // A link that goes nowhere is a button drawn as a link: JazzHR's
+  // "Submit Application" is <a href="#" class="btn"> inside its form (read
+  // live 10 Oct 2026). Until 0.29.8 only a <button>, an input or
+  // role="button" could be a submit, so pressing it was neither a capture nor
+  // a near miss: a real application of 7 Oct 2026 went unrecorded, and every
+  // buffer was silent about it. A link WITH a destination (a listing's
+  // "Apply" that opens the form) still is not one.
+  const inertLink = (el) => el.tagName === "A" &&
+    /^(#?|javascript:.*)$/i.test((el.getAttribute("href") || "").trim());
   function submitWorded(el) {
     if (!el || !el.tagName) return false;
     const type = (el.getAttribute("type") || "").toLowerCase();
     const buttonish = el.tagName === "BUTTON" ||
       (el.tagName === "INPUT" && (type === "submit" || type === "button")) ||
-      el.getAttribute("role") === "button";
+      el.getAttribute("role") === "button" || inertLink(el);
     if (!buttonish) return false;
     const hooked = SUBMIT_HOOKS.some((s) => el.matches && el.matches(s));
     return hooked || SUBMIT_WORDS.test(label(el));

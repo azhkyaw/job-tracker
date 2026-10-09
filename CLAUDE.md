@@ -864,7 +864,7 @@ Detail lives with each family's rule file; this is the index.
   says per build what to read on first real contact): every adapter
   selector is best-effort; JobStreet's race fix wants one clean submit;
   Indeed never exercised; `getRecruiter()` has one card of evidence;
-  textareas never stored from Easy Apply. Builds 0.9.0-0.29.7 carry
+  textareas never stored from Easy Apply. Builds 0.9.0-0.29.8 carry
   pieces proven only in tests or by rules run in a live page, waiting on:
   the next Easy Apply (0.9.0's `<dialog>` sweep, `getJob()`'s
   self-document fallback and `doc_source`, 0.10.1's
@@ -888,7 +888,8 @@ Detail lives with each family's rule file; this is the index.
   the next Workday apply with a dropdown question (0.29.2: its answer the
   choice shown, not a 32-hex id; and 0.29.7: the employer without
   Workday's company code); the next form with a type-ahead (0.29.6: an
-  open suggestion list never names a question).
+  open suggestion list never names a question); the next JazzHR apply
+  (0.29.8: its submit is a link, missed silently on 7 Oct).
 - **Mail** (`.claude/rules/mail-ingest.md`): IMAP verified on a real inbox
   28 Jul 2026; the web IMAP connect form, Gmail web OAuth and the full `-m 12`
   window are not.

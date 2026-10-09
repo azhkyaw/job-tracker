@@ -2812,3 +2812,30 @@ the key to each real case.
      Ltd") keeps that name; no field on the page names the brand.
    - Ten checks (six red on the old reader). The stored records are
      renamed with the repairs (task 93).
+
+92. **A JazzHR apply was missed without a trace: its submit is a link**
+   (10 Oct 2026, extension 0.29.8). The audit found one record of 7 Oct
+   made by a JazzHR confirmation alone (no answers, no JD), though
+   `applytojob.com` is in the manifest. The failures buffer the popup reads
+   had rolled past it.
+   - **Shown to have logged nothing:** every surviving version of the
+     extension's buffers, read from the LevelDB's tables as well as its
+     log (`job-tracker-snapshots/tools/buffers_all_versions.py`, new), had
+     a failure at 14:59 UTC and the next at 16:50, consecutive in one
+     version, with the apply (its confirmation at 15:07) between them.
+     Chrome's History could not place the visit: it held only 9 Oct.
+   - **Read live** on the employer's public job page (read-only, nothing
+     typed or clicked): rule 1 roots on the form around the resume upload,
+     and the submit is `<a href="#" class="btn">Submit Application</a>`.
+     `submitWorded` took only a `<button>`, an input or `role="button"`,
+     and the near-miss logger starts from the same test, so the press was
+     neither a capture nor a near miss.
+   - **The rule** (`generic.js`): a link that goes nowhere (no `href`, `#`
+     or `javascript:`) is a button drawn as a link; one with a destination
+     is not. Two checks red on the old adapter.
+   - **The buffers are deeper** (`background.js:KEEP`, failures 50 and
+     sweeps 50 from 10, provenance 100 from 25): a day of 20 to 40 applies
+     had outrun them by the next morning.
+   - Not recoverable: the form's answers (its store went with the tab).
+     The JD is the author's re-capture from the popup on the job page,
+     which is still live.

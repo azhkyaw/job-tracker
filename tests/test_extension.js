@@ -2397,6 +2397,29 @@ console.log("\ngeneric.js: the application form and its submit, per vendor (read
   check("Greenhouse: the resume widget's 'Attach' is not", a.isCompletion(attach), false);
 }
 {
+  // JazzHR (read live 10 Oct 2026, a job page on <tenant>.applytojob.com):
+  // the job and its form on one page, the form holding the resume upload,
+  // and the submit a LINK drawn as a button, <a href="#" class="btn">Submit
+  // Application</a>. Only a <button>, an input or role="button" could be a
+  // submit, so the press was neither a capture nor a near miss, and a real
+  // application of 7 Oct 2026 left nothing in any buffer.
+  const JAZZ = "https://contoso.applytojob.com/apply/AbC123xyZ9/AI-Engineer";
+  const submit = node("a", { href: "#", class: "btn", id: "resumator-submit-resume" }, ["Submit Application"]);
+  const leaves = node("a", { href: JAZZ }, ["Apply"]);
+  const stray = node("a", { href: "#", class: "btn" }, ["Submit Application"]);
+  const form = node("form", { id: "form_submit_new_resume" },
+    [file("resumator-resume-value"), text("resumator-firstname-value"), text("resumator-lastname-value"),
+     text("resumator-email-value"), text("resumator-phone-value"),
+     node("div", { class: "form-group" }, [submit])]);
+  const a = loadGeneric([node("h1", {}, ["AI Engineer"]), leaves, form, stray], JAZZ);
+  check("JazzHR: the root is the form", a.answerFormRoot() === form, true);
+  check("JazzHR: a link going nowhere, 'Submit Application', inside it is the submit",
+        a.isCompletion(submit), true);
+  check("JazzHR: a link that leaves for a page is not, even saying 'Apply'", a.isCompletion(leaves), false);
+  check("JazzHR: and one outside the form is a near miss, said in the popup",
+        a.nearMiss(stray), "the button is outside the application form");
+}
+{
   // Ashby: NO <form> element. The controls live in a container with a stable
   // class; the submit is a bare <button> with hashed classes and no type.
   const submit = button("Submit Application", { class: "_button_zyh3g_28 _primary_zyh3g_97" });

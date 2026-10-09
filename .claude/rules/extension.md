@@ -1636,7 +1636,38 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   service tenant serves many employers). A job board's handoff keeps the
   board's name, so only direct applies are touched.
 
+- **A submit drawn as a LINK was invisible, and so was its miss** (7 Oct
+  2026, found 10 Oct; extension 0.29.8, worklog task 92). The first JazzHR
+  apply reached the tracker only as its confirmation's record: no answers,
+  no JD. Every surviving version of the failures buffer (read from the
+  LevelDB's tables, `job-tracker-snapshots/tools/buffers_all_versions.py`)
+  held a failure at 14:59 UTC and the next at 16:50, with the apply
+  between them: not even a near miss.
+  - **Read live** on the employer's public job page (nothing typed or
+    clicked): the job and its form on one page; the form, holding the
+    resume upload, is the root by rule 1; its submit is `<a href="#"
+    class="btn">Submit Application</a>`. `submitWorded` took only a
+    `<button>`, an input or `role="button"`, and the near-miss logger
+    starts from the same test, so the press was nothing at all.
+  - **The rule:** a link that goes nowhere (no `href`, `#` or
+    `javascript:`) is a button drawn as a link. A link with a destination
+    (a listing's "Apply" that opens the form) still is not.
+  - **And the buffers are deeper** (`background.js:KEEP`: failures 50,
+    sweeps 50, provenance 100, from 10, 10 and 25). On 7-9 Oct a day held
+    20 to 40 applies, and the provenance of an afternoon was gone by the
+    next morning; this audit could read 7 Oct only from versions LevelDB
+    had not compacted yet.
+  - **The general lesson, the 24 Sep one again:** a near-miss logger that
+    starts from the same predicate as the capture cannot report what that
+    predicate does not see. The diagnostic must take a WIDER net than the
+    rule it explains.
+
 ## Known-untested surfaces (verify on first real contact)
+
+- **0.29.8's link submit has met the live JazzHR page only as markup read
+  from it, and tests** (10 Oct 2026). On the next JazzHR apply
+  (`<tenant>.applytojob.com`): one record, with the form's answers, the
+  JD and `ats` jazzhr, captured at the "Submit Application" press.
 
 - **0.29.7's Workday names have run only over stored names and tests**
   (10 Oct 2026). On the next direct Workday apply: the record's company
