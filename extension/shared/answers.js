@@ -144,7 +144,7 @@
     "|identification (?:no|number)|ic (?:no|number)" +
     "|date of birth|dob|birth ?date|birthday|year of birth|age" +
     "|race|ethnic\\w*|religio\\w*|marital|gender|sex|sexual|veteran" +
-    "|disabilit\\w*|disabled)(?= |$)");
+    "|disabilit\\w*|disabled|self identif\\w*)(?= |$)");
   const isSensitive = (norm) => SENSITIVE.test(norm);
   // What the store holds for an answer — the one place a value is decided, so
   // record() and onEdit's "did the sweep already see this?" test agree.

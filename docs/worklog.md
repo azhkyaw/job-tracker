@@ -2612,3 +2612,20 @@ the key to each real case.
    with the stored signature. The 77 stored ids stay unreadable (tenant ids
    behind a sign-in). `.claude/rules/extension.md` has the detail.
 
+85. **"Go to each employer's Workday and fix the labels"** (9 Oct 2026).
+   Not done, by measurement: all 77 ids answer employer questionnaire
+   questions (50 distinct employer-and-question pairs; each question's id
+   the same on every application to that employer), none a standard field
+   a public form shows. Reading them needs the author's sign-in on 11
+   employers' Workday and a NEW application started on each to reach the
+   question step: drafts on the employers' systems, which some answer with
+   reminder mail. Offered instead: the author states the visa answers, the
+   ones the analysis reads, and they are filed through the repair route.
+   - **Found on the way, extension 0.29.3:** one of the questions was an
+     equal-opportunity "self-identification question" naming no
+     attribute, which 0.29.2 would have stored readable. `self identif…`
+     joined the withheld rule in both implementations; 4 cases added to
+     `tests/sensitive_questions.json` (an ID-verification question stays
+     recorded). `cli redact-answers` dry run: 3 stored rows (their values
+     are option ids); `--apply`, which has no undo, is the author's click.
+

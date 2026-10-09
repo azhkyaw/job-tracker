@@ -130,7 +130,13 @@ _SENSITIVE_RE = re.compile(
     r"|identification (?:no|number)|ic (?:no|number)"
     r"|date of birth|dob|birth ?date|birthday|year of birth|age"
     r"|race|ethnic\w*|religio\w*|marital|gender|sex|sexual|veteran"
-    r"|disabilit\w*|disabled)(?= |$)")
+    r"|disabilit\w*|disabled"
+    # An equal-opportunity question that names no attribute, only its kind
+    # (9 Oct 2026: "The purpose of this self-identification question is to …
+    # Please select one of the following options", for roles in Singapore).
+    # Its answer was a Workday option id until extension 0.29.2 read the
+    # choice; from then on it would have been stored readable.
+    r"|self identif\w*)(?= |$)")
 
 
 def is_sensitive(question: str) -> bool:

@@ -21,7 +21,8 @@ it: the resume picker is PROMOTED to `applications.resume_file` (migration
 "Do you follow industry news to stay up to date?".
 **Some answers are withheld, not stored** (24 Sep 2026): an identity number,
 date of birth or age, race, religion, marital status, gender, veteran status
-or disability keeps its QUESTION and gets the answer `(withheld)` —
+or disability — or a "self-identification" question that names none of them
+(9 Oct 2026) — keeps its QUESTION and gets the answer `(withheld)` —
 `answers.is_sensitive()`, mirrored by `extension/shared/answers.js` so the
 value never leaves the browser, both held to `tests/sensitive_questions.json`.
 Nationality and work authorisation stay recorded: the visa analysis reads them.
@@ -850,7 +851,7 @@ Detail lives with each family's rule file; this is the index.
   says per build what to read on first real contact): every adapter
   selector is best-effort; JobStreet's race fix wants one clean submit;
   Indeed never exercised; `getRecruiter()` has one card of evidence;
-  textareas never stored from Easy Apply. Builds 0.9.0-0.29.2 carry
+  textareas never stored from Easy Apply. Builds 0.9.0-0.29.3 carry
   pieces proven only in tests or by rules run in a live page, waiting on:
   the next Easy Apply (0.9.0's `<dialog>` sweep, `getJob()`'s
   self-document fallback and `doc_source`, 0.10.1's

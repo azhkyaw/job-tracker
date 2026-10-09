@@ -1547,7 +1547,20 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
     verbatim in the live page read all three dropdowns and left every other
     input as it was.
   - **Not repairable:** the ids are the tenant's, and its forms sit behind a
-    sign-in; the visa ones wear "you: answer unread" (task 83).
+    sign-in; the visa ones wear "you: answer unread" (task 83). All 77 are
+    employer questionnaire answers (50 distinct question-and-employer pairs,
+    one id each), none a standard field a public form would show; reading
+    them would take a sign-in AND a new application started on each of 11
+    employers' Workday to reach the question step (task 85).
+  - **Reading the choice opened a privacy hole, closed in 0.29.3:** one of
+    the 77 was "The purpose of this self-identification question is to …
+    Please select one of the following options", an equal-opportunity
+    question naming no attribute. As an id it leaked nothing; read as the
+    choice it would have been stored. `self identif…` joined the withheld
+    rule on both sides (`answers.js:SENSITIVE`, `answers.py:_SENSITIVE_RE`,
+    held together by `tests/sensitive_questions.json`). Reading a widget
+    that was unreadable is also a change to what is STORED: check the
+    sensitive rule against the questions it now reads.
 
 ## Known-untested surfaces (verify on first real contact)
 
