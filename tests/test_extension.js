@@ -1559,6 +1559,33 @@ console.log("\njobposting.js read(): JSON-LD, microdata and the fallbacks");
     jd_text: "Build APIs & services.\n\n• Go\n• Postgres", location: "Singapore, Singapore",
     posted_label: "30 Apr 2026", salary_raw: null, work_type: "Full time", ats: "lever" });
   check("JSON-LD: title_source", j._prov.title_source, "jsonld");
+
+  // Workday names the employer by the tenant's legal entity (stored
+  // captures, 28 Sep - 9 Oct 2026): its company code in front, "Company"
+  // after the corporate form, and on a public-sector tenant the body's
+  // initials before its name. None of it is the employer's name.
+  const WD = "https://contoso.wd3.myworkdayjobs.com/en-US/External/job/Singapore/Senior-Engineer_R00123456";
+  const org = (name, loc) => J.read(pageDoc([ld({
+    "@context": "https://schema.org", "@type": "JobPosting", title: "Senior Engineer",
+    hiringOrganization: { "@type": "Organization", name }, description: "<p>the JD</p>",
+  })], "Senior Engineer"), makeLoc(loc || WD));
+  check("Workday's page is Workday's", org("Contoso").ats, "workday");
+  check("Workday: the company code goes", org("1234 Contoso Bank Ltd").company, "Contoso Bank Ltd");
+  check("Workday: and 'Company' after the corporate form",
+        org("1234 Contoso Pte Ltd Company").company, "Contoso Pte Ltd");
+  check("Workday: initials before the name they abbreviate go",
+        org("NWA Northwind Water Authority").company, "Northwind Water Authority");
+  check("…'of' skipped", org("NAS Northwind Authority of Singapore").company,
+        "Northwind Authority of Singapore");
+  check("…but initials that are not EXACTLY the rest's stay (a parent's)",
+        org("12 CM Client Mgmt (SG) Pte Ltd").company, "CM Client Mgmt (SG) Pte Ltd");
+  check("…as does an abbreviation that names something else",
+        org("1234 NWB SG Svc Pte Ltd Company").company, "NWB SG Svc Pte Ltd");
+  check("…and a 'Company' that is part of the name", org("Northwind Company").company, "Northwind Company");
+  check("…and a plain name", org("Contoso Singapore Pte. Ltd.").company, "Contoso Singapore Pte. Ltd.");
+  check("off Workday, a leading number is the name",
+        org("99 Contoso Pte Ltd", "https://jobs.lever.co/contoso/53e23908-0da6-47a5-a482-39be676e9ee6").company,
+        "99 Contoso Pte Ltd");
 }
 {
   // SuccessFactors Career Site Builder on an employer's own domain: MICRODATA

@@ -436,6 +436,37 @@
     return str(v);
   }
 
+  /* Workday's JobPosting names the employer by the tenant's LEGAL ENTITY, in
+   * the tenant's own spelling, and three habits of that spelling are not the
+   * employer's name (stored captures, 28 Sep - 9 Oct 2026):
+   *  - the company code Workday keeps for the entity, in front: "1234
+   *    Contoso Bank Ltd". Six employers' records read so on the lists, and
+   *    the code kept their keys apart from every other record and mail of
+   *    the same employer;
+   *  - "Company" after the corporate form: "1234 Contoso Pte Ltd Company";
+   *  - on a public-sector tenant, the body's initials before its name:
+   *    "NWA Northwind Water Authority", beside a LinkedIn record of the same
+   *    employer as "Northwind Water Authority".
+   * Only on a Workday page, since elsewhere a leading number can be the
+   * name ("99 Group"). The initials go only when they are EXACTLY the
+   * initials of every word after them (of, and, for, the skipped): a
+   * subsequence would turn "CM Client Mgmt (SG) Pte Ltd", where CM is the
+   * parent's initials, into "Client Mgmt". */
+  const ENTITY_FORM = String.raw`(?:Pte\.?\s*Ltd\.?|Private\s+Limited|Ltd\.?|Limited|Inc\.?|LLC|GmbH|Corp\.?|Corporation|Sdn\.?\s*Bhd\.?|PLC)`;
+  function workdayEntity(name) {
+    let s = (name || "").trim();
+    s = s.replace(/^\d+\s+(?=\S)/, "");
+    s = s.replace(new RegExp(String.raw`\b(${ENTITY_FORM})\s+Company$`, "i"), "$1");
+    const m = /^([A-Z]{2,6})\s+(.+)$/.exec(s);
+    if (m) {
+      const initials = m[2].split(/\s+/)
+        .filter((w) => /^\p{L}/u.test(w) && !/^(of|and|for|the|&)$/i.test(w))
+        .map((w) => w[0].toUpperCase()).join("");
+      if (initials === m[1]) s = m[2];
+    }
+    return s || name;
+  }
+
   function place(v) {
     const all = Array.isArray(v) ? v : [v];
     for (const p of all) {
@@ -573,6 +604,7 @@
     if (p) {
       job.title = str(first(p.title)) || str(first(p.name));
       job.company = orgName(p.hiringOrganization);
+      if (job.ats === "workday" && job.company) job.company = workdayEntity(job.company);
       job.jd_text = description(p);
       job.location = place(p.jobLocation) ||
         ([].concat(p.jobLocationType || []).includes("TELECOMMUTE") ? "Remote" : null);
@@ -1103,5 +1135,5 @@
     { read, idFrom, pageId, tenantOf, atsHandoff, atsCandidates, hasPosting, siteOwner, pickDeparture,
       handoffFits, learnsAlias, rebind, knowsId, keepOpener, openerOf, departsTo, quickApplies, quickApplySent, atsOfUrl, vendorOf, htmlToText, sameJob,
       pickListed, siteOf, APPLY_SEGMENTS, VENDORS,
-      matchPatternRegex, hostCovered, stripRequisition, suggestCompany };
+      matchPatternRegex, hostCovered, stripRequisition, suggestCompany, workdayEntity };
 })();

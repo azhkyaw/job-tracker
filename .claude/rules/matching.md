@@ -238,6 +238,17 @@ route deletes events and may delete an application.
   the two had been rejected by email five days before, and only the
   email-made record had said so: the extension record, the one with the
   answers, still read as waiting.
+  **Since extension 0.29.7 (10 Oct 2026) a Workday capture drops the code**
+  (and "Company" after the corporate form, and a public-sector tenant's
+  initials before its name: `jobposting.js:workdayEntity`), and the stored
+  records were renamed the same way (worklog tasks 91, 93). Not a matcher
+  change, and it closes only the half of this class where the brand is
+  the entity's first word ("1234 Contoso Pte Ltd" now keys as "contoso");
+  an entity that abbreviates the brand ("NWB SG Svc") still shares no word
+  with mail signed by it, and is matched by `workday_tenant` (below) or
+  not at all. Never by stripping a leading number in `norm_company`: a
+  name can begin with one ("99 Group"), and "group" alone would then pass
+  the gate's word-subset rescue for every "X Group".
   The other twins in the same NULL-score sweep were not the matcher's: three
   LinkedIn confirmations made records because the captures they confirmed
   carried ANOTHER job's identity (`.claude/rules/extension.md`, the 30 Sep

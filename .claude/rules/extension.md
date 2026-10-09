@@ -1620,7 +1620,27 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
     reuse one input node across a wizard's steps, and giving back a
     re-labelled node's old key would delete an earlier step's answer.
 
+- **Workday's JobPosting names a legal entity, not the employer** (found
+  10 Oct 2026 over 17 stored Workday postings; extension 0.29.7, worklog
+  task 91). Six employers' direct Workday applies were stored as "<company
+  code> <entity>" ("1234 Contoso Bank Ltd"), one as "<entity> Pte Ltd
+  Company", and a public-sector tenant's as "<initials> <name>" beside a
+  LinkedIn record of the same employer under the name alone. The lists
+  showed one employer under up to three names. `workdayEntity` drops all
+  three habits, on a Workday page only. The initials go only when they are
+  exactly the initials of every word after them: "CM Client Mgmt (SG)
+  Pte Ltd", whose CM is the parent's, would otherwise lose the one word
+  that says whose entity it is. What remains can still be an entity's
+  abbreviation of the brand ("NWB SG Svc Pte Ltd"); no page field names
+  the brand, and the tenant code in the host is no name either (a public
+  service tenant serves many employers). A job board's handoff keeps the
+  board's name, so only direct applies are touched.
+
 ## Known-untested surfaces (verify on first real contact)
+
+- **0.29.7's Workday names have run only over stored names and tests**
+  (10 Oct 2026). On the next direct Workday apply: the record's company
+  has no leading number and no trailing "Company".
 
 - **0.29.6's open-list rule is modelled, not measured** (10 Oct 2026). On
   the next form with a type-ahead (a school, a skill, a city): no row

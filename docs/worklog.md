@@ -2787,3 +2787,28 @@ the key to each real case.
    - `tests/test_captures.py`: the filter box's rows, a resume pick
      promoted, its group renumbered from 0, a second pick removed without
      replacing the recorded resume, and a second run finding nothing.
+
+91. **Workday's legal-entity names, read as the employer's** (10 Oct 2026,
+   extension 0.29.7). The audit found six `company_norm` values beginning
+   with a company code, all direct Workday applies (28 Sep - 8 Oct), one of
+   them also ending "Pte Ltd Company" (three records of one employer), and
+   a public-sector tenant's record named "<initials> <name>" beside a
+   LinkedIn record of the same employer under the name alone. On the lists
+   one employer read under up to three names. Matching was already handled
+   (`workday_tenant`, task 70), so this is the name.
+   - **Proposed first, and corrected before building:** a leading number
+     stripped in `norm_company`. A real name can begin with one ("99
+     Group"), and "group" alone would pass the company gate's word-subset
+     rescue for every "X Group". The habit is Workday's, so the rule is
+     its reader's.
+   - **The rule** (`jobposting.js:workdayEntity`, on a Workday page only):
+     drop one leading run of digits, "Company" after a corporate form, and
+     leading capitals that are EXACTLY the initials of every word after
+     them (of, and, for, the skipped). A subsequence would have turned an
+     investment firm's "CM Client Mgmt (SG) Pte Ltd" into "Client Mgmt".
+     Run over every stored Workday entity name: the code went from six,
+     "Company" from one, the initials from two, and nothing else changed.
+   - **Not solved:** an entity that abbreviates its brand ("NWB SG Svc Pte
+     Ltd") keeps that name; no field on the page names the brand.
+   - Ten checks (six red on the old reader). The stored records are
+     renamed with the repairs (task 93).
