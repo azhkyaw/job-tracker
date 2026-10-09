@@ -1,0 +1,16 @@
+{
+  "about": "One list, two implementations: extension/adapters/linkedin.js (jobFromUrl, and the id every other read takes off a URL, tests/test_extension.js) and pipeline/joburl.py:parse (tests/test_captures.py) must take the same LinkedIn job id from each address, or a manual entry pasted from a page never converges with a capture of it. A job page's address is /jobs/view/<id>/ or, reached from outside LinkedIn, /jobs/view/<slug>-<id>/: on 8 Oct 2026 a capture from the second form stored no job id at all, since both sides read only the first. The id is the trailing run of digits of the path's last segment there; a slug with no trailing number names no job. A split view names its job in currentJobId, which wins. Every id and slug is a placeholder.",
+  "cases": [
+    ["https://www.linkedin.com/jobs/view/4000000001/", "4000000001"],
+    ["https://www.linkedin.com/jobs/view/4000000001", "4000000001"],
+    ["https://www.linkedin.com/jobs/view/4000000001/?refId=abc&trackingId=xyz", "4000000001"],
+    ["https://www.linkedin.com/jobs/view/senior-backend-engineer-ai-infrastructure-contoso-tech-services-at-contoso-4000000002/", "4000000002"],
+    ["https://www.linkedin.com/jobs/view/python-3-developer-at-northwind-labs-4000000003/?trk=public_jobs", "4000000003"],
+    ["https://sg.linkedin.com/jobs/view/ai-engineer-at-fabrikam-4000000004", "4000000004"],
+    ["https://www.linkedin.com/jobs/search/?currentJobId=4000000005&keywords=AI%20Engineer", "4000000005"],
+    ["https://www.linkedin.com/jobs/collections/recommended/?currentJobId=4000000006", "4000000006"],
+    ["https://www.linkedin.com/jobs/view/senior-engineer-at-contoso/", null],
+    ["https://www.linkedin.com/jobs/search/?keywords=AI%20Engineer", null],
+    ["https://www.linkedin.com/preload/?_bprMode=vanilla", null]
+  ]
+}

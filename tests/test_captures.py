@@ -619,6 +619,14 @@ check("parse: a bare site names no job",
 check("parse: the three platforms are unchanged",
       joburl.parse("https://www.linkedin.com/jobs/view/123/")
       == ("linkedin", "123", "https://www.linkedin.com/jobs/view/123/"))
+# The LinkedIn job id, one list with the adapter (linkedin.js:viewId and
+# jobFromUrl, tests/test_extension.js): the slug form /jobs/view/<slug>-<id>/
+# stored a capture with no job id on 8 Oct 2026.
+for url, want in _json.loads((Path(__file__).resolve().parent / "linkedin_urls.json")
+                             .read_text(encoding="utf-8"))["cases"]:
+    plat, got, canon = joburl.parse(url)
+    check(f"parse linkedin {url}", (plat, got) == ("linkedin", want)
+          and canon == (f"https://www.linkedin.com/jobs/view/{want}/" if want else url), (plat, got, canon))
 
 SITE = {"platform": "other", "platform_job_id": "careers.contoso.com/9876543210",
         "url": "https://careers.contoso.com/job/Engineer/9876543210/",

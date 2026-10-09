@@ -268,6 +268,8 @@ An invariant keeps its RULE here and its case history in the rule file.
 - `pipeline/covers.py` — cover letters; `load_profile()` reads `users.resume_profile`
 - `pipeline/joburl.py` — paste-a-link job-id derivation for manual entry; mirrors
   the adapters' URL logic, and the adapters are the source of truth
+  (`tests/job_urls.json` holds the generic ids to `jobposting.js`,
+  `tests/linkedin_urls.json` LinkedIn's to `linkedin.js:viewId`)
 - `pipeline/templates/` — every page; ALL CSS is one `<style>` block in `base.html`
 - `extension/` — browser capture (LinkedIn/JobStreet/Indeed adapters + shared/);
   `shared/jobposting.js` reads ANY job page off its schema.org JobPosting and

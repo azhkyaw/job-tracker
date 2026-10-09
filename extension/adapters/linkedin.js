@@ -41,11 +41,24 @@ function paneJobIds(jdEl, anchor) {
   for (let i = 0; i < 6 && box && box.parentElement; i++) box = box.parentElement;
   if (box && box.querySelectorAll) {
     for (const a of box.querySelectorAll("a[href*='/jobs/view/']")) {
-      const m = /\/jobs\/view\/(\d+)/.exec(a.getAttribute("href") || "");
-      if (m) ids.add(m[1]);
+      const id = viewId(a.getAttribute("href"));
+      if (id) ids.add(id);
     }
   }
   return ids;
+}
+
+// The job id a /jobs/view/ address names: /jobs/view/<id>/, or, reached from
+// outside LinkedIn, /jobs/view/<slug>-<id>/, the id the trailing digits of the
+// slug. Every read here wanted digits straight after "view/", so a capture
+// from the second form (8 Oct 2026) stored no job id at all, and a record
+// with no id is one nothing can find, dedupe or link. The ONE reading for
+// every place that takes an id off an address; pipeline/joburl.py:parse
+// reads it the same way, and tests/linkedin_urls.json holds the two to one
+// list.
+function viewId(path) {
+  const m = /\/jobs\/view\/(?:[^/?#]*-)?(\d+)(?=[/?#]|$)/.exec(path || "");
+  return m ? m[1] : null;
 }
 
 window.__trackerAdapter = {
@@ -163,7 +176,7 @@ window.__trackerAdapter = {
     let loc = location;
     try { if (window.top && window.top.location) loc = window.top.location; } catch (e) {}
     return new URLSearchParams(loc.search).get("currentJobId") ||
-           (loc.pathname.match(/\/jobs\/view\/(\d+)/) || [])[1] || loc.href;
+           viewId(loc.pathname) || loc.href;
   },
   // Identity from a URL alone, for a capture where every DOM read has failed —
   // the background supplies the tab's real URL, which survives a frame that
@@ -175,7 +188,7 @@ window.__trackerAdapter = {
       const u = new URL(href);
       if (!/(^|\.)linkedin\.com$/i.test(u.hostname)) return null;
       const id = u.searchParams.get("currentJobId") ||
-                 (u.pathname.match(/\/jobs\/view\/(\d+)/) || [])[1] || null;
+                 viewId(u.pathname);
       if (!id) return null;
       return { platform_job_id: id, url: `https://www.linkedin.com/jobs/view/${id}/` };
     } catch (e) { return null; }
@@ -262,7 +275,7 @@ window.__trackerAdapter = {
     };
     const idFromUrl =
       new URLSearchParams(loc.search).get("currentJobId") ||
-      (loc.pathname.match(/\/jobs\/view\/(\d+)/) || [])[1] || null;
+      viewId(loc.pathname);
 
     // Try the classic, human-named classes first — still real on the
     // /jobs/collections/recommended/ layout (verified live 2026-07-23).

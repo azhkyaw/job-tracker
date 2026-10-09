@@ -2715,3 +2715,20 @@ the key to each real case.
      breadcrumbs, `stale`) and printed by the popup as a warn line, since a
      false alarm and a real catch store the same thing.
    - The two records are repaired with the data repairs below (task 93).
+
+88. **A LinkedIn job page's slug address gave no job id** (10 Oct 2026,
+   extension 0.29.5). The same audit found one Easy Apply record of 8 Oct
+   with `platform_job_id` NULL and a full title, company and JD: the tab
+   was at `/jobs/view/<slug>-<id>/`, the address LinkedIn uses for a job
+   reached from outside it, and all four places in `linkedin.js` that take
+   an id off an address (the page's own read, `jobFromUrl`, the answers
+   store's key and the pane's own links), and `joburl.parse` beside them,
+   wanted digits straight after `view/`. A record with no id cannot be
+   found by its confirmation's id, deduped or linked by a handoff.
+   - **One reading now:** `linkedin.js:viewId` (the trailing digits of the
+     path's last segment; a slug with no number names no job), used by all
+     four, and the same pattern in `joburl.parse`.
+   - **Held together by `tests/linkedin_urls.json`** (11 cases), read by
+     both `test_extension.js` and `test_captures.py`; the JS side's four
+     slug checks fail on the old adapter.
+   - The record is repaired with the others (task 93).

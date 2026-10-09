@@ -156,10 +156,13 @@ def parse(url: str | None) -> tuple[str | None, str | None, str | None]:
     qs = parse_qs(parsed.query)
 
     if _host_matches(host, _LINKEDIN_SUFFIXES):
-        # linkedin.js:74-76 — currentJobId query param, else /jobs/view/<id>.
+        # linkedin.js — currentJobId query param, else the job page's own
+        # path, /jobs/view/<id>/ or /jobs/view/<slug>-<id>/ (linkedin.js:viewId,
+        # held to tests/linkedin_urls.json): an address in the slug form gave
+        # a capture no job id on 8 Oct 2026.
         job_id = (qs.get("currentJobId") or [None])[0]
         if not job_id:
-            m = re.search(r"/jobs/view/(\d+)", parsed.path)
+            m = re.search(r"/jobs/view/(?:[^/?#]*-)?(\d+)(?=[/?#]|$)", parsed.path)
             job_id = m.group(1) if m else None
         canonical = f"https://www.linkedin.com/jobs/view/{job_id}/" if job_id else url
         return "linkedin", job_id, canonical

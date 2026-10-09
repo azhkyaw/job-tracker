@@ -1590,6 +1590,15 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
     visible text; the card's was the visible text plus the screen
     reader's, and the two differ exactly when the page adds a badge.
 
+- **A job page's address may carry a slug before its id** (8 Oct 2026,
+  found 10 Oct; extension 0.29.5, worklog task 88). Reached from outside
+  LinkedIn, a job page is `/jobs/view/<slug>-<id>/`, and every id read in
+  `linkedin.js` (and `joburl.parse`) wanted digits right after `view/`, so
+  one Easy Apply stored its full title, company and JD under no job id.
+  `viewId` is now the one reading, and `tests/linkedin_urls.json` holds it
+  to Python's. A new place that takes an id off a LinkedIn address calls
+  `viewId`; it does not write its own pattern.
+
 ## Known-untested surfaces (verify on first real contact)
 
 - **0.29.4's card read has met the live card's markup only as a fixture**

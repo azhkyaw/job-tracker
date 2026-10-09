@@ -440,6 +440,24 @@ console.log("\njobFromUrl(): last-resort identity off the tab URL");
         a.jobFromUrl("https://evil.example.com/jobs/view/123/"), null);
   check("garbage rejected", a.jobFromUrl("not a url"), null);
   check("empty rejected", a.jobFromUrl(""), null);
+  // One list with pipeline/joburl.py:parse (tests/test_captures.py): the
+  // slug form /jobs/view/<slug>-<id>/ stored a capture with no job id
+  // (8 Oct 2026), since every read here wanted digits right after "view/".
+  const { cases } = JSON.parse(fs.readFileSync(path.join(__dirname, "linkedin_urls.json"), "utf8"));
+  for (const [url, want] of cases) {
+    const got = a.jobFromUrl(url);
+    check(`jobFromUrl ${url}`, got ? got.platform_job_id : null, want);
+  }
+  // And the page's own read: a job page at the slug address keeps its id.
+  const slug = "https://www.linkedin.com/jobs/view/senior-backend-engineer-at-contoso-4000000002/";
+  const r = loadAdapter({
+    ownDoc: makeDoc({ sel: { ".job-details-jobs-unified-top-card__job-title": "Senior Backend Engineer",
+                             ".job-details-jobs-unified-top-card__company-name a": "Contoso",
+                             "#job-details": "About the job" } }),
+    ownLoc: makeLoc(slug) }).window.__trackerAdapter;
+  check("a job page at the slug address: its id, and the canonical url",
+        [r.getJob().platform_job_id, r.getJob().url, r.answerFormKey()],
+        ["4000000002", "https://www.linkedin.com/jobs/view/4000000002/", "4000000002"]);
 }
 
 console.log("\nisExternal(): decides whether a capture asks before it writes");
