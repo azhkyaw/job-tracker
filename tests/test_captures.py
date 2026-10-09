@@ -600,6 +600,23 @@ with db.connect() as conn:
         == _answers.REDACTED)
     check("a second run finds nothing to do", _answers.redact_stored(conn) == [])
 
+# A contact value under a question that does not ask for one (Workday's
+# contact step, 28 Sep - 2 Oct 2026): dropped when the capture also holds
+# it under a question that asks; kept everywhere it is asked for.
+_CONTACT = [{"question": "Email Address", "answer": "jane@example.com", "type": "text"},
+            {"question": "Phone Number", "answer": "+65 9123 4567", "type": "text"},
+            {"question": "How did you hear about us?", "answer": "+6591234567", "type": "text"},
+            {"question": "Phone Extension", "answer": "jane@example.com", "type": "text"},
+            {"question": "Emergency contact number", "answer": "91234567", "type": "text"},
+            {"question": "Referred by", "answer": "someone.else@example.com", "type": "text"}]
+check("mislabelled contacts: the phone under 'How did you hear', the email under 'Phone Extension'",
+      _answers.mislabelled_contacts(_CONTACT) == {2, 3}, _answers.mislabelled_contacts(_CONTACT))
+check("...and clean() stores the rest, a referrer's email (held nowhere else) included",
+      [c["question"] for c in _answers.clean(_CONTACT)]
+      == ["Email Address", "Phone Number", "Emergency contact number", "Referred by"])
+check("a lone value under an unasking question stays (nothing to say it is a copy)",
+      _answers.mislabelled_contacts([{"question": "How did you hear about us?", "answer": "+6591234567"}]) == set())
+
 # prune_stored(): rows a _control_kind() rule now calls form chrome, stored
 # before the rule existed (written past clean(), as the old code wrote them).
 # The real case: an iCIMS filter box's typed text, 8 rows on the first iCIMS
@@ -607,7 +624,9 @@ with db.connect() as conn:
 _PRUNE_ROWS = [("— Type to Search —", "type to search", "singa", "text", 20, 0),
                ("— Type to Search —", "type to search", "sin", "text", 21, 1),
                ("Resume", "resume", "Jane-Doe-CV.pdf", "radio", 30, 0),
-               ("Resume", "resume", "Attached above", "text", 31, 1)]
+               ("Resume", "resume", "Attached above", "text", 31, 1),
+               ("Mobile", "mobile", "+65 9123 4567", "text", 40, 0),
+               ("How did you hear about us?", "how did you hear about us", "91234567", "text", 41, 0)]
 with db.connect() as conn:
     for q_, norm_, a_, ft_, ord_, occ_ in _PRUNE_ROWS:
         conn.execute(
@@ -623,6 +642,7 @@ with db.connect() as conn:
     check("prune dry run: the filter box's rows and the resume pick, and no answer reported",
           sorted((p["kind"], p["question"], p["promote"]) for p in plan)
           == [("drop", "— Type to Search —", None), ("drop", "— Type to Search —", None),
+              ("mislabel", "How did you hear about us?", None),
               ("resume", "Resume", "Jane-Doe-CV.pdf")]
           and all(set(p) == {"id", "application_id", "question", "kind", "promote"} for p in plan), plan)
     check("...and writes nothing", conn.execute(
@@ -636,6 +656,11 @@ with db.connect() as conn:
         "ORDER BY 1, 2", (sens_app,)).fetchall()]
     check("applied: the chrome is gone, and the resume group left renumbered from 0",
           left == [("resume", 0, "Attached above")], left)
+    contact = [r["question_norm"] for r in conn.execute(
+        "SELECT question_norm FROM application_answers WHERE application_id = %s::uuid "
+        "AND question_norm IN ('mobile', 'how did you hear about us')", (sens_app,)).fetchall()]
+    check("applied: the phone's copy under 'How did you hear' is gone, its 'Mobile' row stays",
+          contact == ["mobile"], contact)
     check("applied: the pick became the application's resume",
           conn.execute("SELECT resume_file FROM applications WHERE id = %s::uuid",
                        (sens_app,)).fetchone()["resume_file"] == "Jane-Doe-CV.pdf")

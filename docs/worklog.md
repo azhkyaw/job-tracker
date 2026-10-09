@@ -2899,3 +2899,27 @@ the key to each real case.
      the database; Gmail still holds the mails).
    - 11 checks in `tests/test_email_ingest.py`, one through
      `store_message` itself.
+
+95. **A contact value under a question that does not ask for one**
+   (10 Oct 2026). Both audits that night found Workday's contact step
+   storing the candidate's own contact details under a neighbour's label:
+   the phone number as the answer to "How did you hear about us?" on three
+   forms (removed with task 93) and the email address as the "Phone
+   Extension" on one. Every one of those forms ALSO held the value under
+   its own question. The forms sit behind a sign-in, so why the step
+   mislabels is not established.
+   - **The rule** (`answers.mislabelled_contacts`): an answer that is an
+     email address or a phone number (compared by its last eight digits)
+     which another answer of the same capture holds under a question
+     ASKING for one (email, username, login; phone, mobile, contact, tel,
+     cell, WhatsApp) is a mislabelled copy wherever its own question does
+     not ask. `clean()` drops it at capture; `prune_stored()` reads each
+     application's rows together and removes stored copies (kind
+     `mislabel`). A value held nowhere else stays (a referrer's email
+     under "Referred by"), and one only under an unasking question stays.
+   - **On the dev DB:** over every stored answer it named exactly the one
+     remaining row, the "Phone Extension"; snapshot
+     `2026-10-10-mislabelled-contact-prune.json`, removed by
+     `cli prune-answers --apply`.
+   - Five checks in `tests/test_captures.py`: the rule, `clean()`, a lone
+     value kept, and the prune keeping the phone under "Mobile".

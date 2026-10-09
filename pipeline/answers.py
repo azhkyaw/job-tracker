@@ -252,6 +252,42 @@ def _drawn_text(s: str) -> str:
     return "".join(c for c in s if unicodedata.category(c) != "Co")
 
 
+# A contact value under a question that does not ask for one. Workday's
+# contact step stored the candidate's phone number as the answer to "How did
+# you hear about us?" on three forms and their email address as the "Phone
+# Extension" on another (28 Sep - 2 Oct 2026, found by two audits on 10 Oct):
+# a field named by a neighbour's label, its form behind a sign-in, so the
+# cause was not established. The value was never lost, since each form also
+# held it under its own question, and that is the rule: a contact value
+# another field of the same capture holds under a question ASKING for it is
+# a mislabelled copy wherever the question does not ask. A phone compares by
+# its last eight digits (+65 or not).
+_EMAIL_VALUE = re.compile(r"^[\w.+-]+@[\w-]+(\.[\w-]+)+$")
+_PHONE_VALUE = re.compile(r"^\+?[\d\s()./-]{8,}$")
+_ASKS_FOR = {"email": re.compile(r"(^| )(e ?mail|username|login)( |$)"),
+             "phone": re.compile(r"(^| )(phone|mobile|contact|tel|telephone|cell|whatsapp)( |$)")}
+
+
+def _contact(answer: str | None) -> tuple[str, str] | None:
+    a = (answer or "").strip()
+    if _EMAIL_VALUE.match(a):
+        return "email", a.lower()
+    digits = re.sub(r"\D", "", a)
+    if _PHONE_VALUE.match(a) and len(digits) >= 8:
+        return "phone", digits[-8:]
+    return None
+
+
+def mislabelled_contacts(items) -> set[int]:
+    """Indexes of `items` (dicts with question and answer) whose answer is a
+    contact value held by another item under a question asking for it,
+    while their own question does not ask for one."""
+    seen = [(_contact(it.get("answer")), norm_question(it.get("question") or "")) for it in items]
+    asked = {c for c, q in seen if c and _ASKS_FOR[c[0]].search(q)}
+    return {i for i, (c, q) in enumerate(seen)
+            if c and c in asked and not _ASKS_FOR[c[0]].search(q)}
+
+
 def clean(items) -> list[dict]:
     """Normalise a capture's raw answer list: trim, cap, drop the unusable, and
     number repeats. Returns items ready to insert, in form order.
@@ -263,7 +299,10 @@ def clean(items) -> list[dict]:
     """
     out: list[dict] = []
     seen: dict[str, int] = {}
+    mislabelled = mislabelled_contacts(items or [])
     for i, raw in enumerate(items or []):
+        if i in mislabelled:
+            continue
         question = _drawn_text(raw.get("question") or "").strip()
         answer = _drawn_text(raw.get("answer") or "").strip()
         norm = norm_question(question)
@@ -419,8 +458,16 @@ def prune_stored(conn, apply: bool = False) -> list[dict]:
         "x.field_type, x.occurrence, x.ordinal, a.resume_file "
         "FROM application_answers x JOIN applications a ON a.id = x.application_id").fetchall()
     plan = []
+    # mislabelled_contacts() reads a capture as a whole: one application's
+    # rows together.
+    by_app: dict = defaultdict(list)
     for r in rows:
-        kind = _control_kind(r["question"], r["answer"], r["field_type"])
+        by_app[r["application_id"]].append(r)
+    mislabelled = {members[i]["id"] for members in by_app.values()
+                   for i in mislabelled_contacts(members)}
+    for r in rows:
+        kind = _control_kind(r["question"], r["answer"], r["field_type"]) or \
+            ("mislabel" if r["id"] in mislabelled else None)
         if kind:
             plan.append({"id": r["id"], "application_id": r["application_id"],
                          "question": r["question"], "kind": kind,

@@ -255,7 +255,9 @@ An invariant keeps its RULE here and its case history in the rule file.
   into restricts / sponsors / nothing for the list filter and `/analytics`
 - `pipeline/answers.py` — screening-answer normalisation and the ONLY write to
   `application_answers` (invariant #11); `prune_stored()` removes stored rows
-  a newer `_control_kind` rule calls chrome; `renorm()` re-keys stored rows when
+  a newer `_control_kind` rule calls chrome, or `mislabelled_contacts`
+  calls a contact value's copy under a question not asking for it;
+  `renorm()` re-keys stored rows when
   `norm_question` changes, which `extension/shared/answers.js:normKey`
   mirrors (`tests/question_norms.json` holds the two together).
   `declares_sponsorship` is ONE rule in Python and SQL (its regexes run in
@@ -1017,7 +1019,10 @@ The dated register behind each item, tasks 1-93 with their measurements, is
   "How did you hear about us?", a multi-select prompt, stored the
   author's phone number on three forms (28 Sep - 2 Oct, removed) and
   typed search text on others ("l", "linked"; removed), and never its
-  pick; reading it needs a signed-in Workday form.
+  pick; reading it needs a signed-in Workday form. Since task 95 a
+  contact value under a question not asking for one is dropped at
+  capture when the form also holds it where asked, so the copies no
+  longer land; why the contact step mislabels is still not known.
 - **The legal-entity duplicates** (task 64, 7 Oct): the review strip's two
   rows on its first day were two applications filed twice on 2 Oct (a
   confirmation started a record beside the extension's Workday capture
