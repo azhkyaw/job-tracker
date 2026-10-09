@@ -47,7 +47,10 @@ _RESPONSE_TYPES = _sql_list(RESPONSE_TYPES)
 # The events that end a thread, as SQL: trace.TERMINAL, the one list.
 _CLOSES = _sql_list(sorted(trace.TERMINAL))
 
-_APPS_CTE = f"""
+# A function, not a constant: `interviewed` reads effective_type_sql, defined
+# further down beside the round rules it belongs with.
+def _apps_cte() -> str:
+    return f"""
 WITH apps AS (
     SELECT a.id,
            a.job_id,
@@ -61,7 +64,8 @@ WITH apps AS (
                AND e.type IN {_RESPONSE_TYPES})                          AS first_resp,
            EXISTS (SELECT 1 FROM events e
                    WHERE e.application_id = a.id
-                     AND e.type IN ('interview_invite','offer'))         AS interviewed,
+                     AND {effective_type_sql('e')} IN ('interview_invite','offer'))
+                                                                          AS interviewed,
            EXISTS (SELECT 1 FROM events e
                    WHERE e.application_id = a.id AND e.type = 'offer')   AS offered
     FROM applications a
@@ -83,7 +87,7 @@ def summary(conn, user_id, inbound: bool | None = None) -> dict:
     not — 2 real inbound leads the user later applied to carry an `applied`
     event, so they counted as applications on a page they are not on (258
     against 256 rows, 24 Sep 2026)."""
-    row = conn.execute(_APPS_CTE + f"""
+    row = conn.execute(_apps_cte() + f"""
         SELECT count(*) FILTER (WHERE applied_at IS NOT NULL) AS applied,
                count(*) FILTER (WHERE applied_at IS NULL)     AS interested,
                count(*) FILTER (WHERE first_resp IS NOT NULL) AS responded,
@@ -255,19 +259,58 @@ def same_round_sql(x: str, r: str) -> str:
                      OR {x}.occurred_at BETWEEN {r}.occurred_at - {span} AND {r}.occurred_at + {span}))"""
 
 
+def _excluded_line_sql(r: str) -> str:
+    """Invitation line `r` is no round by its own line: you said so
+    (trace.NOT_A_ROUND) or the mail did (trace.NON_ROUND_ROLES). trace.excluded."""
+    return f"""(COALESCE({r}.payload->>'round_is', '') = '{trace.NOT_A_ROUND}'
+                OR COALESCE({r}.payload->>'invite_role', '') IN {_NON_ROUND_ROLES})"""
+
+
+def _non_round_kind_sql(r: str) -> str:
+    """Invitation `r` belongs to a round of a kind that is not one
+    (trace.NON_ROUND_KINDS: the automated questionnaire), the kind set on it
+    or on any event of the same round."""
+    return f"""EXISTS (SELECT 1 FROM events k
+                        WHERE k.application_id = {r}.application_id
+                          AND k.payload->>'round_kind' IN {_NON_ROUND_KINDS}
+                          AND (k.id = {r}.id OR {same_round_sql('k', r)}))"""
+
+
+# What an event COUNTS as (9 Oct 2026): its type, except an invitation that
+# is not a round. One of a kind that is not one — the automated
+# questionnaire every applicant gets — is part of applying, and reads as the
+# confirmation does; one excluded by its line — a mail arranging or
+# cancelling an interview, or a line you said is not a round — is a person
+# writing about an interview, and reads as `engaged`. Found on a thread whose
+# only invitations were a 3-question screening questionnaire and its
+# reminder: no round, no interview in the figure, yet the status view, which
+# ranked by type alone, said "interviewing". Migration 021 states this
+# expression in the view (static SQL cannot import it) and tests/test_web.py
+# holds the two, and insights.effective_type, equal on every event.
+# Hearing back reads the TYPE, not this: a questionnaire is a response, as
+# LinkedIn's "viewed" notice is, but not an answer (UI rule 18).
+def effective_type_sql(e: str) -> str:
+    """Event `e`'s type as the status and every round count read it."""
+    return f"""(CASE WHEN {e}.type <> '{trace.ROUND_EVENT}' THEN {e}.type
+                     WHEN {_non_round_kind_sql(e)} THEN 'confirmation'
+                     WHEN {_excluded_line_sql(e)} THEN 'engaged'
+                     ELSE {e}.type END)"""
+
+
+def round_sql(e: str) -> str:
+    """Event `e` is a ROUND_EVENT once it is read for what it counts as: an
+    interview, a person getting in touch (or writing about an interview), an
+    offer — never a questionnaire. What "after a round" and "answered" test."""
+    return f"({effective_type_sql(e)} IN {ROUND_TYPES})"
+
+
 def sat_sql(r: str) -> str:
-    """Event `r` (an `events` alias) is a round you sat: a rated type, unless
-    you said the line is not a round (trace.NOT_A_ROUND), the mail said so
-    itself (trace.NON_ROUND_ROLES), or the round it belongs to is a kind
-    that is not one (trace.NON_ROUND_KINDS, set on any event of the same
-    round) — then nothing here anchors on it."""
+    """Event `r` (an `events` alias) is a round you sat: a rated type that
+    counts as itself — not a line you or the mail said is not a round, and
+    not of a round whose kind is not one — or nothing here anchors on it."""
     return f"""({r}.type IN {_RATED_TYPES}
-        AND COALESCE({r}.payload->>'round_is', '') <> '{trace.NOT_A_ROUND}'
-        AND COALESCE({r}.payload->>'invite_role', '') NOT IN {_NON_ROUND_ROLES}
-        AND NOT EXISTS (SELECT 1 FROM events k
-                         WHERE k.application_id = {r}.application_id
-                           AND k.payload->>'round_kind' IN {_NON_ROUND_KINDS}
-                           AND (k.id = {r}.id OR {same_round_sql('k', r)})))"""
+        AND NOT {_excluded_line_sql(r)}
+        AND NOT {_non_round_kind_sql(r)})"""
 
 # What came of the round you rated: one bucket per application with a round
 # you sat, the SQL twin of insights._went (8 Oct 2026). The anchor is the
@@ -495,7 +538,7 @@ def rejection_ends(conn, user_id, inbound: bool | None = None):
     email's own extracted platform, or no email at all — for the chip's hover
     text."""
     had_round = (f"EXISTS (SELECT 1 FROM events x WHERE x.application_id = c.application_id "
-                 f"AND x.type IN {ROUND_TYPES})")
+                 f"AND {round_sql('x')})")
     return conn.execute(f"""
         WITH closed AS (
             SELECT DISTINCT ON (e.application_id)
@@ -856,7 +899,7 @@ def reapplications(conn, user_id) -> dict:
               -- the reason to close an older record, that the employer
               -- answers the newer one, is false there by construction.
               AND NOT EXISTS (SELECT 1 FROM events x WHERE x.application_id = a.id
-                              AND x.type IN {ROUND_TYPES})
+                              AND {round_sql('x')})
         )
         SELECT q.id AS old_id, n.id, n.applied_at, n.title_canonical,
                (SELECT string_agg(p.jd_text, ' ') FROM postings p
@@ -1133,7 +1176,7 @@ def facts(conn, user_id) -> tuple[list[dict], list[dict]]:
        .replace("@VISA_GROUP@", jd_visa_group_sql("x.visa_signal")),
         {"user_id": user_id}).fetchall()
     events = conn.execute("""
-        SELECT e.application_id, e.type, e.source, e.occurred_at, e.created_at,
+        SELECT e.id, e.application_id, e.type, e.source, e.occurred_at, e.created_at,
                CASE WHEN e.type = 'applied'
                     THEN (e.payload->>'external')::bool END  AS external,
                e.payload->>'reason'                          AS reason,

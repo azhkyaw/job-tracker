@@ -1027,6 +1027,22 @@ is a private artifact, linked from the memory file
     person engaging is still an answer, opens "Heard nothing since?" and
     makes a rejection "after a round" (rule 13), which asks whether a
     person engaged, not whether you sat an interview.
+    **And an invitation is read for what it counts as** (the same evening,
+    worklog task 81; migration 021): a thread whose only invitations were
+    an employer's automated 3-question screening questionnaire and its
+    reminder had no round and no place in the figure, but read
+    "interviewing", because the status view ranked by type alone. Now one
+    rule, `analytics.effective_type_sql` (Python twin
+    `insights.effective_type`, a copy in the view): an invitation of a
+    non-round kind counts as the confirmation, one excluded by its line (a
+    mail arranging or cancelling an interview, your "not a round") as
+    `engaged`, every other event as its type. The status ranks by it;
+    "after a round" (`round_sql`: rule 13's buckets, the list's `how`
+    filter), "answered" and `round_at` on `/analytics`, the re-application
+    suggestion's "a thread they answered", and "They went quiet"'s guard all
+    test it. Heard back still reads the TYPE: a questionnaire is a
+    response, as the "viewed" notice is, not an answer. On the day it moved
+    one status (that thread, to applied) and no bucket.
     **A round has a kind** (the same morning): `analytics.ROUND_KINDS`, a
     closed vocabulary (coding test or take-home, recruiter screen,
     technical interview, hiring manager, panel or onsite, final round,

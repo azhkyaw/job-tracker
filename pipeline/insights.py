@@ -21,7 +21,10 @@ The page's vocabulary, defined once here and used the same way in every panel:
                 employer's site 33% to 29%; by answered, the employer's site
                 won 29% to 19%. Comparisons use answered.
   round         analytics.ROUND_EVENTS — an interview invitation, a call or
-                message (`engaged`), or an offer.
+                message (`engaged`), or an offer, each read for what it
+                counts as (effective_type, 9 Oct 2026): an automated
+                questionnaire is a response but neither a round nor an
+                answer, as the confirmation is not.
 
 Colour follows the list (UI rule 1): an application's square wears the colour
 its day count wears on the list — `trace.live()` and `trace.heat()` decide
@@ -200,6 +203,11 @@ def build_facts(apps, events, now: datetime, reminder_days: int, tz=None) -> lis
         def first(types, evs=evs):
             return next((e for e in evs if e["type"] in types), None)
 
+        def first_as(types, evs=evs):
+            # By what an event counts as (effective_type): a questionnaire
+            # is a response, but not an answer and not a round.
+            return next((e for e in evs if effective_type(e, evs) in types), None)
+
         applied = first({"applied"})
         f["applied_at"] = applied["occurred_at"] if applied else None
         f["external"] = applied["external"] if applied else None
@@ -213,9 +221,9 @@ def build_facts(apps, events, now: datetime, reminder_days: int, tz=None) -> lis
         else:
             f["start"] = f["applied_at"]
 
-        sig, ans, rnd = first(RESPONSE), first(ANSWER), first(ROUND)
+        sig, ans, rnd = first(RESPONSE), first_as(ANSWER), first_as(ROUND)
         f["signal_at"] = sig["occurred_at"] if sig else None
-        f["signal_type"] = sig["type"] if sig else None
+        f["signal_type"] = effective_type(sig, evs) if sig else None
         f["answer_at"] = ans["occurred_at"] if ans else None
         f["round_at"] = rnd["occurred_at"] if rnd else None
         f["offer"] = any(e["type"] == "offer" for e in evs)
@@ -316,15 +324,24 @@ def _stated(e):
     return e.get("stated_date") or (e.get("payload") or {}).get("stated_date")
 
 
+def effective_type(e, evs) -> str:
+    """What event `e` counts as (analytics.effective_type_sql's twin, and the
+    status view's since migration 021): its type, except an invitation that
+    is not a round — one of a kind that is not one (trace.NON_ROUND_KINDS,
+    on it or on any event of the same round by _same_round) reads as the
+    confirmation, one excluded by its line (trace.excluded) as `engaged`."""
+    if e["type"] != trace.ROUND_EVENT:
+        return e["type"]
+    if any(trace.kind_of(x) in trace.NON_ROUND_KINDS and (x is e or _same_round(x, e))
+           for x in evs):
+        return "confirmation"
+    return "engaged" if trace.excluded(e) else e["type"]
+
+
 def _sat(e, evs) -> bool:
-    """Event `e` is a round you sat (analytics.sat_sql's twin): a rated
-    type, not a line you said is not a round, and not of a round whose kind
-    is not one (trace.NON_ROUND_KINDS, on it or on any event of the same
-    round by _same_round)."""
-    if e["type"] not in RATED or trace.excluded(e):
-        return False
-    return not any(trace.kind_of(x) in trace.NON_ROUND_KINDS and (x is e or _same_round(x, e))
-                   for x in evs)
+    """Event `e` is a round you sat (analytics.sat_sql's twin): a rated type
+    that counts as itself."""
+    return e["type"] in RATED and effective_type(e, evs) == e["type"]
 
 
 def _same_round(e, anchor) -> bool:

@@ -4151,6 +4151,107 @@ for _id in _lf.values():
 check("this section's records are gone",
       all(client.get(f"/applications/{_id}").status_code == 404 for _id in _lf.values()))
 
+print("what an invitation counts as: the status reads the rounds (9 Oct 2026)")
+# An automated screening questionnaire and its reminder made a real thread
+# "interviewing" while trace.rounds and the interviews figure said no round:
+# the status view ranked events by type alone. Migration 021 ranks each as
+# what it counts as (analytics.effective_type_sql, insights.effective_type):
+# a non-round kind as the confirmation, a line excluded by itself as engaged.
+from collections import defaultdict as _defaultdict                      # noqa: E402
+
+
+def _invite(app_id, days_ago, payload, source="email"):
+    with db.connect() as conn:
+        return conn.execute(
+            "INSERT INTO events (user_id, application_id, type, source, occurred_at, payload) "
+            "VALUES (%s, %s, 'interview_invite', %s, now() - make_interval(days => %s), %s) RETURNING id",
+            (user_id, app_id, source, days_ago, Json(payload))).fetchone()["id"]
+
+
+_ec = {"questionnaire": _new_app("Questionnaire Only Co", 12),
+       "scheduling": _new_app("Scheduling Only Co", 12),
+       "not_a_round": _new_app("Not A Round Co", 12),
+       "screened_out": _new_app("Questionnaire Then No Co", 30),
+       "real": _new_app("Real Round Co", 12)}
+# The kind on the invitation only: its reminder, a week on, names the same
+# deadline, so it is the same round and a questionnaire too.
+_invite(_ec["questionnaire"], 11, {"round_kind": "questionnaire", "invite_role": "invitation",
+                                   "stated_date": _ago(-3)})
+_invite(_ec["questionnaire"], 4, {"invite_role": "reminder", "stated_date": _ago(-3)})
+_invite(_ec["scheduling"], 2, {"invite_role": "scheduling"})
+_nar = _invite(_ec["not_a_round"], 3, {"invite_role": "invitation", "stated_date": _ago(2)})
+client.post(f"/applications/{_ec['not_a_round']}/events/{_nar}/round", data={"round_is": "none"})
+_invite(_ec["screened_out"], 29, {"round_kind": "questionnaire"})
+client.post(f"/applications/{_ec['screened_out']}/events", data={"type": "rejected", "occurred_on": _ago(20)})
+_invite(_ec["real"], 3, {"round_kind": "screen", "invite_role": "invitation", "stated_date": _ago(2)})
+_ecs = {k: _state(v)[0] for k, v in _ec.items()}
+check("a questionnaire, kind on its line or on its round's other line, is part of applying: the "
+      "status is the confirmation's, and the row reads applied",
+      _ecs["questionnaire"] == "confirmation"
+      and re.search(r"Questionnaire Only Co.*?<span class=\"badge\"[^>]*>applied</span>",
+                    client.get("/").text, re.S) is not None, _ecs)
+check("a mail arranging an interview, or a line you said is not a round, is a person writing: "
+      "engaged; an interview is still one",
+      _ecs["scheduling"] == "engaged" and _ecs["not_a_round"] == "engaged"
+      and _ecs["real"] == "interview_invite", _ecs)
+check("a questionnaire then a rejection ended without a round, not after one",
+      "Questionnaire Then No Co" in client.get("/?how=no_round").text
+      and "Questionnaire Then No Co" not in client.get("/?how=after_round").text)
+r = client.post(f"/applications/{_ec['questionnaire']}/close", data={"action": "quiet"})
+check("and a questionnaire opens no “They went quiet”: nobody has answered",
+      "event_error=" in r.headers.get("location", "") and not _closes(_ec["questionnaire"]),
+      r.headers.get("location"))
+with db.connect() as conn:
+    _sql_eff = {str(x["id"]): x["t"] for x in conn.execute(
+        f"SELECT e.id, {analytics.effective_type_sql('e')} AS t FROM events e "
+        f"JOIN applications a ON a.id = e.application_id WHERE a.user_id = %s", (user_id,)).fetchall()}
+    _view = {str(x["application_id"]): x["status"] for x in conn.execute(
+        "SELECT application_id, status FROM application_status WHERE user_id = %s", (user_id,)).fetchall()}
+    _fa, _fe = analytics.facts(conn, user_id)
+    _vdef = conn.execute("SELECT pg_get_viewdef('application_status'::regclass) AS d").fetchone()["d"]
+_bfx = {str(f["id"]): f for f in insights.build_facts(_fa, _fe, datetime.now(timezone.utc), 10)}
+_qf = _bfx[_ec["questionnaire"]]
+check("a questionnaire is still heard back, as LinkedIn's “viewed” notice is, but neither an answer "
+      "nor a round",
+      _qf["signal_at"] is not None and _qf["answer_at"] is None and _qf["round_at"] is None,
+      {k: _qf[k] for k in ("signal_at", "answer_at", "round_at")})
+_evs_by = _defaultdict(list)
+for _e in _fe:
+    _evs_by[str(_e["application_id"])].append(_e)
+_py_eff = {str(_e["id"]): insights.effective_type(_e, _evs_by[str(_e["application_id"])]) for _e in _fe}
+check("what each event counts as, in SQL and in Python, on every event in this database",
+      _sql_eff == _py_eff and len(_sql_eff) > 100,
+      [(k, _sql_eff[k], _py_eff.get(k)) for k in _sql_eff if _sql_eff[k] != _py_eff.get(k)][:5])
+# The view's own copy of the rule (migration 021's static SQL), by its rank:
+# two events of one rank at one instant may be named either way.
+_RANK = {"withdrawn": 60, "rejected": 60, "offer": 55, "interview_invite": 50, "engaged": 45,
+         "viewed": 40, "confirmation": 30, "applied": 30, "interested": 10}
+
+
+def _py_status(evs):
+    ranked = [(_RANK[insights.effective_type(e, evs)], e["occurred_at"]) for e in evs
+              if e["type"] in _RANK]
+    top = max(ranked, default=None)
+    return top[0] if top else 10
+
+
+check("the status view ranks every application as the Python twin does",
+      all(_RANK.get(_view[k], 10) == _py_status(_evs_by[k]) for k in _view) and len(_view) > 20,
+      [(k, _view[k], _py_status(_evs_by[k])) for k in _view
+       if _RANK.get(_view[k], 10) != _py_status(_evs_by[k])][:5])
+_iv_view = {k for k, v in _view.items() if v == "interview_invite"}
+_iv_rounds = {k for k, f in _bfx.items() if f["n_rounds"] and not f["offer"] and f["ended_at"] is None}
+check("“interviewing” is exactly an open thread trace.rounds finds a round on",
+      _iv_view == _iv_rounds and _iv_view, _iv_view ^ _iv_rounds)
+check("the view states trace's vocabularies and span — a change there needs a migration restating it",
+      all(f"'{v}'" in _vdef for v in (*web.trace.NON_ROUND_KINDS, *web.trace.NON_ROUND_ROLES,
+                                       web.trace.NOT_A_ROUND))
+      and re.search(rf"days\s*=>\s*{web.trace.ROUND_SPAN_DAYS}\b", _vdef) is not None, _vdef[:600])
+for _id in _ec.values():
+    client.post(f"/applications/{_id}/delete")
+check("this section's records are gone",
+      all(client.get(f"/applications/{_id}").status_code == 404 for _id in _ec.values()))
+
 print("interview rounds: one interview is several events (8 Oct 2026)")
 # An invitation and its calendar notification name one day: one round, one
 # select, and a rating on the invitation keeps /follow-ups from asking again

@@ -1130,7 +1130,7 @@ _LOST_FATES = analytics._LOST_FATES
 _HOW_CASE = analytics.rejected_how_sql(
     "rr.reason",
     f"EXISTS (SELECT 1 FROM events x WHERE x.application_id = a.id "
-    f"AND x.type IN {analytics.ROUND_TYPES})",
+    f"AND {analytics.round_sql('x')})",
     _SCREEN)
 
 # How the news arrived, for the events the tracker cannot see for itself.
@@ -2380,8 +2380,10 @@ def close_approach(request: Request, app_id: str, action: str = Form(""),
                 return _event_error(app_id, "“Not for me” closes an approach a recruiter started, "
                                             "or an offer. For your own application, record "
                                             "“I withdrew”.")
-            if not conn.execute("SELECT 1 FROM events WHERE application_id = %s AND type = ANY(%s)",
-                                (a["id"], list(analytics.ROUND_EVENTS))).fetchone():
+            # A round as it counts (analytics.round_sql): a questionnaire
+            # every applicant gets is not one, so it opens no such close.
+            if not conn.execute(f"SELECT 1 FROM events e WHERE e.application_id = %s "
+                                f"AND {analytics.round_sql('e')}", (a["id"],)).fetchone():
                 return _event_error(app_id, "“They went quiet” closes an application after an "
                                             "interview or a person getting in touch. One nobody "
                                             "has answered waits on the list, and Follow-ups "

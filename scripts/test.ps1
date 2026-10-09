@@ -45,6 +45,7 @@ Psql @('-d', $DB, '-f', '/migrations/017_visa_signal_v2.sql')
 Psql @('-d', $DB, '-f', '/migrations/018_job_ats_id.sql')
 Psql @('-d', $DB, '-f', '/migrations/019_offer_is_a_round.sql')
 Psql @('-d', $DB, '-f', '/migrations/020_email_reviewed.sql')
+Psql @('-d', $DB, '-f', '/migrations/021_status_reads_rounds.sql')
 Psql @('-d', $DB, '-c', "INSERT INTO users (email) VALUES ('dev@test.local');")
 
 $dbPort = if ($env:TRACKER_DB_PORT) { $env:TRACKER_DB_PORT } else { '55432' }

@@ -168,7 +168,12 @@ An invariant keeps its RULE here and its case history in the rule file.
   a LinkedIn letter inside `SCREEN_HOURS` of the submit is a
   `sponsorship_screen` or `form_screen`, and a screen outranks any recorded
   reason (25 Sep 2026). `LATEST_EXTRACTION` is the one lateral join to a
-  posting's newest JD extraction, shared with `web.py`
+  posting's newest JD extraction, shared with `web.py`.
+  `effective_type_sql` (9 Oct 2026) is what an event COUNTS as — an
+  automated questionnaire's invitation as the confirmation, a scheduling or
+  cancellation mail or a "not a round" line as `engaged` — read by the
+  status view (migration 021), `round_sql` (every "after a round" and
+  "answered") and `sat_sql`; `insights.effective_type` is its twin
 - `pipeline/insights.py` — every number on `/analytics` (25 Sep 2026), pure
   like `trace.py`: the Kaplan-Meier reply curve (a waiting application is
   "not yet", never "never"), Wilson intervals, the reply window, forecast,
@@ -428,7 +433,11 @@ An invariant keeps its RULE here and its case history in the rule file.
    annotation on the round** (8 Oct 2026): `payload.went` — well / mixed /
    badly, `analytics.WENT_LABELS` — with `went_at`, on any
    `interview_invite` whatever its source (a person getting in touch,
-   `engaged`, is not a round you sat since 9 Oct 2026: `trace.rounds`' rule)
+   `engaged`, is not a round you sat since 9 Oct 2026: `trace.rounds`' rule;
+   and since migration 021 the status ranks each event as what it COUNTS
+   as, `analytics.effective_type_sql`: an automated questionnaire's
+   invitation as the confirmation, a scheduling or cancellation mail or a
+   "not a round" line as `engaged` — `.claude/rules/database.md`)
    (`web.set_round_went`, the door `set_rejection_reason` is), never a
    reason on the close and never a status; `/analytics` reads it beside
    what came of the round, and a rating filed after the outcome counts as

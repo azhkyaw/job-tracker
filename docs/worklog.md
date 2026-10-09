@@ -2522,3 +2522,38 @@ the key to each real case.
    round"; the "How did it go?" select leaves its lines, and re-typing a
    rated interview as one drops the rating.
 
+81. **The status reads what an invitation counts as** (9 Oct 2026). Asked
+   why a thread was among "5 interviewing": an employer-site apply whose
+   only invitations were the employer's automated screening questionnaire
+   (3 questions, a deadline two days out) and its reminder, both read by
+   stage 4 as kind `questionnaire`. `trace.rounds` and the interviews figure
+   already said no round; the status view ranked by event TYPE and never
+   read the kind, so it said "interviewing" — the third place deciding "is
+   this an interview?", after task 80 joined the first two. "Fix properly":
+   - **One rule for what an event counts as**: `analytics.effective_type_sql`
+     (and `insights.effective_type`, its twin): an invitation of a non-round
+     kind, on it or on any event of the same round, counts as the
+     confirmation (part of applying); one excluded by its line — a
+     scheduling or cancellation mail, your "not a round" — as `engaged` (a
+     person writing about an interview); everything else as its type.
+     `sat_sql` and `insights._sat` are rebuilt from the same pieces.
+   - **Migration 021** restates `application_status` ranking each event by
+     it (static SQL, so the rule is written out; the view returns the
+     effective type, so the thread reads `confirmation`, the app's
+     "applied").
+   - **Every "a round" test reads it** (`round_sql`): rule 13's `had_round`
+     in `rejection_ends` and the list's `_HOW_CASE`, `/analytics`'
+     `answer_at` and `round_at` (`first_as`) and `signal_type`, the
+     re-application suggestion, "They went quiet"'s guard, and
+     `summary.interviewed`. Heard back stays by type: a questionnaire is a
+     response, like LinkedIn's "viewed" notice, but not an answer.
+   - **Held**: the suite checks SQL and Python agree on every event, the
+     view's rank equals the Python twin's on every application, the view
+     names each of trace's literals, and "interviewing" is exactly the open
+     threads `trace.rounds` finds a round on.
+   - Measured on the dev DB before writing it: 63 invitation lines, 41 read
+     as interviews, 17 as a person writing, 5 as a questionnaire; one status
+     moves (that thread), no rejection bucket moves, and `summary.
+     interviewed` (read by no page) loses one more, a hand-filed screen the
+     author had marked "not a round".
+

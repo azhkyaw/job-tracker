@@ -495,6 +495,31 @@ check("tone(): a close and an offer by status, everything else by its wait",
       [trace.tone("rejected", True), trace.tone("withdrawn", False), trace.tone("offer", False),
        trace.tone("viewed", True), trace.tone("applied", False)]
       == ["rejected", "withdrawn", "offer", "live", "wait"])
+print("what an invitation counts as (9 Oct 2026)")
+# A questionnaire every applicant gets is part of applying; a mail arranging
+# an interview, or a line you said is not a round, is a person writing.
+_qa = app(status="confirmation")
+_q1 = ev(_qa, "interview_invite", ago(11), round_kind="questionnaire", stated_date="2026-09-28")
+_q2 = ev(_qa, "interview_invite", ago(4), stated_date="2026-09-28")     # its reminder: same round
+_sch = ev(_qa, "interview_invite", ago(2), invite_role="scheduling")
+_nar = ev(_qa, "interview_invite", ago(2), round_is="none")
+_iv = ev(_qa, "interview_invite", ago(1), stated_date="2026-09-25")
+_evs = [_q1, _q2, _sch, _nar, _iv]
+check("a non-round kind reads as the confirmation, on its line or its round's other; an excluded "
+      "line as engaged; an interview as itself; anything else as its type",
+      [insights.effective_type(e, _evs) for e in _evs]
+      == ["confirmation", "confirmation", "engaged", "engaged", "interview_invite"]
+      and insights.effective_type(ev(_qa, "viewed", ago(3)), _evs) == "viewed")
+_qr = app(status="rejected")
+_fq = facts_of([_qr], [ev(_qr, "applied", ago(30), source="extension"),
+                       ev(_qr, "interview_invite", ago(29), round_kind="questionnaire"),
+                       ev(_qr, "rejected", ago(20))])[0]
+check("a questionnaire then a rejection: heard back, answered by the rejection alone, no round, "
+      "so it ended without one",
+      _fq["signal_at"] == ago(29) and _fq["answer_at"] == ago(20) and _fq["round_at"] is None
+      and _fq["how"] == "no_round" and _fq["signal_type"] == "confirmation",
+      {k: _fq[k] for k in ("signal_at", "answer_at", "round_at", "how", "signal_type")})
+
 _R = analytics.config.REMINDER_DAYS
 check("wait_span: fresh under the reminder, inside the odds until quiet_after, past from it on",
       [analytics.wait_span(d, _R + 13) for d in (None, 0, _R - 1, _R, _R + 12, _R + 13, 80)]

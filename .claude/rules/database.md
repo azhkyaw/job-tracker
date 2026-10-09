@@ -58,6 +58,20 @@ migration invariant (#8) and the tenancy checklist (#6) are still in CLAUDE.md.
   an offer is a round, so declining or losing it is what ends the thread).
   Each is a `CREATE OR REPLACE VIEW` with the whole CASE restated; the
   current values are whichever migration touched the view LAST.
+- **Since migration 021 the view ranks what an event COUNTS AS, not its
+  type** (9 Oct 2026): an `interview_invite` of a non-round kind (the
+  automated questionnaire) ranks and reads as `confirmation`, one excluded
+  by its line (a scheduling or cancellation mail, or `round_is = 'none'`)
+  as `engaged` — `analytics.effective_type_sql`, written out in the view
+  because a migration cannot import it. Its literals (the kinds, the roles,
+  `'none'`, the 3-day span, `source <> 'manual'`) are copies of `trace.py`'s
+  constants: `tests/test_web.py` checks `pg_get_viewdef` names each one,
+  holds the view's rank to `insights.effective_type` on every application,
+  and holds "interviewing" to the threads `trace.rounds` finds a round on.
+  Changing one of those constants therefore means a new migration
+  restating the view, and the suite says so. The status column returns the
+  EFFECTIVE type, so a questionnaire-only thread reads `confirmation` (the
+  app's "applied") with no `confirmation` event behind it.
 - **Testing an `application_status` precedence tie:** two manual events
   filed with the SAME `occurred_on` date land at the EXACT same instant
   (`ingest.local_date_to_utc` anchors every bare date to local noon), so
