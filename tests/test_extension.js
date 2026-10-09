@@ -248,7 +248,7 @@ console.log("\ngetJob(): a stale detail pane on the split search layout");
   // visually-hidden a11y copy, identical halves) and company.
   const cardStub = (titleText, companyText) => {
     const sel = {
-      "a.job-card-container__link": el(titleText),
+      "a.job-card-container__link": typeof titleText === "string" ? el(titleText) : titleText,
       ".artdeco-entity-lockup__subtitle": el(companyText),
     };
     return {
@@ -293,6 +293,37 @@ console.log("\ngetJob(): a stale detail pane on the split search layout");
   check("agreeing pane: JD is kept", h.jd_text, "About the job\nAbout Contoso Markets\nThere are over 5 billion users...");
   check("agreeing pane: no stale_pane breadcrumb", h._prov.stale_pane, undefined);
   check("agreeing pane: title_source is the class selector, not the card", h._prov.title_source, "class");
+
+  // A VERIFIED job's card (measured live 10 Oct 2026): the link holds the
+  // visible copy in <span aria-hidden="true"> (the title, a space, the badge's
+  // icon, which has no text) and the screen reader's in
+  // <span class="visually-hidden">, "<title> with verification". Its text is
+  // "<title> <title> with verification", which no equal split undoubles: on
+  // the old code the card disagreed with a pane showing the RIGHT job, the
+  // guard fired, the title was stored doubled and the JD dropped (two real
+  // Easy Apply captures, 9 Oct 2026). The exact selector pins the read.
+  const verified = (t) => {
+    const vis = { tagName: "SPAN", textContent: `${t} ` };
+    return { tagName: "A", textContent: ` ${t} ${t} with verification `,
+             querySelector: (s) => (s === ":scope > [aria-hidden='true']" ? vis : null) };
+  };
+  const v = loadAdapter({ ownDoc: stalePaneDoc(verified("Full Stack Engineer, AI systems"), "Contoso Markets"),
+                          ownLoc: makeLoc(SEARCH) }).window.__trackerAdapter.getJob();
+  check("verified card agreeing with the pane: nothing is touched",
+        [v.title, v.jd_text !== null, v._prov.stale_pane, v._prov.title_source],
+        ["Full Stack Engineer, AI systems", true, undefined, "class"]);
+  const vs = loadAdapter({ ownDoc: stalePaneDoc(verified("AI Agent Engineer"), "Northwind Labs"),
+                           ownLoc: makeLoc(SEARCH) }).window.__trackerAdapter.getJob();
+  check("verified card on a stale pane: the card's visible title, without the badge's words",
+        [vs.title, vs.jd_text, vs._prov.stale_pane.card], ["AI Agent Engineer", null, "AI Agent Engineer"]);
+  // A layout that marks no visible copy: the text alone, its second copy
+  // carrying the badge's words, still reads as the title.
+  const t = loadAdapter({
+    ownDoc: stalePaneDoc("Full Stack Engineer, AI systems Full Stack Engineer, AI systems with verification",
+                         "Contoso Markets"),
+    ownLoc: makeLoc(SEARCH) }).window.__trackerAdapter.getJob();
+  check("unmarked card text whose second copy names the badge: no false alarm",
+        [t.title, t._prov.stale_pane], ["Full Stack Engineer, AI systems", undefined]);
 }
 
 console.log("\ngetJob(): the pane names its own job (/jobs/search-results/, read live 2 Oct 2026)");

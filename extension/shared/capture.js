@@ -838,6 +838,12 @@
                   fromUrl,
                   fromGuess,
                   disagreed,
+                  // The adapter's stale-pane catch (linkedin.js readJob): what
+                  // the pane showed and what replaced it. Until 0.29.4 it rode
+                  // only on the job, never into this line, so two false alarms
+                  // on 9 Oct 2026 read in the popup as healthy captures "via
+                  // card", and only the stored titles said otherwise.
+                  stale: (job._prov && job._prov.stale_pane) || null,
                   page: { title: pageSaw.title, company: pageSaw.company },
                   stash: was ? { title: was.title || null, company: was.company || null } : null,
                 },
@@ -939,6 +945,7 @@
           source: (job._prov && job._prov.title_source) || null,
           layout: (job._prov && job._prov.layout) || null,
           stashed: false, disagreed: [],
+          stale: (job._prov && job._prov.stale_pane) || null,
           page: { title: job.title || null, company: job.company || null },
         },
       });

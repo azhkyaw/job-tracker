@@ -2695,3 +2695,23 @@ the key to each real case.
      400px, where the story keeps its own line under the name (the trace
      was hidden there); 2 of 402 stories meet the fade at that width.
 
+87. **A verified job's card set off the stale-pane guard** (10 Oct 2026,
+   extension 0.29.4). Found by that night's data audit (the author's "do
+   another round of data analysis", then "Fix all"): two Easy Apply records
+   of 9 Oct, captured from a search page five minutes apart, stored their
+   titles doubled ("<title> <title> with verification") and no JD; a third
+   between them was fine. The provenance buffer said both titles came "via
+   card", which is the guard's re-sourcing, but carried no `stale_pane`.
+   - **Measured live** on the classic search page (read-only): the results
+     card's link holds the visible copy in `<span aria-hidden="true">` (the
+     title and the badge's icon) and the screen reader's in
+     `<span class="visually-hidden">`, "<title> with verification".
+     `undouble` wanted two equal halves, so the card's title never equalled
+     the pane's and the guard fired on a pane showing the right job.
+   - **Fixed as a rule** (`linkedin.js`): the card is read by its visible
+     copy, else by the longest leading run of words its text repeats
+     straight after itself. Three checks, red on the old adapter.
+   - **The catch is now on the provenance line** (`capture.js`, both
+     breadcrumbs, `stale`) and printed by the popup as a warn line, since a
+     false alarm and a real catch store the same thing.
+   - The two records are repaired with the data repairs below (task 93).

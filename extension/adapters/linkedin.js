@@ -383,26 +383,42 @@ window.__trackerAdapter = {
     const expected = idFromUrl || expectId;
     if (expected && /^\d+$/.test(expected) && title) {
       const norm = (s) => s.toLowerCase().replace(/\s+/g, " ").trim();
-      // Card title/company text is doubled (visible span + a visually-hidden
-      // copy carrying the accessible name — the same a11y pattern answers.js
-      // strips); the two halves are identical, so take the first.
+      // Card title/company text is doubled: a visible copy and a
+      // visually-hidden one carrying the accessible name (the a11y pattern
+      // answers.js strips). The two are NOT always alike. On a verified job
+      // (measured live 10 Oct 2026) the link holds <span aria-hidden="true">
+      // with the title and a badge's icon, then <span class="visually-hidden">
+      // reading "<title> with verification". Splitting that text into two
+      // equal halves failed, so the card "disagreed" with a pane showing the
+      // right job: the guard fired, the title was stored doubled and the JD
+      // dropped (two real Easy Apply captures, 9 Oct 2026). So: the visible
+      // copy when the card marks it, and otherwise the longest leading run of
+      // words the text repeats straight after itself, whatever follows ("X X",
+      // "XX", "X X with verification" all read X).
       const undouble = (s) => {
         const c = (s || "").replace(/\s+/g, " ").trim();
-        const h = c.length / 2;
-        return c.length % 2 === 0 && h > 0 && c.slice(0, h) === c.slice(h)
-          ? c.slice(0, h) : c;
+        for (let i = Math.floor(c.length / 2); i > 0; i--) {
+          const h = c.slice(0, i).trim();
+          const rest = c.slice(i).trimStart();
+          if (h && rest.startsWith(h) && (rest.length === h.length || rest[h.length] === " ")) return h;
+        }
+        return c;
+      };
+      const shown = (n) => {
+        const vis = n.querySelector && n.querySelector(":scope > [aria-hidden='true']");
+        return undouble(vis ? vis.textContent : n.textContent);
       };
       const card =
         doc.querySelector(`[data-occludable-job-id="${expected}"]`) ||
         doc.querySelector(`[data-job-id="${expected}"]`);
       const link = card && card.querySelector(
         "a.job-card-container__link, a.job-card-list__title--link");
-      const cardTitle = link ? undouble(link.textContent) : null;
+      const cardTitle = link ? shown(link) : null;
       if (cardTitle && norm(cardTitle) !== norm(title)) {
         const sub = card.querySelector(".artdeco-entity-lockup__subtitle");
         stale_pane = { url: expected, shown: title, card: cardTitle };
         title = cardTitle;
-        company = sub ? undouble(sub.textContent) : null;
+        company = sub ? shown(sub) : null;
         title_source = company_source = "card";
         jd_text = null;
         location = null;

@@ -858,12 +858,12 @@ Detail lives with each family's rule file; this is the index.
   says per build what to read on first real contact): every adapter
   selector is best-effort; JobStreet's race fix wants one clean submit;
   Indeed never exercised; `getRecruiter()` has one card of evidence;
-  textareas never stored from Easy Apply. Builds 0.9.0-0.29.3 carry
+  textareas never stored from Easy Apply. Builds 0.9.0-0.29.4 carry
   pieces proven only in tests or by rules run in a live page, waiting on:
   the next Easy Apply (0.9.0's `<dialog>` sweep, `getJob()`'s
   self-document fallback and `doc_source`, 0.10.1's
   `normKey`, 0.23.1's radio rows, 0.25.1's stale-pane checks from a search
-  page); the next external apply (0.26.0's kept opener, seen only
+  page, 0.29.4's read of a verified job's results card); the next external apply (0.26.0's kept opener, seen only
   refusing a career site's hop to its ATS, 7 Oct); a Greenhouse job
   board with a picked country (0.23.0); LinkedIn → SmartRecruiters
   (0.24.1); an ATS form with drawn checkboxes or switches (0.24.0); a

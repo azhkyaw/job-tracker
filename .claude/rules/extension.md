@@ -1562,7 +1562,41 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
     that was unreadable is also a change to what is STORED: check the
     sensitive rule against the questions it now reads.
 
+- **A verified job's results card set off the stale-pane guard** (found
+  10 Oct 2026 by that night's data audit; extension 0.29.4, worklog task
+  87). Two Easy Apply captures on 9 Oct, from a search page, were stored
+  with the title doubled ("AI Agent Engineer AI Agent Engineer with
+  verification") and no JD, while a third between them was fine.
+  - **The card, read live:** the title link holds the visible copy in
+    `<span aria-hidden="true">` (the title, a space, the badge's
+    `verified-small` icon with no text) and the screen reader's in
+    `<span class="visually-hidden">`, reading "<title> with
+    verification". `undouble` split the text into two EQUAL halves, which
+    this text has none of, so the card "disagreed" with a pane showing the
+    right job. The guard then did what it does for a stale pane: it took
+    the card's text as the title and dropped the JD.
+  - **Fixed as a rule:** the card is read by its visible copy
+    (`:scope > [aria-hidden='true']`) when it marks one, and otherwise by
+    the longest leading run of words its text repeats straight after
+    itself, so "X X", "XX" and "X X with verification" all read X.
+  - **And the catch is now said:** `_prov.stale_pane` had always been set,
+    but neither provenance breadcrumb carried it, so both false alarms read
+    in the popup as healthy captures "via card". The breadcrumb's `stale`
+    and a popup warn line name what the pane showed and what replaced it.
+    The guard's mistake and its success look the same from the record (a
+    title from the card, no JD), so the line prints every time it fires.
+  - **The lesson, the 2 Sep one again:** a check that compares two copies
+    of one fact must read both the same way. The pane's title is the
+    visible text; the card's was the visible text plus the screen
+    reader's, and the two differ exactly when the page adds a badge.
+
 ## Known-untested surfaces (verify on first real contact)
+
+- **0.29.4's card read has met the live card's markup only as a fixture**
+  (10 Oct 2026). On the next Easy Apply from a search page, a verified
+  job's record reads its title once, keeps its JD, and the popup prints no
+  "the pane showed" line. That line on a capture whose pane WAS right is
+  the guard misreading again: read the card's link markup live.
 
 - **0.29.2's Workday dropdown reading has met only a public "Introduce
   Yourself" form and tests.** On the next Workday apply: no answer of 32

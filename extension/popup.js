@@ -311,6 +311,17 @@ chrome.storage.local.get({ provenance: [] }, ({ provenance }) => {
     } else if (p.stashed) {
       li.append(" — agreed with stash");
     }
+    // The stale-pane guard fired (linkedin.js readJob): the detail pane showed
+    // another job. A warn line every time, because the guard's own mistake
+    // looks exactly like its success from here: a title "via card" and no JD.
+    if (p.stale) {
+      const w = document.createElement("span");
+      w.className = "warn";
+      w.textContent = ` — the pane showed "${p.stale.shown || "?"}"; `
+        + (p.stale.card ? `kept the results card's "${p.stale.card}" and dropped the JD`
+                        : `it named job ${p.stale.named || "?"}, so only the id was kept`);
+      li.append(w);
+    }
     // The frame that submits can be one that cannot read the job at all (an
     // Easy Apply modal inside linkedin.com/preload/). Say so, and say whether
     // asking frame 0 rescued it — a capture with no stash AND nothing recovered
