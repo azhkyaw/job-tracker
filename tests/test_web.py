@@ -3918,11 +3918,7 @@ check("a rating on anything but a round you sat is 404, like a reason off a reje
 r = client.post(f"/applications/{northwind_app}/events/{_wt_inv}/went", data={"went": "well"})
 check("and so is another application's round", r.status_code == 404, r.status_code)
 
-_wt2 = _new_app("Rated Call Co", 12)
-client.post(f"/applications/{_wt2}/events", data={"type": "engaged", "occurred_on": _ago(4)})
-with db.connect() as conn:
-    _wt2_call = conn.execute("SELECT id FROM events WHERE application_id = %s AND type = 'engaged'",
-                             (_wt2,)).fetchone()["id"]
+_wt2 = _new_app("Rated Screen Co", 12)
 
 
 def _rating_owed():
@@ -3930,22 +3926,39 @@ def _rating_owed():
         return {str(r["id"]): r for r in analytics.ratings_owed(conn, user_id)}
 
 
+# A person getting in touch is not a round you sat (9 Oct 2026: the list's
+# "11 interviews" counted an agency recruiter's pitch, filed by hand as "They
+# reached out", where trace.rounds said no round). Owed no word, takes none.
+client.post(f"/applications/{_wt2}/events", data={"type": "engaged", "occurred_on": _ago(6)})
+with db.connect() as conn:
+    _wt2_touch = conn.execute("SELECT id FROM events WHERE application_id = %s AND type = 'engaged'",
+                              (_wt2,)).fetchone()["id"]
+check("a person getting in touch is owed no word and takes none — 404, like any non-round",
+      _wt2 not in _rating_owed()
+      and client.post(f"/applications/{_wt2}/events/{_wt2_touch}/went",
+                      data={"went": "well"}).status_code == 404
+      and f"/events/{_wt2_touch}/went" not in client.get(f"/applications/{_wt2}").text)
+client.post(f"/applications/{_wt2}/events", data={"type": "interview_invite", "occurred_on": _ago(4)})
+with db.connect() as conn:
+    _wt2_call = conn.execute("SELECT id FROM events WHERE application_id = %s "
+                             "AND type = 'interview_invite'", (_wt2,)).fetchone()["id"]
+
 # /follow-ups asks for the word (analytics.rating_owed_sql): an open thread
 # whose newest round you sat has passed unrated, no offer since.
 _o = _rating_owed()
-check("a round you sat on an open thread, its day passed and no word yet, is owed one — the call; "
-      "the rejected thread's interview is not",
-      _wt2 in _o and _o[_wt2]["round_type"] == "engaged"
+check("a round you sat on an open thread, its day passed and no word yet, is owed one — the "
+      "interview filed by hand; the rejected thread's interview is not",
+      _wt2 in _o and _o[_wt2]["round_type"] == "interview_invite"
       and str(_o[_wt2]["event_id"]) == str(_wt2_call) and _wt not in _o, sorted(_o))
 _fu = client.get("/follow-ups").text
-_rrow = _row_on("/follow-ups", "Rated Call Co")
-check("the page asks first of all: the row names the call and its day, and its select posts to "
+_rrow = _row_on("/follow-ups", "Rated Screen Co")
+check("the page asks first of all: the row names the round and its day, and its select posts to "
       "that event and comes back here",
       'id="rate"' in _fu
       and all(_fu.index('id="rate"') < _fu.index(s) for s in ('id="by-email"', 'id="rounds"', 'id="nudge"')
               if s in _fu)
       and f'action="/applications/{_wt2}/events/{_wt2_call}/went"' in _rrow
-      and 'value="/follow-ups"' in _rrow and "They got in touch on" in _rrow
+      and 'value="/follow-ups"' in _rrow and "They invited you to interview on" in _rrow
       and '<option value="well">went well</option>' in _rrow and ">4d<" in _rrow, _rrow[:700])
 with db.connect() as conn:
     _q = analytics.queue(conn, user_id)
@@ -3962,7 +3975,7 @@ check("a newer invitation for a day still to come takes the thread off the list 
 with db.connect() as conn:
     conn.execute("UPDATE events SET payload = %s WHERE id = %s", (Json({"stated_date": _ago(2)}), _fut))
 _o = _rating_owed()
-_rrow = _row_on("/follow-ups", "Rated Call Co")
+_rrow = _row_on("/follow-ups", "Rated Screen Co")
 check("...and once that day has passed, it is the round asked about, by the interview's day, not "
       "the email's",
       _wt2 in _o and str(_o[_wt2]["event_id"]) == str(_fut)
@@ -3976,25 +3989,27 @@ with db.connect() as conn:
     conn.execute("DELETE FROM events WHERE id IN (%s, %s)", (_off, _fut))
 r = client.post(f"/applications/{_wt2}/events/{_wt2_call}/went",
                 data={"went": "well", "redirect_to": "/follow-ups"})
-check("a call filed by hand takes a rating too — from the page's own row, which then leaves",
+check("an interview filed by hand takes a rating too — from the page's own row, which then leaves",
       r.status_code == 303 and r.headers["location"] == "/follow-ups"
       and _wt_event(_wt2_call)["payload"]["went"] == "well"
-      and _wt2 not in _rating_owed() and "Rated Call Co" not in client.get("/follow-ups").text,
+      and _wt2 not in _rating_owed() and "Rated Screen Co" not in client.get("/follow-ups").text,
       r.headers.get("location"))
 _t2 = _wt_event(_wt2_call)["payload"]["went_at"]
 r = client.post(f"/applications/{_wt2}/events/{_wt2_call}/edit",
-                data={"type": "engaged", "occurred_on": _ago(5), "note": "the hiring manager rang"})
+                data={"type": "interview_invite", "occurred_on": _ago(5),
+                      "note": "the hiring manager rang"})
 _p = _wt_event(_wt2_call)["payload"]
 check("re-saving the event through the edit form carries the rating and its time across",
       r.status_code == 303 and _p.get("went") == "well" and _p.get("went_at") == _t2
       and _p.get("note") == "the hiring manager rang", _p)
 r = client.post(f"/applications/{_wt2}/events/{_wt2_call}/edit",
-                data={"type": "note", "occurred_on": _ago(5), "note": "the hiring manager rang"})
-check("re-typed as something that is not a round, it drops the rating",
+                data={"type": "engaged", "occurred_on": _ago(5), "note": "the hiring manager rang"})
+check("re-typed as something that is not a round you sat — a person getting in touch, since "
+      "9 Oct 2026 — it drops the rating",
       r.status_code == 303 and "went" not in _wt_event(_wt2_call)["payload"],
       _wt_event(_wt2_call)["payload"])
 client.post(f"/applications/{_wt2}/events/{_wt2_call}/edit",
-            data={"type": "engaged", "occurred_on": _ago(5)})
+            data={"type": "interview_invite", "occurred_on": _ago(5)})
 client.post(f"/applications/{_wt2}/events/{_wt2_call}/went", data={"went": "well"})
 
 with db.connect() as conn:
@@ -4004,7 +4019,7 @@ check("facts: the rejected one reads its rating beside the rejection, filed in h
       _fx[_wt]["went"] == "mixed" and _fx[_wt]["went_next"] == "rejected"
       and _fx[_wt]["went_hindsight"],
       {k: _fx[_wt][k] for k in ("went", "went_next", "went_hindsight")})
-check("the call is rated well and still waiting, which is not hindsight",
+check("the interview filed by hand is rated well and still waiting, which is not hindsight",
       _fx[_wt2]["went"] == "well" and _fx[_wt2]["went_next"] == "waiting"
       and not _fx[_wt2]["went_hindsight"],
       {k: _fx[_wt2][k] for k in ("went", "went_next", "went_hindsight")})
@@ -4024,7 +4039,7 @@ r = client.post(f"/applications/{_wt}/events/{_wt_inv}/went", data={"went": ""})
 check("blank clears the rating and its time; nothing else moves",
       r.status_code == 303 and _wt_event(_wt_inv)["payload"] == _before["payload"],
       _wt_event(_wt_inv)["payload"])
-client.post(f"/applications/{_wt2}/events", data={"type": "engaged"})
+client.post(f"/applications/{_wt2}/events", data={"type": "interview_invite"})
 check("a round sat today is not asked about until its day has passed", _wt2 not in _rating_owed())
 # This section's records go, so the suites after count what they counted.
 for _id in (_wt, _wt2):
@@ -4063,10 +4078,19 @@ with db.connect() as conn:
         f"WHERE a.user_id = %s", (user_id,)).fetchall()}
     _fa, _fe = analytics.facts(conn, user_id)
     _summ = analytics.summary(conn, user_id, False)
-_py = {str(f["id"]): f["round_fate"] for f in insights.build_facts(_fa, _fe, datetime.now(timezone.utc), 10)}
+_bf = insights.build_facts(_fa, _fe, datetime.now(timezone.utc), 10)
+_py = {str(f["id"]): f["round_fate"] for f in _bf}
 check("the SQL bucket is insights._went's, on every application in this database",
       {k: v[1] for k, v in _rows.items()} == _py and len(_rows) > 20,
       [(k, _rows[k][1], _py.get(k)) for k in _rows if _rows[k][1] != _py.get(k)][:5])
+# The interviews figure and the rounds tag are one notion (9 Oct 2026): until
+# then the figure took a person getting in touch as a round you sat, which
+# trace.rounds never has, and the list counted an agency's pitch email as one
+# of "11 interviews" on a row whose tag said no round.
+_sat_ids = {k for k, v in _rows.items() if v[1] is not None}
+_round_ids = {str(f["id"]) for f in _bf if f["n_rounds"]}
+check("an application counts as an interview exactly when trace.rounds finds a round on it",
+      _sat_ids == _round_ids and _sat_ids, (_sat_ids ^ _round_ids))
 check("the six fixtures land in their buckets — a visa stop or a closed role after a round is "
       "'stopped', not lost",
       _rows[_lf["Lost Rejected Co"]][1] == "rejected" and _rows[_lf["Lost Quiet Co"]][1] == "lost_quiet"

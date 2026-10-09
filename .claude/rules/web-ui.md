@@ -226,7 +226,8 @@ is a private artifact, linked from the memory file
 
    **Since 8 Oct 2026 a section before the emails: "How did it go?"**
    (rule 20, worklog task 75). An open thread whose newest round you sat —
-   an `interview_invite` or `engaged`, `analytics.RATED_EVENTS` — has
+   an `interview_invite`, `analytics.RATED_EVENTS` (and `engaged` until
+   9 Oct 2026, rule 20) — has
    passed with no `went`, and no offer since (then the outcome is on
    record and a rating would be hindsight). First of all, because it is
    due the day after and only a rating made before the answer tells the
@@ -907,8 +908,9 @@ is a private artifact, linked from the memory file
     facts that rule 12 keeps apart: the close's reason is the employer's,
     said later; how the round went is yours, and comes first. So
     `payload.went` (`analytics.WENT_LABELS`: well / mixed / badly) sits on
-    the ROUND event — an `interview_invite` or `engaged`,
-    `analytics.RATED_EVENTS`; an offer is a round reached, not one sat —
+    the ROUND event — an `interview_invite`, `analytics.RATED_EVENTS` (an
+    `engaged` too until 9 Oct 2026, below); an offer is a round reached,
+    not one sat —
     whatever its source, through `web.set_round_went`, the door
     `set_rejection_reason` is: it writes the two keys and leaves the
     email's facts alone. A select on every such timeline line ("How did it
@@ -981,7 +983,8 @@ is a private artifact, linked from the memory file
     silent statistic (invariant #3's preference). ONE "How did it go?"
     select per round, on the round's `rate_event` (the rated one, else the
     newest), after the author rated every line of one interview; a call
-    keeps its own. `/analytics`' "How far you got" is the interviews grid
+    kept its own until 9 Oct 2026 (below, "A person getting in touch").
+    `/analytics`' "How far you got" is the interviews grid
     by rounds reached. The follow-ups rule approximates the round in SQL
     (same stated day, or within the span of the newest event) so a
     reminder after a rated invitation does not ask again. **The override
@@ -1008,6 +1011,22 @@ is a private artifact, linked from the memory file
     invitation had named the same day as its deadline. Nobody hand-files
     a reminder, so the rule is by source, not by click; the SQL
     same-round approximations exclude manual events the same way.
+    **A person getting in touch is not a round you sat** (9 Oct 2026,
+    worklog task 80). `trace.rounds` left `engaged` out from the day it was
+    written, but `RATED_EVENTS` — which `sat_sql`, its twin
+    `insights._sat`, the ratings owed and the "How did it go?" select all
+    read — still held it from rule 20's first day, when a call could be
+    rated. So the lists' "11 interviews" counted one record the rounds tag
+    said had none: an agency recruiter's email pitching their client's
+    other openings, filed by hand as "They reached out", a reply, then
+    silence. It was the only record counted that way on either page, and
+    no `engaged` had ever been rated. `RATED_EVENTS` is now DEFINED as
+    `(trace.ROUND_EVENT,)`, and `tests/test_web.py` holds the figure's
+    records to those `trace.rounds` finds a round on, over every
+    application in the suite's database. `engaged` stays a ROUND_EVENT: a
+    person engaging is still an answer, opens "Heard nothing since?" and
+    makes a rejection "after a round" (rule 13), which asks whether a
+    person engaged, not whether you sat an interview.
     **A round has a kind** (the same morning): `analytics.ROUND_KINDS`, a
     closed vocabulary (coding test or take-home, recruiter screen,
     technical interview, hiring manager, panel or onsite, final round,
@@ -1089,8 +1108,9 @@ events, so an offer that was made still counts whatever came after; the
 same rule 13 uses for `after_round`.
 
 **How a round you sat went is your annotation on it** (8 Oct 2026):
-`payload.went` with `went_at` on an `interview_invite` or `engaged` event
-whatever its source, through `web.set_round_went` — rule 12's narrow door
+`payload.went` with `went_at` on an `interview_invite` (an `engaged` too,
+until 9 Oct 2026: rule 20) whatever its source, through
+`web.set_round_went` — rule 12's narrow door
 again, for the same reason an emailed rejection takes a reason. Never a
 status (nothing moves), never a reason on the close (that is the
 employer's). Rule 20 has the why and the hindsight rule.

@@ -2501,3 +2501,24 @@ the key to each real case.
    - Seen in the dev Chrome, dark and light, unfiltered and `?wait=past`;
      not at phone width.
 
+80. **A person getting in touch is not an interview** (9 Oct 2026). "Why is
+   <record> counted as '11 interviews'": an Easy Apply to an agency, whose
+   recruiter emailed the next day pitching their client's other openings;
+   the author filed it by hand as "They reached out" (`engaged`), replied
+   six days later with work-pass questions, heard nothing, and closed it
+   "They went quiet". No invitation anywhere on the thread. The figure
+   counts `round_fate_sql`, which anchors on `sat_sql`, which read
+   `RATED_EVENTS = (interview_invite, engaged)` — from task 75, when a call
+   could be rated — while task 76's `trace.rounds` had left `engaged` out
+   ("a call is not a round"): the row wore no rounds tag and "How far you
+   got" skipped it, but the figure counted it. Measured first: the only
+   record of 17 (11 on `/`, 6 on `/inbound`) counted through `engaged`
+   alone, and no `engaged` had ever been rated. The author chose the rule
+   over editing the record (the recruiter did reach out; the counting was
+   wrong): `RATED_EVENTS = (trace.ROUND_EVENT,)`, so the two are one
+   constant, and the suite holds the figure's records to `trace.rounds`'
+   over every application. On the day: 11 → 10 interviews. `engaged` stays
+   an answer, a round for "Heard nothing since?" and for rule 13's "after a
+   round"; the "How did it go?" select leaves its lines, and re-typing a
+   rated interview as one drops the rating.
+

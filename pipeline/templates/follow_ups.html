@@ -38,7 +38,7 @@ closed. <a href="/">Back to the applications</a>.</p>
 {% endif %}
 
 {# A round you sat, waiting for your word (analytics.rating_owed_sql, 8 Oct
-   2026): an interview or a call on an open thread, its day passed, unrated,
+   2026): an interview on an open thread, its day passed, unrated,
    no offer since. First of all, because it is due the day after and only a
    rating made before anything comes back tells /analytics' interviews panel
    anything — one filed after the answer can only agree with it. Grey, like
@@ -47,7 +47,7 @@ closed. <a href="/">Back to the applications</a>.</p>
    (web.set_round_went) and comes back here. #}
 {% if rate %}
 <h2 id="rate">How did it go?</h2>
-<p class="lede"><b>{{ rate | length }}</b> interview{{ '' if rate | length == 1 else 's' }} or call{{ '' if rate | length == 1 else 's' }}
+<p class="lede"><b>{{ rate | length }}</b> interview{{ '' if rate | length == 1 else 's' }}
   you sat, and no word yet on how it went. Say it now, before you hear back: a rating
   made after the answer can only agree with it.</p>
 <div class="card fu">

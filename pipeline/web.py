@@ -2461,8 +2461,9 @@ def set_rejection_reason(request: Request, app_id: str, event_id: str,
 @app.post("/applications/{app_id}/events/{event_id}/went")
 def set_round_went(request: Request, app_id: str, event_id: str, went: str = Form(""),
                    redirect_to: str = Form("")):
-    """Say how a round you sat went — on any interview invitation or
-    `engaged` event (analytics.RATED_EVENTS), whatever its source.
+    """Say how a round you sat went — on any interview invitation
+    (analytics.RATED_EVENTS), whatever its source; a person getting in touch
+    (`engaged`) took one too until 9 Oct 2026.
 
     set_rejection_reason's shape, for its reason: the invitation is the
     email's fact and stays read-only; how the interview went is yours. Asked

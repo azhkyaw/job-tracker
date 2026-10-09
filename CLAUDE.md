@@ -427,7 +427,8 @@ An invariant keeps its RULE here and its case history in the rule file.
    (28 Sep 2026; web-ui.md rule 17). **How a round you sat went is YOUR
    annotation on the round** (8 Oct 2026): `payload.went` — well / mixed /
    badly, `analytics.WENT_LABELS` — with `went_at`, on any
-   `interview_invite` or `engaged` whatever its source
+   `interview_invite` whatever its source (a person getting in touch,
+   `engaged`, is not a round you sat since 9 Oct 2026: `trace.rounds`' rule)
    (`web.set_round_went`, the door `set_rejection_reason` is), never a
    reason on the close and never a status; `/analytics` reads it beside
    what came of the round, and a rating filed after the outcome counts as

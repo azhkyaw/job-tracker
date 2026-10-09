@@ -201,18 +201,25 @@ def rejection_reasons(conn, user_id, inbound: bool | None = None):
 ROUND_EVENTS = ("interview_invite", "engaged", "offer")
 ROUND_TYPES = _sql_list(ROUND_EVENTS)
 
-# The rounds you SAT — an interview, a call or message (`engaged`) — and so
-# the ones that take your own reading of how it went: `payload.went`, a key
-# of WENT_LABELS, written by web.set_round_went on the round event whatever
-# its source, with `went_at`, when you said so (8 Oct 2026). An offer is a
-# round the thread reached, not one you performed in; it takes none. Two
-# facts kept apart on purpose: the rating is yours, about the round, and
-# comes first; a close's reason is the employer's, about the close, and comes
-# later (rule 12). "I'm sure I didn't hear because the interview went badly"
-# and "I know it went well and heard nothing" were one record each until
-# then, and read the same — "rejected after a round", "they went quiet".
-# insights.interviews reads the rating beside what came of the round.
-RATED_EVENTS = ("interview_invite", "engaged")
+# The rounds you SAT — an interview — and so the ones that take your own
+# reading of how it went: `payload.went`, a key of WENT_LABELS, written by
+# web.set_round_went on the round event whatever its source, with `went_at`,
+# when you said so (8 Oct 2026). An offer is a round the thread reached, not
+# one you performed in; it takes none. Two facts kept apart on purpose: the
+# rating is yours, about the round, and comes first; a close's reason is the
+# employer's, about the close, and comes later (rule 12). "I'm sure I didn't
+# hear because the interview went badly" and "I know it went well and heard
+# nothing" were one record each until then, and read the same — "rejected
+# after a round", "they went quiet". insights.interviews reads the rating
+# beside what came of the round.
+# A person getting in touch (`engaged`) was one too until 9 Oct 2026, while
+# trace.rounds had said since the day before that a call is not a round: the
+# list's "11 interviews" then counted an agency recruiter's pitch email, filed
+# by hand as "They reached out", as an interview, on a row whose rounds tag
+# said none. So it is DEFINED as the event trace.rounds groups, and the two
+# cannot drift apart again. `engaged` stays a ROUND_EVENT: a person engaging
+# is still an answer, and still makes a rejection "after a round".
+RATED_EVENTS = (trace.ROUND_EVENT,)
 _RATED_TYPES = _sql_list(RATED_EVENTS)
 WENT_LABELS = {"well": "went well", "mixed": "mixed", "badly": "went badly"}
 
