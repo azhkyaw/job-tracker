@@ -86,7 +86,8 @@ what separates this from anything that drives a logged-in session for you.
 - **Answers**: every screening question you have ever been asked, grouped
   across employers — the same questions recur almost verbatim. Identity
   numbers, date of birth, race, religion, marital status, gender, veteran and
-  disability status are withheld *in the browser* and stored as `(withheld)`;
+  disability status, and equal-opportunity "self-identification" questions,
+  are withheld *in the browser* and stored as `(withheld)`;
   nationality and work authorisation stay, because the visa analysis reads
   them.
 - **Job-description extraction**: languages, technologies, salary and the
@@ -222,7 +223,7 @@ grey.
 
 | Page | What it is for |
 |---|---|
-| `/` | Your applications, with a shared-axis timeline per row, filters, sort, search |
+| `/` | Your applications, with a shared-axis timeline per row, a status bar painted in its rows' own colours, filters, sort, search |
 | `/inbound` | Threads a recruiter or employer started (`origin = inbound`), kept on their own page |
 | `/triage` | Mail the matcher would not file alone, with the records it weighed; identical mail from one sender as one card; applications filed twice; the week's less certain filings for a "Looks right" |
 | `/follow-ups` | Your move: how did yesterday's interview go, CV owed by email, worth a nudge, applied to again, gone quiet after a round, leads awaiting your reply; a confirmed bulk close for the ones past the odds |
@@ -234,7 +235,7 @@ grey.
 
 ## The extension
 
-`extension/` is a Manifest V3 extension (currently 0.29.0) that loads
+`extension/` is a Manifest V3 extension (currently 0.29.3) that loads
 unpacked. It captures when you submit an application:
 
 - on the three job boards it has adapters for — LinkedIn (Easy Apply and the
@@ -242,7 +243,7 @@ unpacked. It captures when you submit an application:
 - on the application forms of the hiring systems employers use, by content
   script: Greenhouse, Lever, Ashby, Workable, Workday, SuccessFactors
   (classic and the newer candidate experience), SmartRecruiters, iCIMS,
-  JazzHR, Breezy, Darwinbox and Taleo. Oracle Recruiting Cloud, Phenom and
+  JazzHR, Breezy, Darwinbox, Taleo and Oracle Recruiting Cloud. Phenom and
   Eightfold, which run under the employer's own domain, work once you enable
   that site;
 - on **any other job page** from the toolbar popup: it reads the page's

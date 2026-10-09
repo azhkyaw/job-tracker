@@ -364,7 +364,10 @@ explicit "attach to this job" parameter (§10), never a similarity match.
   (`greenhouse.io`, `lever.co`, `ashbyhq.com`, `myworkdayjobs.com`,
   `successfactors.com` / `.eu`, `smartrecruiters.com`, `workable.com`,
   `personio.com`/`.de`, `applytojob.com`, `recruitee.com`, `teamtailor.com`,
-  …). These make the hooks automatic.
+  …). These make the hooks automatic. Oracle Recruiting Cloud joined on
+  9 Oct 2026 (extension 0.29.1), path-limited to
+  `oraclecloud.com/hcmUI/CandidateExperience/*`: its forms had always lived
+  on the vendor's host, but only the vendor table knew it.
   - Adding hosts is a permission increase: a store-installed extension is
     disabled until the user re-approves it.
   - Unpacked, it is a reload, plus the existing rule to refresh tabs opened

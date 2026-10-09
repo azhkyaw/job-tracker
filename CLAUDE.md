@@ -83,7 +83,7 @@ and design records; the code and `migrations/` win where they disagree.
   this install. Read its §3 first: the author's right to earn in Singapore
   decides the rest. Confirms `docs/open-source.md` and says what would
   reopen the question.
-- `docs/worklog.md` — the dated task register (tasks 1-78 with their
+- `docs/worklog.md` — the dated task register (tasks 1-85 with their
   measurements); what is still open is summarised under "Open work" below.
 
 **Path-scoped rules.** Dated case history that only matters when touching
@@ -590,6 +590,8 @@ rules that must survive any edit, one line each: colour means exactly one
 thing, the state of the wait, and everything else is grey (blue engaged, amber
 waiting, rust closed, green offer) — and since 23 Sep 2026 amber is GRADED by
 `trace.heat()` through one `--heat` variable per row, never a second amber;
+every surface that colours a thread (the rows, the status bar, `/analytics`'
+squares) reads it through `trace.wait()` / `trace.tone()`, never its own rule;
 the dark palette is written TWICE and both copies change together; every
 trace on a page shares ONE axis; charts are single-series, never dual-axis;
 never print a rate below `analytics.MIN_RATE_N`; words on a page come from
@@ -914,11 +916,13 @@ Detail lives with each family's rule file; this is the index.
   labels with their "not a round" buttons, the detail badge, the list's
   "N rounds" tag, and "How far you got" on `/analytics`. The status bar
   painted with its own rows and its two-group legend (task 79) were seen
-  in both themes at desktop width, never at phone width.
+  in both themes at desktop width, never at phone width. The speaker-named
+  visa tags and the "you: answer unread" bucket (task 83) were rendered
+  through TestClient against real data only, not looked at.
 
 ## Open work (as of 9 Oct 2026)
 
-The dated register behind each item, tasks 1-78 with their measurements, is
+The dated register behind each item, tasks 1-85 with their measurements, is
 `docs/worklog.md`; read the matching entry before acting on one.
 
 - **Interview rounds, their kinds, and what came of them** (tasks 75-78,
@@ -962,7 +966,11 @@ The dated register behind each item, tasks 1-78 with their measurements, is
   applications, whose questions were never stored. Workday answers stored
   as the platform's internal ids are fixed for new captures (0.29.2, task
   84: the 77 stored ones, 32-hex, can't be read back and wear "you: answer
-  unread" where they are visa answers). Code, not built: a cookie banner's
+  unread" where they are visa answers). The author's, offered 9 Oct and
+  left for later (task 85): the 11 visa questions behind those tags,
+  filed from the author's own word through the repair route, never
+  guessed; and `cli redact-answers --apply` for the 3 rows answering a
+  self-identification question (no undo). Code, not built: a cookie banner's
   checkboxes stored as answers on an Eightfold form. Sync and the worker had stopped at 07:28
   UTC that day, and again on 8 Oct (newest mail 02:45 UTC, the queue idle
   from 04:00): check the cron.
