@@ -247,7 +247,8 @@ An invariant keeps its RULE here and its case history in the rule file.
   turn, then `unclear`). `VISA_GROUPS` / `visa_group_sql` fold the signals
   into restricts / sponsors / nothing for the list filter and `/analytics`
 - `pipeline/answers.py` — screening-answer normalisation and the ONLY write to
-  `application_answers` (invariant #11); `renorm()` re-keys stored rows when
+  `application_answers` (invariant #11); `prune_stored()` removes stored rows
+  a newer `_control_kind` rule calls chrome; `renorm()` re-keys stored rows when
   `norm_question` changes, which `extension/shared/answers.js:normKey`
   mirrors (`tests/question_norms.json` holds the two together).
   `declares_sponsorship` is ONE rule in Python and SQL (its regexes run in
@@ -319,7 +320,10 @@ An invariant keeps its RULE here and its case history in the rule file.
 - Answer keys: `uv run python -m pipeline.cli renorm-answers [--apply]` after any
   change to `norm_question` (dry run by default; `.claude/rules/extension.md`);
   `redact-answers [--apply]` after any change to `is_sensitive` (dry run by
-  default, prints questions never values, and `--apply` has no undo)
+  default, prints questions never values, and `--apply` has no undo);
+  `prune-answers [--apply]` after any change to `_control_kind` (removes the
+  rows a new chrome rule names, promotes a resume pick where the application
+  has none, renumbers the groups they leave; dry run by default)
 - Account bootstrap/recovery: `uv run python -m pipeline.cli passwd <email>`
 - Linux/WSL only: Postgres must be running (`sudo service postgresql start`;
   WSL doesn't autostart). Native Windows runs the suites on Docker, next bullet.

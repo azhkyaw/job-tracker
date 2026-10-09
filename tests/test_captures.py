@@ -600,6 +600,61 @@ with db.connect() as conn:
         == _answers.REDACTED)
     check("a second run finds nothing to do", _answers.redact_stored(conn) == [])
 
+# prune_stored(): rows a _control_kind() rule now calls form chrome, stored
+# before the rule existed (written past clean(), as the old code wrote them).
+# The real case: an iCIMS filter box's typed text, 8 rows on the first iCIMS
+# apply (3 Oct 2026), stored before 0.27.2 skipped the box.
+_PRUNE_ROWS = [("— Type to Search —", "type to search", "singa", "text", 20, 0),
+               ("— Type to Search —", "type to search", "sin", "text", 21, 1),
+               ("Resume", "resume", "Jane-Doe-CV.pdf", "radio", 30, 0),
+               ("Resume", "resume", "Attached above", "text", 31, 1)]
+with db.connect() as conn:
+    for q_, norm_, a_, ft_, ord_, occ_ in _PRUNE_ROWS:
+        conn.execute(
+            "INSERT INTO application_answers (user_id, application_id, question, "
+            "question_norm, answer, field_type, ordinal, occurrence) "
+            "SELECT user_id, id, %s, %s, %s, %s, %s, %s FROM applications WHERE id = %s::uuid",
+            (q_, norm_, a_, ft_, ord_, occ_, sens_app))
+    conn.execute("UPDATE applications SET resume_file = NULL WHERE id = %s::uuid", (sens_app,))
+_n_before = None
+with db.connect() as conn:
+    _n_before = conn.execute("SELECT count(*) AS n FROM application_answers").fetchone()["n"]
+    plan = _answers.prune_stored(conn)
+    check("prune dry run: the filter box's rows and the resume pick, and no answer reported",
+          sorted((p["kind"], p["question"], p["promote"]) for p in plan)
+          == [("drop", "— Type to Search —", None), ("drop", "— Type to Search —", None),
+              ("resume", "Resume", "Jane-Doe-CV.pdf")]
+          and all(set(p) == {"id", "application_id", "question", "kind", "promote"} for p in plan), plan)
+    check("...and writes nothing", conn.execute(
+        "SELECT count(*) AS n FROM application_answers").fetchone()["n"] == _n_before)
+with db.connect() as conn:
+    _answers.prune_stored(conn, apply=True)
+with db.connect() as conn:
+    left = [(r["question_norm"], r["occurrence"], r["answer"]) for r in conn.execute(
+        "SELECT question_norm, occurrence, answer FROM application_answers "
+        "WHERE application_id = %s::uuid AND question_norm IN ('type to search', 'resume') "
+        "ORDER BY 1, 2", (sens_app,)).fetchall()]
+    check("applied: the chrome is gone, and the resume group left renumbered from 0",
+          left == [("resume", 0, "Attached above")], left)
+    check("applied: the pick became the application's resume",
+          conn.execute("SELECT resume_file FROM applications WHERE id = %s::uuid",
+                       (sens_app,)).fetchone()["resume_file"] == "Jane-Doe-CV.pdf")
+    check("a second run finds nothing to do", _answers.prune_stored(conn) == [])
+    # A pick stored where the application already names a resume: removed,
+    # and the resume a capture recorded is never replaced.
+    conn.execute(
+        "INSERT INTO application_answers (user_id, application_id, question, "
+        "question_norm, answer, field_type, ordinal, occurrence) "
+        "SELECT user_id, id, 'Resume', 'resume', 'Old-CV.pdf', 'radio', 29, 1 "
+        "FROM applications WHERE id = %s::uuid", (sens_app,))
+with db.connect() as conn:
+    plan = _answers.prune_stored(conn, apply=True)
+    check("a pick on an application that names its resume: removed, nothing to promote",
+          [(p["kind"], p["promote"]) for p in plan] == [("resume", None)], plan)
+    check("...and its resume is the one already recorded",
+          conn.execute("SELECT resume_file FROM applications WHERE id = %s::uuid",
+                       (sens_app,)).fetchone()["resume_file"] == "Jane-Doe-CV.pdf")
+
 print("employer career sites: one id rule with the extension (docs/career-sites.md)")
 from pipeline import joburl                                            # noqa: E402
 _URLS = _json.loads((Path(__file__).resolve().parent / "job_urls.json")

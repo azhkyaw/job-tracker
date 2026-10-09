@@ -17,6 +17,10 @@
                      withhold stored answers that answers.is_sensitive() now
                      covers (NRIC, date of birth, race, …); dry run unless
                      --apply, and there is no undo
+  prune-answers [--apply]
+                     remove stored rows answers._control_kind() now calls
+                     form chrome (promoting a resume pick); dry run unless
+                     --apply
 """
 
 from __future__ import annotations
@@ -223,6 +227,19 @@ def cmd_redact_answers(args) -> None:
           + ("withheld" if args.apply else "to withhold (dry run; --apply writes)"))
 
 
+def cmd_prune_answers(args) -> None:
+    import sys
+    from . import answers
+    sys.stdout.reconfigure(errors="replace")      # same reason as renorm-answers
+    with db.connect() as conn:
+        plan = answers.prune_stored(conn, apply=args.apply)
+    for p in plan:
+        print(f"  {str(p['application_id'])[:8]}  {p['kind']:6}  {p['question'][:70]!r}"
+              + ("  -> resume_file" if p["promote"] else ""))
+    print(f"{len(plan)} answer row(s) "
+          + ("removed" if args.apply else "to remove (dry run; --apply writes)"))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="tracker")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -256,6 +273,9 @@ def main() -> None:
     p = sub.add_parser("redact-answers")
     p.add_argument("--apply", action="store_true", help="overwrite the values (no undo)")
     p.set_defaults(fn=cmd_redact_answers)
+    p = sub.add_parser("prune-answers")
+    p.add_argument("--apply", action="store_true", help="remove the rows")
+    p.set_defaults(fn=cmd_prune_answers)
     args = parser.parse_args()
     args.fn(args)
 

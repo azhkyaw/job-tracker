@@ -2765,3 +2765,25 @@ the key to each real case.
      step's real answer.
    - Three checks, red on the old `answers.js`; the closed-field control
      is green on both. The 17 rows are removed with the repairs (task 93).
+
+90. **A filter box's typed text, removed from the stored rows by a rule**
+   (10 Oct 2026). The audit found 8 rows on the first iCIMS apply (3 Oct)
+   under "— Type to Search —", answered with what was typed to find a
+   dropdown's option ("singa", "sin", "s"), and an invariant-#11 gap among
+   them: the 8 Oct cleanup script had removed one. 0.27.2 stopped the
+   capture (`answers.js:filterBox`), but the server had no second line, and
+   rows stored before a chrome rule existed had only ever been removed by
+   one-off scripts (2 and 8 Oct).
+   - **The rule:** `answers._CONTROL_NORM_RES` drops `^type to search$`,
+     anchored on the whole key.
+   - **And the stored rows follow a rule change the way the other two do:**
+     `answers.prune_stored()` / `cli prune-answers [--apply]`, beside
+     `renorm-answers` and `redact-answers`: it removes what `_control_kind`
+     now calls chrome, promotes a resume pick to `applications.resume_file`
+     where the application has none (a capture's choice is never
+     replaced), renumbers the groups a removed row leaves, and prints the
+     question and kind, never the answer. Dry run on the dev DB: exactly
+     the 8 rows. Applied with the repairs (task 93).
+   - `tests/test_captures.py`: the filter box's rows, a resume pick
+     promoted, its group renumbered from 0, a second pick removed without
+     replacing the recorded resume, and a second run finding nothing.

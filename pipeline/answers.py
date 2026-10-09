@@ -106,6 +106,13 @@ _CONTROL_NORM_RES = (
     # by its own name attribute); this is the second line, for the three
     # captchas ATS forms carry, once an ATS put one INSIDE the application.
     re.compile(r"^(g recaptcha|h captcha|cf turnstile) response$"),
+    # The search box that filters a dropdown, named only by its placeholder:
+    # iCIMS's "— Type to Search —" (read live 4 Oct 2026), holding whatever
+    # was typed to find the option ("singa", "sin", "s"). The extension has
+    # skipped it since 0.27.2 (answers.js:filterBox); this is the second line,
+    # and what removed the 8 rows the first iCIMS apply had already stored
+    # (prune_stored, 10 Oct 2026).
+    re.compile(r"^type to search$"),
 )
 
 # Questions whose ANSWER is identity or protected-characteristic data: an
@@ -389,6 +396,59 @@ def redact_stored(conn, apply: bool = False) -> list[dict]:
         with conn.transaction():
             conn.execute("UPDATE application_answers SET answer = %s WHERE id = ANY(%s)",
                          (REDACTED, [p["id"] for p in plan]))
+    return plan
+
+
+def prune_stored(conn, apply: bool = False) -> list[dict]:
+    """Remove stored rows that _control_kind() now calls form chrome, for when
+    its rules change: clean() drops such rows at capture, so only rows stored
+    before a rule existed can be there. A resume pick is promoted on the way
+    out, as a capture does (applications.resume_file), but only where the
+    application has none, so a later capture's choice is never replaced.
+    Returns the rows (kind, application, question; never the answer, which
+    may be a resume's file name); writes only when `apply`. The groups a
+    removed row leaves are renumbered in form order, as renorm() does, so a
+    repeater keeps its occurrences contiguous (invariant #11). Admin
+    connection, every user's rows, like renorm() and redact_stored().
+
+    Until 10 Oct 2026 each new rule's stored rows were removed by a one-off
+    script (2 and 8 Oct): renorm-answers and redact-answers had commands of
+    their own, and this rule did not."""
+    rows = conn.execute(
+        "SELECT x.id, x.application_id, x.question, x.question_norm, x.answer, "
+        "x.field_type, x.occurrence, x.ordinal, a.resume_file "
+        "FROM application_answers x JOIN applications a ON a.id = x.application_id").fetchall()
+    plan = []
+    for r in rows:
+        kind = _control_kind(r["question"], r["answer"], r["field_type"])
+        if kind:
+            plan.append({"id": r["id"], "application_id": r["application_id"],
+                         "question": r["question"], "kind": kind,
+                         "promote": (resume_file([{"question": r["question"], "answer": r["answer"],
+                                                   "type": r["field_type"]}])
+                                     if kind == "resume" and not r["resume_file"] else None)})
+    if apply and plan:
+        gone = {p["id"] for p in plan}
+        touched = {(r["application_id"], r["question_norm"]) for r in rows if r["id"] in gone}
+        groups: dict[tuple, list] = defaultdict(list)
+        for r in rows:
+            if r["id"] not in gone and (r["application_id"], r["question_norm"]) in touched:
+                groups[(r["application_id"], r["question_norm"])].append(r)
+        with conn.transaction():
+            for p in plan:
+                if p["promote"]:
+                    conn.execute("UPDATE applications SET resume_file = %s "
+                                 "WHERE id = %s AND resume_file IS NULL",
+                                 (p["promote"], p["application_id"]))
+            conn.execute("DELETE FROM application_answers WHERE id = ANY(%s)", (list(gone),))
+            for members in groups.values():
+                members.sort(key=lambda r: (r["ordinal"] is None, r["ordinal"] or 0,
+                                            r["occurrence"], str(r["id"])))
+                for occurrence, r in enumerate(members):
+                    conn.execute("UPDATE application_answers SET occurrence = %s WHERE id = %s",
+                                 (-1 - occurrence, r["id"]))
+                conn.execute("UPDATE application_answers SET occurrence = -1 - occurrence "
+                             "WHERE id = ANY(%s)", ([r["id"] for r in members],))
     return plan
 
 
