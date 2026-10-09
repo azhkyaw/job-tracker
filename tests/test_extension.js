@@ -911,6 +911,30 @@ console.log("\nanswers.js sweep: Greenhouse's job-board form (read live 29 Sep 2
   for (const fn of icSandbox._listeners.input) fn({ composedPath: () => [icB.search] });
   check("…and typing in its search box stores nothing (the edit backstop)",
         icSandbox.window.__trackerAnswers.take().map((a) => a.question), ["Country"]);
+  // Workday's dropdown (read live 9 Oct 2026, a tenant's "Introduce Yourself"
+  // form): the field's <label for> names a <button aria-haspopup="listbox">
+  // showing the choice, whose `value` is the choice's 32-hex id, and an
+  // <input type=text> beside it mirrors that id. The sweep read the input:
+  // 77 stored answers were the id. The question here reaches the input the
+  // way the stored rows show it must have, as the block before its field.
+  const WD_ID = "8c17e811c1be0168d7a23229d0001c9b";
+  const workday = (shown, id) => node("div", { "data-automation-id": "formField-workAuth" }, [
+    node("label", { for: "wa--btn" }, ["What is your right-to-work status?*"]),
+    node("div", {}, [
+      node("button", { type: "button", id: "wa--btn", "aria-haspopup": "listbox", value: id,
+                       "aria-label": `What is your right-to-work status? ${shown} Required` }, [shown]),
+      node("input", { type: "text", value: id, class: "css-77hcv", "aria-hidden": "true", tabindex: "-1" }),
+    ]),
+  ]);
+  check("a Workday dropdown answers with the choice its button shows, never the id the input mirrors",
+        sweepOf(workday("Employment Pass holder", WD_ID)),
+        [{ question: "What is your right-to-work status?*", answer: "Employment Pass holder", type: "text" }]);
+  check("…and nothing while it says Select One", sweepOf(workday("Select One", "")), []);
+  check("…and an input that does not mirror the button's value is read as itself",
+        sweepOf(node("div", {}, [node("label", { for: "q" }, ["City"]), node("div", {}, [
+          node("button", { type: "button", "aria-haspopup": "listbox", value: WD_ID }, ["Singapore"]),
+          node("input", { type: "text", id: "q", value: "singa" })])])),
+        [{ question: "City", answer: "singa", type: "text" }]);
   // Resume: <input type=file class="visually-hidden">, whose only <label for>
   // is the "Attach" button's, inside <div role="group"
   // aria-labelledby="upload-label-resume"> named "Resume/CV*".

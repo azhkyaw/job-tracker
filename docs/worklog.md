@@ -2594,5 +2594,21 @@ the key to each real case.
      `tests/sponsorship_answers.json`, the real miss among them.
    - On the dev DB: needs 74 → 75, the 19 "asked" → 14 unread and 4 asked.
    - **Not done:** reading Workday's option ids as words, the 7 Oct audit's
-     open extension item; it needs a live Workday form.
+     open extension item; it needs a live Workday form (task 84, next).
+
+84. **Workday's dropdowns, read as what they show** (9 Oct 2026, extension
+   0.29.2). "Feel free to navigate to any workday form you'd like." The
+   tenant with the most unreadable answers asked for a sign-in at its
+   candidate home, which was not given; its public "Introduce Yourself"
+   form was open and built from the same widgets, with a country already
+   chosen, so a selected dropdown could be read without choosing anything.
+   Read-only (nothing typed, clicked or sent): the `<label for>` names a
+   `<button aria-haspopup="listbox">` showing the choice, its `value` the
+   choice's id, and an `<input type="text">` beside it mirrors the id. The
+   sweep reads inputs, so it stored the id. `answers.js:mirroredButton`
+   answers such an input with the button's text ("Select One" none) and
+   names it by the button's label; run verbatim in the page it read all
+   three dropdowns and nothing else changed. The test fails on the old code
+   with the stored signature. The 77 stored ids stay unreadable (tenant ids
+   behind a sign-in). `.claude/rules/extension.md` has the detail.
 

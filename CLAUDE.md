@@ -850,7 +850,7 @@ Detail lives with each family's rule file; this is the index.
   says per build what to read on first real contact): every adapter
   selector is best-effort; JobStreet's race fix wants one clean submit;
   Indeed never exercised; `getRecruiter()` has one card of evidence;
-  textareas never stored from Easy Apply. Builds 0.9.0-0.29.1 carry
+  textareas never stored from Easy Apply. Builds 0.9.0-0.29.2 carry
   pieces proven only in tests or by rules run in a live page, waiting on:
   the next Easy Apply (0.9.0's `<dialog>` sweep, `getJob()`'s
   self-document fallback and `doc_source`, 0.10.1's
@@ -870,7 +870,9 @@ Detail lives with each family's rule file; this is the index.
   empties (0.28.1, 0.28.3: no live-region text or icon glyph as an answer,
   no answer kept for a field left blank); the next Taleo apply (0.29.0:
   seen only on re-opened applications, task 74); the next Oracle
-  Recruiting Cloud apply with no site enabled (0.29.1's static match).
+  Recruiting Cloud apply with no site enabled (0.29.1's static match);
+  the next Workday apply with a dropdown question (0.29.2: its answer the
+  choice shown, not a 32-hex id).
 - **Mail** (`.claude/rules/mail-ingest.md`): IMAP verified on a real inbox
   28 Jul 2026; the web IMAP connect form, Gmail web OAuth and the full `-m 12`
   window are not.
@@ -956,10 +958,11 @@ The dated register behind each item, tasks 1-78 with their measurements, is
   application whose job board reported a failed delivery after "sent"
   (the mail was ignored in triage on 30 Sep; check the board), and
   whether to delete the option-as-question checkbox rows on 7 older
-  applications, whose questions were never stored. Code, not built:
-  Workday answers stored as the platform's internal ids (a 30-character
-  hex value as the answer), and a cookie banner's checkboxes stored as
-  answers on an Eightfold form. Sync and the worker had stopped at 07:28
+  applications, whose questions were never stored. Workday answers stored
+  as the platform's internal ids are fixed for new captures (0.29.2, task
+  84: the 77 stored ones, 32-hex, can't be read back and wear "you: answer
+  unread" where they are visa answers). Code, not built: a cookie banner's
+  checkboxes stored as answers on an Eightfold form. Sync and the worker had stopped at 07:28
   UTC that day, and again on 8 Oct (newest mail 02:45 UTC, the queue idle
   from 04:00): check the cron.
 - **The legal-entity duplicates** (task 64, 7 Oct): the review strip's two

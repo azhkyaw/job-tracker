@@ -1521,7 +1521,41 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
     `ssoCompanyId`: `siteOwner` would have filed the code as the employer,
     had the site been enabled. Such an owner is now no company.
 
+- **Workday's dropdown stored its option id, not the choice** (found 9 Oct
+  2026 from the visa tags' "answer unread"; extension 0.29.2, worklog task
+  84). 77 stored answers on 22 applications, six tenants, every one 32
+  lowercase hex digits.
+  - **The widget, read live** on a tenant's public "Introduce Yourself" form
+    (no sign-in; nothing typed, clicked or sent): the field's `<label for>`
+    names a `<button aria-haspopup="listbox">` whose TEXT is the choice
+    ("United States of America", "Select One" before any) and whose `value`
+    is the choice's id; an `<input type="text">` beside it, the same parent,
+    mirrors that id (display:none there). The sweep collects inputs, never
+    buttons, so it stored the input's value.
+  - **The rule** (`answers.js:mirroredButton`): an input whose parent holds
+    exactly one listbox button carrying the input's own non-empty value is
+    that button's shadow. It answers with the button's text, nothing for a
+    placeholder ("Select One" joined `PLACEHOLDER`), and is named by the
+    `<label for>` that names the button. Mirroring, not visibility, is the
+    test: on this form the input was undisplayed and unnamed (it would have
+    been dropped), yet the stored ids sit under their questions, so the
+    application's own step reached the input some other way, unseen behind
+    its sign-in. Named as the block before it, the input took the button's
+    text, its own answer, as its question.
+  - **Proven** in `tests/test_extension.js`; with `mirroredButton` disabled
+    the fixture stores the 32-hex id, the stored signature. The rule run
+    verbatim in the live page read all three dropdowns and left every other
+    input as it was.
+  - **Not repairable:** the ids are the tenant's, and its forms sit behind a
+    sign-in; the visa ones wear "you: answer unread" (task 83).
+
 ## Known-untested surfaces (verify on first real contact)
+
+- **0.29.2's Workday dropdown reading has met only a public "Introduce
+  Yourself" form and tests.** On the next Workday apply: no answer of 32
+  hex digits (`SELECT count(*) FROM application_answers WHERE answer ~
+  '^[0-9a-f]{32}$' AND id > <the last one>` stays put), each dropdown
+  question once, under its own question and not under its answer.
 
 - **Extension DOM selectors** (`extension/adapters/*.js`) — best-effort against
   unverified live DOMs; WILL need adjustment. Failures surface loudly: console

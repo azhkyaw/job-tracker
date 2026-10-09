@@ -399,6 +399,13 @@
       const legend = fs.querySelector("legend");
       if (legend && labelText(legend)) return labelText(legend);
     }
+    // An input mirroring a Workday listbox button is named as the button is:
+    // the field's <label for> points at the button (listboxShown, below).
+    const mirrored = mirroredButton(el);
+    if (mirrored && mirrored.id && root.querySelector) {
+      const l = root.querySelector(`label[for="${CSS.escape(mirrored.id)}"]`);
+      if (l && labelText(l)) return labelText(l);
+    }
     // Nothing names the control itself: the question is the block just before
     // its field. Lever's custom questions (read live 2 Oct 2026) are
     // <div class="application-label">…</div> beside the field's own <div>,
@@ -645,8 +652,9 @@
 
   // Placeholder options ("Select an option") are the absence of an answer, not
   // an answer — recording them would fill the bank with noise. Dashes either
-  // side are decoration ("— Make a Selection —", iCIMS, 3 Oct 2026).
-  const PLACEHOLDER = /^[\s\-–—]*(select an option|select(\.\.\.|…)|please select|make a selection|choose(\.\.\.| an option)?)?[\s\-–—]*$/i;
+  // side are decoration ("— Make a Selection —", iCIMS, 3 Oct 2026); Workday's
+  // empty dropdown reads "Select One" (9 Oct 2026).
+  const PLACEHOLDER = /^[\s\-–—]*(select an option|select one|select(\.\.\.|…)|please select|make a selection|choose(\.\.\.| an option)?)?[\s\-–—]*$/i;
 
   /* A live region speaks a widget's state to a screen reader; it is never
    * the widget's value. SuccessFactors' comboboxes keep one beside the input
@@ -696,9 +704,45 @@
     return null;
   }
 
+  /* Workday draws a dropdown as a <button aria-haspopup="listbox"> showing the
+   * choice ("United States of America", "Select One" before any), and keeps
+   * the choice's internal id in an <input type="text"> beside it that is not
+   * displayed; the field's <label for> names the button, not the input. The
+   * sweep reads inputs, so it took that input and stored its value: 77
+   * answers on 22 applications, every one a 32-hex id nobody can read (read
+   * live 9 Oct 2026 on a Workday "Introduce Yourself" form: three dropdowns,
+   * each a button and an input sharing one parent, the button's `value` the
+   * same id, both empty while the button says "Select One"). That mirror is
+   * the test, not visibility: there the input was display:none and no label
+   * named it, yet the stored ids sit under their questions, so on the
+   * application's own step the input was reachable some other way. An input
+   * beside exactly one listbox button holding its value answers with what
+   * the button shows; a placeholder is no answer. A search box beside a
+   * toggle never mirrors one, and an EMPTY input mirrors nothing (it reads
+   * as no answer already, and must not borrow a neighbour's shown choice).
+   * `undefined`: not this shape, read the input. labelFor() names such an
+   * input as its button is named (mirroredButton), since the field's label
+   * names the button: read as the block before it, the input was named by
+   * the button's own text, its answer. */
+  function mirroredButton(el) {
+    if (el.tagName !== "INPUT" || !el.parentElement || !(el.value || "").trim()) return null;
+    const btns = [...el.parentElement.children]
+      .filter((n) => n.tagName === "BUTTON" && n.getAttribute("aria-haspopup") === "listbox");
+    return btns.length === 1 && (btns[0].getAttribute("value") || "") === el.value ? btns[0] : null;
+  }
+
+  function listboxShown(el) {
+    const btn = mirroredButton(el);
+    if (!btn) return undefined;
+    const t = text(btn).replace(/\p{Co}/gu, "").trim();
+    return t && !PLACEHOLDER.test(t) ? t.slice(0, MAX_ANSWER) : null;
+  }
+
   function valueOf(el) {
     const tag = el.tagName;
     const type = (el.type || "").toLowerCase();
+    const shown = listboxShown(el);
+    if (shown !== undefined) return shown;
     // A file field answers with the NAME of the file chosen, never its path
     // (the browser reports C:\fakepath\…): which resume went with the
     // application, where the form uploads one rather than picking it
