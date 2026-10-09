@@ -2732,3 +2732,36 @@ the key to each real case.
      both `test_extension.js` and `test_captures.py`; the JS side's four
      slug checks fail on the old adapter.
    - The record is repaired with the others (task 93).
+
+89. **A type-ahead's open list was read as its question** (10 Oct 2026,
+   extension 0.29.6). The audit found 17 rows on one application of 8 Oct,
+   captured from an employer's own career site through the LinkedIn
+   handoff, whose questions were not questions: ten were a suggestion list
+   cut at the 300-character cap (a list of schools, a list of skills)
+   answered by each keystroke ("c", "ce", "cen" …); others were the query echoed by the
+   list (".net" answered ".ne", ".ne" answered ".n", ".n" answered ".").
+   The real answers landed under their real questions beside them. The same
+   site family's form had stored "School" on 3 Oct, so the junk is the
+   OPEN list's state: a sweep while the user typed read the field's name
+   from text that held the options on offer.
+   - **Not measured open:** the form opens only by starting an application
+     on the employer's system (not done; the listing's "Apply Now" is a
+     button). So the rule is ARIA's, applied in every reader of a name,
+     and three shapes are modelled: the list inside a `role="combobox"`
+     wrapper with the box (ARIA 1.1), drawn between the question and the
+     box, and named by the box's `aria-labelledby`.
+   - **The rule** (`answers.js`): `labelText` passes over a `listbox` (and
+     its raw-text fallback no longer hands one back); `precedingText`
+     passes over a list drawn before the box and refuses a block holding
+     one; and a wrapper names its control by its text only for the roles
+     ARIA names from content (radio, checkbox, switch), never a combobox,
+     whose content is its value and its popup. Darwinbox's 8 Oct case had
+     already met the last one from the other side ("its text is the choice
+     plus every option").
+   - **Considered and not built:** "one element owns one key" (a field
+     re-read under a new question gives its old key back). It would have
+     caught any transient mislabel, but React may reuse one input node
+     across a wizard's steps, and the rule would then delete an earlier
+     step's real answer.
+   - Three checks, red on the old `answers.js`; the closed-field control
+     is green on both. The 17 rows are removed with the repairs (task 93).

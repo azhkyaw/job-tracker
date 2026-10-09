@@ -237,6 +237,9 @@
    * which keys as nothing, and every answer on the step was dropped. */
   function labelText(node) {
     if (!node) return "";
+    // An open suggestion list is choices, never a name: the raw-text fallback
+    // below must not hand its options back either.
+    if (isPopup(node)) return "";
     const kids = (n) => (n.tagName === "SLOT" && n.assignedNodes
       ? n.assignedNodes({ flatten: true }) : (n.shadowRoot || n).childNodes);
     const walk = (n) => {
@@ -245,13 +248,29 @@
         if (c.nodeType === 3) { out += c.textContent; continue; }
         if (c.nodeType !== 1) continue;
         if (c.getAttribute("aria-hidden") === "true") continue;
+        if (isPopup(c)) continue;
         if (c.tagName !== "SLOT" && c.getClientRects && c.getClientRects().length === 0) continue;
         out += " " + walk(c);
       }
       return out;
     };
-    return walk(node).replace(/\s+/g, " ").trim() || text(node);
+    const t = walk(node).replace(/\s+/g, " ").trim();
+    return t || (holdsPopup(node) ? "" : text(node));
   }
+
+  /* The list a type-ahead opens (role="listbox"). Its text is the options on
+   * offer for what was typed so far, so it changes with every keystroke, and
+   * read as a question it stored each keystroke under a new one: an
+   * employer's career site (8 Oct 2026) kept 17 such rows, a school list and
+   * a skills list as questions ("Northwind University Contoso Institute …")
+   * answered "c", "ce", "cent", and ".net", ".ne", ".n" each answering the
+   * next. The same field, closed, read its real question, as the same site
+   * family's form had on 3 Oct ("School"). Not measured open: the site's
+   * form opens only by starting an application. So the rule is ARIA's, in
+   * every reader of a name: a listbox's content names nothing. */
+  const POPUP = "[role='listbox']";
+  const isPopup = (n) => !!(n && n.matches && n.matches(POPUP));
+  const holdsPopup = (n) => !!(n && n.querySelector && n.querySelector(POPUP));
 
   // .closest() stops at a shadow boundary; hop to the host and keep going.
   function closestDeep(el, sel) {
@@ -285,6 +304,7 @@
   // Apply. The wrapper, not the input, is what carries the name there.
   const WIDGET = "[role='radio'],[role='checkbox'],[role='switch']," +
                  "[role='combobox'],[role='textbox'],[role='spinbutton']";
+  const BY_CONTENT = "[role='radio'],[role='checkbox'],[role='switch']";
 
   // The text block immediately BEFORE a control group — how the rebuilt Easy
   // Apply labels a Yes/No question (<p>Will you…?*</p>, then a legendless
@@ -295,12 +315,17 @@
   // description line under "Resume*" does not ride into the question text.
   function precedingText(node) {
     for (let n = node, hops = 0; n && hops < 3; n = n.parentElement, hops++) {
-      const prev = n.previousElementSibling;
+      let prev = n.previousElementSibling;
+      // A type-ahead's open list drawn between its question and its box is
+      // passed over: the question is the block before the list (isPopup).
+      while (prev && isPopup(prev)) prev = prev.previousElementSibling;
       if (!prev) continue;
       // A control is never a label either: in a row of a code's boxes, each
-      // box's neighbour is the box before it.
+      // box's neighbour is the box before it. Nor is a block holding an open
+      // list: that is a field too, the previous question's.
       if (prev.matches && prev.matches("input,select,textarea")) return null;
       if (prev.querySelector && prev.querySelector("input,select,textarea")) return null;
+      if (holdsPopup(prev)) return null;
       const kids = prev.children ? Array.from(prev.children) : [];
       const head = kids.length >= 2 ? labelText(kids[0]) : "";
       return (head.length > 1 ? head : labelText(prev)) || null;
@@ -388,10 +413,16 @@
     // the choice inside <div role="combobox">, beside a search box and a
     // listbox of 300 countries, and the select's question was stored as
     // "Singapore Search and Select Singapore Remove item Afghanistan…".
+    // And its text only for a role ARIA names from content (radio, checkbox,
+    // switch): a combobox, a textbox or a spinbutton is named by a label, and
+    // its content is its value and its popup. A type-ahead whose wrapper holds
+    // the box and its open list (role="combobox", ARIA 1.1's pattern) was
+    // otherwise named by the options on offer (isPopup, above).
     const widget = closestDeep(el, WIDGET);
     if (widget && widget !== el) {
       const alone = collect(widget, []).every((c) => c === el);
-      const t = ariaName(widget) || (alone ? labelText(widget) : "");
+      const t = ariaName(widget) || (alone && widget.matches && widget.matches(BY_CONTENT)
+        ? labelText(widget) : "");
       if (t) return t;
     }
     const fs = closestDeep(el, "fieldset");

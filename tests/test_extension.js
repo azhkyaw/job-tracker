@@ -960,6 +960,37 @@ console.log("\nanswers.js sweep: Greenhouse's job-board form (read live 29 Sep 2
   for (const fn of icSandbox._listeners.input) fn({ composedPath: () => [icB.search] });
   check("…and typing in its search box stores nothing (the edit backstop)",
         icSandbox.window.__trackerAnswers.take().map((a) => a.question), ["Country"]);
+  // A type-ahead with its suggestion list OPEN (modelled 10 Oct 2026 on the
+  // 17 rows an employer's career site left on 8 Oct; the open state was not
+  // read live, since the form opens only by starting an application). Closed,
+  // the field read its question from the block before it ("School", the same
+  // site family's form, 3 Oct). Open, the old code named it by the options on
+  // offer, a new "question" per keystroke. Three shapes a list takes: inside
+  // a role="combobox" wrapper with the box (ARIA 1.1), drawn between the
+  // question and the box, and named by the box's own aria-labelledby.
+  const ahead = (typed, opts, shape) => {
+    const list = (id) => node("ul", { role: "listbox", ...(id ? { id } : {}) },
+                              opts.map((o) => node("li", { role: "option" }, [o])));
+    if (shape === "wrapper") {
+      return node("div", {}, [node("div", { class: "label" }, ["School"]),
+        node("div", { role: "combobox", "aria-expanded": "true" },
+             [node("input", { type: "text", value: typed }), list()])]);
+    }
+    if (shape === "between") {
+      return node("div", {}, [node("div", {}, ["School"]), list(),
+                              node("input", { type: "text", role: "combobox", value: typed })]);
+    }
+    return node("div", {}, [node("span", { id: "sch-q" }, ["School"]),
+      node("input", { type: "text", value: typed, "aria-labelledby": "sch-q sch-list" }), list("sch-list")]);
+  };
+  const OPTS = ["Northwind University", "Northwind Institute of Technology"];
+  for (const shape of ["wrapper", "between", "labelledby"]) {
+    check(`a type-ahead's open list is never its question (${shape})`,
+          sweepOf(ahead("nor", OPTS, shape)), [{ question: "School", answer: "nor", type: "text" }]);
+  }
+  check("…and the same field closed reads the same question",
+        sweepOf(ahead("Northwind University", [], "wrapper")),
+        [{ question: "School", answer: "Northwind University", type: "text" }]);
   // Workday's dropdown (read live 9 Oct 2026, a tenant's "Introduce Yourself"
   // form): the field's <label for> names a <button aria-haspopup="listbox">
   // showing the choice, whose `value` is the choice's 32-hex id, and an

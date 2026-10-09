@@ -1599,7 +1599,35 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   to Python's. A new place that takes an id off a LinkedIn address calls
   `viewId`; it does not write its own pattern.
 
+- **A type-ahead's open suggestion list became the question, once per
+  keystroke** (8 Oct 2026, found 10 Oct; extension 0.29.6, worklog task
+  89). An employer's career site, reached through the LinkedIn handoff,
+  left 17 rows whose question was the list on offer ("Northwind University
+  Contoso Institute …", cut at 300 characters) or the query the list
+  echoed (".net" answered ".ne"), answered by each keystroke; the closed
+  field had read "School" on the same site family's form. A sweep runs on
+  every click and the edit backstop on every `input` event, so a name read
+  from text that changes while typing mints a key per keystroke.
+  - **The rule, ARIA's, in every reader of a name:** a `listbox`'s content
+    names nothing (`labelText`, and its raw-text fallback);
+    `precedingText` passes over a list drawn before the box and refuses a
+    block holding one; a wrapper's text names its control only for the
+    roles named from content (radio, checkbox, switch).
+  - **Modelled, not measured open** (three shapes in
+    `tests/test_extension.js`): the site's form opens only by starting an
+    application on the employer's system.
+  - **Not built, on purpose:** "one element owns one key". React may
+    reuse one input node across a wizard's steps, and giving back a
+    re-labelled node's old key would delete an earlier step's answer.
+
 ## Known-untested surfaces (verify on first real contact)
+
+- **0.29.6's open-list rule is modelled, not measured** (10 Oct 2026). On
+  the next form with a type-ahead (a school, a skill, a city): no row
+  whose question is a run of option names or a fragment of what was
+  typed, and the field's row under its real question. If one appears, the
+  list is marked some other way (not `role="listbox"`): read the open
+  field's markup live, once its form is open anyway.
 
 - **0.29.4's card read has met the live card's markup only as a fixture**
   (10 Oct 2026). On the next Easy Apply from a search page, a verified
