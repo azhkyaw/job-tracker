@@ -21,6 +21,10 @@
                      remove stored rows answers._control_kind() now calls
                      form chrome (promoting a resume pick); dry run unless
                      --apply
+  redact-mail [--apply]
+                     withhold identity numbers (NRIC/FIN, MyKad, a labelled
+                     passport or date of birth) in stored mail; dry run
+                     unless --apply
 """
 
 from __future__ import annotations
@@ -227,6 +231,19 @@ def cmd_redact_answers(args) -> None:
           + ("withheld" if args.apply else "to withhold (dry run; --apply writes)"))
 
 
+def cmd_redact_mail(args) -> None:
+    import sys
+    from . import redact
+    sys.stdout.reconfigure(errors="replace")      # same reason as renorm-answers
+    with db.connect() as conn:
+        plan = redact.stored_mail(conn, apply=args.apply)
+    # Where, never what: printing the number would copy it into scrollback.
+    for p in plan:
+        print(f"  {p['received_at']:%Y-%m-%d}  {p['count']} value(s)  {p['subject']!r}")
+    print(f"{len(plan)} mail(s) "
+          + ("redacted" if args.apply else "to redact (dry run; --apply writes)"))
+
+
 def cmd_prune_answers(args) -> None:
     import sys
     from . import answers
@@ -276,6 +293,9 @@ def main() -> None:
     p = sub.add_parser("prune-answers")
     p.add_argument("--apply", action="store_true", help="remove the rows")
     p.set_defaults(fn=cmd_prune_answers)
+    p = sub.add_parser("redact-mail")
+    p.add_argument("--apply", action="store_true", help="overwrite the values (no undo but Gmail)")
+    p.set_defaults(fn=cmd_redact_mail)
     args = parser.parse_args()
     args.fn(args)
 

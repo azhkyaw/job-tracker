@@ -203,6 +203,7 @@ uv run python -m pipeline.cli passwd <email>                 # set a password, m
 uv run python -m pipeline.cli renorm-answers [--apply]       # re-key stored answers after a change to norm_question
 uv run python -m pipeline.cli redact-answers [--apply]       # re-apply the sensitive-answer rule (no undo)
 uv run python -m pipeline.cli prune-answers [--apply]        # remove stored rows a new form-chrome rule names
+uv run python -m pipeline.cli redact-mail [--apply]          # withhold identity numbers in stored mail
 
 # steady state: one cron entry and one long-running worker
 */15 * * * *  cd ~/job-tracker && uv run python -m pipeline.cli sync

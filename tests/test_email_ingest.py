@@ -390,6 +390,26 @@ check("an HTML part that renders to nothing falls back to the plain part",
       repr(mailbox.body_from_parts("hello", "<html><body><img src='x.png'></body></html>")))
 check("no parts at all is the empty string", mailbox.body_from_parts(None, None) == "")
 
+print("pure functions: identity numbers never stored (redact.py)")
+from pipeline import redact as _redact                                 # noqa: E402
+# Placeholders with valid check letters (S1234567D, G1234567X) and invalid
+# ones; a FIN in a sent reply was found stored on 10 Oct 2026.
+for _src, _want, _n in [
+        ("Hi,\nFIN Number: G1234567X\nBest", "Hi,\nFIN Number: (withheld)\nBest", 1),
+        ("NRIC/FIN: S1234567D", "NRIC/FIN: (withheld)", 1),
+        ("my nric is S1234567D, thanks", "my nric is (withheld), thanks", 1),
+        ("Passport No: AB1234567", "Passport No: (withheld)", 1),
+        ("Date of birth: 1 Jan 1990; city", "Date of birth: (withheld); city", 1),
+        ("IC 900101-14-5678 attached", "IC (withheld) attached", 1),
+        ("requisition S1234567A closes", "requisition S1234567A closes", 0),
+        ("Job ID: R00123456", "Job ID: R00123456", 0),
+        ("Passport: Myanmar", "Passport: Myanmar", 0),
+        ("Fintech role, 5 years", "Fintech role, 5 years", 0)]:
+    _got = _redact.identity_numbers(_src)
+    check(f"identity_numbers {_src!r}", _got == (_want, _n), _got)
+check("an empty body stays empty", _redact.identity_numbers("") == ("", 0)
+      and _redact.identity_numbers(None) == (None, 0))
+
 print("pure functions: X-GM-MSGID hex identity")
 for dec in (1000000000001101, 1837402910584999, 1, 18446744073709551615):
     hexid = format(dec, "x")
@@ -540,6 +560,23 @@ with db.connect() as conn:
     check("a multipart/alternative message is stored as its HTML alternative's text, "
           "not its footer-only plain part",
           body_row["body_text"] == MSGID_MAX_BODY, repr(body_row["body_text"]))
+
+    # store_message, the one door both providers store through, withholds an
+    # identity number before the row (and the classifier) ever sees it.
+    _fin_id = "ffff00000000abcd"
+    with conn.transaction():
+        mailbox.store_message(conn, user_id, {
+            # An allowlisted sender: this suite pins the candidate filter on.
+            "id": _fin_id, "sender": "careers@lever.co",
+            "subject": "Your application", "body_text": "Sure.\n\nFIN Number: G1234567X\n\nBest",
+            "received_at": datetime(2026, 9, 2, 3, 0, tzinfo=timezone.utc), "sent": False})
+    _fin_row = conn.execute("SELECT id, body_text FROM emails WHERE user_id = %s AND gmail_message_id = %s",
+                            (user_id, _fin_id)).fetchone()
+    check("store_message stores a FIN as withheld",
+          _fin_row["body_text"] == "Sure.\n\nFIN Number: (withheld)\n\nBest", repr(_fin_row["body_text"]))
+    with conn.transaction():
+        conn.execute("DELETE FROM job_queue WHERE payload->>'email_id' = %s", (str(_fin_row["id"]),))
+        conn.execute("DELETE FROM emails WHERE id = %s", (_fin_row["id"],))
 
     job_rows = conn.execute(
         """SELECT e.gmail_message_id FROM job_queue q

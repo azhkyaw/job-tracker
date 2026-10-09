@@ -2875,3 +2875,27 @@ the key to each real case.
      (`opener-kept+handoff`), and the 9 Oct Oracle Recruiting Cloud apply
      bound through the handoff with its answers and its id, its
      confirmation matched by that id at 1.0.
+
+94. **Identity numbers out of stored mail** (10 Oct 2026). The wider audit
+   (read-only, that night: `job-tracker-snapshots/audit-2026-10-10/wide*`)
+   found the author's FIN in a stored mail body, a reply they had SENT a
+   recruiter (2 Sep), while a form answer holding the same number has been
+   withheld since 24 Sep. Mail had no rule, and every body also goes to the
+   classifier.
+   - **The rule, by value** (`pipeline/redact.py`): a Singapore NRIC/FIN
+     whose check letter is the one ICA's weighted sum gives (S/T/F/G; the
+     M series by shape only), a MyKad number, and any value holding a
+     digit after an identity label and a colon (NRIC, FIN, IC no.,
+     passport, national ID, date of birth). Replaced by `(withheld)`.
+     A requisition shaped like an NRIC with the wrong check letter, a
+     "Job ID:" and a "Passport: <country>" stay.
+   - **Applied where mail enters**, `mailbox.store_message`, both
+     providers' one write: neither the database nor the model sees it.
+   - **Stored rows:** `cli redact-mail [--apply]` (prints where, never the
+     value). The dry run found 3 mails, all real: the FIN, and the author's
+     date of birth, sent to a recruiter "for visa checking" (3 Sep) and
+     quoted back in that recruiter's reply. The FIN's check letter
+     validated, the algorithm's first real-value check. Applied (no undo in
+     the database; Gmail still holds the mails).
+   - 11 checks in `tests/test_email_ingest.py`, one through
+     `store_message` itself.

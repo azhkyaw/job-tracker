@@ -26,6 +26,11 @@ or disability — or a "self-identification" question that names none of them
 `answers.is_sensitive()`, mirrored by `extension/shared/answers.js` so the
 value never leaves the browser, both held to `tests/sensitive_questions.json`.
 Nationality and work authorisation stay recorded: the visa analysis reads them.
+**Mail is held to the same rule by its values** (10 Oct 2026): a valid
+NRIC/FIN, a MyKad number, or any value after an identity label ("FIN
+Number:", "Passport No:", "Date of birth:") is replaced in every stored
+subject and body, before the classifier sees it (`pipeline/redact.py`,
+applied by `mailbox.store_message`; `cli redact-mail` for rows stored before).
 
 ## Docs map
 
@@ -136,7 +141,9 @@ An invariant keeps its RULE here and its case history in the rule file.
 - `pipeline/mailbox.py` — mail-ingest orchestrator shared by IMAP + Gmail API;
   `body_from_parts()` is the ONE decision of which MIME part is the body
   (the HTML alternative, since 23 Sep 2026 — `.claude/rules/mail-ingest.md`
-  has the four senders whose `text/plain` part is not the mail)
+  has the four senders whose `text/plain` part is not the mail);
+  `store_message()` is the one write, and withholds identity numbers
+  (`pipeline/redact.py`)
 - `pipeline/dedup.py` — the only place two jobs are merged (`merge_jobs`)
 - `pipeline/trace.py` — pure geometry: the detail page's calendar trace
   (`build`), and since 9 Oct 2026 the lists' STORY (`stations`, `story`,
@@ -323,7 +330,9 @@ An invariant keeps its RULE here and its case history in the rule file.
   default, prints questions never values, and `--apply` has no undo);
   `prune-answers [--apply]` after any change to `_control_kind` (removes the
   rows a new chrome rule names, promotes a resume pick where the application
-  has none, renumbers the groups they leave; dry run by default)
+  has none, renumbers the groups they leave; dry run by default);
+  `redact-mail [--apply]` after any change to `pipeline/redact.py` (prints
+  where, never the value; no undo but Gmail)
 - Account bootstrap/recovery: `uv run python -m pipeline.cli passwd <email>`
 - Linux/WSL only: Postgres must be running (`sudo service postgresql start`;
   WSL doesn't autostart). Native Windows runs the suites on Docker, next bullet.

@@ -44,7 +44,7 @@ from email.utils import parseaddr
 from html import unescape
 from html.parser import HTMLParser
 
-from . import config, db
+from . import config, db, redact
 
 
 class MailboxError(RuntimeError):
@@ -297,6 +297,10 @@ def store_message(conn, user_id, msg: dict) -> bool:
     both providers funnel through here so they cannot silently diverge."""
     if not is_candidate(msg["sender"], msg["subject"]):
         return False
+    # Identity numbers never reach the database or the classifier, from
+    # either provider (redact.py; a FIN in a sent reply, found 10 Oct 2026).
+    subject, _ = redact.identity_numbers(msg["subject"])
+    body, _ = redact.identity_numbers(msg["body_text"])
     row = conn.execute(
         """
         INSERT INTO emails (user_id, gmail_message_id, sender, subject, body_text,
@@ -305,7 +309,7 @@ def store_message(conn, user_id, msg: dict) -> bool:
         ON CONFLICT (user_id, gmail_message_id) DO NOTHING
         RETURNING id
         """,
-        (user_id, msg["id"], msg["sender"], msg["subject"], msg["body_text"],
+        (user_id, msg["id"], msg["sender"], subject, body,
          msg["received_at"], msg["sent"]),
     ).fetchone()
     if row is None:
