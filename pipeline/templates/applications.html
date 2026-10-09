@@ -356,14 +356,17 @@
         {#- What the JD says about who may be hired, when it says anything
             (jd_extract_v2, which records only what the JD states and quotes
             it). Grey like the other property tags: a fact about the posting,
-            not about the wait. The JD's own sentence is the title. #}
+            not about the wait. The JD's own sentence is the title. "JD:"
+            names the speaker (9 Oct 2026), beside the form's "you:": the two
+            tags read as one claim contradicting itself when neither did. #}
         {%- if r.visa_signal and r.visa_signal != 'unclear' %}<span class="tag"
-              title="The job description: {{ r.visa_notes or VISA_LABELS.get(r.visa_signal, r.visa_signal) }}">{{ VISA_LABELS.get(r.visa_signal, r.visa_signal | replace('_', ' ')) }}</span>{% endif %}
-        {#- What the apply form recorded about sponsorship (answers.FORM_VISA),
-            only when it asked: the question and what was answered are the
-            title, the same evidence-in-the-tooltip rule as the JD's tag. #}
+              title="The job description: {{ r.visa_notes or VISA_LABELS.get(r.visa_signal, r.visa_signal) }}">JD: {{ VISA_LABELS.get(r.visa_signal, r.visa_signal | replace('_', ' ')) }}</span>{% endif %}
+        {#- What you told the form about sponsorship (answers.FORM_VISA), only
+            when it asked: the question and what was answered are the title,
+            the same evidence-in-the-tooltip rule as the JD's tag. An answer
+            stored as an option id says so instead of quoting the id. #}
         {%- if form_visa[r.form_visa][1] %}<span class="tag"
-              title="The form asked “{{ r.form_question }}” and you answered “{{ r.form_answer }}”">{{ form_visa[r.form_visa][1] }}</span>{% endif %}
+              title="{% if r.form_visa == 'unread' %}The form asked “{{ r.form_question }}”, and your answer was stored as the hiring system's option id, which the tracker cannot read{% else %}The form asked “{{ r.form_question }}” and you answered “{{ r.form_answer }}”{% endif %}">{{ form_visa[r.form_visa][1] }}</span>{% endif %}
         {#- How many interview rounds the thread reached (trace.rounds, 8 Oct
             2026), their days in the title. Grey: a fact about the thread,
             not about the wait, and the trace already draws the rounds. #}

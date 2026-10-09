@@ -337,6 +337,21 @@ is a private artifact, linked from the memory file
    in words above the search (`.filter-note`). On the day, 42 of 278 forms
    recorded the need and 19 JDs restricted; the cell where both hold had 9
    applications, 5 of them rejected.
+   **Each tag names its speaker** (9 Oct 2026, worklog task 83): "JD: no
+   sponsorship" beside "you: need sponsorship". Asked whether "form: needs
+   sponsorship" was confusing: it named no one, so it read as a fact about
+   the job like every other tag on the line, and on 10 rows it sat beside
+   "no sponsorship" as one claim contradicting itself, where it is what you
+   told them beside what they wrote. "form:" was the tracker's word for the
+   capture, not a speaker. The other tag was worse than unclear: of 19
+   "form: asked about visas", 13 rows rested on answers stored as Workday's
+   32-hex option ids, which no rule can read, and one on a free-text "Will
+   require an EP sponsorship please" the rule missed. Now `unread` (a visa
+   answer is an `answers.OPAQUE_ANSWER`: "you: answer unread", its title
+   saying why rather than quoting the id) splits from `asked` ("you: no need
+   stated", readable answers only), and `declares_sponsorship` allows three
+   words between the verb and "sponsorship" with a negation guard. On the
+   day: needs 75, unread 14, asked 4.
 10. **The name column takes the free space; the trace is capped** (`.tl`
    grid). Verified against 47 real applications: applied in one burst, so
    every trace is the same line at the same length while agency company/role

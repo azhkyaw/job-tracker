@@ -248,6 +248,9 @@ An invariant keeps its RULE here and its case history in the rule file.
   `declares_sponsorship` is ONE rule in Python and SQL (its regexes run in
   both dialects), held to `tests/sponsorship_answers.json`; `FORM_VISA` /
   `form_visa_sql` bucket each application by what its form said about visas
+  (since 9 Oct 2026 with `unread`, a visa answer stored as an option id,
+  `OPAQUE_ANSWER`, apart from `asked`; the list's tags read "you: …" beside
+  the JD's "JD: …")
 - `pipeline/email_apply.py` — does a JD ask for the CV BY EMAIL (4 Oct
   2026)? One sentence holding an address and a CV word, and not also
   offering the apply button. One rule in Python (`instruction()`, which

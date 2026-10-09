@@ -2429,9 +2429,10 @@ with db.connect() as conn, conn.transaction():
         "VALUES (%s, %s, 'no_sponsorship', 'Employer sponsorship (work pass) is not available.', "
         "'claude-sonnet-5', 'jd_extract_v2') RETURNING id", (user_id, nw_posting)).fetchone()["id"]
 r = client.get("/?q=northwind")
-check("the newest extraction's signal is a grey tag on the role line, its sentence the title",
+check("the newest extraction's signal is a grey tag on the role line, its sentence the title, "
+      "naming its speaker",
       re.search(r'<span class="tag"\s+title="The job description: Employer sponsorship \(work pass\) '
-                r'is not available\.">no sponsorship</span>', r.text) is not None, r.status_code)
+                r'is not available\.">JD: no sponsorship</span>', r.text) is not None, r.status_code)
 r = client.get(f"/applications/{northwind_app}")
 check("the detail page offers v2's vocabulary in its own words",
       '<option value="in_country">in-country only</option>' in r.text
@@ -2463,17 +2464,38 @@ check("the cells account for every record on /", sum(int(n) for *_, n in cells) 
       (sum(int(n) for *_, n in cells), mine))
 r = client.get("/?visa=restricts&form=needs")
 check("a filtered list names its filter in words, with a way out",
-      "the JD restricts who may apply and the form recorded you need sponsorship" in r.text
+      "the JD restricts who may apply and you told the form you need sponsorship" in r.text
       and "Show every visa case" in r.text, r.status_code)
 check("and the page keeps it: the search re-submits it, a status link carries it",
       'name="visa" value="restricts"' in r.text and 'name="form" value="needs"' in r.text
       and re.search(r'href="/\?status=\w+&amp;visa=restricts&amp;form=needs"', r.text) is not None,
       r.status_code)
 r = client.get("/?q=screened+sponsor")
-check("a form that recorded the need wears it, quoting the question and the answer",
+check("a form that recorded the need wears it, in your voice, quoting the question and the answer",
       re.search(r'title="The form asked “Will you now or in the future require sponsorship for '
-                r'employment visa status” and you answered “Yes”">form: needs sponsorship</span>',
+                r'employment visa status” and you answered “Yes”">you: need sponsorship</span>',
                 r.text) is not None, r.status_code)
+# An answer stored as an option id (Workday's dropdowns, 9 Oct 2026) may be
+# the declaration itself: the form's bucket says it cannot tell, and the tag
+# says why instead of quoting the id. A readable "Yes" states no need.
+_OPAQUE = "8c17e811c1be0168d7a23229d0001c9b"
+with db.connect() as conn, conn.transaction():
+    _ur, _ = _screened(conn, "unread answer co", 120, ("Are you legally authorized to work in Singapore?", _OPAQUE))
+    _nn, _ = _screened(conn, "no need co", 120, ("Are you legally authorized to work in Singapore?", "Yes"))
+r = client.get("/?q=unread+answer")
+check("an answer stored as an option id is unread: its tag says so, and its title explains rather "
+      "than quoting the id",
+      ">you: answer unread</span>" in r.text and "option id, which the tracker cannot read" in r.text
+      and _OPAQUE not in r.text, r.status_code)
+check("a readable answer that states no need says exactly that",
+      ">you: no need stated</span>" in client.get("/?q=no+need+co").text)
+check("each opens under its own form filter, and not the other's",
+      "unread answer co" in client.get("/?form=unread").text
+      and "unread answer co" not in client.get("/?form=asked").text
+      and "no need co" in client.get("/?form=asked").text
+      and "no need co" not in client.get("/?form=unread").text)
+for _id in (_ur, _nn):
+    client.post(f"/applications/{_id}/delete")
 r = client.get("/?visa=everything&form=psychic")
 check("unknown visa/form values are ignored, not an error", r.status_code == 200
       and 'class="filter-note"' not in r.text, r.status_code)

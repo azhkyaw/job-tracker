@@ -11,6 +11,11 @@
     {"q": "are you able to work legally without sponsorship in either singapore or the united states", "a": "No", "needs": true},
     {"q": "what is your level of right to work in singapore", "a": "I don’t have the right to work in Singapore [no work Visa in Singapore]", "needs": true},
     {"q": "which of the following statements best describes your right to work in singapore", "a": "I require sponsorship to work for a new employer in Singapore", "needs": true},
+    {"q": "do you have legal eligibility right to work in the location the position is based", "a": "Will require an EP sponsorship please. Background: I held an EP in Singapore before", "needs": true},
+    {"q": "are you legally authorized to work in singapore", "a": "I will need a work visa sponsorship", "needs": true},
+    {"q": "are you legally authorized to work in singapore", "a": "I am a Singapore PR and do not need sponsorship", "needs": false},
+    {"q": "are you legally authorized to work in singapore", "a": "I won't require an employment pass sponsorship", "needs": false},
+    {"q": "are you legally authorized to work in singapore", "a": "8c17e811c1be0168d7a23229d0001c9b", "needs": false},
 
     {"q": "will you now or in the future require sponsorship for employment visa status", "a": "No", "needs": false},
     {"q": "are you legally authorized to work in singapore", "a": "Yes", "needs": false},

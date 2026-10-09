@@ -2573,3 +2573,26 @@ the key to each real case.
    advice was the popup's "Always capture on this site", which injects
    into the open tab, and no extension reload until after the submit.
 
+83. **The visa tags name their speaker** (9 Oct 2026). "Do you think the
+   tag 'form: needs sponsorship' is a bit confusing?" Yes, measured: it
+   named no one, so it read as a fact about the job like every other tag
+   on the role line, and on 10 rows it sat beside the JD's "no
+   sponsorship" as a contradiction. "Form: asked about visas" mostly meant
+   "unreadable": of its 19 rows, 13 rested on answers stored as Workday's
+   32-hex option ids (77 such answers in all, every one exactly that
+   shape) and one on "Will require an EP sponsorship please", a stated need
+   the rule missed (the only one of 115 visa answers). "Go for all":
+   - Tags "JD: …" and "you: need sponsorship" / "you: no need stated" /
+     "you: answer unread"; the last's title says the answer was stored as
+     an option id instead of quoting it. `/analytics`' grid gains the
+     `unread` row by looping `FORM_VISA`.
+   - `answers.OPAQUE_ANSWER` and the `unread` bucket, ahead of `asked`: an
+     unreadable answer may be the declaration itself.
+   - `declares_sponsorship` (Python and SQL): up to three words between
+     "require/need" and "sponsorship", and a negation guard ("do not need
+     sponsorship"), which the wider gap needed; 5 cases added to
+     `tests/sponsorship_answers.json`, the real miss among them.
+   - On the dev DB: needs 74 → 75, the 19 "asked" → 14 unread and 4 asked.
+   - **Not done:** reading Workday's option ids as words, the 7 Oct audit's
+     open extension item; it needs a live Workday form.
+

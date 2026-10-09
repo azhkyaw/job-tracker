@@ -453,7 +453,13 @@ SPONSOR_NEED_Q = (r"(^| )(require|requires|required|need|needs)( [a-z ]*)? "
                   r"(sponsorship|sponsor|visa|ep)( |$)")
 _YES_A = r"^\s*yes"
 _NO_A = r"^\s*no([^a-z]|$)"
-_NEED_A = r"(require|need)s? (visa |work )?(sponsorship|a sponsor)|(don.?t|do not) have the right"
+# A chosen or written statement of the need. Up to three words may stand
+# between the verb and "sponsorship" (9 Oct 2026: "Will require an EP
+# sponsorship please" was the one stated need of 115 visa answers the rule
+# missed), and a negated verb states none ("I do not need sponsorship"),
+# which the wider gap would otherwise have let through.
+_NEED_A = r"(require|need)s? ([a-z]+ ){0,3}(sponsorship|a sponsor)|(don.?t|do not) have the right"
+_NO_NEED_A = r"(not|n.?t) (require|need)"
 
 
 def declares_sponsorship(question_norm: str, answer: str | None) -> bool:
@@ -461,7 +467,8 @@ def declares_sponsorship(question_norm: str, answer: str | None) -> bool:
     q, a = question_norm or "", answer or ""
     if re.search(SPONSOR_AUTH_Q, q):
         return (not re.search(_YES_A, a, re.I)
-                and bool(re.search(_NO_A, a, re.I) or re.search(_NEED_A, a, re.I)))
+                and bool(re.search(_NO_A, a, re.I)
+                         or (re.search(_NEED_A, a, re.I) and not re.search(_NO_NEED_A, a, re.I))))
     return bool(re.search(SPONSOR_NEED_Q, q) and re.search(_YES_A, a, re.I))
 
 
@@ -469,27 +476,40 @@ def declares_sponsorship_sql(q: str, a: str) -> str:
     """The same rule as a SQL boolean over a question column and an answer
     column. The patterns hold no quote or percent sign, so they inline safely
     into a query that also takes psycopg parameters."""
-    for p in (SPONSOR_AUTH_Q, SPONSOR_NEED_Q, _YES_A, _NO_A, _NEED_A):
+    for p in (SPONSOR_AUTH_Q, SPONSOR_NEED_Q, _YES_A, _NO_A, _NEED_A, _NO_NEED_A):
         assert "'" not in p and "%" not in p
     return (f"(({q} ~ '{SPONSOR_AUTH_Q}' AND {a} !~* '{_YES_A}' "
-            f"AND ({a} ~* '{_NO_A}' OR {a} ~* '{_NEED_A}')) "
+            f"AND ({a} ~* '{_NO_A}' OR ({a} ~* '{_NEED_A}' AND {a} !~* '{_NO_NEED_A}'))) "
             f"OR ({q} !~ '{SPONSOR_AUTH_Q}' AND {q} ~ '{SPONSOR_NEED_Q}' AND {a} ~* '{_YES_A}'))")
 
+
+# An answer stored as the hiring system's internal option id rather than the
+# words chosen: 77 answers on 9 Oct 2026, every one 32 lowercase hex digits
+# (Workday's dropdowns, an open extension issue). No rule can read one, so a
+# visa question answered this way says nothing either way.
+OPAQUE_ANSWER = r"^[0-9a-f]{32}$"
 
 # What the apply form recorded about sponsorship, one bucket per application
 # (25 Sep 2026): the rows of /analytics' "Visa, at a glance" and the list's
 # `form` filter, from ONE SQL expression, so a cell's count is the number of
 # rows its link shows. In precedence order:
 #   needs      an answer declared that you need sponsorship (declares_sponsorship)
-#   asked      the form asked (an authorisation or sponsorship question) and no
-#              answer declared the need — a "no need", or an unreadable capture
+#   unread     the form asked, and an answer to it is an OPAQUE_ANSWER: it may
+#              be the declaration, so nothing is concluded (9 Oct 2026: 13 of
+#              the 19 "asked" rows were this)
+#   asked      the form asked (an authorisation or sponsorship question) and
+#              every answer is readable and states no need
 #   no_visa_q  a form was captured and asked nothing about visas
 #   no_form    no form was captured (an employer site, manual entry, mail)
 # Each key maps to its row label on /analytics and its tag on a list row; the
-# last two wear no tag, since silence is not a finding.
+# last two wear no tag, since silence is not a finding. The tags name their
+# speaker, "you:", beside the JD's "JD:" (9 Oct 2026): "form: needs
+# sponsorship" beside "no sponsorship" read as one claim contradicting itself
+# on 10 rows, where it is what you told them beside what they wrote.
 FORM_VISA = {
-    "needs":     ("The form recorded you need sponsorship", "form: needs sponsorship"),
-    "asked":     ("The form asked; you didn't say you need it", "form: asked about visas"),
+    "needs":     ("You told the form you need sponsorship", "you: need sponsorship"),
+    "asked":     ("The form asked, and your answer stated no need", "you: no need stated"),
+    "unread":    ("The form asked, and your answer can't be read", "you: answer unread"),
     "no_visa_q": ("The form asked nothing about visas", None),
     "no_form":   ("No form was captured", None),
 }
@@ -506,6 +526,9 @@ def form_visa_sql(app: str) -> str:
     return (f"(CASE WHEN EXISTS (SELECT 1 FROM application_answers fv "
             f"WHERE fv.application_id = {app} AND {declared}) THEN 'needs' "
             f"WHEN EXISTS (SELECT 1 FROM application_answers fv "
+            f"WHERE fv.application_id = {app} AND {asked} "
+            f"AND fv.answer ~ '{OPAQUE_ANSWER}') THEN 'unread' "
+            f"WHEN EXISTS (SELECT 1 FROM application_answers fv "
             f"WHERE fv.application_id = {app} AND {asked}) THEN 'asked' "
             f"WHEN EXISTS (SELECT 1 FROM application_answers fv "
             f"WHERE fv.application_id = {app}) THEN 'no_visa_q' "
@@ -514,9 +537,11 @@ def form_visa_sql(app: str) -> str:
 
 def form_visa_evidence_sql(app: str) -> str:
     """A lateral join (`fq`) to the answer a row's form tag rests on — the one
-    that declared the need, else the first visa question asked — so the tag's
-    title can quote the question and what was said."""
+    that declared the need, else an unreadable one, else the first visa
+    question asked — so the tag's title can quote the question and what was
+    said."""
     declared = declares_sponsorship_sql("fe.question_norm", "fe.answer")
     return (f"LEFT JOIN LATERAL (SELECT fe.question, fe.answer FROM application_answers fe "
             f"WHERE fe.application_id = {app} AND {_visa_question_sql('fe.question_norm')} "
-            f"ORDER BY {declared} DESC, fe.ordinal NULLS LAST, fe.occurrence LIMIT 1) fq ON true")
+            f"ORDER BY {declared} DESC, (fe.answer ~ '{OPAQUE_ANSWER}') DESC, "
+            f"fe.ordinal NULLS LAST, fe.occurrence LIMIT 1) fq ON true")
