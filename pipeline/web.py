@@ -778,15 +778,18 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
         events_by_app: dict = {}
         if rows:
             # stated_date: the day an invitation named, which is what groups
-            # invitations into rounds (trace.rounds) for the row's tag.
+            # invitations into rounds (trace.rounds) for the row's tag. sent:
+            # whose a note is (trace.own) — mail you sent, or theirs.
             for e in conn.execute(
                 """
-                SELECT application_id, type, source, occurred_at,
-                       payload->>'stated_date' AS stated_date,
-                       payload->>'round_is' AS round_is,
-                       payload->>'round_kind' AS round_kind,
-                       payload->>'invite_role' AS invite_role FROM events
-                 WHERE application_id = ANY(%s) ORDER BY occurred_at, created_at
+                SELECT e.application_id, e.type, e.source, e.occurred_at,
+                       e.payload->>'stated_date' AS stated_date,
+                       e.payload->>'round_is' AS round_is,
+                       e.payload->>'round_kind' AS round_kind,
+                       e.payload->>'invite_role' AS invite_role,
+                       COALESCE(m.sent_by_user, false) AS sent
+                  FROM events e LEFT JOIN emails m ON m.id = e.source_email_id
+                 WHERE e.application_id = ANY(%s) ORDER BY e.occurred_at, e.created_at
                 """, ([r["id"] for r in rows],)).fetchall():
                 events_by_app.setdefault(e["application_id"], []).append(e)
         axis = trace.build(rows, events_by_app, now, config.REMINDER_DAYS)

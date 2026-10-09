@@ -400,6 +400,20 @@ fv = facts_of([v1], [ev(v1, "applied", ago(30)),
 check("a rejection after a round whose closing reason is the role closing is 'stopped', not lost",
       fv["round_fate"] == "stopped" and fv["went_next"] == "rejected" and fv["reason"] == "role_closed")
 
+print("whose a mark is: their status mail is theirs (9 Oct 2026)")
+w1 = app()
+w_evs = [ev(w1, "applied", ago(9), source="extension"),
+         ev(w1, "note", ago(8)),                                       # their status update
+         ev(w1, "note", ago(6), sent=True),                            # your reply
+         ev(w1, "note", ago(5), source="manual"),                      # your note
+         ev(w1, "follow_up_sent", ago(3), source="manual")]
+check("whose a note is: theirs by mail they sent, yours by hand or by mail you sent",
+      [trace.own(e) for e in w_evs] == [False, False, True, True, True])
+_row = dict(w1)
+trace.build([_row], {w1["id"]: w_evs}, NOW, 10)
+check("...and the trace draws theirs solid, yours hollow",
+      [p["hollow"] for p in _row["pts"]] == [False, False, True, True, True], _row["pts"])
+
 print("sponsorship: what an answer told the employer")
 import json                                                   # noqa: E402
 from pipeline import answers                                  # noqa: E402

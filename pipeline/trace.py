@@ -228,9 +228,18 @@ _ROLE = {
     "note": "applied",
 }
 
-# Things the user did rather than received — drawn hollow so the solid dots
-# read as "someone else moved".
-_OWN = {"follow_up_sent", "note", "applied"}
+def own(e) -> bool:
+    """Drawn hollow, so the solid marks read as "someone else moved" — the
+    calendar trace asks this, on the list and on the detail page.
+    You did this, rather than received it: a follow-up, or a note you wrote
+    — by hand, or in mail you sent. A note that came in mail THEY sent is
+    theirs: the classifier files an employer's status update ("your
+    application is under review") as a note, and on 9 Oct 2026 36 of the 57
+    notes on the author's applications were exactly that, every one drawn as
+    a hollow "you did this" mark until then."""
+    if e["type"] == "follow_up_sent":
+        return True
+    return e["type"] == "note" and not (e.get("source") == "email" and not e.get("sent"))
 
 # The wait has a temperature (23 Sep 2026). Amber used to be binary — a tail
 # either crossed `reminder_days` or it didn't — and on 277 real rows that put
@@ -350,7 +359,7 @@ def build(rows, events_by_app, now: datetime, reminder_days: int) -> dict:
             pts.append({
                 "x": _pct(x(e["occurred_at"])),
                 "role": role(e["type"]),
-                "hollow": e["type"] in _OWN and e["type"] != "applied",
+                "hollow": own(e),
                 "label": f'{e["type"].replace("_", " ")} {e["occurred_at"]:%d %b %Y}',
             })
         w = wait(evs, now, reminder_days)
