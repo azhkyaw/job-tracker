@@ -2164,6 +2164,20 @@ console.log("\njobposting.js read: Taleo's listing and its apply flow (read live
   check("the manifest injects on the listing and the flow, nowhere else on taleo.net",
         [covers(LISTING), covers(FLOW), covers("https://tbe.taleo.net/MANAGER/dispatcher/servlet/x")],
         [true, true, false]);
+  // Oracle Recruiting Cloud (0.29.1, 9 Oct 2026): a vendor host, so the
+  // static list (docs/career-sites.md §14, decision 1), path-limited because
+  // the tenant's host also serves Oracle's HR system to its employees. The
+  // listing and form addresses are the shape tests/job_urls.json holds from
+  // the 28 Sep 2026 apply.
+  const ORC = "https://contoso.fa.ap2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001";
+  check("the manifest injects on an Oracle Recruiting Cloud listing and every step of its form, "
+        + "not on the tenant's HR pages",
+        [covers(`${ORC}/job/2087?utm_medium=jobshare`), covers(`${ORC}/job/2087/apply/section/1`),
+         covers(`${ORC}/job/2087/apply/section/3`),
+         covers("https://contoso.fa.ap2.oraclecloud.com/hcmUI/faces/FuseWelcome")],
+        [true, true, true, false]);
+  check("…so a tenant enabled before it joined the manifest is not injected twice",
+        J.hostCovered(injected, "contoso.fa.ap2.oraclecloud.com"), true);
 }
 
 /* ------------------------------ adapters/generic.js on an ATS's own pages

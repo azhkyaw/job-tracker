@@ -2557,3 +2557,19 @@ the key to each real case.
      interviewed` (read by no page) loses one more, a hand-filed screen the
      author had marked "not a round".
 
+82. **Oracle Recruiting Cloud joins the static list** (9 Oct 2026,
+   extension 0.29.1). "I'm about to submit <an Oracle Recruiting Cloud job
+   link>. Shall we add that as a supported ATS". It was half there:
+   `oraclecloud.com` has been in `VENDORS` since phase A and one apply was
+   captured (28 Sep, through LinkedIn's handoff), but the manifest never
+   listed it, so on a tenant the scripts ran only once its site was
+   enabled from the popup. Oracle's forms live on the vendor's host, the
+   case `docs/career-sites.md` §14's first decision gives the static list:
+   `*://*.oraclecloud.com/hcmUI/CandidateExperience/*`, path-limited since
+   the tenant's host also serves Oracle's HR system to its employees.
+   `tests/test_extension.js` checks a listing and two form steps are
+   reached and the HR welcome page is not; the address in hand keys its
+   listing and its form steps to one id. For the apply already open, the
+   advice was the popup's "Always capture on this site", which injects
+   into the open tab, and no extension reload until after the submit.
+

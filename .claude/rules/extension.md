@@ -1992,6 +1992,17 @@ invariants that govern this code (#1, #3, #11) are still in CLAUDE.md.
   site is enabled: the receipt asks for the company instead of filing the
   code.
 
+- **0.29.1 puts Oracle Recruiting Cloud on the static list, untested live**
+  (9 Oct 2026, worklog task 82). It was in `VENDORS` since phase A and
+  captured once (28 Sep, through LinkedIn's handoff), but the manifest
+  never listed it, so a tenant ran the scripts only once enabled from the
+  popup: `*://*.oraclecloud.com/hcmUI/CandidateExperience/*`, the path
+  every stored listing and form step sits under, which leaves out the
+  tenant's own HR pages (`/hcmUI/faces/…`). A tenant enabled earlier is
+  dropped by `syncSites` (`hostCovered`). On the next Oracle apply, with
+  the tab opened after the reload: the toolbar icon is blue on the listing
+  and every section, and ONE record carries the listing's
+  `<tenant host>/<requisition>` id, the form's answers and `ats` oracle.
 - **0.29.0's Taleo support has captured only RE-OPENED applications**
   (8 Oct 2026, worklog task 74). Both real applies on Oracle Taleo's
   classic career section were missed at the submit (the first before the
