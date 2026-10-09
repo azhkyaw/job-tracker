@@ -383,6 +383,44 @@ HOW_LABELS = {
     "form_screen":        "form screen",
     "no_round":           "without a round",
 }
+# LinkedIn's two automatic rejections are one mechanism (screen_sql), so the
+# list's legend names them as one entry, "screened", with the two as its
+# parts; `how=screen` is that entry's filter, a sum of buckets and not a
+# bucket, as `lost` is for interviews (9 Oct 2026).
+SCREEN_HOWS = ("sponsorship_screen", "form_screen")
+
+
+# How long an application has waited with nothing back, in the three spans
+# the list's `applied` entry breaks into (9 Oct 2026): fresh, under
+# REMINDER_DAYS quiet (the rows' grey); inside the odds; and past them, from
+# `quiet_after` (insights.quiet_after, /follow-ups' cut) on. Measured on the
+# row's own days quiet, the list's "Days quiet" column and the heat the
+# status bar paints with (trace.wait: since the last event), where
+# /follow-ups counts from the submission and leaves out a row you followed
+# up or applied to again; hence "past the odds" here, never its "gone
+# quiet". On the day 292 applied split 88 / 57 / 147.
+WAIT_SPANS = ("fresh", "inside", "past")
+
+
+def wait_span(silent_days: int | None, quiet_after: int | None) -> str | None:
+    """The span in Python, over trace.wait's silent_days, for the legend's
+    counts; written beside the SQL so the two are changed together."""
+    if silent_days is None:
+        return None
+    if silent_days < config.REMINDER_DAYS:
+        return "fresh"
+    return "inside" if quiet_after is None or silent_days < quiet_after else "past"
+
+
+def wait_span_sql(a: str) -> str:
+    """The same span over application `a`, for the list's `wait` filter.
+    `%(reminder)s` and `%(quiet)s` are the caller's parameters (quiet_after,
+    NULL with too few replies to draw the odds). Whole days quiet below N is
+    the last event later than N days ago, which is trace.wait's floor."""
+    last = f"(SELECT max(we.occurred_at) FROM events we WHERE we.application_id = {a}.id)"
+    return (f"(CASE WHEN {last} > now() - make_interval(days => %(reminder)s) THEN 'fresh' "
+            f"WHEN %(quiet)s::int IS NULL OR {last} > now() - make_interval(days => %(quiet)s::int) "
+            f"THEN 'inside' ELSE 'past' END)")
 
 # LinkedIn's automatic rejection, recognised by its timer. An employer can
 # mark a screening question a must-have and have LinkedIn reject whoever
@@ -977,7 +1015,7 @@ def ratings_owed(conn, user_id) -> list[dict]:
     """, (user_id,)).fetchall()
 
 
-def queue_count(conn, user_id) -> int:
+def queue_count(conn, user_id, odds: ReplyOdds | None = None) -> int:
     """The nav pill: the rows on /follow-ups that carry a move — the rounds
     owed a word, the emails owed, the threads after a round, the
     applications worth a nudge — which is the page's row sections over
@@ -985,8 +1023,9 @@ def queue_count(conn, user_id) -> int:
     every page renders it (the full queue() is ~250 ms on the dev DB; this
     and the odds are ~100). Until 7 Oct 2026 it counted every unanswered
     application: 197 on the day, a number nobody could act on.
-    tests/test_web.py holds it to the page's rows."""
-    quiet_after = reply_odds(conn, user_id).quiet_after
+    tests/test_web.py holds it to the page's rows. `odds`: a caller that has
+    read them already (the list, for its applied entry) passes them in."""
+    quiet_after = (odds or reply_odds(conn, user_id)).quiet_after
     return conn.execute(f"""
         SELECT (SELECT count(*) FROM applications a
                  WHERE a.user_id = %(user_id)s AND {rating_owed_sql('a')})

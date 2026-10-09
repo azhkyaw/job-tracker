@@ -301,10 +301,15 @@ a.tl:hover{background:color-mix(in srgb,var(--ink) 3.5%,var(--mix))}
 /* --------------------------------------------------------------- the strip
    Segment width IS the count. No numerals inside the bar — they'd have to
    wrap on a thin segment; the legend underneath carries them at a size that
-   always fits, and the legend is the status filter (UI rule 11). */
+   always fits, and the legend is the status filter (UI rule 11).
+   A segment is painted with its own applications (9 Oct 2026): one band per
+   run of one colour, as wide as its count, in the t-<tone> colours below —
+   the colour of each row's wait, which /analytics' squares wear too. A
+   legend swatch is the same bands in miniature. */
 .funnel{display:flex;gap:2px;height:.5rem;margin:0 0 .5rem;border-radius:2px;overflow:hidden}
-.funnel .seg{flex-grow:var(--n);flex-basis:0;min-width:3px;background:var(--c);
-        display:block;cursor:pointer;transition:opacity .12s}
+.funnel .seg{flex-grow:var(--n);flex-basis:0;min-width:3px;
+        display:flex;cursor:pointer;transition:opacity .12s}
+.funnel .seg i,.legend .sw i{flex:var(--n) 1 0;min-width:0;background:var(--tc)}
 .funnel .seg .n,.funnel .seg .l{position:absolute;width:1px;height:1px;
         overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 /* A segment is a filter chip, not a redraw: selecting one dims its siblings
@@ -319,13 +324,21 @@ a.tl:hover{background:color-mix(in srgb,var(--ink) 3.5%,var(--mix))}
 .legend a{color:inherit;text-decoration:none}
 .legend a:hover{color:var(--ink)}
 .legend a.active{color:var(--ink);font-weight:600}
-/* The rejected entry's own breakdown, attached to it rather than spaced like
-   a sibling status: how each rejection ended, three chips that are filters. */
-.legend .sub{display:inline-flex;flex-wrap:wrap;gap:.2rem .7rem;font-size:.78rem;margin-left:-.5rem}
-.legend .sub::before{content:"";display:inline-block;width:1px;height:.9em;background:var(--line);
-                     vertical-align:-.1em;margin-right:.1rem}
-.legend i{display:inline-block;width:.5rem;height:.5rem;border-radius:1px;
-          background:var(--c);margin-right:.38rem;vertical-align:-.02em}
+/* Two groups (9 Oct 2026), open then closed, pushed to either end so the
+   closed one sits under the bar's closed end; each a row of statuses with
+   its first entry's breakdown on a line under it. */
+.legend.lgs{justify-content:space-between;gap:.5rem 2.4rem;align-items:flex-start}
+.legend .lg{display:flex;flex-direction:column;gap:.18rem;min-width:0}
+.legend .lg-row{display:flex;flex-wrap:wrap;gap:.2rem 1.15rem;align-items:baseline}
+.legend .sw{display:inline-flex;width:1rem;height:.5rem;border-radius:1px;overflow:hidden;
+            margin-right:.38rem;vertical-align:-.02em}
+/* A breakdown hangs off the entry above it by a hooked rule: how long the
+   applied records have waited, how the rejections ended — chips that are
+   filters, at a step smaller than the statuses. */
+.legend .sub{display:flex;flex-wrap:wrap;gap:.2rem .7rem;font-size:.78rem;align-items:baseline;
+             padding-left:.45rem}
+.legend .sub::before{content:"";align-self:flex-start;width:.45rem;height:.55em;margin-right:-.35rem;
+                     border:solid var(--line);border-width:0 0 1px 1px}
 .legend.why{margin-top:-1.1rem}
 /* The list's visa filter, named in words above the search (the cells of
    /analytics' "Visa, at a glance" link here). Grey: a filter, not a state. */

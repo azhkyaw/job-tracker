@@ -18,6 +18,7 @@ no framework — this is a single-user ops tool that must stay maintainable.
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import replace as _replace
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -302,26 +303,61 @@ def _pending_count(conn) -> int:
     ).fetchone()["n"] + len(triage.twins(conn))
 
 
-def _funnel(conn, user_id, inbound: bool | None = None) -> list[dict]:
+def _funnel(conn, user_id, inbound: bool | None = None, now: datetime | None = None,
+            quiet_after: int | None = None) -> list[dict]:
     """Status counts for one list page: `inbound` True is `/inbound`, False is
     `/` (everything the user started — `applied` and `saved` alike), None is
     both. Empty segments are dropped, which is why `/` shows no `interested`
-    segment at all rather than a zero: nothing on that page can be one."""
+    segment at all rather than a zero: nothing on that page can be one.
+
+    Each segment carries `bands`, its applications in the colours their rows
+    wear (9 Oct 2026, trace.bands): the bar painted by status token had
+    drawn 45 records blue, 40 of them "viewed", where the list below drew 7,
+    and the 292 `applied` in ink, the brightest mark on the page, over 88
+    fresh rows, 57 waiting and 147 past the odds. The colour is trace.wait
+    over each application's LAST event (the list's own order, occurred_at
+    then created_at), which is exact: an open thread has no closing event,
+    and a closed one wears its status whatever came after. The `applied`
+    segment also carries `spans`, its applications per
+    analytics.wait_span against `quiet_after`."""
+    now = now or datetime.now(timezone.utc)
     rows = conn.execute(
         """
-        SELECT s.status, count(*) AS n
+        SELECT s.status, l.type, l.occurred_at
         FROM application_status s
         JOIN applications a ON a.id = s.application_id
+        LEFT JOIN LATERAL (
+          SELECT e.type, e.occurred_at FROM events e
+           WHERE e.application_id = a.id
+           ORDER BY e.occurred_at DESC, e.created_at DESC LIMIT 1
+        ) l ON true
         WHERE s.user_id = %(user_id)s
           AND (%(inbound)s::bool IS NULL OR (a.origin = 'inbound') = %(inbound)s)
-        GROUP BY s.status
         """, {"user_id": user_id, "inbound": inbound}).fetchall()
-    counts: dict[str, int] = {}
+    threads: dict[str, list] = {}
+    said: dict[str, Counter] = {}
+    spans: Counter = Counter()
     for r in rows:
         key = DISPLAY_STATUS.get(r["status"], r["status"])
-        counts[key] = counts.get(key, 0) + r["n"]
-    return [{"key": s, "label": STATUS_LABEL.get(s, s), "n": counts[s]}
-            for s in FUNNEL_ORDER if counts.get(s)]
+        w = trace.wait([r] if r["type"] else [], now, config.REMINDER_DAYS)
+        tone = trace.tone(key, w["live"])
+        threads.setdefault(key, []).append((tone, w["heat"]))
+        # The segment's title, by days quiet: the heat is 0 AT the threshold
+        # (trace.heat), so the grey band also holds the rows quiet exactly
+        # REMINDER_DAYS, and a title counted by colour would disagree with
+        # the applied entry's "fresh" by those rows.
+        said.setdefault(key, Counter())
+        if tone == "live":
+            said[key]["live"] += 1
+        elif tone == "wait" and w["silent_days"] is not None:
+            said[key]["under" if w["silent_days"] < config.REMINDER_DAYS else "over"] += 1
+        span = analytics.wait_span(w["silent_days"], quiet_after) if key == "applied" else None
+        if span:
+            spans[span] += 1
+    return [{"key": s, "label": STATUS_LABEL.get(s, s), "n": len(threads[s]),
+             "bands": trace.bands(threads[s]), "closed": s in trace.TERMINAL,
+             "said": said[s], **({"spans": spans} if s == "applied" else {})}
+            for s in FUNNEL_ORDER if threads.get(s)]
 
 
 # --------------------------------------------------------------------------- applications
@@ -431,7 +467,7 @@ def _list_path(a: dict) -> str:
 def applications(request: Request, deleted: str | None = None,
                  q: str = "", sort: str = _DEFAULT_SORT, status: str = "",
                  reason: str = "", how: str = "", visa: str = "", form: str = "",
-                 interviews: str = ""):
+                 interviews: str = "", wait: str = ""):
     """The record: what the user sent, newest submission first — every
     `applied` record and the odd `saved` capture, which is theirs too.
 
@@ -451,14 +487,14 @@ def applications(request: Request, deleted: str | None = None,
     list above the first trace. UI rule 9 still holds — the queue is work and
     still gets real rows and a one-click action, just not on this page."""
     return _list(request, "applications", deleted, q, sort, status, reason, how, visa, form,
-                 interviews)
+                 interviews, wait)
 
 
 @app.get("/inbound")
 def inbound(request: Request, deleted: str | None = None,
             q: str = "", sort: str = _DEFAULT_SORT, status: str = "",
             reason: str = "", how: str = "", visa: str = "", form: str = "",
-            interviews: str = ""):
+            interviews: str = "", wait: str = ""):
     """What recruiters started: every `origin = 'inbound'` record in every
     status, newest approach first (24 Sep 2026). Same query, template, funnel
     and filters as `/`; only the membership differs, and it is decided by
@@ -472,7 +508,7 @@ def inbound(request: Request, deleted: str | None = None,
     triage pill counts what is waiting to be filed: things awaiting the user,
     not a wait on anyone else, so it is not amber."""
     return _list(request, "inbound", deleted, q, sort, status, reason, how, visa, form,
-                 interviews)
+                 interviews, wait)
 
 
 def _month_landmarks(rows, tz) -> list[dict]:
@@ -511,7 +547,7 @@ def _month_landmarks(rows, tz) -> list[dict]:
 
 def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
           status: str, reason: str, how: str, visa: str = "", form: str = "",
-          interviews: str = ""):
+          interviews: str = "", wait: str = ""):
     """The one list builder behind `/` and `/inbound`. `page` decides which
     half of `applications` the query sees (by origin — `_list_path` is the
     same rule read the other way, for redirects) and which words the
@@ -553,21 +589,34 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
     (`analytics.ROUND_FATES`, `_INTERVIEW_FILTERS`): the lede's "N
     interviews, M lost (…)" counts (`analytics.summary`) each open exactly
     their rows through it, off the same `round_fate_sql`. Like `visa`/`form`
-    it belongs to no status and rides on every link."""
+    it belongs to no status and rides on every link.
+
+    `wait` (9 Oct 2026) is `how` for the other end of the bar: how long an
+    `applied` record has gone without a reply (analytics.WAIT_SPANS: fresh,
+    inside the odds, past them), the sub-line under the legend's applied
+    entry. It folds into status=applied as `how` folds into rejected, and a
+    rejected filter wins, since the two cannot both hold."""
     user = _login_user(request)
     is_inbound = page == "inbound"
     sort = sort if sort in _SORTS else _DEFAULT_SORT
     q = q.strip()
     status = status if status in FUNNEL_ORDER else ""
     reason = reason if reason in _REASON_FILTERS else ""
-    how = how if how in _HOW_FILTERS else ""
+    how = how if how in _HOW_FILTERS or how == _HOW_SCREEN else ""
     visa = visa if visa in jd_extraction.VISA_GROUPS else ""
     form = form if form in answers.FORM_VISA else ""
     interviews = interviews if interviews in _INTERVIEW_FILTERS else ""
+    wait = wait if wait in _WAIT_FILTERS and not (reason or how) else ""
     if reason or how:
         status = "rejected"
+    if wait:
+        status = "applied"
+    now = datetime.now(timezone.utc)
     with db.connect_scoped(user["id"]) as conn:
         user_id = user["id"]
+        # The odds behind the applied entry's spans and the nav pill's nudges,
+        # read once (the curve is one query over every application).
+        odds = analytics.reply_odds(conn, user_id, now)
         rows = conn.execute(
             f"""
             SELECT a.id, a.origin, j.company_norm, j.title_canonical, s.status,
@@ -692,7 +741,11 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
               AND (NOT %(unrecorded)s::bool OR (rr.id IS NOT NULL AND rr.reason IS NULL))
               -- rr.id guards the CASE: with no rejected event rr.reason is NULL
               -- and the expression would read 'no_round' for a live thread.
-              AND (%(how)s::text = '' OR (rr.id IS NOT NULL AND {_HOW_CASE} = %(how)s))
+              -- `hows`: the bucket, or both screens for the legend's "screened".
+              AND (cardinality(%(hows)s::text[]) = 0
+                   OR (rr.id IS NOT NULL AND {_HOW_CASE} = ANY(%(hows)s::text[])))
+              -- How long an applied record has waited (analytics.wait_span_sql).
+              AND (%(wait)s::text = '' OR {_WAIT_SPAN} = %(wait)s)
               AND (%(visa)s::text = '' OR {_VISA_GROUP} = %(visa)s)
               AND (%(formv)s::text = '' OR {_FORM_VISA} = %(formv)s)
               -- What came of the round you sat: a bucket, `lost` (the two
@@ -705,7 +758,10 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
             """, {"user_id": user_id, "inbound": is_inbound, "status": status,
                   "reason": reason if reason in _EVENT_REASONS else "",
                   "unrecorded": reason == _REASON_UNRECORDED,
-                  "how": how, "visa": visa, "formv": form, "fate": interviews,
+                  "hows": (list(analytics.SCREEN_HOWS) if how == _HOW_SCREEN
+                           else [how] if how else []),
+                  "wait": wait, "reminder": config.REMINDER_DAYS, "quiet": odds.quiet_after,
+                  "visa": visa, "formv": form, "fate": interviews,
                   "q": q, "like": f"%{q}%"}).fetchall()
         for r in rows:
             # Flagged before _display() rewrites the status into a human label:
@@ -730,11 +786,11 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
                        payload->>'round_is' AS round_is,
                        payload->>'round_kind' AS round_kind,
                        payload->>'invite_role' AS invite_role FROM events
-                 WHERE application_id = ANY(%s) ORDER BY occurred_at
+                 WHERE application_id = ANY(%s) ORDER BY occurred_at, created_at
                 """, ([r["id"] for r in rows],)).fetchall():
                 events_by_app.setdefault(e["application_id"], []).append(e)
-        axis = trace.build(rows, events_by_app, datetime.now(timezone.utc),
-                           config.REMINDER_DAYS)
+        axis = trace.build(rows, events_by_app, now, config.REMINDER_DAYS)
+        funnel = _funnel(conn, user_id, is_inbound, now, odds.quiet_after)
         # How many interview rounds the thread reached, for the row's grey
         # tag (8 Oct 2026): a fact about the thread, not about the wait.
         for r in rows:
@@ -774,9 +830,9 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
             "page": page,
             "rows": rows,
             "axis": axis,
-            "funnel": _funnel(conn, user_id, is_inbound),
+            "funnel": funnel,
             "pending": _pending_count(conn),
-            "follow_ups": analytics.queue_count(conn, user_id),
+            "follow_ups": analytics.queue_count(conn, user_id, odds),
             # Only the record's page nudges about it: an approach owes none.
             "emails_owed": 0 if is_inbound else analytics.email_owed_count(conn, user_id),
             "leads": analytics.lead_count(conn, user_id),
@@ -804,8 +860,11 @@ def _list(request: Request, page: str, deleted: str | None, q: str, sort: str,
             "how": how,
             # Always, not only with rejected selected: these ride on the
             # legend's rejected entry as the at-rest glance, over the same
-            # page the funnel counts.
-            "ends": _end_rows(analytics.rejection_ends(conn, user_id, is_inbound)),
+            # page the funnel counts — the two screens as one entry.
+            "ends": _legend_ends(_end_rows(analytics.rejection_ends(conn, user_id, is_inbound))),
+            # The applied entry's own glance, the same idea at the open end.
+            "wait": wait,
+            "waits": _wait_rows(funnel, odds.quiet_after),
             # Named apart from `form`/`visa`, which read like generic template
             # words; the macro defaults to carrying them on every link.
             "visa_filter": visa,
@@ -991,12 +1050,75 @@ def _end_rows(rows) -> list[dict]:
     return out
 
 
+# The list's `how` filter also takes `screen`: both of LinkedIn's automatic
+# rejections, the legend's "screened" entry (analytics.SCREEN_HOWS).
+_HOW_SCREEN = "screen"
+_SCREEN_PART_WORDS = {"sponsorship_screen": ("sponsorship", "the form had recorded that you need sponsorship"),
+                      "form_screen":        ("form", "the form had not recorded a need for sponsorship")}
+assert set(_SCREEN_PART_WORDS) == set(analytics.SCREEN_HOWS)
+
+
+def _legend_ends(ends) -> list[dict]:
+    """_end_rows' buckets as the legend says them (9 Oct 2026): in the same
+    fixed order, with the two screens as ONE entry, "N screened", its parts
+    beside it — the same mechanism, LinkedIn's timer, split only by what the
+    form had recorded. Each with its `title`. /analytics' table keeps all
+    five apart."""
+    out: list[dict] = []
+    for x in ends:
+        said = f": {x['detail']}" if x["detail"] else ""
+        if x["key"] not in _SCREEN_PART_WORDS:
+            out.append({**x, "parts": [], "title": f"{x['n']} rejected {x['label']}{said}"})
+            continue
+        if not out or out[-1]["key"] != _HOW_SCREEN:
+            out.append({"key": _HOW_SCREEN, "label": "screened", "n": 0, "parts": []})
+        group = out[-1]
+        group["n"] += x["n"]
+        group["title"] = (f"{group['n']} rejected by LinkedIn automatically, 72 hours after "
+                          f"you applied: a must-have screening question failed")
+        word, why = _SCREEN_PART_WORDS[x["key"]]
+        group["parts"].append({**x, "label": word, "title": f"{x['n']} screened where {why}{said}"})
+    return out
+
+
+# The `applied` entry's spans (analytics.WAIT_SPANS), in the list's words:
+# the legend's sub-line under it and the `wait` filter, which folds into
+# status=applied the way `how` folds into rejected. "Past the odds", never
+# /follow-ups' "gone quiet": the two count different rows (the constant's
+# comment says which).
+_WAIT_FILTERS = {"fresh": "fresh", "inside": "inside the odds", "past": "past the odds"}
+assert tuple(_WAIT_FILTERS) == analytics.WAIT_SPANS
+
+
+def _wait_rows(funnel, quiet_after: int | None) -> list[dict]:
+    """The applied segment's spans as legend entries, each with the sentence
+    its title says. With too few replies to draw the odds there are none,
+    and the middle span is just "waiting"."""
+    applied = next((s for s in funnel if s["key"] == "applied"), None)
+    if not applied:
+        return []
+    days, pct = config.REMINDER_DAYS, round(insights.QUIET_CHANCE * 100)
+    titles = {
+        "fresh": f"quiet under {days} days",
+        "inside": (f"quiet {days} to {quiet_after - 1} days, still inside the odds"
+                   if quiet_after else f"quiet {days} days or more"),
+        "past": (f"quiet {quiet_after} days or more: fewer than {pct}% of yours "
+                 f"have ever heard back after that long"),
+    }
+    return [{"key": k, "n": applied["spans"][k],
+             "label": _WAIT_FILTERS[k] if quiet_after or k != "inside" else "waiting",
+             "title": f"{applied['spans'][k]} applied, {titles[k]}"}
+            for k in analytics.WAIT_SPANS if applied["spans"].get(k)]
+
+
 # The list's `how` WHERE, off the same closing event (`rr`) the row badge and
 # the reason filter read, and the same bucket expression the chips are counted
 # by — formatted from one function so the two cannot drift. The screen
 # (LinkedIn's automatic rejection, analytics.screen_sql) is one expression too,
 # selected for the row's tag and read by the bucket.
 _SCREEN = analytics.screen_sql("a.id")
+# The list's `wait` filter, the SQL twin of the spans its legend counts.
+_WAIT_SPAN = analytics.wait_span_sql("a")
 # The list's `visa` and `form` filters, the same expressions /analytics'
 # "Visa, at a glance" is counted by (analytics.facts).
 _VISA_GROUP = jd_extraction.visa_group_sql("x.visa_signal")

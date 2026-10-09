@@ -22,8 +22,9 @@
    only an imported one can't), so the path it builds is the page it is on.
    `visa` and `form` (25 Sep 2026) belong to no status, so every link carries
    the page's own unless it passes '' — which only the links that clear them
-   do. #}
-{% macro list_url(status='', q='', sort='', reason='', how='', visa=none, form=none, interviews=none) -%}
+   do. `wait` (9 Oct 2026) is `how`'s twin for `applied`: carried by the
+   links that keep the status, dropped by the ones that change it. #}
+{% macro list_url(status='', q='', sort='', reason='', how='', visa=none, form=none, interviews=none, wait='') -%}
 {%- set vf = visa_filter if visa is none else visa -%}
 {%- set ff = form_filter if form is none else form -%}
 {%- set itf = interviews_filter if interviews is none else interviews -%}
@@ -33,10 +34,29 @@
 {%- if status %}{% set _ = parts.append('status=' + status) %}{% endif -%}
 {%- if reason %}{% set _ = parts.append('reason=' + reason) %}{% endif -%}
 {%- if how %}{% set _ = parts.append('how=' + how) %}{% endif -%}
+{%- if wait %}{% set _ = parts.append('wait=' + wait) %}{% endif -%}
 {%- if vf %}{% set _ = parts.append('visa=' + vf) %}{% endif -%}
 {%- if ff %}{% set _ = parts.append('form=' + ff) %}{% endif -%}
 {%- if itf %}{% set _ = parts.append('interviews=' + itf) %}{% endif -%}
 {{ '/inbound' if page == 'inbound' else '/' }}{{ '?' + (parts | join('&')) if parts else '' }}
+{%- endmacro %}
+
+{#- A status segment painted with its own applications (9 Oct 2026,
+    web._funnel's `bands`, trace.bands): one band per run of one colour, as
+    wide as its count, in the t-<tone> classes /analytics' squares wear — the
+    colour of each row's wait, its numeral and its tail. Drawn twice: the
+    bar's segment, and the legend's swatch, the segment in miniature. #}
+{% macro paint(s) -%}
+{%- for b in s.bands %}<i class="t-{{ b.tone }}" style="--n:{{ b.n }}{% if b.tone == 'wait' %};--heat:{{ b.heat }}%{% endif %}"></i>{% endfor -%}
+{%- endmacro %}
+{#- What a segment's colours say, left to right, for its title (`said`,
+    counted by days quiet, so "under 10 days" is the applied entry's fresh). #}
+{% macro paint_words(s) -%}
+{%- set words = [] -%}
+{%- if s.said.live %}{% set _ = words.append(s.said.live ~ ' where someone else moved, fresh') %}{% endif -%}
+{%- if s.said.under %}{% set _ = words.append(s.said.under ~ ' quiet under ' ~ reminder_days ~ ' days') %}{% endif -%}
+{%- if s.said.over %}{% set _ = words.append(s.said.over ~ ' quiet ' ~ reminder_days ~ ' days or more, amber as the wait grows') %}{% endif -%}
+{{ s.n }} {{ s.label }}{% if words %}: {{ words | join('; ') }}{% endif %}
 {%- endmacro %}
 
 {% if deleted %}
@@ -96,43 +116,77 @@
 {# The funnel is counted from `origin` alone, never `status` — so every
    segment stays visible (and clickable) while one is selected. It's a filter
    chip row, not a redraw of itself; narrowing the funnel to match its own
-   filter would leave no way to see, or click into, any other status. #}
+   filter would leave no way to see, or click into, any other status.
+   Since 9 Oct 2026 a segment is painted with its own applications (paint(),
+   above), shortest silence first: the live in blue, then the waits grey to
+   amber, a closed segment in its status's colour. Painted by status token it
+   had drawn 45 records blue where the rows' waits drew 7, and the 292
+   `applied` in ink, the brightest mark on the page, over a wait the rows
+   draw amber. #}
 <div class="funnel{% if status %} filtered{% endif %}">
   {% for s in funnel %}
   {% set is_active = s.key == status %}
   <a class="seg{% if is_active %} active{% endif %}"
      href="{{ list_url(status=('' if is_active else s.key), q=q, sort=sort) }}"
-     style="--n:{{ s.n }};--c:var(--{{ s.key }})"
-     title="{{ s.n }} {{ s.label }}{% if is_active %}. Click to clear{% endif %}">
+     style="--n:{{ s.n }}"
+     title="{{ paint_words(s) }}{% if is_active %}. Click to clear{% endif %}">
+    {{- paint(s) -}}
     <span class="n">{{ s.n }}</span><span class="l">{{ s.label }}</span>
   </a>
   {% endfor %}
 </div>
-<div class="legend">
-  {% for s in funnel %}
-  {% set is_active = s.key == status %}
-  <a class="{% if is_active %}active{% endif %}"
-     href="{{ list_url(status=('' if is_active else s.key), q=q, sort=sort) }}">
-    <i style="--c:var(--{{ s.key }})"></i>{{ s.n }} {{ s.label }}</a>
-  {#- How the rejections ended, attached to the rejected entry AT REST (UI rule
-      13): one bucket per application, derived from the timeline, so the three
-      numbers sum to the entry's count with nothing tagged. Each is a filter —
-      `?status=rejected&how=` — active through weight like every legend link,
-      and it carries `reason` so the two rejected filters combine. #}
-  {%- if s.key == 'rejected' and ends %}
-  <span class="sub">
-    {%- for x in ends %}
-    {%- set how_active = x.key == how %}
-    <a class="{% if how_active %}active{% endif %}"
-       href="{{ list_url(status='rejected', how=('' if how_active else x.key), reason=reason, q=q, sort=sort) }}"
-       title="{{ x.n }} rejected {{ x.label }}: {{ x.detail }}{% if how_active %}. Click to clear{% endif %}">{{ x.n }} {{ x.label }}</a>
-    {%- endfor %}
-  </span>
+{#- The legend in two groups (9 Oct 2026): the threads still open, then the
+    closed, so `withdrawn` sits beside `rejected` rather than after the
+    rejected entry's breakdown, and the closed group sits under the bar's
+    closed end. Under each group's first entry, its glance at rest, every
+    number a filter that keeps the status: how long the `applied` records
+    have waited (`waits`, ?wait=) and how the rejections ended (`ends`,
+    ?how=, UI rule 13 — one bucket per application, derived from the
+    timeline, so they sum to the entry's count with nothing tagged; the two
+    screens one entry with its two parts). The how chips carry `reason` so
+    the two rejected filters combine. A swatch is its segment in miniature. #}
+<div class="legend lgs">
+  {%- for closed in (false, true) %}
+  {%- set group = funnel | selectattr('closed', 'eq', closed) | list %}
+  {%- if group %}
+  <div class="lg{% if closed %} closed{% endif %}">
+    <div class="lg-row">
+      {%- for s in group %}
+      {%- set is_active = s.key == status %}
+      <a class="{% if is_active %}active{% endif %}" title="{{ paint_words(s) }}"
+         href="{{ list_url(status=('' if is_active else s.key), q=q, sort=sort) }}"><span class="sw">{{ paint(s) }}</span>{{ s.n }} {{ s.label }}</a>
+      {%- endfor %}
+      {%- if status and not closed %}
+      <a href="{{ list_url(q=q, sort=sort) }}">show all statuses</a>
+      {%- endif %}
+    </div>
+    {%- if not closed and waits %}
+    <div class="sub">
+      {%- if group[0].key != 'applied' %}<span>applied:</span>{% endif %}
+      {%- for x in waits %}
+      {%- set wait_active = x.key == wait %}
+      <a class="{% if wait_active %}active{% endif %}"
+         href="{{ list_url(status='applied', wait=('' if wait_active else x.key), q=q, sort=sort) }}"
+         title="{{ x.title }}{% if wait_active %}. Click to clear{% endif %}">{{ x.n }} {{ x.label }}</a>
+      {%- endfor %}
+    </div>
+    {%- elif closed and ends %}
+    <div class="sub">
+      {%- for x in ends %}
+      {%- set how_active = x.key == how %}
+      <span><a class="{% if how_active %}active{% endif %}"
+         href="{{ list_url(status='rejected', how=('' if how_active else x.key), reason=reason, q=q, sort=sort) }}"
+         title="{{ x.title }}{% if how_active %}. Click to clear{% endif %}">{{ x.n }} {{ x.label }}</a>
+      {%- if x.parts %} ({% for p in x.parts %}{% set part_active = p.key == how %}<a class="{% if part_active %}active{% endif %}"
+         href="{{ list_url(status='rejected', how=('' if part_active else p.key), reason=reason, q=q, sort=sort) }}"
+         title="{{ p.title }}{% if part_active %}. Click to clear{% endif %}">{{ p.n }} {{ p.label }}</a>{% if not loop.last %} · {% endif %}{% endfor %}){% endif -%}
+      </span>
+      {%- endfor %}
+    </div>
+    {%- endif %}
+  </div>
   {%- endif %}
-  {% endfor %}
-  {% if status %}
-  <a href="{{ list_url(q=q, sort=sort) }}">show all statuses</a>
-  {% endif %}
+  {%- endfor %}
 </div>
 {# The rejected segment, once selected, unfolds into WHY — the same chip-row
    idea one level down (UI rule 11): each chip is `?status=rejected&reason=`,
@@ -161,12 +215,12 @@
   {%- if visa_filter %} {{ (visa_groups[visa_filter][1][:1] | lower) ~ visa_groups[visa_filter][1][1:] }}{% endif %}
   {%- if visa_filter and form_filter %} and{% endif %}
   {%- if form_filter %} {{ (form_visa[form_filter][0][:1] | lower) ~ form_visa[form_filter][0][1:] }}{% endif %}.
-  <a href="{{ list_url(status=status, q=q, sort=sort, reason=reason, how=how, visa='', form='') }}">Show every visa case</a></p>
+  <a href="{{ list_url(status=status, q=q, sort=sort, reason=reason, how=how, wait=wait, visa='', form='') }}">Show every visa case</a></p>
 {% endif %}
 {# The interviews filter, when one is set (8 Oct 2026): the lede's words. #}
 {% if interviews_filter %}
 <p class="filter-note">Only interviews {{ interview_filters[interviews_filter] }}.
-  <a href="{{ list_url(status=status, q=q, sort=sort, reason=reason, how=how, interviews='') }}">Show every interview</a></p>
+  <a href="{{ list_url(status=status, q=q, sort=sort, reason=reason, how=how, wait=wait, interviews='') }}">Show every interview</a></p>
 {% endif %}
 
 {# One row for the controls and the page's nudges (7 Oct 2026): the search
@@ -180,6 +234,7 @@
   {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
   {% if reason %}<input type="hidden" name="reason" value="{{ reason }}">{% endif %}
   {% if how %}<input type="hidden" name="how" value="{{ how }}">{% endif %}
+  {% if wait %}<input type="hidden" name="wait" value="{{ wait }}">{% endif %}
   {% if visa_filter %}<input type="hidden" name="visa" value="{{ visa_filter }}">{% endif %}
   {% if form_filter %}<input type="hidden" name="form" value="{{ form_filter }}">{% endif %}
   {% if interviews_filter %}<input type="hidden" name="interviews" value="{{ interviews_filter }}">{% endif %}
@@ -195,7 +250,7 @@
     <option value="company" {% if sort == 'company' %}selected{% endif %}>Company A to Z</option>
   </select>
   <button>Apply</button>
-  {% if q %}<a href="{{ list_url(status=status, sort=sort, reason=reason, how=how) }}">Clear</a>{% endif %}
+  {% if q %}<a href="{{ list_url(status=status, sort=sort, reason=reason, how=how, wait=wait) }}">Clear</a>{% endif %}
   <span class="aside">
     {% if page == 'inbound' %}
     {# The inbound page's nudge: approaches still sitting in triage's inbound

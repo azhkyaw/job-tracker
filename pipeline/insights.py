@@ -249,17 +249,13 @@ def build_facts(apps, events, now: datetime, reminder_days: int, tz=None) -> lis
         # The wait, exactly as the list draws it (trace.build): silent days
         # since the last event, unless the thread has closed — at ANY point,
         # not only on its last event (trace.closing).
-        last = None if trace.closing(evs) else (evs[-1] if evs else None)
-        silent = max((now - last["occurred_at"]).days, 0) if last else None
-        f["silent_days"] = silent
-        f["heat"] = trace.heat(silent, reminder_days)
-        f["live"] = trace.live(last["type"] if last else None, silent, reminder_days)
+        w = trace.wait(evs, now, reminder_days)
+        f["silent_days"], f["heat"], f["live"] = w["silent_days"], w["heat"], w["live"]
         status = "applied" if a["status"] == "confirmation" else a["status"]
         f["state"] = status
-        # An offer in hand is open (migration 019) and still wears green — the
-        # one colour that is the thread's own rather than the state of its wait.
-        f["tone"] = (status if status in CLOSED or status == "offer"
-                     else ("live" if f["live"] else "wait"))
+        # An offer in hand is open (migration 019) and still wears green
+        # (trace.tone, the list's status bar's rule too).
+        f["tone"] = trace.tone(status, f["live"])
         out.append(f)
     return out
 

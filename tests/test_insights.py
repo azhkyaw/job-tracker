@@ -470,6 +470,27 @@ _open = {"id": "open"}
 trace.build([_open], {"open": [{"type": "recruiter_outreach", "occurred_at": ago(2)}]}, NOW, 10)
 check("an open approach still draws its live tail (the guard is the close, not the type)",
       _open["tail"] is not None and _open["cap"] is None and _open["live"] is True)
+
+print("trace: a status bar segment is painted with its own threads (9 Oct 2026)")
+_b = trace.bands([("wait", 100), ("live", 0), ("wait", 0), ("wait", 40), ("wait", 0), ("live", 0)])
+check("shortest silence first: the live, then the waits by rising heat, one run per colour",
+      _b == [{"tone": "live", "heat": 0, "n": 2}, {"tone": "wait", "heat": 0, "n": 2},
+             {"tone": "wait", "heat": 40, "n": 1}, {"tone": "wait", "heat": 100, "n": 1}], _b)
+check("a heat counts only on a wait: a closed segment is one band",
+      trace.bands([("rejected", 0), ("rejected", 0)]) == [{"tone": "rejected", "heat": 0, "n": 2}])
+_seq = [{"type": "applied", "occurred_at": ago(40)}, {"type": "viewed", "occurred_at": ago(30)}]
+check("wait() of an open thread reads its last event alone, so the bar's one-event read is exact",
+      trace.wait(_seq, NOW, 10) == trace.wait(_seq[-1:], NOW, 10)
+      == {"silent_days": 30, "heat": trace.heat(30, 10), "live": False})
+check("tone(): a close and an offer by status, everything else by its wait",
+      [trace.tone("rejected", True), trace.tone("withdrawn", False), trace.tone("offer", False),
+       trace.tone("viewed", True), trace.tone("applied", False)]
+      == ["rejected", "withdrawn", "offer", "live", "wait"])
+_R = analytics.config.REMINDER_DAYS
+check("wait_span: fresh under the reminder, inside the odds until quiet_after, past from it on",
+      [analytics.wait_span(d, _R + 13) for d in (None, 0, _R - 1, _R, _R + 12, _R + 13, 80)]
+      == [None, "fresh", "fresh", "inside", "inside", "past", "past"]
+      and analytics.wait_span(80, None) == "inside")
 print("facts: an approach in the words the /inbound row uses (28 Sep 2026)")
 _waiting = app(status="interested", origin="inbound", awaiting_you=True)
 _answered = app(status="interested", origin="inbound", awaiting_you=False)

@@ -269,6 +269,55 @@ def live(last_type: str | None, silent_days, reminder_days: int) -> bool:
             and role(last_type) != "applied" and silent_days < reminder_days)
 
 
+def wait(evs, now: datetime, reminder_days: int) -> dict:
+    """The state of a thread's wait, exactly as the list draws it: the days
+    since its last event, unless it has closed at ANY point (closing()),
+    their heat, and whether it is live. One reading for every surface that
+    colours a thread — the list's rows (build(), below), its status bar
+    (web._funnel's bands) and /analytics' squares (insights) — since the same
+    application must wear the same colour on all three. `evs` oldest-first."""
+    last = None if closing(evs) else (evs[-1] if evs else None)
+    silent = max((now - last["occurred_at"]).days, 0) if last else None
+    return {"silent_days": silent, "heat": heat(silent, reminder_days),
+            "live": live(last["type"] if last else None, silent, reminder_days)}
+
+
+def tone(status: str, is_live: bool) -> str:
+    """The colour a thread wears, as a `t-<tone>` class in base.html: its own
+    status once it has closed, or an offer (green, the one colour that is the
+    thread's own rather than the state of its wait); otherwise the wait —
+    `live` blue, or `wait`, grey to amber by its heat. `status` is the
+    display status (confirmation reads as applied)."""
+    if status in TERMINAL or status == "offer":
+        return status
+    return "live" if is_live else "wait"
+
+
+# A status bar segment's runs, left to right, by how long each thread has
+# been quiet, shortest first: the live (someone else moved, fresh), then the
+# waits as their heat rises. So a segment reads in the order the legend's
+# breakdown under `applied` does — fresh, inside the odds, past the odds —
+# and the first look at a segment with a live thread is its blue.
+_BAND_ORDER = {"live": 0, "wait": 1, "offer": 2, "rejected": 3, "withdrawn": 4}
+
+
+def bands(threads) -> list[dict]:
+    """A segment painted with its own threads (9 Oct 2026): `threads` is
+    (tone, heat) pairs, one per application; the result is runs of one
+    colour, [{"tone", "heat", "n"}], in _BAND_ORDER and, among the waits, by
+    rising heat. A heat counts only on a wait: every other tone is one
+    colour whatever its silence."""
+    keyed = sorted(((t, h if t == "wait" else 0) for t, h in threads),
+                   key=lambda th: (_BAND_ORDER.get(th[0], len(_BAND_ORDER)), th[1]))
+    out: list[dict] = []
+    for t, h in keyed:
+        if out and out[-1]["tone"] == t and out[-1]["heat"] == h:
+            out[-1]["n"] += 1
+        else:
+            out.append({"tone": t, "heat": h, "n": 1})
+    return out
+
+
 def _pct(value: float) -> str:
     return f"{max(0.0, min(100.0, value)):.3f}%"
 
@@ -304,19 +353,18 @@ def build(rows, events_by_app, now: datetime, reminder_days: int) -> dict:
                 "hollow": e["type"] in _OWN and e["type"] != "applied",
                 "label": f'{e["type"].replace("_", " ")} {e["occurred_at"]:%d %b %Y}',
             })
+        w = wait(evs, now, reminder_days)
+        silent = w["silent_days"]
         end = closing(evs)
         if end:
             cap = _pct(x(end["occurred_at"]))
         elif evs:
             last = evs[-1]
-            days = (now - last["occurred_at"]).days
-            silent = max(days, 0)
             tail = {"a": _pct(x(last["occurred_at"])), "b": "100%",
                     "aging": silent >= reminder_days,
                     "role": role(last["type"])}
         r["pts"], r["tail"], r["cap"], r["silent_days"] = pts, tail, cap, silent
-        r["heat"] = heat(silent, reminder_days)
-        r["live"] = live(evs[-1]["type"] if evs and not end else None, silent, reminder_days)
+        r["heat"], r["live"] = w["heat"], w["live"]
         r["trace_label"] = _describe(r, silent)
 
     return {"t0": t0, "t1": t1, "ticks": _ticks(t0, t1, span, x),

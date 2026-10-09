@@ -2455,3 +2455,49 @@ the key to each real case.
      "Canceled event" mail and a recruiter's InMail reply are not
      invitations.
 
+79. **The status bar, painted with its own rows** (9 Oct 2026). "Let's
+   rethink this", over a screenshot of the list's bar and legend. Measured
+   on `/` first (398 records): the bar coloured by status TOKEN while every
+   row and /analytics' squares colour by the wait (`trace.live`/`heat`), so
+   it drew 45 records blue (40 viewed, 5 interviewing) where the rows' waits
+   drew 7 — 36 of the 40 "viewed" were waits, 26 past the odds; and it drew
+   the 292 `applied` in ink, the brightest mark on the page, over 88 fresh,
+   57 inside the odds and 147 past them. The legend ran eleven items in one
+   line: four statuses, the rejected entry's five buckets, then `withdrawn`
+   stranded after them; two of the five were one mechanism, LinkedIn's
+   72-hour screen. The author said "go" to all three proposals:
+   - **Each segment is its rows** (`web._funnel`'s `bands`, `trace.bands`):
+     a run per colour, as wide as its count, in the `t-<tone>` classes the
+     squares wear, shortest silence first — the live, then the waits as
+     their heat rises — so a segment reads in the order its breakdown does.
+     One reading of a thread's wait now serves all three surfaces:
+     `trace.wait()` (build() and insights used to compute it apart) and
+     `trace.tone()` (insights' rule, moved). The bar reads each record's
+     LAST event (occurred_at, then created_at, now the list's event order
+     too), which `tests/test_insights.py` holds exact; `tests/test_web.py`
+     holds every segment to its rows colour for colour, on both pages. A
+     legend swatch is the same bands in miniature. Hottest-first was built
+     first and seen in the browser: the bar ran the opposite way to the
+     breakdown under it.
+   - **The legend in two groups**, open then closed (`.legend.lgs`), the
+     closed one pushed under the bar's closed end, each group's first entry
+     with its breakdown on a hooked line under it; the two screens are one
+     entry, "27 screened (16 sponsorship · 11 form)", whose `how=screen` is
+     a sum of buckets like `interviews=lost` (`_legend_ends`; /analytics'
+     table keeps all five apart).
+   - **`applied` gets the at-rest breakdown `rejected` has**: "88 fresh · 57
+     inside the odds · 147 past the odds" (`analytics.WAIT_SPANS`,
+     `wait_span` and its SQL twin `wait_span_sql`, the `?wait=` filter,
+     which folds into status=applied as `how` folds into rejected; a
+     rejected filter wins). Counted on the row's own days quiet, the
+     "Days quiet" column, against `quiet_after`; NOT /follow-ups' "gone
+     quiet", which counts from the submission and leaves out rows followed
+     up or applied to again — hence the different words. `queue_count`
+     takes the odds the list already read.
+   - **Found on the way:** `trace.heat()` is 0 AT the threshold, so the grey
+     band held 101 rows where "fresh" held 88 (13 quiet exactly 10 days),
+     and a segment title counted by colour said "101 quiet under 10 days".
+     Titles now count by days quiet (`said`); the colour is unchanged.
+   - Seen in the dev Chrome, dark and light, unfiltered and `?wait=past`;
+     not at phone width.
+

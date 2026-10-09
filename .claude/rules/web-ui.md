@@ -425,6 +425,31 @@ is a private artifact, linked from the memory file
     the same collapse `_display()` already applies to the funnel's own
     counts, so a filter and the count that names it can't disagree about
     what one status label covers.
+    **A segment is painted with its own rows** (9 Oct 2026, worklog task
+    79). The bar was the one surface that coloured by status TOKEN, while
+    the rows and /analytics' squares colour by the wait (rule 18's "a square
+    is the list's colour"): on the day it drew 45 records blue where the
+    rows' waits drew 7, and 292 `applied` in ink — the brightest mark on the
+    page — over 204 rows the list drew amber. Now `web._funnel` reads every
+    record's last event through `trace.wait()` and `trace.tone()` (the one
+    reading build() and insights share since), and `trace.bands` lays a
+    segment out as runs of one colour, each a flex child as wide as its
+    count wearing a `t-<tone>` class: shortest silence first, the live, then
+    the waits as their heat rises, so a segment reads in its breakdown's
+    order (hottest-first was built first and ran against it). A segment's
+    title says the same in words, counted by days quiet rather than colour,
+    since `heat()` is 0 AT the threshold. No new colour, and the dark
+    palette needed nothing. The legend's swatch is the segment in
+    miniature (`paint()` in the template), because a status no longer has
+    one colour. `tests/test_web.py` holds every segment to its rows, colour
+    for colour, on both pages.
+    **The legend is two groups, open then closed** (`.legend.lgs`, the same
+    day): flex `space-between`, so the closed group sits under the bar's
+    closed end and `withdrawn` beside `rejected`, where it had trailed the
+    rejected entry's breakdown on one line of eleven items. Each group's
+    first entry carries its breakdown on the line under it, hung off it by a
+    hooked rule (`.legend .sub::before`): `applied`'s spans (rule 13) and
+    `rejected`'s buckets.
 12. **Why it closed is a qualifier on `rejected`, never a status of its own**
     (9 Sep 2026). A visa rejection is still a closed thread, so it keeps rust
     (rule 1); the reason rides beside it as a grey badge on the list row — the
@@ -529,6 +554,23 @@ is a private artifact, linked from the memory file
     "sponsorship screen" beside "rejected" is wider than the 7rem rail, the
     clipping rule 9b measured. It cannot see other hiring systems'
     knockouts (no fixed timer), nor an employer who chose "notify promptly".
+    **On the legend the two screens are one entry** (9 Oct 2026): "27
+    screened (16 sponsorship · 11 form)", one mechanism split only by what
+    the form recorded. `how=screen` is a sum of buckets, not a bucket
+    (`analytics.SCREEN_HOWS`, `web._legend_ends`), the way `lost` is for
+    interviews; /analytics' table and flow keep all five apart, so
+    `_HOW_FILTERS` stays the bucket registry `insights.flow` loops.
+    **`applied` got the same at-rest glance** (the same day): "88 fresh · 57
+    inside the odds · 147 past the odds", `analytics.WAIT_SPANS` — under
+    REMINDER_DAYS quiet, then up to `quiet_after` (/follow-ups' cut, the
+    same odds), then past it — each a `?wait=` filter that folds into
+    status=applied as `how` folds into rejected (a rejected filter wins;
+    the funnel and legend links drop it, the search keeps it). Counted in
+    Python over `trace.wait` (`wait_span`) and filtered by its SQL twin
+    (`wait_span_sql`), on the row's own days quiet: so "past the odds",
+    never /follow-ups' "gone quiet", which counts from the submission and
+    leaves out the rows followed up or applied to again — two words for two
+    counts. The suite loops the spans, chip number against rows shown.
 14. **The wait has a temperature** (23 Sep 2026). Amber was binary — a tail
     either crossed `REMINDER_DAYS` or it did not — and on 277 real rows that
     put 150 in one flat amber: a highlighted list, not a scale. `trace.heat()`
@@ -718,7 +760,9 @@ is a private artifact, linked from the memory file
       it was 3 of 59, and 3 did. Rule 7's `MIN_RATE_N` still withholds
       thin rates.
     - **A square is the list's colour.** `trace.live()` and `trace.heat()`
-      decide both the list rail and the page's squares. `live` moved out of
+      decide both the list rail and the page's squares — and since 9 Oct
+      2026 the list's status bar, all three through `trace.wait()` and
+      `trace.tone()` (rule 11). `live` moved out of
       two templates into `trace.py` so there is one rule. `t-<tone>`
       classes set ONE `--tc` that a square paints as background and a flow
       band as fill.

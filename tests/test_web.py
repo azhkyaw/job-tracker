@@ -2257,14 +2257,23 @@ check(f"the SQL agrees with every case in email_apply.json ({len(_ea_cases)})",
       len(_ea_got) == len(_ea_cases) and not _ea_bad, _ea_bad)
 
 r = client.get("/")
-legend = r.text.split('class="legend"')[1].split("</span>")[0]
+# The closed group's breakdown (9 Oct 2026: the legend is two groups, and the
+# rejected entry's buckets hang under the closed one).
+legend = r.text.split('<div class="lg closed">')[1].split('<form class="bar')[0]
 check("the legend's rejected entry carries every bucket at rest, each a filter",
       all(f"how={k}" in legend for k in web._HOW_FILTERS)
       and "after a round" in legend and "without a round" in legend, legend)
 check("a chip says what closed them — the hand-filed one here",
       "filed by hand" in legend, legend)
+check("the two screens are one entry, screened, with its two parts beside it",
+      re.search(r'how=screen"[^>]*>(\d+) screened</a> \(<a[^>]*how=sponsorship_screen"[^>]*>\d+ sponsorship</a>'
+                r' · <a[^>]*how=form_screen"[^>]*>\d+ form</a>\)', legend) is not None, legend)
+_segs = re.findall(r'status=(\w+)"', r.text.split('class="funnel')[1].split("</div>")[0])
+check("the closed group holds exactly the bar's closes, so withdrawn sits beside rejected",
+      set(re.findall(r'status=(\w+)"', legend.split('class="sub"')[0]))
+      == {k for k in _segs if k in web.trace.TERMINAL} and "rejected" in _segs, (_segs, legend[:400]))
 import re as _re_how
-for _k in web._HOW_FILTERS:
+for _k in [*web._HOW_FILTERS, web._HOW_SCREEN]:
     _m = _re_how.search(rf'how={_k}"[^>]*>(\d+) ', legend)
     _n = int(_m.group(1))
     _rows = client.get(f"/?how={_k}").text.count('<a class="tl" href="/applications/')
@@ -2289,7 +2298,7 @@ check("how and why combine — the untagged form letters are the tagging queue's
       r.status_code)
 why = r.text.split("why it closed")[1].split("</div>")[0]
 check("the why-chips carry the how filter", "how=no_round" in why, why[:400])
-sub = r.text.split('class="sub"')[1].split("</span>")[0]
+sub = r.text.split('<div class="lg closed">')[1].split('class="sub"')[1].split("</div>")[0]
 check("and the how chips carry the reason, with this one active",
       "reason=unrecorded" in sub and 'class="active"' in sub, sub)
 funnel = r.text.split('class="funnel')[1].split("</div>")[0]
@@ -2303,6 +2312,70 @@ r = client.get("/?how=teleport")
 check("an unknown how is ignored, not an error — the unfiltered list",
       r.status_code == 200 and "roundtrip co" in r.text
       and 'class="funnel filtered"' not in r.text, r.status_code)
+
+print("the status bar: each segment painted with its own rows (9 Oct 2026)")
+# Painted by status token, the bar had drawn 45 real records blue where the
+# rows' waits drew 7. Now a segment's bands must be its rows, colour for
+# colour: the rail's live numeral, each wait's heat, the closes by status.
+from collections import Counter as _Counter                             # noqa: E402
+_BAND = re.compile(r'class="t-(\w+)" style="--n:(\d+)(?:;--heat:(\d+)%)?"')
+_ROW = re.compile(r'<a class="tl" href="/applications/[^"]+" title="[^"]*" style="--heat:(\d+)%">'
+                  r'.*?<b class="d( live)?( dash)?">.*?<span class="badge"[^>]*>([^<]+)</span>', re.S)
+for _path in ("/", "/inbound"):
+    r = client.get(_path)
+    if _path != "/" and '<div class="funnel' not in r.text:
+        continue                     # no approaches in the suite's data yet
+    _drawn, _order_ok = {}, True
+    for _label, _seg in re.findall(r'<a class="seg[^"]*"[^>]*title="\d+ ([a-z]+)[^"]*"[^>]*>(.*?)</a>',
+                                   r.text.split('<div class="funnel')[1].split("</div>")[0], re.S):
+        _seq = [(_t, int(_h or 0), int(_n)) for _t, _n, _h in _BAND.findall(_seg)]
+        _order_ok &= _seq == sorted(_seq, key=lambda b: ({"live": 0, "wait": 1}.get(b[0], 2), b[1]))
+        _drawn[_label] = _Counter()
+        for _t, _h, _n in _seq:
+            _drawn[_label][(_t, _h)] += _n
+    _rows_by = {}
+    for _heat, _live, _dash, _st in _ROW.findall(r.text):
+        _tone = _st if _st in ("rejected", "withdrawn", "offer") else "live" if _live else "wait"
+        _rows_by.setdefault(_st, _Counter())[(_tone, int(_heat) if _tone == "wait" else 0)] += 1
+    check(f"{_path}: every segment is its rows, colour for colour — the live, each wait's heat, "
+          f"the closes",
+          _drawn and _drawn == _rows_by, (_drawn, _rows_by))
+    check(f"{_path}: shortest silence first in every segment — the live, then the waits as "
+          f"their heat rises", _order_ok, _drawn)
+
+print("the applied entry: how long it has waited, each span a filter (9 Oct 2026)")
+r = client.get("/")
+_open_sub = r.text.split('<div class="lg">')[1].split('<div class="lg closed">')[0]
+_spans = re.findall(r'href="/\?status=applied&(?:amp;)?wait=(\w+)"[^>]*>(\d+) ', _open_sub)
+_applied_n = int(re.search(r'title="(\d+) applied', r.text.split('class="funnel')[1]).group(1))
+check("the spans sum to the applied entry, in their fixed order",
+      _spans and sum(int(n) for _, n in _spans) == _applied_n
+      and [k for k, _ in _spans] == [k for k in analytics.WAIT_SPANS if k in dict(_spans)],
+      (_spans, _applied_n))
+for _k, _n in _spans:
+    _rows = client.get(f"/?wait={_k}").text.count('<a class="tl" href="/applications/')
+    check(f"the {_k} span's number is the number of rows it shows ({_n})", int(_n) == _rows,
+          (_n, _rows))
+_k0 = _spans[0][0]
+r = client.get(f"/?wait={_k0}")
+check("a wait filter is an applied filter: the funnel marked filtered, applied active",
+      'class="funnel filtered"' in r.text
+      and re.search(r'class="seg active"\s+href="[^"]*"\s+style="[^"]*"\s+title="\d+ applied', r.text),
+      r.status_code)
+funnel = r.text.split('class="funnel')[1].split("</div>")[0]
+check("the funnel's own links drop it — it belongs to applied", "wait=" not in funnel, funnel[:300])
+r = client.get(f"/?wait={_k0}&q=zz")
+check("the search's Clear link and its form carry it",
+      re.search(rf'href="/\?status=applied&(amp;)?wait={_k0}"', r.text) is not None
+      and f'<input type="hidden" name="wait" value="{_k0}">' in r.text, r.status_code)
+r = client.get(f"/?wait={_k0}&how=visa")
+check("a rejected filter wins over a wait: the two cannot both hold",
+      'name="wait"' not in r.text and '<input type="hidden" name="how" value="visa">' in r.text,
+      r.status_code)
+r = client.get("/?wait=forever")
+check("an unknown wait is ignored, not an error — the unfiltered list",
+      r.status_code == 200 and 'class="funnel filtered"' not in r.text, r.status_code)
+
 r = client.get("/analytics")
 tbl = r.text.split("How it ended")[1].split("</table>")[0]
 check("analytics counts the buckets in the same fixed order, each linking to its rows",

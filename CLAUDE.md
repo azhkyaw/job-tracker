@@ -140,7 +140,10 @@ An invariant keeps its RULE here and its case history in the rule file.
 - `pipeline/trace.py` — pure timeline/axis geometry for list + detail pages,
   and `rounds()` (8 Oct 2026): the interview ROUNDS of a thread, grouped
   from its invitation events by the day each named — one interview is
-  several events — read by the detail page, the list's tag and `/analytics`
+  several events — read by the detail page, the list's tag and `/analytics`.
+  `wait()` and `tone()` (9 Oct 2026) are the ONE reading of a thread's wait
+  and colour, shared by the rows, `/analytics`' squares and the list's
+  status bar, whose segments `bands()` paints with their own rows
 - `pipeline/analytics.py` — the counts the LIST pages show (summary,
   rejection reasons and endings, reminders), `reapplications` (the follow-up
   queue's "you applied again" suggestion; `web.mark_reapplied` files it),
@@ -892,7 +895,9 @@ Detail lives with each family's rule file; this is the index.
   the lists' head — a row of figures since 9 Oct (`.figures`), each a
   link into its `?interviews=` filter, with its note. And the rounds' (task 76): the "round 2 of 4" line
   labels with their "not a round" buttons, the detail badge, the list's
-  "N rounds" tag, and "How far you got" on `/analytics`.
+  "N rounds" tag, and "How far you got" on `/analytics`. The status bar
+  painted with its own rows and its two-group legend (task 79) were seen
+  in both themes at desktop width, never at phone width.
 
 ## Open work (as of 9 Oct 2026)
 
